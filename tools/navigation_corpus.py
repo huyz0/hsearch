@@ -48,7 +48,12 @@ def cleanup_claims(store, claims, resources, query, known_edits, primary_error):
         except Exception as error:
             errors.append({"claim": claim, "cleanup_error": str(error)[:256]})
     for error in errors:
-        print(json.dumps(error), flush=True)
+        try:
+            print(json.dumps(error), flush=True)
+        except (OSError, ValueError):
+            # A closed diagnostic sink cannot replace the original failure.
+            # Cleanup still fails below if it is the only primary error.
+            pass
     if errors and primary_error is None:
         raise API["Refused"]("Owned corpus cleanup incomplete; inspect the recorded errors")
 

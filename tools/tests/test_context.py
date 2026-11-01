@@ -181,6 +181,30 @@ class RetrievalControls(unittest.TestCase):
         self.assertEqual(result["data"]["semantic_failure"], details)
         self.assertTrue(result["cargo_check_required"])
 
+    def test_escaped_cli_output_keeps_original_failure_through_actual_router(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "dev"))
+        try:
+            guest = runpy.run_path(str(Path(__file__).resolve().parents[2] / "dev/navigation.py"))
+        finally:
+            sys.path.pop(0)
+        for character in ("\t", "\x00", "\\", "\"", "\n", "\u03bb", "\U0001f9ed"):
+            with self.subTest(character=repr(character)):
+                failure = guest["CliFailure"]({"exit_code": 1, "stdout": character * 1024, "stderr": character * 1024})
+                details = failure.details
+                self.assertLessEqual(len(API["encoded"](details)), 4096)
+                for stream in ("stdout", "stderr"):
+                    head = details[stream + "_head"]
+                    self.assertLessEqual(len(head.encode()), 1024)
+                    self.assertTrue((character * 1024).startswith(head))
+                    self.assertEqual(details[stream + "_truncated"], head != character * 1024)
+                result = self.route("diagnostics", file="src/main.rs", semantic=lambda *_args:
+                                    {"status": "unavailable", "reason": str(failure), "data": details})
+                self.assertEqual(result["status"], "fallback")
+                self.assertEqual(result["reason"], "navigation_cli_query_failed")
+                self.assertEqual(result["data"]["semantic_failure"], details)
+                self.assertEqual(result["data"]["semantic_failure"]["exit_code"], 1)
+                self.assertTrue(result["cargo_check_required"])
+
     def test_aliases_and_oversized_source_units_refuse(self):
         outside = self.area / "outside.rs"
         outside.write_text("// private fixture\n")

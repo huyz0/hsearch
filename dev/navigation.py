@@ -29,6 +29,13 @@ class CliFailure(RuntimeError):
             raw = result[stream].encode("utf-8")
             self.details[stream + "_head"] = raw[:1024].decode("utf-8", errors="ignore")
             self.details[stream + "_truncated"] = len(raw) > 1024
+        # Escaping control characters can expand a raw byte sixfold. Bound the
+        # serialized object consumed by the host as well as each raw prefix.
+        while len(encoded(self.details)) > 4096:
+            stream = max(("stdout", "stderr"), key=lambda name: len(encoded(self.details[name + "_head"])))
+            head = self.details[stream + "_head"]
+            self.details[stream + "_head"] = head[:len(head) // 2]
+            self.details[stream + "_truncated"] = True
 
 
 def encoded(value):

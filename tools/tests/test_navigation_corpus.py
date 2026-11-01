@@ -1,6 +1,7 @@
 """Corpus failures must remain visible without discarding unexpected work."""
 from contextlib import redirect_stdout
 import io
+import os
 from pathlib import Path
 import runpy
 from types import SimpleNamespace
@@ -12,6 +13,36 @@ Refused = API["API"]["Refused"]
 
 
 class CleanupControls(unittest.TestCase):
+    def test_closed_logging_sink_cannot_replace_primary_error(self):
+        def fails(*_args):
+            raise Refused("cleanup failed")
+        class ClosedSink:
+            def write(self, _text):
+                raise BrokenPipeError("closed diagnostic stream")
+        primary = Refused("original diagnostic failure")
+        store = SimpleNamespace(get=lambda _claim: {"phase": "allocated"}, cleanup=fails)
+        with self.assertRaises(Refused) as caught, redirect_stdout(ClosedSink()):
+            try:
+                raise primary
+            finally:
+                API["cleanup_claims"](store, [("claim", "owner")], None, lambda *_args: {"status": "stopped"}, {}, API["sys"].exception())
+        self.assertIs(caught.exception, primary)
+
+    @unittest.skipUnless(os.name == "posix", "Native link preservation is qualified on Linux")
+    def test_owned_cleanup_preserves_hardlinked_fixture_without_closing_claim(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path, alias = Path(folder) / "fixture.rs", Path(folder) / "alias.rs"
+            path.write_bytes(b"known edit")
+            os.link(path, alias)
+            calls = []
+            store = SimpleNamespace(get=lambda _claim: {"phase": "allocated", "worktree": folder}, cleanup=lambda *_args: calls.append("closed"))
+            with self.assertRaisesRegex(Refused, "cleanup incomplete"), redirect_stdout(io.StringIO()):
+                API["cleanup_claims"](store, [("claim", "owner")], None, lambda *_args: {"status": "stopped"},
+                                      {"claim": [(path, b"original", b"known edit")]}, None)
+            self.assertEqual(path.read_bytes(), b"known edit")
+            self.assertEqual(alias.read_bytes(), b"known edit")
+            self.assertEqual(calls, [])
+
     def test_primary_failure_is_not_masked_by_cleanup_failure(self):
         def fails(*_args):
             raise Refused("cleanup failed")
