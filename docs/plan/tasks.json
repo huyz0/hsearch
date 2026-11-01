@@ -562,15 +562,17 @@
             "M01.12"
           ],
           "owner": "harness/integrator",
-          "status": "blocked",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m01-07-blocked.md",
               "result": "Original implementation attempt blocked at round3; no original gate pass. Composite goal can close only after separately reviewed redesigned source protocol and complete final integration, all inherited counterexamples and full native PR/main qualification."
+            },
+            {
+              "path": "evidence/m01-13-integrated.md",
+              "result": "Accepted genuine native-report/context3 and complete inherited successor integration: actual finalR3clear, protected PR16, all7 finalPR/main/manual. Composite goal only; originalM07hard3blocked and allM12/M13issuedhistories remain frozen; originalmanualfailure retained."
             }
-          ],
-          "blocker": "Original patch-text implementation b637769 reached the hard three-round review ceiling with an actual Unicode separator false coverage pass; no publication or gate clearance.",
-          "next_action": "Retain accepted M01.10 decomposition and M01.11 source proof, frozen original failure and all M01.12 review history; complete genuine M01.13 compiler-report redesign before generic M01.12/composite acceptance."
+          ]
         },
         {
           "id": "M01.08",
@@ -710,7 +712,7 @@
             "M01.13"
           ],
           "owner": "harness/integrator",
-          "status": "blocked",
+          "status": "done",
           "evidence": [
             {
               "path": "native-coverage-projection.md",
@@ -719,10 +721,12 @@
             {
               "path": "evidence/native-report-counterexample.json",
               "result": "Actual pinned production-object denominator fails closed before tests: observe LF208/195DA, observation types LF280/272DA; no floor/control waived."
+            },
+            {
+              "path": "evidence/m01-13-integrated.md",
+              "result": "Accepted genuine native-report/context3 and complete inherited successor integration: actual finalR3clear, protected PR16, all7 finalPR/main/manual. Composite goal only; originalM07hard3blocked and allM12/M13issuedhistories remain frozen; originalmanualfailure retained."
             }
-          ],
-          "blocker": "Actual next-library LLVM22.1.6 emits function-summary LF208/280 versus195/272 physical DA records; current native-report parser refuses before tests. Historical43-line PR/main/manual pass and R3clear gate remain scoped/frozen.",
-          "next_action": "Complete genuine M01.13 native-segment report protocol replacement and full inherited integration qualification; no fourth M01.12 packet or relaxed LCOV check."
+          ]
         },
         {
           "id": "M01.13",
@@ -747,8 +751,13 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "in_progress",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m01-13-integrated.md",
+              "result": "Accepted genuine native-report/context3 and complete inherited successor integration: actual finalR3clear, protected PR16, all7 finalPR/main/manual. Composite goal only; originalM07hard3blocked and allM12/M13issuedhistories remain frozen; originalmanualfailure retained."
+            }
+          ]
         }
       ]
     },
@@ -1878,15 +1887,18 @@
             "M01.13"
           ],
           "owner": "operations",
-          "status": "blocked",
+          "status": "planned",
           "evidence": [
             {
               "path": "native-coverage-projection.md",
               "result": "Unpublished event/facade draft preserved in an isolated worktree; preliminary draft Rust/bootstrap passed, new production coverage blocked by native report protocol; no schema/runtime acceptance."
+            },
+            {
+              "path": "evidence/m01-13-integrated.md",
+              "result": "Coverage prerequisite accepted; original-model fixture is scoped report evidence, not finalM08/schema acceptance."
             }
           ],
-          "blocker": "Preserved unpublished event/facade draft cannot obtain required actual production coverage because its valid native denominator triggers the report-protocol mismatch.",
-          "next_action": "After M01.13 is independently accepted, integrate that normal main source into the preserved draft, finish schema evidence and rerun complete coverage/tests/reviews/hosted qualification."
+          "next_action": "Resume exact preserved draft in fresh owned claim; align incarnation identity and committed-but-unavailable receipt semantics; qualify schema/privacy/bounded queue/goldens/actual coverage, independent finalsource review and full nativeCI."
         },
         {
           "id": "M08.02",

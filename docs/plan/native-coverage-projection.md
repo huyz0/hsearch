@@ -1,6 +1,8 @@
 # Native physical-line coverage projection
 
-Status: M01.13 has a private implementation candidate with initial local qualification, not an accepted implementation. M01.12 was independently reviewed and normally merged as75f30ddc74b727dd6cff8dda6c23cf29e2facca7. Its PR41339748484, main41340616696 and explicit-base manual41340639807 each passed all seven jobs, including the complete native x86_64/ARM64 matrix. Those runs qualify the existing43-line Rust bootstrap; a new actual library exposes a report assumption outside that demonstrated case. Generic coverage/composite acceptance is held. M08.01's unpublished event/facade draft is preserved and cannot qualify until this protocol is repaired. No product runtime or release is accepted.
+Status: the genuine native-report replacement and complete successor pipeline are [accepted](evidence/m01-13-integrated.md) at normally merged295bbad after final R3 and full repaired-source PR/main/manual qualification. Original M07/M12/M13 issued histories and the failed earlier manual remain frozen. M08's draft is ready to resume but unaccepted; no product runtime or release is accepted.
+
+Historical origin: M12's initial75f30dd integration passed seven jobs in each PR41339748484/main41340616696/manual41340639807 on43 Rust lines. A new real library then exposed the LF/DA assumption below. Those observations and earlier prototype stages remain provenance; current generic acceptance comes from the final M13 evidence linked above.
 
 ## Observed counterexample and preserved history
 
@@ -46,6 +48,8 @@ Both [first-round reviews](evidence/native-projection-review-history.json) block
 
 The repair follows the exact native invariant: locations increase, or remain equal only after an uncounted predecessor. Segment order and every record remain intact; counted-predecessor duplicates and backwards coordinates still refuse. Source-backed baseline and positive-count cases exercise decode, projection and production normalization, with the independently stated mapped-line oracle. The original optional tiny Rust diagnostic produced no usable export receipt, so no Rust reachability or whole-collector failure is claimed for this edge case. Full native qualification and separate final review of the repaired source are required.
 
-## Post-merge manual fixture failure
+## Historical post-merge manual fixture failure (resolved by final R3)
 
 PR15 source1d8 normally merged as7a238d9 after finalR2clear/full7 PR/gate; its original explicit-base manual run41349817121 failed an inherited nextest positive process control: the body passed but156ms wholeprocess exceeded the synthetic100ms timeout shared with the negative seed. [Original receipt and repair contract](evidence/native-nextest-fixture-failure.json) remain retained. Same M13 task continues with its original75 base and genuine finalR3 budget, not a fresh review counter. The repair keeps the wide100ms setup as an expected-failure control, adds a deliberate300ms positive, and scopes the unchanged100ms negative only to the10second timeout_seed. Production policy, timeout/retry failure assertions and all coverage floors remain unchanged; complete repaired-source checks/reviews/PR/main/manual remain required. Generic acceptance/M08readiness stay held. This is unrelated to the unconfirmed original ARM navigation cause.
+
+M13 is now [accepted with complete final-source review/native/event evidence](evidence/m01-13-integrated.md), resolving generic M12 acceptance and the composite M07 goal. Original b637/hard3gate, all M12/M13 issued history and the original failed manual remain frozen. M08 is ready to resume its unaccepted draft; original ARM cause/M01.09 and M01.08 remain open.
