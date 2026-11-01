@@ -220,6 +220,25 @@ class Sandbox:
         need(re.fullmatch(r"[A-Za-z0-9.-]{1,25}", task), "Invalid task identifier")
         return "hsearch-" + task.lower().replace(".", "-") + "-" + secrets.token_hex(6)
 
+    def backend_free(self, record, name, *, data_volumes=False):
+        mounts = []
+        paths = ["/"]
+        if data_volumes:
+            for suffix, target in (("cargo", "/cargo"), ("target", "/target"), ("data", "/data")):
+                mounts += ["--mount", f"type=volume,source={record['namespace']}-{suffix},target={target},readonly,volume-nocopy"]
+                paths.append(target)
+        script = "import shutil; print(min(shutil.disk_usage(p).free for p in " + repr(paths) + "))"
+        output = self.docker.command("run", "--rm", "--name", name, "--label", f"{LABEL}={record['owner']}",
+                 "--label", f"io.hsearch.namespace={record['namespace']}", "--read-only", "--network", "none", "--user", "10001:10001",
+                 "--cpus", "0.25", "--memory", "67108864", "--memory-swap", "67108864", "--pids-limit", "32", "--cap-drop", "ALL",
+                 "--security-opt", "no-new-privileges", *mounts, record["image"], "python3", "-c", script)
+        return int(output)
+
+    def require_backend_reserve(self, free):
+        with self.registry.edit() as data:
+            reserved = sum(lease["budget"]["disk_bytes"] for lease in data["leases"].values())
+            need(free >= reserved + 10 * GIB, "Low Docker backend disk reserve; workload not started")
+
     def image(self):
         lease_id = self.namespace("image")
         self.registry.acquire(lease_id, BUILD, self.docker.capacity, self.docker.engine, {"kind": "image"})
@@ -256,17 +275,9 @@ class Sandbox:
         folder = owned_snapshot(record)
         prepared, backend_read_complete = False, False
         try:
-            backend_output = self.docker.command("run", "--rm", "--name", namespace + "-preflight", "--label", f"{LABEL}={owner}",
-                               "--label", f"io.hsearch.namespace={namespace}", "--read-only", "--network", "none", "--user", "10001:10001",
-                               "--cpus", "0.25", "--memory", "67108864", "--pids-limit", "32", "--cap-drop", "ALL",
-                               "--memory-swap", "67108864",
-                               "--security-opt", "no-new-privileges", image["id"], "python3", "-c",
-                               "import shutil; print(shutil.disk_usage('/').free)")
+            backend_free = self.backend_free(record, namespace + "-preflight")
             backend_read_complete = True
-            backend_free = int(backend_output)
-            with self.registry.edit() as data:
-                reserved_disk = sum(lease["budget"]["disk_bytes"] for lease in data["leases"].values())
-                need(backend_free >= reserved_disk + 10 * GIB, "Low Docker backend disk reserve; topology not started")
+            self.require_backend_reserve(backend_free)
             folder.mkdir(parents=True, exist_ok=False)
             template = Template((ROOT / "dev/compose.json").read_text())
             # JSON-escape substituted path values before parsing the concrete snapshot.
@@ -280,6 +291,7 @@ class Sandbox:
             for suffix in VOLUMES:
                 self.docker.command("volume", "create", "--label", f"{LABEL}={owner}", "--label", f"io.hsearch.namespace={namespace}", f"{namespace}-{suffix}")
                 assert_owned(self.docker.inspect("volume", [f"{namespace}-{suffix}"]), owner)
+            self.require_backend_reserve(self.backend_free(record, namespace + "-storage-admission", data_volumes=True))
             self.compose(record, "up", "--detach", "--wait", "--wait-timeout", "100")
             containers = self.docker.command("container", "ls", "--all", "--filter", f"label=com.docker.compose.project={namespace}", "--format", "{{.ID}}").split()
             info = self.docker.inspect("container", containers)
@@ -328,14 +340,20 @@ class Sandbox:
                      "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly", record["image"], "python3", "dev/probe.py", namespace]
         else:
             args += [record["image"], "python3", "dev/execute.py", mode, "--disk-bytes", str(BUILD["disk_bytes"]), "--timeout", "1200"]
-        completed = False
+        completed, backend_known, workload_attempted = False, False, False
         try:
+            free = self.backend_free(record, container + "-admission", data_volumes=True)
+            backend_known = True
+            self.require_backend_reserve(free)
+            workload_attempted = True
             self.docker.command(*args, stream=True, timeout=1250)
             completed = True
         finally:
             # An empty listing is not proof that an uncertain create cannot arrive later.
             # Only successful synchronous run completion can permit release here.
-            if completed:
+            if backend_known and not workload_attempted:
+                self.registry.release(lease_id)
+            elif completed:
                 live = self.docker.command("container", "ls", "--all", "--filter", f"name=^/{container}$", "--format", "{{.ID}}").split()
                 if not live:
                     self.registry.release(lease_id)

@@ -174,6 +174,8 @@ class OwnershipControls(unittest.TestCase):
             capacity = CAPACITY
             def command(self, *args, **kwargs):
                 if args[0] == "run":
+                    if any(str(arg).endswith("-admission") for arg in args):
+                        return str(100 * GIB)
                     raise Refused("unknown run outcome")
                 return "live-cid\n"
         with tempfile.TemporaryDirectory() as directory:
@@ -191,6 +193,8 @@ class OwnershipControls(unittest.TestCase):
             capacity = CAPACITY
             def command(self, *args, **kwargs):
                 if args[0] == "run":
+                    if any(str(arg).endswith("-admission") for arg in args):
+                        return str(100 * GIB)
                     raise Refused("unknown create result")
                 return ""
         with tempfile.TemporaryDirectory() as directory:
@@ -203,6 +207,27 @@ class OwnershipControls(unittest.TestCase):
                 self.assertEqual(sum(x.get("parent") == namespace for x in data["leases"].values()), 1)
             with self.assertRaisesRegex(Refused, "uncertain run lease"):
                 sandbox.down(namespace)
+
+    def test_run_rechecks_backend_after_topology_start_before_workload(self):
+        class FakeDocker:
+            engine = "engine"
+            capacity = CAPACITY
+            def command(self, *args, **kwargs):
+                if args[0] == "run" and any(str(arg).endswith("-admission") for arg in args):
+                    for suffix in ("cargo", "target", "data"):
+                        if not any(f"source=hsearch-test-0123456789ab-{suffix}," in str(arg) and "readonly,volume-nocopy" in str(arg) for arg in args):
+                            raise AssertionError("Backend admission must sample actual owned data volumes read-only")
+                    return str(5 * GIB)
+                raise AssertionError("Workload must not start when backend free space has fallen")
+        with tempfile.TemporaryDirectory() as directory:
+            sandbox = Sandbox(directory, docker=FakeDocker())
+            namespace = "hsearch-test-0123456789ab"
+            sandbox.registry.acquire(namespace, STORAGE, CAPACITY, "engine", {"namespace": namespace, "owner": "mine", "source": str(MODULE["ROOT"]), "image": "image", "phase": "ready"})
+            with self.assertRaisesRegex(Refused, "backend disk reserve"):
+                sandbox.run(namespace, "check")
+            with sandbox.registry.edit() as data:
+                self.assertEqual(set(data["leases"]), {namespace})
+                self.assertEqual(data["leases"][namespace]["phase"], "ready")
 
     def test_compose_snapshot_has_no_host_socket_or_static_secret(self):
         template = (Path(MODULE["ROOT"]) / "dev/compose.json").read_text()

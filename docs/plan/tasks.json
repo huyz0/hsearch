@@ -333,6 +333,10 @@
             {
               "path": "evidence/m01-02-review-fix-check.txt",
               "result": "Fresh full offline smoke and 29 targeted Linux regressions passed after correcting the three independent review findings; follow-up review and hosted native checks pending."
+            },
+            {
+              "path": "evidence/m01-02-command-admission-check.txt",
+              "result": "Complete fresh smoke passed with 30 tests after final command-time backend/actual-volume admission fix; final third-round delta review and hosted native CI pending."
             }
           ],
           "owner_session": "sandbox-integrator",

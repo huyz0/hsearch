@@ -34,6 +34,16 @@ The corrected version retains uncertain claims regardless of momentary visibilit
 
 [Observed correction validation](m01-02-review-fix-check.txt) includes a fresh two-topology smoke with the full offline suite and 27 tests, actual `memory.swap.max=0` alongside the prior finite limits, all live TLS/auth/object/isolation probes and cleanup success. Additional targeted Linux regression verification passed all 29 tests without skips, including public diagnostic refusal and pre-execution checks. Pure fixture tests supply sensors intentionally; the complete live smoke reads actual kernel caps and disk probes. Follow-up independent review of the corrected commit and hosted native results remain required.
 
+## Final command-admission correction
+
+Follow-up correctness review at `0ea766325286742d14d122a3999918cc26c427fa` accepted uncertain-claim retention and aggregate topology admission but found that a ready topology's subsequent command checked only host free space. Follow-up security review found no remaining security/publication blocker at that commit.
+
+The final delta rechecks backend headroom immediately before every workload, against all outstanding reservations. It samples the actual owned cargo, target and data volumes read-only with no copy-up, as well as the image filesystem, so a separate/changed data filesystem cannot be hidden by ample host/image space. Topology startup also checks the created owned data volumes before launching services. A completed low-space read-only preflight releases its unused command claim; an uncertain probe or attempted workload retains its claim.
+
+[Final fresh qualification](m01-02-command-admission-check.txt) passed the complete offline Rust suite and **30 Python regressions without skips**, real TLS/auth/S3 probes, private namespace isolation and cleanup preserving the other store. The added counterexample starts with a ready topology, ample registry-host space and backend space reduced to 5 GiB; it verifies no workload starts and only the known-unused claim is released. Actual-volume read-only/no-copy sampling is checked. Final registry inspection was empty.
+
+This uses the one unplanned third delta review permitted by the hard three-round ceiling. Both original review stages remain recorded; no verdict is reset by changing the diff. Unresolved blockers at that ceiling require split/redesign and remain unmergeable. No merge is authorized by a test count alone.
+
 ## Remaining acceptance
 
 Independent final-tree correctness/security review and native hosted x86_64/ARM64 CI must pass before integration. Windows is a host-controller path with Linux containers, not native hsearch runtime qualification. Automatic crash reclamation, worktree/task lifecycle, full review/CI/coverage gates and coordinator recovery remain M01.03-M01.08. Provider/fencing/security/scale/soak qualification stays in its original later milestones. No release or deployment occurred.
