@@ -6,16 +6,21 @@ use std::process::{Command, ExitCode};
 
 fn main() -> ExitCode {
     let args: Vec<_> = env::args().skip(1).collect();
-    let [command] = args.as_slice() else {
-        eprintln!("usage: cargo xtask <check|policy|help>");
+    let Some((command, remaining)) = args.split_first() else {
+        eprintln!("usage: cargo xtask <check|policy|sandbox|help>");
         return ExitCode::FAILURE;
     };
+    if command != "sandbox" && !remaining.is_empty() {
+        eprintln!("unexpected arguments for {command}");
+        return ExitCode::FAILURE;
+    }
     let script = match command.as_str() {
         "check" => "tools/check.py",
         "policy" => "tools/workspace.py",
+        "sandbox" => "tools/sandbox.py",
         "help" => {
             println!(
-                "check: bootstrap checks; policy: dependency boundaries; see docs/plan/development.md"
+                "check: bootstrap checks; policy: dependency boundaries; sandbox: local resource caps; see docs/plan/development.md"
             );
             return ExitCode::SUCCESS;
         }
@@ -31,6 +36,8 @@ fn main() -> ExitCode {
     child.current_dir(root).arg(script);
     if command == "policy" {
         child.arg("check");
+    } else if command == "sandbox" {
+        child.args(remaining);
     }
     match child.status() {
         Ok(status) if status.success() => ExitCode::SUCCESS,

@@ -1,6 +1,6 @@
 # Bootstrap development
 
-This checkout contains the M01.01 workspace bootstrap. It is not a running search store. The [task ledger](tasks.json) retains all later product and qualification obligations. The bootstrap defines checkpoint relationships, an observation trait, a pinned engine boundary and a development entrypoint. It has no storage API, node binary, network service or persisted format.
+This checkout contains the integrated M01.01 workspace bootstrap and the M01.02 [local sandbox](sandbox.md) under review. It is not a running search store. The [task ledger](tasks.json) retains all later product and qualification obligations. The bootstrap defines checkpoint relationships, an observation trait, a pinned engine boundary and a development entrypoint. It has no hsearch storage API, node binary, network service or persisted format.
 
 ## Run the implemented checks
 
@@ -44,4 +44,4 @@ No hsearch redistribution license has been selected. Public GitHub visibility pe
 
 ## Continue delivery
 
-Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02-M01.08 still require the reproducible non-root development image/topology, safe resource/worktree task runner, LSP/context budgets, durable independent review protocol, impact planner, complete coverage gate and concurrent recovery qualification. The broader engine/storage/security/search/replication/provider work remains M02-M17. Keep the original acceptance criteria; bootstrap success cannot close those milestones.
+Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02 supplies its sandbox artifact under review; M01.03-M01.08 still require the safe resource/worktree task runner, LSP/context budgets, durable independent review protocol, impact planner, complete coverage gate and concurrent recovery qualification. The broader engine/storage/security/search/replication/provider work remains M02-M17. Keep the original acceptance criteria; bootstrap/sandbox success cannot close those milestones.

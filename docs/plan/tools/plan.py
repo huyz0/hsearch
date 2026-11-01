@@ -262,6 +262,8 @@ def selftest(data: dict) -> int:
     case("cross-task cycle", "Dependency cycle", lambda d: d["milestones"][0]["tasks"][0]["depends_on"].append("M00.02"))
     def unfinished(d):
         d["milestones"][1]["tasks"][0]["depends_on"] = []
+        # The negative fixture must remain unfinished after the real task ships.
+        d["milestones"][1]["tasks"][0]["status"] = "planned"
         d["milestones"][0]["tasks"][0]["depends_on"].append("M01.01")
     case("unfinished dependency", "Active/done task has unfinished dependency", unfinished)
     case("milestone completion cycle", "Milestone prerequisite cycle", lambda d: d["milestones"][1].update(depends_on=["M02"]))

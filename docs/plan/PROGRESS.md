@@ -4,19 +4,15 @@ Last updated: 1 November 2026 (Australia/Sydney).
 
 ## Current state
 
-The repository began as an empty directory without `.git`, source code, tests, or workflows. This work delivers the research and planning package. The active ledger contains **18 milestones (M00-M17) and 118 tasks**. M00 is complete and M01.01 workspace bootstrap is under review; the other 110 product tasks remain planned. The operational AI harness, storage/search runtime, cloud integrations and benchmark targets are not delivered. No inherited-project test result is claimed.
+M00 research and M01.01 bootstrap are integrated. M01.01 merged normally as `81bde7398bec3ebb50a82f9661f50faae1a02852` after independent review and native x86_64/ARM64 checks. The user authorized normal automatic merges after independent multi-session review and passing required checks. No formal approving reviews are submitted under the user's identity; releases/deployments remain unauthorized.
 
-The user paused the initial research turn and then resumed it with the added requirements for module extension points, cross-cluster replication/copy and portable BYOK. The paused turn made no filesystem progress. Resumed work inspected the authoritative empty directory, retrieved source evidence and then created these planning artifacts. Source inspection changed the critical path by exposing the whole-file engine input limitation and the fork's incomplete quorum activation.
+M01.02 is under review on `codex/m01-sandbox`. It adds a pinned non-root Linux dev image, an internal-network RustFS/test-CA topology, unique credential volumes, host admission leases, actual container caps, monitored command budgets, private serving sockets and ownership-checked cleanup. [Sandbox instructions](sandbox.md) and [observed evidence](evidence/m01-02-sandbox.md) give the implemented scope and limits. The final local cold smoke passed the full bootstrap suite, 23 Python tests, actual TLS/authentication and S3 round trips, and cleanup of one topology while the other remained usable. No command is stalled; independent final-tree review and hosted native CI are pending.
 
-## Public hosting and workspace bootstrap
+The ledger has 18 milestones and 118 tasks: eight done (M00 plus M01.01), one in review (M01.02), and 109 planned. M01 as a whole remains in progress. The hsearch storage/search runtime, operational task/review harness, providers, native optimization and release qualification remain open. No product delivery is inferred from the bootstrap/sandbox subset.
 
-The original planning package is published at [huyz0/hsearch](https://github.com/huyz0/hsearch), with baseline commit `1ac6cbb449d7193f019c34b13ad42d44c05a36f9`. The authenticated owner and public visibility were verified before publishing. An independent review found no blocking secrets/private-data/publication issues and reproduced all existing Python checks and both cost-research artifacts. No project redistribution license has been selected; public visibility does not grant one.
+## Public hosting and integration
 
-M01.01 is under review on `codex/m01-workspace`, using an isolated worktree based on that commit. It owns the Cargo/toolchain/configuration, initial types/observe/engine/testkit/xtask crates, dependency policy, bootstrap CI and development evidence. Shared ledger edits are serialized by the integrator. [Current executable commands and limits](development.md) distinguish this bootstrap from an operational search store or completed AI harness. The initial Linux check rejected missing documentation in an integration-test crate; documentation was added before rerunning. No tests or warning gates were weakened.
-
-[Local Linux evidence](evidence/m01-01-bootstrap.md) records the complete passing bootstrap suite and 43/43 production lines covered. The first independent review found a name-only dependency-ownership gap; package IDs/manifest paths now bind owned dependencies, and the complete offline suite passed with 18 negative controls. Follow-up final-tree review and native hosted CI are pending.
-
-All broader M01.02-M17 obligations remain open. Full product delivery still requires actual storage/security/query/replication implementation, independently reviewed correctness evidence, provider credentials/billing, native hardware and release-scale/soak qualification. No release or deployment has occurred.
+[huyz0/hsearch](https://github.com/huyz0/hsearch) is public under the verified owner. Baseline plan commit is `1ac6cbb449d7193f019c34b13ad42d44c05a36f9`; [M01.01 integration evidence](evidence/m01-01-integrated.md) records its exact review/CI/merge. The original local planning directory/session were preserved. Hsearch has no selected redistribution license. Subsequent tasks preserve all original acceptance requirements and record exact tested/reviewed commits. No force push, protection bypass, release or deployment occurred.
 
 ## Immediate cost research checkpoint (planning history)
 
