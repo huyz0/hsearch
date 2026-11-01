@@ -1,0 +1,3 @@
+# M01.05 independent review protocol checkpoint
+
+Implementation is in progress in its own unpublished worktree, stacked on the reviewed M01.04 candidate. [Protocol](../review-gates.md) documents identity/trust limits, exact adapters, durable task counters and final source/check binding. Nine initial real-Git/schema protocol controls passed on the Windows host using new fixtures in the explicitly writable task directory. They test report ingestion and rejection, not automatic AI detection of the seeded defects. Full Linux/Rust checks, independent review of actual code/seeds, hosted CI and integration remain pending. M01.04 PR #7 is independently reviewed and running its own required native matrix; this task does not claim it merged yet.

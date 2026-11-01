@@ -484,8 +484,13 @@
             "M01.03"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "in_progress",
+          "evidence": [
+            {
+              "path": "evidence/m01-05-review.md",
+              "result": "Durable session-report protocol, exact schemas, risk routing, source/check binding and counter controls implemented locally; full Linux checks, independent seeded review and hosted CI pending."
+            }
+          ]
         },
         {
           "id": "M01.06",

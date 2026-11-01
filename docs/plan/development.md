@@ -49,3 +49,5 @@ Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02 a
 API-dependent work follows integrated [core-v1](api-compatibility.md) and [engineering standards](engineering-standards.md). M01.03 is integrated; its [runner interface](task-runner.md) and [qualification record](evidence/m01-03-integrated.md) remain distinct from M01.04 semantic navigation and later harness gates. Run `python tools/api_contract.py check` alongside workspace/plan checks.
 
 M01.04 development interface and qualification are documented in [source-bound context and navigation](context-navigation.md). Its corpus is a development harness check, separate from product and M01.08 agent qualification.
+
+M01.05's [independent review gate](review-gates.md) is implemented locally and undergoing qualification; it does not submit formal GitHub reviews or grant merge permission.

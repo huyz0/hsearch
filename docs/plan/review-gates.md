@@ -1,0 +1,34 @@
+# Independent review evidence gate
+
+M01.05 turns the [review process](ai-harness.md#review-and-architecture-feedback) into a durable trusted-coordinator protocol. `tools/review.py` and `cargo xtask review` create bounded packets, ingest structured reports from assigned independent sessions, and refuse integration when reports, source identity, findings or required check evidence disagree. The gate does not authenticate a session, detect defects by itself, grant publication permission or submit formal GitHub reviews. The integrator must obtain the actual separate session reports and observed check results through authorized tools; a JSON file is not proof that its author or claims are truthful.
+
+Use one explicit shared `--state-root` for all worktrees of the coordinator. State is namespaced by canonical Git common-directory identity, then keyed by task ID rather than mutable diff hashes. Reopening the store or changing a diff does not reset rounds. The counter charges issued packets, including incomplete rounds: two rounds are planned, three is the hard ceiling. At the ceiling, split/redesign rather than create a fourth packet or pass unresolved findings. Private local state is not an authentication boundary against a host user who can replace the entire store or choose a new one; the trusted integrator must preserve its recorded registry and history.
+
+## Session adapter and workflow
+
+Run cheap deterministic checks before issuing a packet. Freeze a committed clean worktree; actual source bytes, index, head, tree and repository identity are bound using the runner's checks, including hidden index flags and clean-filter controls. Do not edit that worktree while preparing, reviewing or gating it. These are observed source bookends, not atomic filesystem snapshots. Ignored files are refused; use the managed external build/cache volumes rather than a mutable ignored target directory in the source worktree.
+
+Create `reviewers.json` from actual independent session identities. Code/unknown changes require both roles; ordinary documentation requires correctness/tests/claims review. Security/API/architecture and other sensitive documents also require architecture/security review. Roles have distinct assigned sessions and none may equal the implementer. Risk routing derives from the actual base/head paths and fails toward the additional review for unknown code. Reviewer adapters accept only the checked-in `harness/review-verdict.schema.json` format; there is no hard-coded model/provider, arbitrary shell launch or automatic user-identity approval.
+
+```json
+{"correctness_tests_claims":"separate-session-A","architecture_security":"separate-session-B"}
+```
+
+The trusted coordinator supplies observed checks as an array of objects with `name`, exact `head`, `conclusion:"success"`, and a concrete `evidence` reference. These inputs must come from the actual validators/hosted run, not a requested or inferred pass. Local checks can precede hosted CI; the final gate additionally always requires the current protected `ci-ok` check. GitHub branch protection and an expected-head merge guard remain independent server-side requirements; the local protocol does not bypass them.
+
+```sh
+cargo xtask review --state-root "$REVIEW_STATE" begin M01.05 --base "$BASE_SHA" --implementer "$IMPLEMENTER_SESSION" --reviewers reviewers.json --checks local-checks.json --reason "Initial review of the frozen implementation"
+cargo xtask review --state-root "$REVIEW_STATE" record correctness-verdict.json
+cargo xtask review --state-root "$REVIEW_STATE" record architecture-verdict.json
+cargo xtask review --state-root "$REVIEW_STATE" gate M01.05 --checks final-local-and-hosted-checks.json
+```
+
+Send the generated packet to the actual assigned sessions and ask them to inspect the code, independent counterexamples and test/architecture/PR claims. The packet includes its source identities, changed paths, observed deterministic checks, required check names and previous findings. Canonical packet JSON is limited to 48,000 UTF-8 bytes and labels its ceil(bytes/4) estimate; this is at most an estimated 12,000 tokens, not a billed-token measurement. Larger work must be narrowed or split. CLI input files are bounded to 128 KiB and registry storage to 32 MiB including serialization overhead.
+
+A structured verdict identifies packet SHA-256, role, actual reviewer session, head, tree and source digest; `basis` explains what was examined. Findings have a stable per-review ID, priority, file/line and concrete reproduction/expected/observed behavior. P0/P1/P2 findings block; P3 is advisory. Empty findings are valid. A `clear` conclusion cannot conceal a blocking finding. Each follow-up verdict explicitly resolves every prior blocking finding by its task-history review key and concrete fix evidence. Store content hashes catch changed packets/reports; accepted reports cannot be overwritten.
+
+Fixes or changed review source require another bounded round. A verdict bound to an old commit/tree/source cannot be recorded or used to gate the new one. Issued rounds and earlier findings remain in the same history. A pass requires every assigned role, no blocker, current actual clean source, and all original plus protected hosted check names passing at the same exact head. After a pass, compare the live PR head again and merge normally with the expected-head guard. The protocol itself neither merges nor grants new authorization.
+
+## Qualification scope
+
+The protocol tests use actual Git repositories and deliberately seeded arithmetic, authentication and self-comparison-oracle regressions. Supplied independent finding reports must block integration; wrong reviewer, stale check/source/tree, hidden dirty bytes, omitted prior resolution, changed report and round-reset attempts must fail. These are deterministic protocol controls, not a claim that an AI detected the seeds. The task's independent review sessions separately inspect the seeded examples; M01.08 still owns broad frozen agent-quality, escaped-defect and whole-workflow cost evaluation. Provider/hardware/runtime search qualification is separate.
