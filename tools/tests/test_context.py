@@ -1,5 +1,7 @@
 """Independent bounded retrieval, source freshness and accounting controls."""
 import json
+import io
+from contextlib import redirect_stdout
 import os
 from pathlib import Path
 import runpy
@@ -8,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 API = runpy.run_path(str(Path(__file__).resolve().parents[1] / "context.py"))
 Refused = API["Refused"]
@@ -75,8 +78,14 @@ class RetrievalControls(unittest.TestCase):
         self.store.evidence(self.claim, self.owner)
 
     def test_default_cli_preserves_legacy_metadata_shape_without_accounting_event(self):
-        value = json.loads(subprocess.check_output([sys.executable, str(API["ROOT"] / "tools/context.py"),
-            "context", self.claim, "--owner", self.owner, "--state-root", str(self.area / "state")], cwd=self.source))
+        # The real CLI's trusted checkout root is deliberately fixed, so supply
+        # this isolated repository's store without weakening repository binding.
+        output = io.StringIO()
+        with patch.dict(API["main"].__globals__["TASK"], TaskStore=lambda _state: self.store), \
+             patch.object(sys, "argv", ["context.py", "context", self.claim, "--owner", self.owner,
+                                       "--state-root", str(self.area / "state")]), redirect_stdout(output):
+            self.assertEqual(API["main"](), 0)
+        value = json.loads(output.getvalue())
         self.assertEqual(value["claim"], self.claim)
         self.assertEqual(value["packet"]["owner_session"], self.owner)
         self.assertIn("context_bytes", value)
