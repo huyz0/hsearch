@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import random
 import runpy
+import platform
 import subprocess
 import sys
 import tempfile
@@ -42,6 +43,25 @@ def lcs_length(left, right):
 
 
 class DeltaOracle(unittest.TestCase):
+    @unittest.skipUnless(platform.system() == 'Linux', 'Native process RSS/cost control requires Linux')
+    def test_large_original_native_delta_cost_and_repetitive_refusal(self):
+        # A fresh interpreter exposes actual algorithm RSS/time without suite noise.
+        code = '''import json,resource,runpy,time
+m=runpy.run_path('tools/coverage_sources.py'); b=m['Budget'](); before=b''.join((str(i).encode()+b' original line\\n') for i in range(200000)); parts=before.split(b'\\n');parts[100000]=b'changed original line';after=b'\\n'.join(parts)+b'appended\\n'; start=time.monotonic();added=m['added_lines'](before,after,b);assert added==[100001,200001];print(json.dumps({'source_delta_native_cost':{'physical_input_lines':400001,'input_bytes':len(before)+len(after),'added':added,'seconds':time.monotonic()-start,'peak_rss_bytes':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,'operations':b.operations,'stored_frontier_cells':b.cells}}))
+'''
+        result = subprocess.run([sys.executable, '-c', code], cwd=ROOT, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, timeout=15, check=True)
+        self.assertLess(len(result.stdout) + len(result.stderr), 8192)
+        observation = json.loads(result.stdout)
+        self.assertGreater(observation['source_delta_native_cost']['peak_rss_bytes'], 0)
+        print(json.dumps(observation), flush=True)
+        before = b''.join((str(i).encode() + b'\n') for i in range(10000))
+        after = b''.join((str(i).encode() + b'\n') for i in reversed(range(10000)))
+        started = time.monotonic()
+        with self.assertRaisesRegex(Refused, 'delta_frontier_limit'):
+            delta(before, after)
+        self.assertLess(time.monotonic() - started, 15)
+
     def test_physical_framing_manual_final_lf_cr_and_separators(self):
         for raw, expected in [(b'', []), (b'\n', [b'\n']), (b'a\n', [b'a\n']),
                               (b'a\n\n', [b'a\n', b'\n']), (b'a', [b'a']), (b'\r\n', [b'\r\n'])]:
