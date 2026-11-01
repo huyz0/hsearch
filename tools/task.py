@@ -329,6 +329,7 @@ class TaskStore:
             while component != path:
                 need(not component.is_symlink(), "Task source path is redirected")
                 component = component.parent
+            need(candidate.resolve() == candidate.absolute(), "Task source path is redirected")
             if candidate.exists():
                 before = candidate.stat()
                 need(stat.S_ISREG(before.st_mode) and before.st_size <= SOURCE_FILE_BYTES, "Task input is not a bounded regular file")

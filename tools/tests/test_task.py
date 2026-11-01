@@ -207,6 +207,20 @@ class WorktreeControls(unittest.TestCase):
         with patch.dict(self.store.fingerprint.__globals__, SOURCE_FILE_BYTES=1024):
             with self.assertRaisesRegex(Refused, "bounded regular"):
                 self.store.fingerprint(record)
+
+    def test_canonical_aliases_refuse_even_when_not_reported_as_symlinks(self):
+        claim = self.claim()
+        record = self.store.get(claim)
+        root = Path(record["worktree"])
+        outside = self.area / "outside.txt"
+        outside.write_text("first\n")
+        (root / "a.txt").unlink()
+        (root / "a.txt").symlink_to(outside)
+        # Windows junctions are one alias type not reported by is_symlink.
+        # A real redirect with that classification suppressed must still refuse.
+        with patch.object(Path, "is_symlink", return_value=False):
+            with self.assertRaisesRegex(Refused, "redirected"):
+                self.store.fingerprint(record)
         (root / "a.txt").write_text("first\n")
         with patch.dict(self.store.fingerprint.__globals__, SOURCE_TOTAL_BYTES=1):
             with self.assertRaisesRegex(Refused, "aggregate byte"):
