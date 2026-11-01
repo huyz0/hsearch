@@ -159,8 +159,15 @@ def source_path(value):
     return value
 
 
-def canonical(value):
-    return json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(',', ':'), allow_nan=False).encode('ascii')
+def canonical(value, maximum=Limits().proof_bytes):
+    # Do not first allocate an oversized JSON string and only then check it.
+    encoder = json.JSONEncoder(sort_keys=True, ensure_ascii=True, separators=(',', ':'), allow_nan=False)
+    encoded = bytearray()
+    for part in encoder.iterencode(value):
+        block = part.encode('ascii')
+        need(len(encoded) + len(block) <= maximum, 'proof_output_limit')
+        encoded.extend(block)
+    return bytes(encoded)
 
 
 def object_hash(kind, raw):
@@ -368,7 +375,7 @@ def prove(root, *, head, base, sources, deleted=(), limits=Limits()):
               'repository_identity': git.identity, 'head': head, 'base': base,
               'head_tree': head_tree, 'base_tree': base_tree, 'limits': asdict(limits),
               'files': files}
-    need(len(canonical(result)) <= limits.proof_bytes, 'proof_output_limit')
+    canonical(result, limits.proof_bytes)
     budget.remaining()
     return result
 
@@ -376,8 +383,7 @@ def prove(root, *, head, base, sources, deleted=(), limits=Limits()):
 def verify(proof, root, *, head, base, sources, deleted=(), limits=Limits()):
     """Recompute immutable inputs; stale/extra/missing/corrupt proof refuses."""
     need(type(proof) is dict, 'proof_type')
-    encoded = canonical(proof)
-    need(len(encoded) <= limits.proof_bytes, 'proof_output_limit')
+    encoded = canonical(proof, limits.proof_bytes)
     expected = prove(root, head=head, base=base, sources=sources, deleted=deleted, limits=limits)
-    need(encoded == canonical(expected), 'source_proof_mismatch')
+    need(encoded == canonical(expected, limits.proof_bytes), 'source_proof_mismatch')
     return True
