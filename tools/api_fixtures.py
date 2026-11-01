@@ -44,8 +44,8 @@ def check(root=ROOT):
     _, manifest = read(folder / "manifest.json", root)
     need(set(manifest) == {"schema_version", "status", "hsearch_runtime_implemented", "reference", "profile_sha256", "files", "missing", "constraints"}, "Unknown/missing inventory metadata")
     need(manifest["schema_version"] == 1 and manifest["hsearch_runtime_implemented"] is False, "This corpus cannot claim an implemented hsearch runtime")
-    need(manifest["reference"]["reference_observed"] is False, "Reference execution has no implemented evidence recorder yet")
-    need(manifest["status"] == "inventory in progress; reference execution and native conformance not run", "Inventory status must retain missing execution")
+    need(set(manifest["reference"]) == {"server_version", "server_revision", "client_version", "client_revision", "image_index", "linux_amd64", "linux_arm64", "source_license"}, "Static reference metadata cannot claim execution")
+    need(manifest["status"] == "fixture inventory; execution evidence is recorded separately", "Inventory must distinguish inputs from observations")
     need(type(manifest["files"]) is dict and set(manifest["files"]) == FILES, "Exact corpus file inventory required")
     need(manifest["missing"] and manifest["constraints"], "Missing workloads and limitations must remain visible")
     for key in ("server_revision", "client_revision"):
@@ -81,7 +81,7 @@ def check(root=ROOT):
         need(type(identity) is str and re.fullmatch(r"[a-z][a-z0-9-]{0,63}", identity) and identity not in case_ids, "Duplicate/invalid case identity")
         case_ids.add(identity)
         need(item["area"] in areas and item["profile_class"] == areas[item["area"]], "Case/profile classification mismatch")
-        need(item["hsearch_observed"] is False, "No hsearch service conformance has run")
+        need(set(item) == {"id", "area", "profile_class", "request", "reference_oracle"} | ({"adaptation"} if "adaptation" in item else set()), "Static cases cannot claim conformance")
         request = item["request"]
         need(set(request) == {"method", "path", "json"} and request["method"] == "POST" and request["path"] == "/{index}/_search", "Unreviewed request surface")
         need(type(request["json"]["size"]) is int and 0 <= request["json"]["size"] <= 100 and request["json"]["track_total_hits"] is True, "Reference work bounds changed")
@@ -98,12 +98,12 @@ def check(root=ROOT):
     for item in analyzers:
         need(item["id"] not in analyzer_ids and item["analyzer"] in schema["settings"]["analysis"]["analyzer"], "Unknown/duplicate analyzer case")
         analyzer_ids.add(item["id"])
-        need(item["reference_observed"] is False and item["hsearch_observed"] is False, "Analyzer execution is not recorded")
+        need(set(item) == {"id", "text", "tokens", "analyzer"}, "Static analyzer expectations cannot claim execution")
         units = len(item["text"].encode("utf-16-le")) // 2
         for position, token in enumerate(item["tokens"]):
             need(token["position"] == position and type(token["token"]) is str and token["token"], "Analyzer token/position oracle is invalid")
             need(type(token["start_offset"]) is int and type(token["end_offset"]) is int and 0 <= token["start_offset"] < token["end_offset"] <= units, "Analyzer UTF-16 offset oracle is invalid")
-    return {"integrity": "pass", "documents": len(documents), "search_cases": len(cases), "analyzer_cases": len(analyzers), "reference_execution": "NOT-RUN", "hsearch_conformance": "NOT-RUN", "task_completion": False}
+    return {"integrity": "pass", "documents": len(documents), "search_cases": len(cases), "analyzer_cases": len(analyzers), "reference_execution": "NOT-ASSESSED", "hsearch_conformance": "NOT-ASSESSED", "establishes_task_completion": False}
 
 
 def main():

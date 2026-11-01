@@ -11,14 +11,14 @@ API = runpy.run_path(str(ROOT / "tools/api_fixtures.py"))
 
 
 class FixtureControls(unittest.TestCase):
-    def test_real_inventory_retains_missing_execution(self):
+    def test_real_inventory_does_not_decide_execution(self):
         result = API["check"]()
         self.assertEqual(result["documents"], 11)
         self.assertEqual(result["search_cases"], 13)
         self.assertEqual(result["analyzer_cases"], 4)
-        self.assertEqual(result["reference_execution"], "NOT-RUN")
-        self.assertEqual(result["hsearch_conformance"], "NOT-RUN")
-        self.assertFalse(result["task_completion"])
+        self.assertEqual(result["reference_execution"], "NOT-ASSESSED")
+        self.assertEqual(result["hsearch_conformance"], "NOT-ASSESSED")
+        self.assertFalse(result["establishes_task_completion"])
 
     def test_tampered_dataset_stale_profile_and_invented_execution_fail(self):
         for change in ("dataset", "profile", "reference_claim", "hsearch_claim", "path"):

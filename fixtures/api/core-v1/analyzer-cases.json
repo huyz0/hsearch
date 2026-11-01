@@ -22,9 +22,7 @@
         "end_offset": 15
       }
     ],
-    "analyzer": "fixture_text_v1",
-    "reference_observed": false,
-    "hsearch_observed": false
+    "analyzer": "fixture_text_v1"
   },
   {
     "id": "accent-preserved",
@@ -49,9 +47,7 @@
         "end_offset": 14
       }
     ],
-    "analyzer": "fixture_text_v1",
-    "reference_observed": false,
-    "hsearch_observed": false
+    "analyzer": "fixture_text_v1"
   },
   {
     "id": "no-default-stopword-removal",
@@ -82,16 +78,12 @@
         "end_offset": 19
       }
     ],
-    "analyzer": "fixture_text_v1",
-    "reference_observed": false,
-    "hsearch_observed": false
+    "analyzer": "fixture_text_v1"
   },
   {
     "id": "empty-text",
     "text": "",
     "tokens": [],
-    "analyzer": "fixture_text_v1",
-    "reference_observed": false,
-    "hsearch_observed": false
+    "analyzer": "fixture_text_v1"
   }
 ]

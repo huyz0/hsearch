@@ -164,6 +164,81 @@ def handle_live(handle):
     return identity == "unknown" or identity is not None and identity == handle["identity"]
 
 
+def source_fingerprint(path, base_revision, owned_paths):
+    """Hash actual Git inputs read-only; this grants no task/worktree ownership."""
+    path = Path(path)
+    need(path.resolve() == path.absolute() and
+         Path(git("rev-parse", "--show-toplevel", root=path).strip()).resolve() == path.resolve(),
+         "Read-only source root is redirected or not the checkout root")
+    need(type(base_revision) is str and SHA.fullmatch(base_revision), "Exact source base revision required")
+    need(type(owned_paths) is list and len(owned_paths) <= 10000, "Bounded source ownership paths required")
+    value = {"base_revision": base_revision, "owned_paths": [relative_path(item) for item in owned_paths]}
+    flags = git("ls-files", "-v", "-z", root=path).split("\0")
+    need(all(not entry or entry.startswith("H ") for entry in flags), "Hidden index flags/unmerged inputs refused")
+    ignored = git("ls-files", "--others", "--ignored", "--exclude-standard", "-z", root=path)
+    need(not ignored, "Ignored worktree inputs/data present; preserve and inspect before running/cleanup")
+    head = git("rev-parse", "HEAD", root=path).strip()
+
+    def tree(revision):
+        result = {}
+        for entry in filter(None, git("ls-tree", "-r", "-z", revision, root=path).split("\0")):
+            meta, name = entry.split("\t", 1)
+            mode, kind, oid = meta.split()
+            need(kind == "blob" and mode in {"100644", "100755"}, "Unsupported tracked source type")
+            result[relative_path(name)] = (mode, oid)
+        return result
+
+    base, committed = tree(value["base_revision"]), tree(head)
+    index = {}
+    for entry in filter(None, git("ls-files", "--stage", "-z", root=path).split("\0")):
+        meta, name = entry.split("\t", 1)
+        mode, oid, stage = meta.split()
+        need(stage == "0" and mode in {"100644", "100755"}, "Unmerged/unsupported task source")
+        index[relative_path(name)] = (mode, oid)
+    untracked = list(filter(None, git("ls-files", "--others", "--exclude-standard", "-z", root=path).split("\0")))
+    names = sorted(set(base) | set(committed) | set(index) | set(untracked))
+    need(len(names) <= 10000, "Task source file count exceeds bound")
+    manifest, actual, total = [], {}, 0
+    for name in names:
+        name = relative_path(name)
+        candidate = path / name
+        component = candidate
+        while component != path:
+            need(not component.is_symlink(), "Task source path is redirected")
+            component = component.parent
+        need(candidate.resolve() == candidate.absolute(), "Task source path is redirected")
+        if candidate.exists():
+            before = candidate.stat()
+            need(stat.S_ISREG(before.st_mode) and before.st_size <= SOURCE_FILE_BYTES, "Task input is not a bounded regular file")
+            total += before.st_size
+            need(total <= SOURCE_TOTAL_BYTES, "Task source aggregate byte bound exceeded")
+            blob = hashlib.sha1(f"blob {before.st_size}\0".encode(), usedforsecurity=False)
+            content = hashlib.sha256()
+            read_bytes = 0
+            with candidate.open("rb") as source:
+                opened = os.fstat(source.fileno())
+                need((opened.st_dev, opened.st_ino) == (before.st_dev, before.st_ino), "Task input identity changed")
+                while chunk := source.read(65536):
+                    read_bytes += len(chunk)
+                    need(read_bytes <= before.st_size, "Task input changed while hashing")
+                    blob.update(chunk)
+                    content.update(chunk)
+            after = candidate.stat()
+            need(read_bytes == before.st_size and (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) ==
+                 (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns), "Task input changed while hashing")
+            mode = index.get(name, ("100644",))[0] if os.name == "nt" else ("100755" if before.st_mode & 0o111 else "100644")
+            actual[name] = (mode, blob.hexdigest())
+            manifest.append((name, mode, before.st_size, content.hexdigest()))
+        if actual.get(name) != base.get(name) or index.get(name) != base.get(name):
+            need(any(name.casefold() == owner.casefold() or name.casefold().startswith(owner.casefold() + "/")
+                     for owner in value["owned_paths"]), "Worktree changed a path outside its task claim")
+    state = {"head": head, "source_tree_sha256": hashlib.sha256(encoded(manifest)).hexdigest(),
+             "index_sha256": hashlib.sha256(encoded(index)).hexdigest(), "input_bytes": total, "file_count": len(actual),
+             "clean": actual == committed and index == committed and not untracked}
+    state["digest"] = hashlib.sha256(encoded(state)).hexdigest()
+    return state
+
+
 class TaskStore:
     def __init__(self, state_root, root=ROOT):
         self.source = Path(root).resolve()
@@ -296,70 +371,7 @@ class TaskStore:
     def fingerprint(self, record):
         path = self.inspect_worktree(record)
         value = record["packet"]
-        flags = git("ls-files", "-v", "-z", root=path).split("\0")
-        need(all(not entry or entry.startswith("H ") for entry in flags), "Hidden index flags/unmerged inputs refused")
-        ignored = git("ls-files", "--others", "--ignored", "--exclude-standard", "-z", root=path)
-        need(not ignored, "Ignored worktree inputs/data present; preserve and inspect before running/cleanup")
-        head = git("rev-parse", "HEAD", root=path).strip()
-
-        def tree(revision):
-            result = {}
-            for entry in filter(None, git("ls-tree", "-r", "-z", revision, root=path).split("\0")):
-                meta, name = entry.split("\t", 1)
-                mode, kind, oid = meta.split()
-                need(kind == "blob" and mode in {"100644", "100755"}, "Unsupported tracked source type")
-                result[relative_path(name)] = (mode, oid)
-            return result
-
-        base, committed = tree(value["base_revision"]), tree(head)
-        index = {}
-        for entry in filter(None, git("ls-files", "--stage", "-z", root=path).split("\0")):
-            meta, name = entry.split("\t", 1)
-            mode, oid, stage = meta.split()
-            need(stage == "0" and mode in {"100644", "100755"}, "Unmerged/unsupported task source")
-            index[relative_path(name)] = (mode, oid)
-        untracked = list(filter(None, git("ls-files", "--others", "--exclude-standard", "-z", root=path).split("\0")))
-        names = sorted(set(base) | set(committed) | set(index) | set(untracked))
-        need(len(names) <= 10000, "Task source file count exceeds bound")
-        manifest, actual, total = [], {}, 0
-        for name in names:
-            name = relative_path(name)
-            candidate = path / name
-            component = candidate
-            while component != path:
-                need(not component.is_symlink(), "Task source path is redirected")
-                component = component.parent
-            need(candidate.resolve() == candidate.absolute(), "Task source path is redirected")
-            if candidate.exists():
-                before = candidate.stat()
-                need(stat.S_ISREG(before.st_mode) and before.st_size <= SOURCE_FILE_BYTES, "Task input is not a bounded regular file")
-                total += before.st_size
-                need(total <= SOURCE_TOTAL_BYTES, "Task source aggregate byte bound exceeded")
-                blob = hashlib.sha1(f"blob {before.st_size}\0".encode(), usedforsecurity=False)
-                content = hashlib.sha256()
-                read_bytes = 0
-                with candidate.open("rb") as source:
-                    opened = os.fstat(source.fileno())
-                    need((opened.st_dev, opened.st_ino) == (before.st_dev, before.st_ino), "Task input identity changed")
-                    while chunk := source.read(65536):
-                        read_bytes += len(chunk)
-                        need(read_bytes <= before.st_size, "Task input changed while hashing")
-                        blob.update(chunk)
-                        content.update(chunk)
-                after = candidate.stat()
-                need(read_bytes == before.st_size and (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) ==
-                     (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns), "Task input changed while hashing")
-                mode = index.get(name, ("100644",))[0] if os.name == "nt" else ("100755" if before.st_mode & 0o111 else "100644")
-                actual[name] = (mode, blob.hexdigest())
-                manifest.append((name, mode, before.st_size, content.hexdigest()))
-            if actual.get(name) != base.get(name) or index.get(name) != base.get(name):
-                need(any(name.casefold() == owner.casefold() or name.casefold().startswith(owner.casefold() + "/")
-                         for owner in value["owned_paths"]), "Worktree changed a path outside its task claim")
-        state = {"head": head, "source_tree_sha256": hashlib.sha256(encoded(manifest)).hexdigest(),
-                 "index_sha256": hashlib.sha256(encoded(index)).hexdigest(), "input_bytes": total, "file_count": len(actual),
-                 "clean": actual == committed and index == committed and not untracked}
-        state["digest"] = hashlib.sha256(encoded(state)).hexdigest()
-        return state
+        return source_fingerprint(path, value["base_revision"], value["owned_paths"])
 
     def context(self, claim, owner):
         record = self.get(claim, owner)

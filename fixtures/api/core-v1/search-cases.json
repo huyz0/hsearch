@@ -38,8 +38,7 @@
         "011"
       ],
       "exact_total": 11
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "keyword-term",
@@ -78,8 +77,7 @@
         "011"
       ],
       "exact_total": 7
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "keyword-terms",
@@ -118,8 +116,7 @@
         "008"
       ],
       "exact_total": 4
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "integer-range",
@@ -159,8 +156,7 @@
         "011"
       ],
       "exact_total": 5
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "integer-threshold-bool",
@@ -229,8 +225,7 @@
         "011"
       ],
       "exact_total": 4
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "standard-match",
@@ -266,8 +261,7 @@
         "011"
       ],
       "exact_total": 4
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "standard-phrase",
@@ -302,8 +296,7 @@
         "009"
       ],
       "exact_total": 3
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "standard-accent-preserved",
@@ -336,8 +329,7 @@
         "011"
       ],
       "exact_total": 1
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "analyzed-text-term-is-case-sensitive",
@@ -368,8 +360,7 @@
       "kind": "hits",
       "ids": [],
       "exact_total": 0
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "bounded-field-sort",
@@ -405,8 +396,7 @@
         "001"
       ],
       "exact_total": 11
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "date-range",
@@ -452,8 +442,7 @@
         "011"
       ],
       "exact_total": 11
-    },
-    "hsearch_observed": false
+    }
   },
   {
     "id": "finite-metrics",
@@ -498,7 +487,6 @@
         "count_price": 11
       }
     },
-    "hsearch_observed": false,
     "adaptation": "Reference baseline for bounded native metrics/group semantics; no universal aggregation DSL compatibility."
   },
   {
@@ -543,7 +531,6 @@
         ]
       }
     },
-    "hsearch_observed": false,
     "adaptation": "Reference baseline for bounded native metrics/group semantics; no universal aggregation DSL compatibility."
   }
 ]
