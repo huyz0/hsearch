@@ -1,4 +1,5 @@
 //! Shared checkpoint types. Persisted encodings and distributed protocols are not defined here.
+//! CI qualification fixture for types and its transitive consumers.
 
 /// An ordered logical shard coordinate. Zero denotes the empty prefix.
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
