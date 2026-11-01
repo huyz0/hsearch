@@ -674,15 +674,15 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
-              "path": "source-proof.md",
-              "result": "Isolated immutable source proof implemented; R1 ancestry defect fixed with exact native Git controls, full final qualification and R2 pending. No coverage acceptance."
+              "path": "evidence/m01-11-integrated.md",
+              "result": "Both actual R2 sessions clear, immutable failed R1 retained, full191native/no skips plus both7job PR/main source/corpora proof, durable gate and normal protected PR12 merge with matching reviewed tree. Source-only; no coverage integration acceptance."
             },
             {
               "path": "evidence/source-proof-review-history.json",
-              "result": "Both actual R1 blocking late-parent findings/reproduction hashes retained; original M01.07 remains hard3 blocked."
+              "result": "Both failed R1 ancestry reports/reproduction hashes retained; exact native ignored-parent control now refuses. Original M01.07 registry remains blocked at hard3."
             }
           ]
         },
