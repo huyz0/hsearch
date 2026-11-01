@@ -8,14 +8,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from contextlib import closing
+import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
+import platform
 import sqlite3
+import statistics
+import subprocess
+import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 HASH_SPACE = 65536  # Deliberately small synthetic routing space, not a product limit.
 MAX_CATALOG_BYTES = 128 * 1024**2
 MAX_ROUTES = 128
+IDENTITY_SQL = "SELECT incarnation,generation FROM collections WHERE tenant=? AND name=?"
+ROUTE_SQL = "SELECT partition,lower,upper,reader FROM routes WHERE tenant=? AND name=? AND incarnation=? AND generation=? AND lower<? AND upper>? ORDER BY partition LIMIT ?"
 
 
 class Refused(ValueError):
@@ -156,11 +166,11 @@ class Catalog:
         integer(lower, 0, HASH_SPACE - 1, "range lower")
         integer(upper, lower + 1, HASH_SPACE, "range upper")
         integer(max_selected, 1, MAX_ROUTES, "selected partitions")
-        identity = self._rows("SELECT incarnation,generation FROM collections WHERE tenant=? AND name=?",
+        identity = self._rows(IDENTITY_SQL,
                               (tenant, collection), 1)
         need(identity, "Unknown collection")
         incarnation, generation = identity[0]
-        rows = self._rows("SELECT partition,lower,upper,reader FROM routes WHERE tenant=? AND name=? AND incarnation=? AND generation=? AND lower<? AND upper>? ORDER BY partition LIMIT ?",
+        rows = self._rows(ROUTE_SQL,
                           (tenant, collection, incarnation, generation, upper, lower, max_selected + 1), max_selected + 1)
         need(len(rows) <= max_selected, "selected_partitions limit exceeded")
         need(rows, "Missing selected route")
@@ -168,5 +178,123 @@ class Catalog:
 
     def selection_query_plan(self, tenant="synthetic", collection="hot"):
         key(tenant); key(collection)
-        return self.connection.execute("EXPLAIN QUERY PLAN SELECT partition FROM routes WHERE tenant=? AND name=? AND incarnation=? AND generation=? ORDER BY partition LIMIT ?",
-                                       (tenant, collection, 1, 1, 65)).fetchall()
+        return [*self.connection.execute("EXPLAIN QUERY PLAN " + IDENTITY_SQL, (tenant, collection)).fetchall(),
+                *self.connection.execute("EXPLAIN QUERY PLAN " + ROUTE_SQL, (tenant, collection, 1, 1, HASH_SPACE, 0, 65)).fetchall()]
+
+
+def rss_bytes():
+    need(platform.system() == "Linux", "RSS model experiment requires native Linux")
+    status = Path('/proc/self/status').read_text(encoding='ascii')
+    need(len(status) < 65536, "Process status exceeds bound")
+    for line in status.splitlines():
+        if line.startswith('VmRSS:'):
+            value, units = line.split()[1:]
+            need(units == 'kB' and value.isdecimal(), "Unknown RSS units")
+            return int(value) * 1024
+    raise Refused('RSS unavailable')
+
+
+def probe(path, *, iterations=100, variant='bounded'):
+    """Fresh-process synthetic measurement; deliberately bad variants are bounded."""
+    integer(iterations, 1, 100, 'probe iterations')
+    need(variant in {'bounded', 'full_scan', 'timer_records'}, 'Unknown model variant')
+    before = rss_bytes()
+    retained, timer_records, maximum_rows = [], 0, 0
+    with Catalog(path) as catalog:
+        for _ in range(5): catalog.select('synthetic', 'hot')
+        plans = [row[3] for row in catalog.selection_query_plan()]
+        if variant != 'bounded':
+            plans += [row[3] for row in catalog.connection.execute('EXPLAIN QUERY PLAN SELECT tenant,name FROM collections LIMIT 100001')]
+        catalog.metadata_statements = catalog.returned_rows = 0
+        started = time.perf_counter()
+        for _ in range(iterations):
+            rows_before = catalog.returned_rows
+            if variant != 'bounded':
+                retained = catalog._rows('SELECT tenant,name FROM collections LIMIT 100001', (), 100001)
+                if variant == 'timer_records':
+                    # Model allocation only; never spawn a timer/thread per idle collection.
+                    retained = [(tenant, name, 0) for tenant, name in retained]
+                    timer_records = len(retained)
+            selected = catalog.select('synthetic', 'hot')
+            need(len(selected.routes) == 16, 'Selected work differs from original fixture')
+            maximum_rows = max(maximum_rows, catalog.returned_rows - rows_before)
+        elapsed = time.perf_counter() - started
+        after = rss_bytes()
+        return {'schema_version': 1, 'scope': 'synthetic SQLite model; not hsearch runtime/fleet G01 qualification',
+                'variant': variant, 'iterations': iterations, 'selected_partitions': 16,
+                'rss_before_catalog_bytes': before, 'rss_after_hot_work_bytes': after,
+                'sql_statement_attempts': catalog.metadata_statements, 'returned_rows': catalog.returned_rows,
+                'maximum_rows_per_request': maximum_rows, 'timer_model_records': timer_records,
+                'retained_negative_control_rows': len(retained), 'query_plans': plans,
+                'elapsed_seconds': elapsed, 'python': platform.python_version(), 'sqlite': sqlite3.sqlite_version,
+                'kernel': platform.release(), 'sqlite_cache_kib': 256, 'mmap_bytes': 0}
+
+
+def scale_experiment(directory, *, small=1000, large=10000, repetitions=3, iterations=100):
+    need(platform.system() == 'Linux', 'Fresh-process scale experiment requires native Linux')
+    integer(small, 1, 10000, 'small catalog'); integer(large, 10, 100000, 'large catalog')
+    integer(repetitions, 3, 10, 'repetitions'); integer(iterations, 1, 100, 'iterations')
+    need(large == small * 10, 'Experiment must grow idle cardinality exactly10x')
+    directory = Path(directory).absolute()
+    need(directory.resolve() == directory and not directory.is_relative_to(ROOT), 'Experiment output must be private and outside source')
+    directory.mkdir(parents=True, exist_ok=False)
+    datasets, samples = [], []
+    for idle in [small, large]:
+        path = create_catalog(directory / (str(idle) + '.sqlite'), idle_collections=idle)
+        with closing(sqlite3.connect(path)) as connection:
+            counts = [connection.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] for table in ['collections', 'routes']]
+        need(counts == [idle + 1, idle + 16], 'Setup-only actual fixture cardinality mismatch')
+        digest = hashlib.sha256()
+        with path.open('rb') as source:
+            while chunk := source.read(65536): digest.update(chunk)
+        datasets.append({'idle_collections': idle, 'collection_rows': counts[0], 'route_rows': counts[1],
+                         'bytes': path.stat().st_size, 'sha256': digest.hexdigest()})
+        for variant in ['bounded', 'full_scan', 'timer_records']:
+            for repeat in range(repetitions):
+                result = subprocess.run([sys.executable, str(Path(__file__).resolve()), 'probe', '--catalog', str(path),
+                                         '--iterations', str(iterations), '--variant', variant],
+                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+                need(result.returncode == 0 and len(result.stdout.encode()) <= 16384 and len(result.stderr.encode()) <= 16384,
+                     'Fresh process probe failed or exceeded output bound')
+                sample = json.loads(result.stdout)
+                sample.update(idle_collections=idle, repeat=repeat)
+                samples.append(sample)
+    outcomes = {}
+    for variant in ['bounded', 'full_scan', 'timer_records']:
+        groups = [[sample for sample in samples if sample['variant'] == variant and sample['idle_collections'] == idle] for idle in [small, large]]
+        medians = [statistics.median(sample['rss_after_hot_work_bytes'] for sample in group) for group in groups]
+        ratio = medians[1] / medians[0]
+        no_scan = all(all('SEARCH' in plan and 'SCAN' not in plan for plan in sample['query_plans']) for group in groups for sample in group)
+        bounded_work = all(sample['maximum_rows_per_request'] == 17 and sample['timer_model_records'] == 0 and
+                           sample['sql_statement_attempts'] == iterations * 2 for group in groups for sample in group)
+        outcomes[variant] = {'model_gate_passed': no_scan and bounded_work and ratio <= 1.10,
+                             'median_hot_rss_bytes': medians, 'rss_ratio': ratio, 'indexed_plans': no_scan,
+                             'fixed_selected_work': bounded_work}
+    report = {'schema_version': 1, 'scope': 'model evidence only; API G01 remains unobserved for hsearch runtime',
+              'datasets': datasets, 'samples': samples, 'outcomes': outcomes,
+              'counts_note': 'SQL statement attempts and returned rows; not object-store or physical page-read attempts',
+              'rss_note': 'Fresh-process absolute hot RSS includes Python/SQLite; raw baseline and repeat noise remain visible',
+              'passed': outcomes['bounded']['model_gate_passed'] and not outcomes['full_scan']['model_gate_passed'] and not outcomes['timer_records']['model_gate_passed']}
+    encoded = json.dumps(report, indent=2).encode('utf-8')
+    need(len(encoded) <= 1024**2, 'Model report exceeds bound')
+    with (directory / 'report.json').open('xb') as output: output.write(encoded + b'\n')
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='command', required=True)
+    one = sub.add_parser('probe'); one.add_argument('--catalog', type=Path, required=True)
+    one.add_argument('--iterations', type=int, default=100); one.add_argument('--variant', default='bounded')
+    scale = sub.add_parser('scale'); scale.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    if args.command == 'probe': print(json.dumps(probe(args.catalog, iterations=args.iterations, variant=args.variant)))
+    else:
+        report = scale_experiment(args.output)
+        print(json.dumps({'catalog_model_scale': 'pass' if report['passed'] else 'fail', 'outcomes': report['outcomes'], 'evidence': str(args.output / 'report.json')}))
+        return 0 if report['passed'] else 1
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
