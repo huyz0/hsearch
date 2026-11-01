@@ -644,11 +644,11 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
-              "path": "coverage-redesign.md",
-              "result": "Concrete decomposition and source-proof contract prepared; independent plan review and hosted qualification pending, no successor acceptance."
+              "path": "evidence/m01-10-integrated.md",
+              "result": "Two actual independent plan reviews and durable gate, protected PR11 merge with matching tree, all7 PR/main native jobs and decoded full corpora passed. Plan only; original M01.07 remains blocked."
             }
           ]
         },
@@ -674,7 +674,7 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
+          "status": "in_progress",
           "evidence": []
         },
         {
