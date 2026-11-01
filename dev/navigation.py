@@ -57,8 +57,13 @@ def bounded(args, *, timeout=45, limit=MAX_OUTPUT, env=None):
         return {"exit_code": child.wait(timeout=3), **{key: bytes(value).decode("utf-8", errors="strict") for key, value in output.items()}}
     finally:
         streams.close()
-        if child.poll() is None:
+        # A CLI can exit while descendants retain its output pipes. Its own
+        # session/process group still needs termination on timeout or success.
+        try:
             os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if child.poll() is None:
             child.wait(timeout=3)
         child.stdout.close()
         child.stderr.close()
@@ -187,13 +192,6 @@ def query(value):
         operation = value["operation"]
         if operation == "doctor":
             return {"status": "doctor", "data": ready}
-        if operation == "compile":
-            stopped = bounded(["lsp", "server", "stop", "/workspace", "--output", "json"])
-            if stopped["exit_code"]:
-                raise RuntimeError("navigation_server_stop_failed")
-            compiled = bounded(["cargo", "check", "--locked", "--offline", "--workspace", "--all-targets", "--all-features"], timeout=120)
-            return {"status": "compile", "backend": "cargo-check", "semantic": False,
-                    "data": {"passed": compiled["exit_code"] == 0, **compiled}}
         commands = {"outline": "outline", "definition": "definition", "reference": "reference",
                     "diagnostics": "diagnostics", "rename-preview": "rename"}
         if operation not in commands:

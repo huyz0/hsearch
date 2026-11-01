@@ -252,11 +252,25 @@ def navigate(store, claim, owner, value, resources, source):
         navigation = Navigation(store, claim, owner, resources, source)
         with navigation.exclusive():
             navigation.connect()
+            if value["operation"] == "compile":
+                navigation.close()
+                compile_requested = True
+            else:
+                compile_requested = False
             if value["operation"] == "stop":
                 return navigation.close()
             if value["operation"] == "start":
                 record = navigation.start()
                 return {"status": "ready", "data": {"namespace": record["namespace"], "source_digest": record["source_digest"], "identity": record["identity"]}}
-            return navigation.query(value)
+            if not compile_requested:
+                return navigation.query(value)
+        try:
+            result = store.run(claim, owner, "compile", resources)
+            return {"status": "compile", "backend": "cargo-check", "semantic": False, "data": {"passed": True, **result}}
+        except refused as error:
+            if hasattr(error, "result"):
+                return {"status": "compile", "backend": "cargo-check", "semantic": False,
+                        "data": {"passed": False, "result": error.result}}
+            raise
     except (refused, OSError, ValueError, KeyError, TypeError) as error:
         return {"status": "unavailable", "semantic": False, "reason": str(error)[:256]}

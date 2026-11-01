@@ -106,6 +106,23 @@ class WorktreeControls(unittest.TestCase):
         self.assertIn(a["branch"], self.git("branch", "--list"))
         self.assertTrue(self.store.evidence(first, "fixture-owner"))
 
+    def test_semantic_lease_blocks_worktree_cleanup_and_wrong_registry_cannot_hide_it(self):
+        claim = self.claim()
+        resource = self.area / "resources"
+        with self.store.edit() as data:
+            data["resource_root"] = str(resource.resolve())
+        registry = MODULE["SANDBOX"]["Registry"](resource, free_disk=lambda: 100 * 1024**3)
+        budget = MODULE["SANDBOX"]["BUILD"]
+        registry.acquire("navigation", budget, dict(budget), "fixture", {"kind": "navigation", "task_claim": claim})
+        with self.assertRaisesRegex(Refused, "recorded shared resource registry"):
+            self.store.cleanup(claim, "fixture-owner", self.area / "different")
+        with self.assertRaisesRegex(Refused, "semantic session"):
+            self.store.cleanup(claim, "fixture-owner", resource)
+        self.assertEqual(self.store.get(claim)["phase"], "allocated")
+        self.assertTrue(Path(self.store.get(claim)["worktree"]).is_dir())
+        registry.release("navigation")
+        self.store.cleanup(claim, "fixture-owner", resource)
+
     def test_dependency_readiness_uses_committed_packet_base(self):
         self.ledger["milestones"][1]["tasks"][0]["status"] = "done"
         (self.source / "docs/plan/tasks.json").write_text(json.dumps(self.ledger))

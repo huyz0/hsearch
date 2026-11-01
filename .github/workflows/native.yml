@@ -59,3 +59,6 @@ jobs:
       - name: Qualify private RustFS sandbox and cleanup isolation
         if: ${{ inputs.mode == 'sandbox' }}
         run: python3 tools/sandbox.py --state-root "${{ runner.temp }}/hsearch-leases" smoke
+      - name: Qualify real semantic corpus, worktree isolation and whole fixture costs
+        if: ${{ inputs.mode == 'sandbox' }}
+        run: python3 tools/navigation_corpus.py --state-root "${{ runner.temp }}/hsearch-leases" --evidence-parent "${{ runner.temp }}/hsearch-navigation"

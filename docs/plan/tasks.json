@@ -463,7 +463,7 @@
           "evidence": [
             {
               "path": "evidence/m01-04-navigation.md",
-              "result": "Pinned lsp-cli0.4.1 sourcecd9d492 and exact schemas/config/fixtures inspected; bounded semantic adapter/router/corpus implementation pending."
+              "result": "Implemented pinned semantic adapter, bounded context router and whole-fixture accounting; real Linux semantic/isolation/freshness/compiler corpus passed; final complete checks, independent review and hosted CI pending."
             }
           ]
         },

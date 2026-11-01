@@ -151,7 +151,8 @@ def route(store, claim, owner, value, resource_root, *, semantic=None):
         previous = prior_context(store, claim, owner)
         body = {"status": "accounting", "data": {"previous_context_events": len(previous), "excludes_this_response": True,
                 "canonical_request_bytes": sum(item["canonical_request_bytes"] for item in previous),
-                "wire_response_bytes": sum(item["wire_response_bytes"] for item in previous),
+                "response_payload_bytes": sum(item["response_payload_bytes"] for item in previous),
+                "scope": "versioned context request/response JSON payloads only; excludes CLI framing and other tools",
                 "tokenizer": None, "token_counts_are_estimates": True,
                 "estimated_request_plus_response_tokens": sum(item["estimated_request_plus_response_tokens"] for item in previous)}}
     else:
@@ -167,13 +168,13 @@ def route(store, claim, owner, value, resource_root, *, semantic=None):
             body["cargo_check_required"] = True
     need(store.fingerprint(store.get(claim, owner))["digest"] == before["digest"], "Context changed during retrieval; result is stale")
     response = {"schema_version": 1, "claim": claim, "source": before, "operation": operation, **body,
-                "evidence_sha256": "0" * 64, "wire_bytes": 0, "estimated_tokens_bytes_div4": 0, "token_count_is_estimate": True}
+                "evidence_sha256": "0" * 64, "response_payload_bytes": 0, "estimated_tokens_bytes_div4": 0, "token_count_is_estimate": True}
     for _ in range(6):
         size = len(encoded(response))
-        response.update(wire_bytes=size, estimated_tokens_bytes_div4=(size + 3) // 4)
-    need(len(encoded(response)) == response["wire_bytes"] <= budget, "Context result exceeds byte budget; narrow or paginate the request")
+        response.update(response_payload_bytes=size, estimated_tokens_bytes_div4=(size + 3) // 4)
+    need(len(encoded(response)) == response["response_payload_bytes"] <= budget, "Context result exceeds byte budget; narrow or paginate the request")
     audit = {"source": before, "request": value, "body": body, "canonical_request_bytes": len(encoded(value)),
-             "wire_response_bytes": response["wire_bytes"], "token_counts_are_estimates": True,
+             "response_payload_bytes": response["response_payload_bytes"], "token_counts_are_estimates": True,
              "estimated_request_plus_response_tokens": (len(encoded(value)) + 3) // 4 + response["estimated_tokens_bytes_div4"]}
     response["evidence_sha256"] = store.append(claim, owner, "context", audit)
     return response
@@ -194,10 +195,11 @@ def main():
         if args.request:
             need(args.request.stat().st_size <= 4096, "Context request file exceeds byte bound")
             value = json.loads(args.request.read_text(encoding="utf-8"))
+            result = route(store, args.claim, args.owner, value,
+                           getattr(args, "resource_state_root", Path(tempfile.gettempdir()) / "hsearch-dev-leases"))
         else:
-            value = {"schema_version": 1, "operation": "packet"}
-        result = route(store, args.claim, args.owner, value,
-                       getattr(args, "resource_state_root", Path(tempfile.gettempdir()) / "hsearch-dev-leases"))
+            # Preserve the M01.03 metadata interface for existing xtask callers.
+            result = store.context(args.claim, args.owner)
         print(encoded(result).decode())
         return 0
     except (Refused, OSError, ValueError, KeyError, TypeError) as error:

@@ -451,7 +451,7 @@ class Sandbox:
         return self.docker.command("compose", "--project-name", record["namespace"], "--file", str(path), *args, timeout=150)
 
     def run(self, namespace, mode, *, output_budget=8 * 1024**2, stream=True, artifact_directory=None):
-        need(mode in {"prefetch", "diagnostics", "check", "probe", "navigation-build"}, "Unknown sandbox command")
+        need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build"}, "Unknown sandbox command")
         need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)
         need(record.get("source") == str(self.source_root) and record["engine"] == self.docker.engine and record["phase"] == "ready", "Namespace unavailable in this worktree/engine")
@@ -649,7 +649,7 @@ def main():
     parser.add_argument("--state-root", type=Path, default=Path(tempfile.gettempdir()) / "hsearch-dev-leases")
     parser.add_argument("command", choices=("image", "up", "run", "down", "status", "smoke"))
     parser.add_argument("target", nargs="?")
-    parser.add_argument("mode", nargs="?", choices=("prefetch", "check", "probe", "diagnostics"))
+    parser.add_argument("mode", nargs="?", choices=("prefetch", "check", "compile", "probe", "diagnostics"))
     args = parser.parse_args()
     try:
         sandbox = Sandbox(args.state_root)

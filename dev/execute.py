@@ -13,6 +13,7 @@ import sys
 import time
 
 COMMANDS = {"prefetch": ["cargo", "fetch", "--locked"], "check": ["cargo", "xtask", "check"],
+            "compile": ["cargo", "check", "--locked", "--offline", "--workspace", "--all-targets", "--all-features"],
             "navigation-build": ["python3", "/harness/install_navigation.py"]}
 
 

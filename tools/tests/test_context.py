@@ -5,6 +5,7 @@ from pathlib import Path
 import runpy
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -64,14 +65,23 @@ class RetrievalControls(unittest.TestCase):
     def route(self, operation, *, semantic=None, **fields):
         return API["route"](self.store, self.claim, self.owner, req(operation, **fields), self.area / "resources", semantic=semantic)
 
-    def test_utf8_source_coordinates_and_wire_accounting_are_exact(self):
+    def test_utf8_source_coordinates_and_payload_accounting_are_exact(self):
         result = self.route("slice", file="src/main.rs", start_line=1, end_line=2)
         self.assertEqual(result["data"]["text"], "".join(self.text.splitlines(keepends=True)[:2]))
-        self.assertEqual(len(API["encoded"](result)), result["wire_bytes"])
-        self.assertEqual(result["estimated_tokens_bytes_div4"], (result["wire_bytes"] + 3) // 4)
+        self.assertEqual(len(API["encoded"](result)), result["response_payload_bytes"])
+        self.assertEqual(result["estimated_tokens_bytes_div4"], (result["response_payload_bytes"] + 3) // 4)
         self.assertTrue(result["token_count_is_estimate"])
         self.assertEqual(len(result["evidence_sha256"]), 64)
         self.store.evidence(self.claim, self.owner)
+
+    def test_default_cli_preserves_legacy_metadata_shape_without_accounting_event(self):
+        value = json.loads(subprocess.check_output([sys.executable, str(API["ROOT"] / "tools/context.py"),
+            "context", self.claim, "--owner", self.owner, "--state-root", str(self.area / "state")], cwd=self.source))
+        self.assertEqual(value["claim"], self.claim)
+        self.assertEqual(value["packet"]["owner_session"], self.owner)
+        self.assertIn("context_bytes", value)
+        self.assertNotIn("operation", value)
+        self.assertEqual(API["prior_context"](self.store, self.claim, self.owner), [])
 
     def test_full_file_requires_reason_and_recorded_narrower_attempt_at_same_source(self):
         with self.assertRaisesRegex(Refused, "requires a concrete reason"):
@@ -115,7 +125,7 @@ class RetrievalControls(unittest.TestCase):
 
     def test_missing_semantics_fallback_is_never_a_rename_plan_or_compile_pass(self):
         def missing(_store, _claim, _owner, value, _resources, _source):
-            return API["lexical"](self.root, value, "Pinned LSP unavailable")
+            return {"status": "unavailable", "semantic": False, "reason": "Pinned LSP unavailable"}
         result = self.route("rename-preview", file="src/main.rs", line=3, find="fn <|>greet", new_name="hello", semantic=missing)
         self.assertEqual(result["status"], "fallback")
         self.assertFalse(result["semantic"])
@@ -133,7 +143,7 @@ class RetrievalControls(unittest.TestCase):
         two = self.route("slice", file="src/main.rs", start_line=1, end_line=2)
         result = self.route("stats")["data"]
         self.assertEqual(result["previous_context_events"], 2)
-        self.assertEqual(result["wire_response_bytes"], one["wire_bytes"] + two["wire_bytes"])
+        self.assertEqual(result["response_payload_bytes"], one["response_payload_bytes"] + two["response_payload_bytes"])
         requests = sum(len(API["encoded"](value)) for value in (req("search", pattern="User"), req("slice", file="src/main.rs", start_line=1, end_line=2)))
         self.assertEqual(result["canonical_request_bytes"], requests)
         self.assertTrue(result["token_counts_are_estimates"])

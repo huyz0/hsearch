@@ -426,7 +426,7 @@ class TaskStore:
 
     def run(self, claim, owner, mode, resource_root):
         record = self.get(claim, owner)
-        need(mode in record["packet"]["commands"], "Command is outside task packet")
+        need(mode in record["packet"]["commands"] or mode == "compile" and "check" in record["packet"]["commands"], "Command is outside task packet")
         before = self.fingerprint(record)
         with self.edit() as data:
             current = data["tasks"][claim]
@@ -505,7 +505,7 @@ def main():
         command.add_argument("claim")
         command.add_argument("--owner", required=True)
         if action == "run":
-            command.add_argument("mode", choices=("prefetch", "diagnostics", "check", "probe"))
+            command.add_argument("mode", choices=("prefetch", "diagnostics", "check", "compile", "probe"))
     context = groups.add_parser("context", parents=[shared])
     context.add_argument("claim")
     context.add_argument("--owner", required=True)
