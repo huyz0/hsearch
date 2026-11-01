@@ -4,6 +4,7 @@ import argparse
 import tempfile
 import hashlib
 import json
+import math
 import re
 import runpy
 import sys
@@ -124,6 +125,36 @@ def verify_step(expected, status, body, bindings):
              (total["relation"] == "eq" and total["value"] == oracle["exact"] or
               total["relation"] == "gte" and oracle["threshold"] <= total["value"] <= oracle["exact"]),
              "Reference count relation/value is not truthful")
+
+
+def verify_search(case, status, body):
+    need(status == 200, "Reference query failed: " + case["id"])
+    oracle = case["reference_oracle"]
+    if oracle["kind"] == "hits":
+        hits = body["hits"]
+        need(same_json([item["_id"] for item in hits["hits"]], oracle["ids"]) and
+             same_json(hits["total"], {"value": oracle["exact_total"], "relation": "eq"}),
+             "Reference ID/count/order oracle mismatch: " + case["id"])
+        need(all(same_json(item["_source"], {"uid": item["_id"]}) for item in hits["hits"]),
+             "Reference source projection mismatch")
+    else:
+        for name, expected in oracle["values"].items():
+            observed = body["aggregations"][name]
+            if type(expected) is list:
+                need(same_json([{key: item[key] for key in ("key", "doc_count")} for item in observed["buckets"]], expected),
+                     "Reference bucket oracle mismatch")
+            else:
+                value = observed["value"]
+                # OpenSearch metrics may serialize an integral value as a double.
+                # Booleans and nonfinite values never represent numeric metrics.
+                need(type(value) in {int, float} and type(expected) in {int, float} and value == expected and
+                     math.isfinite(value) and math.isfinite(expected), "Reference metric oracle mismatch")
+
+
+def verify_analyzer(case, status, body):
+    need(status == 200 and same_json([{key: item[key] for key in ("token", "position", "start_offset", "end_offset")}
+                                     for item in body["tokens"]], case["tokens"]),
+         "Reference analyzer oracle mismatch: " + case["id"])
 
 
 def source_identity():
@@ -314,23 +345,11 @@ def main():
         for case in inputs["search-cases.json"]:
             query = case["request"]
             status, body = request(query["method"], query["path"].replace("{index}", index), query["json"])
-            need(status == 200, "Reference query failed: " + case["id"])
-            oracle = case["reference_oracle"]
-            if oracle["kind"] == "hits":
-                hits = body["hits"]
-                need([item["_id"] for item in hits["hits"]] == oracle["ids"] and hits["total"] == {"value": oracle["exact_total"], "relation": "eq"}, "Reference ID/count/order oracle mismatch: " + case["id"])
-                need(all(item["_source"] == {"uid": item["_id"]} for item in hits["hits"]), "Reference source projection mismatch")
-            else:
-                for name, expected in oracle["values"].items():
-                    observed = body["aggregations"][name]
-                    if isinstance(expected, list):
-                        need([{key: item[key] for key in ("key", "doc_count")} for item in observed["buckets"]] == expected, "Reference bucket oracle mismatch")
-                    else:
-                        need(observed["value"] == expected, "Reference metric oracle mismatch")
+            verify_search(case, status, body)
             print(json.dumps({"reference_case": case["id"], "status": "pass"}), flush=True)
         for case in inputs["analyzer-cases.json"]:
             status, body = request("POST", "/" + index + "/_analyze", {"analyzer": case["analyzer"], "text": case["text"]})
-            need(status == 200 and [{key: item[key] for key in ("token", "position", "start_offset", "end_offset")} for item in body["tokens"]] == case["tokens"], "Reference analyzer oracle mismatch: " + case["id"])
+            verify_analyzer(case, status, body)
             print(json.dumps({"reference_analyzer": case["id"], "status": "pass"}), flush=True)
         for case in inputs["mutation-cases.json"]:
             case_index = "hsearch-case-" + namespace.rsplit("-", 1)[1] + "-" + case["id"]

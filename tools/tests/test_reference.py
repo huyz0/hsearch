@@ -27,6 +27,47 @@ class OracleControls(unittest.TestCase):
         with self.assertRaises(REF["Refused"]):
             REF["verify_step"]({"status": 409, "error_required": True}, 200, {"result": "created"}, {})
 
+    def test_search_verification_rejects_boolean_and_float_counts(self):
+        case = {"id": "one-result", "reference_oracle": {"kind": "hits", "ids": ["011"], "exact_total": 1}}
+        body = {"hits": {"hits": [{"_id": "011", "_source": {"uid": "011"}}], "total": {"value": 1, "relation": "eq"}}}
+        REF["verify_search"](case, 200, body)
+        for bad in (True, 1.0):
+            changed = copy.deepcopy(body)
+            changed["hits"]["total"]["value"] = bad
+            with self.subTest(value=bad), self.assertRaises(REF["Refused"]):
+                REF["verify_search"](case, 200, changed)
+
+    def test_bucket_verification_requires_integer_counts(self):
+        case = {"id": "bucket-types", "reference_oracle": {"kind": "aggregations", "values": {"categories": [{"key": "book", "doc_count": 1}]}}}
+        body = {"aggregations": {"categories": {"buckets": [{"key": "book", "doc_count": 1}]}}}
+        REF["verify_search"](case, 200, body)
+        for bad in (True, 1.0):
+            changed = copy.deepcopy(body)
+            changed["aggregations"]["categories"]["buckets"][0]["doc_count"] = bad
+            with self.subTest(value=bad), self.assertRaises(REF["Refused"]):
+                REF["verify_search"](case, 200, changed)
+
+    def test_metrics_allow_finite_numeric_equivalence_but_never_booleans(self):
+        case = {"id": "metric-types", "reference_oracle": {"kind": "aggregations", "values": {"minimum": 0}}}
+        for value in (0, 0.0):
+            REF["verify_search"](case, 200, {"aggregations": {"minimum": {"value": value}}})
+        for bad in (False, True, "0", float("nan"), float("inf"), -float("inf")):
+            with self.subTest(value=bad), self.assertRaises(REF["Refused"]):
+                REF["verify_search"](case, 200, {"aggregations": {"minimum": {"value": bad}}})
+
+    def test_analyzer_verification_requires_integer_positions_and_offsets(self):
+        tokens = [{"token": "hello", "position": 0, "start_offset": 0, "end_offset": 5},
+                  {"token": "world", "position": 1, "start_offset": 6, "end_offset": 11}]
+        case = {"id": "analyzer-types", "tokens": tokens}
+        REF["verify_analyzer"](case, 200, {"tokens": copy.deepcopy(tokens)})
+        for index, field, bad in [(0, "position", False), (0, "start_offset", False), (1, "position", True),
+                                  *[(i, key, float(token[key])) for i, token in enumerate(tokens)
+                                    for key in ("position", "start_offset", "end_offset")]]:
+            changed = copy.deepcopy(tokens)
+            changed[index][field] = bad
+            with self.subTest(index=index, field=field, value=bad), self.assertRaises(REF["Refused"]):
+                REF["verify_analyzer"](case, 200, {"tokens": changed})
+
     def test_truthful_count_uses_independent_total_not_the_reported_relation_alone(self):
         expected = {"status": 200, "truthful_total": {"exact": 11, "threshold": 2}}
         for value, relation in ((11, "eq"), (2, "gte"), (7, "gte")):
