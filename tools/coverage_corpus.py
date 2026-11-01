@@ -14,6 +14,33 @@ from unittest.mock import patch
 
 
 class ActualOverrideControls(unittest.TestCase):
+    def test_real_cargo_configuration_wrappers_are_explicitly_disabled(self):
+        cov = runpy.run_path(str(Path(__file__).with_name("coverage.py")))
+        with tempfile.TemporaryDirectory(dir=os.environ["CARGO_TARGET_DIR"]) as directory:
+            parent = Path(directory)
+            crate = parent / "crate"
+            (crate / "src").mkdir(parents=True)
+            (crate / ".cargo").mkdir()
+            (crate / "Cargo.toml").write_text('[package]\nname="wrapper-policy-fixture"\nversion="0.0.0"\nedition="2024"\n[workspace]\n')
+            (crate / "src/lib.rs").write_text('pub fn fixture() -> u32 { 1 }\n')
+            missing = parent / "does-not-exist-wrapper"
+            command = ["cargo", "check", "--offline"]
+            clean = dict(os.environ, CARGO_TARGET_DIR=str(parent / "target"), CARGO_TERM_COLOR="never")
+            for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER"):
+                clean.pop(name, None)
+            runner = cov["Runner"](parent / "context")
+            for key in ("rustc-wrapper", "rustc-workspace-wrapper"):
+                (crate / ".cargo/config.toml").write_text('[build]\n' + key + '=' + json.dumps(str(missing)) + '\n')
+                seed = subprocess.run(command, cwd=crate, env=clean, text=True, stdout=subprocess.PIPE,
+                                      stderr=subprocess.STDOUT, timeout=30)
+                self.assertNotEqual(seed.returncode, 0)
+                self.assertIn(str(missing), seed.stdout)
+                repaired = subprocess.run(command, cwd=crate, env=runner.env, text=True, stdout=subprocess.PIPE,
+                                          stderr=subprocess.STDOUT, timeout=30)
+                self.assertEqual(repaired.returncode, 0, repaired.stdout)
+            print(json.dumps({"cargo_config_wrapper_control": "pass", "configured_wrappers": 2,
+                              "unqualified_config": "rejected", "explicit_disabled_policy": "pass"}), flush=True)
+
     def test_actual_pinned_tools_refuse_conflicting_compiler_before_cargo(self):
         cov = runpy.run_path(str(Path(__file__).with_name("coverage.py")))
         with tempfile.TemporaryDirectory(dir=os.environ["CARGO_TARGET_DIR"]) as directory:

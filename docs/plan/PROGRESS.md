@@ -52,7 +52,7 @@ Initial results are recorded in [planning validation evidence](evidence/planning
 
 ## Next implementation action
 
-Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. M01.11 source proof is accepted. Complete M02.08 final combined qualification/review and M01.12 collector integration. M01.05 review gates are integrated; M01.09 causal diagnosis and the dependent M01.08 frozen agent corpus remain open. M02/M03 spikes follow their actual revised prerequisites. Public hosting and strict protected CI are integrated.
+Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. M01.11 source proof is accepted. M02.08's synthetic model is accepted; complete M01.12 collector integration. M01.05 review gates are integrated; M01.09 causal diagnosis and the dependent M01.08 frozen agent corpus remain open. M02/M03 spikes follow their actual revised prerequisites. Public hosting and strict protected CI are integrated.
 
 The main open risks are K01 remote engine inputs, K03 provider conditional semantics, K04 pin/GC coordination, K07 durable consensus integration, K08-K10 crypto/cache lifecycle, and K18 selected API-profile coverage and truthful adaptation. Real cloud credentials/fleet/hardware/spend are not available as evidence in this planning task; M15/M17 cannot be marked done without them.
 
@@ -66,6 +66,6 @@ The main open risks are K01 remote engine inputs, K03 provider conditional seman
 
 Use role owners as allocation hints; they are not claims that a person or agent has already accepted work. Planned future PR/publish/deploy actions still follow the user's authorization and actual environment rules.
 
-M02.08 has an unpublished [bounded catalog/admission/snapshot model](research/catalog-admission-model.md), with [raw synthetic scale observations](evidence/catalog-model-scale-v2.json). Larger native qualification passed; independent review and hosted final-tree qualification remain pending. API gates remain unobserved for the runtime.
+M02.08's earlier [bounded catalog/admission/snapshot model](research/catalog-admission-model.md) and [raw synthetic scale observations](evidence/catalog-model-scale-v2.json) remain provenance. The final acceptance record below supersedes their earlier unpublished/pending status. API gates remain unobserved for the runtime.
 
 M02.08 is [accepted for the synthetic catalog/admission/snapshot model](evidence/m02-08-integrated.md) after final independent R3 and all native PR/main checks. Its [final source-bound native samples](evidence/catalog-model-final-native.json) remain model evidence; no API runtime/fleet/physical-I/O/security qualification is inferred. M01.12 remains in progress.

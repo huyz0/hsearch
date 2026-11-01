@@ -78,7 +78,8 @@ class Runner:
         self.logs.mkdir(mode=0o700)
         self.started, self.number = time.monotonic(), 0
         self.env = dict(os.environ, CARGO_TARGET_DIR=str(self.root / "target"), CARGO_BUILD_JOBS="2", CARGO_INCREMENTAL="0",
-                        RUSTFLAGS=RUSTFLAGS, CARGO_TERM_COLOR="never", DEBUGINFOD_URLS="", PYTHONDONTWRITEBYTECODE="1")
+                        RUSTFLAGS=RUSTFLAGS, RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="",
+                        CARGO_TERM_COLOR="never", DEBUGINFOD_URLS="", PYTHONDONTWRITEBYTECODE="1")
         listing = self.root / ("listing-profiles-" + uuid.uuid4().hex[:12])
         listing.mkdir()
         self.env["LLVM_PROFILE_FILE"] = str(listing / "%m-%p.profraw")
@@ -189,7 +190,8 @@ def bind_compiler(runner, compiler):
 
 
 def tool_identity(runner):
-    for name in ("CARGO_ENCODED_RUSTFLAGS", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTC_BOOTSTRAP"):
+    need("CARGO_ENCODED_RUSTFLAGS" not in os.environ, "Unqualified compiler override: CARGO_ENCODED_RUSTFLAGS")
+    for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTC_BOOTSTRAP"):
         need(not os.environ.get(name), "Unqualified compiler override: " + name)
     need(not any(key.startswith("CARGO_PROFILE_") for key in os.environ), "Unqualified Cargo profile override")
     rustc = runner.command(["rustc", "-vV"], limit=8192)
@@ -214,7 +216,8 @@ def tool_identity(runner):
               [("rustc", sysroot / "bin/rustc"), ("cargo", sysroot / "bin/cargo"),
                ("llvm_cov", llvm / "llvm-cov"), ("llvm_profdata", llvm / "llvm-profdata"), ("llvm_objdump", llvm / "llvm-objdump"), ("nextest", nextest)]}
     need(receipt["binary_sha256"] == hashes["nextest"] and receipt["profile_sha256"] == hashlib.sha256(INPUT["canonical"](profile)).hexdigest(), "Nextest receipt/source identity mismatch")
-    return {"rustc": rustc, "cargo_compiler": runner.env["RUSTC"], "cargo": cargo, "nextest": version, "hashes": hashes}, host, llvm
+    return {"rustc": rustc, "cargo_compiler": runner.env["RUSTC"], "cargo": cargo, "nextest": version, "hashes": hashes,
+            "compiler_wrappers": {name: runner.env[name] for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER")}}, host, llvm
 
 
 def package_inventory(runner, requested):
