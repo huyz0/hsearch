@@ -644,11 +644,11 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
-              "path": "coverage-redesign.md",
-              "result": "Concrete decomposition and source-proof contract prepared; independent plan review and hosted qualification pending, no successor acceptance."
+              "path": "evidence/m01-10-integrated.md",
+              "result": "Two actual independent plan reviews and durable gate, protected PR11 merge with matching tree, all7 PR/main native jobs and decoded full corpora passed. Plan only; original M01.07 remains blocked."
             }
           ]
         },
@@ -674,8 +674,17 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "review",
+          "evidence": [
+            {
+              "path": "source-proof.md",
+              "result": "Isolated immutable source proof implemented; R1 ancestry defect fixed with exact native Git controls, full final qualification and R2 pending. No coverage acceptance."
+            },
+            {
+              "path": "evidence/source-proof-review-history.json",
+              "result": "Both actual R1 blocking late-parent findings/reproduction hashes retained; original M01.07 remains hard3 blocked."
+            }
+          ]
         },
         {
           "id": "M01.12",
