@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Immutable source and byte-LF delta proof v1 (not coverage)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "algorithm", "repository_identity", "head", "base", "head_tree", "base_tree", "limits", "files"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "algorithm": {"const": "byte-lf-myers-delete-tie-prefix-v1"},
+    "repository_identity": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "head": {"$ref": "#/$defs/oid"},
+    "base": {"anyOf": [{"$ref": "#/$defs/oid"}, {"type": "null"}]},
+    "head_tree": {"$ref": "#/$defs/oid"},
+    "base_tree": {"anyOf": [{"$ref": "#/$defs/oid"}, {"type": "null"}]},
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["paths", "blob_bytes", "total_bytes", "lines", "operations", "frontier_cells", "proof_bytes", "metadata_bytes", "commits", "seconds"],
+      "properties": {
+        "paths": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "blob_bytes": {"type": "integer", "minimum": 1, "maximum": 67108864},
+        "total_bytes": {"type": "integer", "minimum": 1, "maximum": 268435456},
+        "lines": {"type": "integer", "minimum": 1, "maximum": 2000000},
+        "operations": {"type": "integer", "minimum": 1, "maximum": 8000000},
+        "frontier_cells": {"type": "integer", "minimum": 1, "maximum": 250000},
+        "proof_bytes": {"type": "integer", "minimum": 1, "maximum": 4194304},
+        "metadata_bytes": {"type": "integer", "minimum": 1, "maximum": 8388608},
+        "commits": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "seconds": {"type": "integer", "minimum": 1, "maximum": 60}
+      }
+    },
+    "files": {
+      "type": "object", "maxProperties": 10000,
+      "propertyNames": {"type": "string", "minLength": 1, "maxLength": 4096},
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "required": ["base_blob", "head_blob", "base_mode", "head_mode", "source", "added_head_lines"],
+        "properties": {
+          "base_blob": {"anyOf": [{"$ref": "#/$defs/oid"}, {"type": "null"}]},
+          "head_blob": {"anyOf": [{"$ref": "#/$defs/oid"}, {"type": "null"}]},
+          "base_mode": {"enum": ["100644", "100755", null]},
+          "head_mode": {"enum": ["100644", "100755", null]},
+          "source": {"anyOf": [{"type": "null"}, {
+            "type": "object", "additionalProperties": false, "required": ["owner", "sha256", "line_count"],
+            "properties": {
+              "owner": {"type": "string", "minLength": 1, "maxLength": 128},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "line_count": {"type": "integer", "minimum": 0, "maximum": 2000000}
+            }
+          }]},
+          "added_head_lines": {"type": "array", "maxItems": 2000000, "uniqueItems": true,
+            "items": {"type": "integer", "minimum": 1, "maximum": 2000000}}
+        }
+      }
+    }
+  },
+  "$defs": {"oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}
+}

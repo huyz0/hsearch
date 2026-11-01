@@ -1,0 +1,69 @@
+{
+  "task": "M01.11",
+  "round": 1,
+  "head": "8a011901292de725d0700ab8571ded8949f95a2f",
+  "status": "both blocked, recorded; repairs require full checks and R2",
+  "scope": "Derived technical reports, only local taskroot redaction; original reports/store remain immutable",
+  "reports": [
+    {
+      "artifact": "M01.11_ROUND1_CORRECTNESS.json",
+      "original_sha256": "60b82fc70fbbb2cacdfa8ec95287492f6694bd79a5043b44f8c8724575670fb4",
+      "report": {
+        "schema_version": 1,
+        "packet_sha256": "1fb4c27e5fc69b131952bbcc4653dff14cff1aec358b8468acc84ee8c8ee35a1",
+        "head": "8a011901292de725d0700ab8571ded8949f95a2f",
+        "tree": "0778144f48c79f5b01ac0ddb633adecc8dd9efc1",
+        "source_digest": "3b119f59f1e6b3043681a6610c68857dccde72775fd1b632925ecf1687ec1016",
+        "role": "correctness_tests_claims",
+        "reviewer_session": "/root/publication_review",
+        "conclusion": "blocked",
+        "basis": "Independent M01.11 R1 review bound to exact clean8a011901292de725d0700ab8571ded8949f95a2f and actual packet. Inspected complete original-base389line module, schema,274line tests, accepted redesign/interface/limits/migrations and public native/retired evidence. This is a genuine source-only redesign review, not an old M01.07 fourth review or collector clearance. A concrete native-Git ancestry mismatch remains: commit() treats late parent headers as graph edges although native Git ignores them. Real hash-object/update-ref/fsck accept the fixture; native rev-list shows a root, merge-base rejects the proposed ancestor, but actual prove accepts that unrelated base with no added lines and rejects the actual root empty-base mode. Executable and measured state retained outside source. Existing13applicable host tests pass; one native-Linux cost case skipped. Their independent byte-scanning LCS/DP exhaustive and500fixed-seed subsequence checks, manual LF/CR/Unicode/final-LF/tie choices, original exact Unicode case, real Git blob/path/mode/root/deletion/rename/state checks, corrupt objects, bounded output/deadline and actual child cleanup are meaningful but do not cover native commit-header grammar. Plan125/DAG/generated267links,16negative controls,API check,diff and read-only source binding pass. Verified final smoke SHA256:189Linux/no skips plus complete Rust/TLS/S3/isolation and actual400001line cost/repetitive refusal pass; reviewed coordinator executions, not repeated Linux qualification here. Public measurement is honestly historical and final output-serialization changes are not relabelled as that measurement. Original Unicode fixture/replay, old reports/counters/head and all inherited obligations remain; exact mode-only semantics and unknown-base refusal are explicitly migrated. No percentage/compiler/runner/profile/Docker implementation or native coverage acceptance is claimed; completeness/ownership/frozen lifecycle/event-base selection and bounded external proof loading remain documented caller/M01.12 duties. Scoped11file publication inspection found no private-root/credential pattern,new dependency/license manifest or copied third-party material; no redistribution license selected. No source edits, review-store mutation, heavy duplicate Docker/Cargo, denied-path retry, publication or formal GitHub approval. Hosted final native ci-ok and whole replacement integration remain pending; old M01.07 stays hard3blocked, original ARM cause unconfirmed/M01.08blocked.",
+        "findings": [
+          {
+            "id": "LATE_PARENT_HEADER_QUALIFIES_UNRELATED_BASE",
+            "priority": "P2",
+            "file": "tools/coverage_sources.py",
+            "line": 262,
+            "reproduction": "Run taskroot/M01.11_ROUND1_CORRECTNESS_REPRO.py. In a fresh task-temp Git repository, commit source a.rs, then hash-object -t commit -w --stdin a new commit containing tree, author, committer and only afterward parent <old-head>. update-ref makes this new object actual HEAD. git fsck --strict exits0, rev-list --parents HEAD prints only the new head (no native parent), and merge-base --is-ancestor old-head HEAD exits1. Actual prove(head=new-head,base=old-head,sources=frozen_manifest) nevertheless accepts the unrelated base and emits added_head_lines=[]. The same actual native root with base=None incorrectly refuses empty_base_requires_parentless_root. Raw commit bytes/native outputs/proof result are preserved in the reproduction JSON; no source edit, Git filter, compiler or Docker is involved.",
+            "expected": "Derive parents from the native contiguous ancestry header position immediately after the tree, with independently checked commit grammar. Ignore or explicitly refuse ambiguous/late parent metadata; it must not create ancestry. This supplied unrelated base must refuse, and any supported parentless-root case must follow actual native ancestry. Preserve exact OID/content checks and finite traversal bounds.",
+            "observed": "commit() gathers every header line beginning parent anywhere in the header block, while native Git does not treat a late parent after author/committer as an ancestry edge. qualify_base therefore invents a path to an unrelated base. Its identical tree can erase all newly introduced root lines from the proof. This directly violates qualified-base/root binding; hash correctness and fsck success do not prove correct parent semantics."
+          }
+        ],
+        "resolutions": []
+      }
+    },
+    {
+      "artifact": "M01.11_ROUND1_SECURITY.json",
+      "original_sha256": "006019429051684eccd26fdbb3d7fc9487d9217e303baee6d4385a400dc81967",
+      "report": {
+        "schema_version": 1,
+        "packet_sha256": "1fb4c27e5fc69b131952bbcc4653dff14cff1aec358b8468acc84ee8c8ee35a1",
+        "head": "8a011901292de725d0700ab8571ded8949f95a2f",
+        "tree": "0778144f48c79f5b01ac0ddb633adecc8dd9efc1",
+        "source_digest": "3b119f59f1e6b3043681a6610c68857dccde72775fd1b632925ecf1687ec1016",
+        "role": "architecture_security",
+        "reviewer_session": "/root/sandbox_security_review",
+        "conclusion": "blocked",
+        "basis": "Independent R1 architecture/security review of genuine source-only redesign M01.11 at exact clean8a011901292de725d0700ab8571ded8949f95a2f, base8ff36e7932a70d0e8bc51bf35325cc6ab0fa824b. Actual issued packet SHA/1929-byte payload and fresh raw-source/head/tree independently verified. Reviewed the full11-file diff, source module/schema/tests, accepted redesign/source-proof contract and native/retired evidence. One concrete P2 was executed through actual Git and the production prove/verify API: a post-committer parent metadata line, ignored by native Git and accepted by ordinary hash-object/fsck --strict, is treated as an ancestry edge. Native merge-base says the nominated base is unrelated and rev-list shows no parents; both prove and verify nonetheless succeed with empty additions. This violates exact immutable ancestry and unknown-base refusal without any host adversary, mutable replacement view, compiler or scoring integration. The executable and raw observations are retained. Host module suite14:13pass/1nativeLinuxRSSskip; it includes DP/exhaustive500fixed-seed/manual byte-LF cases, exact retained Unicode attribution, Git attributes/context/paths, corrupt/stale/source-bookend and actual bounded-child controls. Independently reran plan/DAG/267links/generated,16negative/API/diff checks and verified the exact coordinator smoke hash/terminal189Linux-no-skips/Rust/TLS/auth/S3/isolation result. Heavy native cost/RSS experiments were not duplicated; public earlier measurements are explicitly historical and no runtime/SLO claim is made. Scope boundaries remain genuine: no coverage percentage, compiler/test runner/profile/shard/Docker integration, no M01.07 old-source or gate clearance, and M01.12 retains full final-tree/inherited-control review. Source manifest completeness/production ownership/event-base authorization and checkout lifecycle remain explicit caller responsibilities; content binding is not user authentication or an atomic filesystem snapshot. Other byte/hash/tree/budget guards were inspected, with no additional concrete blocker established in this round. Original source uses standard-library/original fixtures; no new dependency/license grant or observed obvious secret leak. No source edit, real review-store mutation, Docker/heavy duplicate run, publish/merge/formal GitHub review or denied action occurred. Hosted final-tree native CI remains pending; original M01.07 remains hard3 blocked, original M01.09 ARM cause unconfirmed and M01.08 blocked. Supporting evidence: M01.11_ROUND1_SECURITY_REPRO.py/.json and M01.11_ROUND1_SECURITY_CHECKS.json.",
+        "findings": [
+          {
+            "id": "SEC-01-late-parent-header-forges-ancestry",
+            "priority": "P2",
+            "file": "tools/coverage_sources.py",
+            "line": 262,
+            "reproduction": "Run taskroot/M01.11_ROUND1_SECURITY_REPRO.py with the required task/test-temp environment. It creates an ordinary Git root commit containing a.rs, then writes a second commit using git hash-object -t commit -w --stdin (no --literally). Its raw header is tree <tree>, author ..., committer ..., then parent <first-root> before the blank message separator. update-ref makes it actual HEAD and its worktree bytes match the manifest. Native git fsck --strict --no-reflogs exits0; rev-list --parents -1 prints only HEAD, and merge-base --is-ancestor <first-root> <head> exits1. Actual prove(head=head,base=first-root,sources=manifest) still succeeds with added_head_lines=[]; actual verify on that proof returnsTrue. Raw commit and full results are saved in the JSON evidence. This is a tiny owned real-Git fixture, with no filters, source edit, compiler, Docker or coverage score.",
+            "expected": "Only actual native commit-parent headers may establish ancestry from immutable commit bytes. A parent-looking extension line after the contiguous parent section must not become an edge; unsupported/ambiguous layouts should refuse. The unrelated nominated base must fail qualification, and verify must not validate that incomplete ancestry proof. Preserve raw-object hash checking and mutable-view refusal while matching the Git commit-header grammar.",
+            "observed": "commit() collects every header record starting parent from records[1:], irrespective of header position. qualify_base therefore traverses a line that native Git treats as extra metadata, accepts an unrelated root as an ancestor and emits a successful empty delta proof. Recomputing with verify repeats the same mistake. All object hashes, actual HEAD and frozen source bytes can be valid, so those bindings do not catch this ancestry-semantic error."
+          }
+        ],
+        "resolutions": []
+      }
+    }
+  ],
+  "reproductions": {
+    "M01.11_ROUND1_CORRECTNESS_REPRO.py": "e16053ddc59db57fa8a27ce7efeeedc915ff877ebe141ecf6caab50efb931d6d",
+    "M01.11_ROUND1_CORRECTNESS_REPRO.json": "906a1201dd15109c2e3578fd9b6d519f4053f8d52596e0bb2dfabb64b1e31f1d",
+    "M01.11_ROUND1_SECURITY_REPRO.py": "9442a605f97eb6c908a0fa2a947547314a272e28c9bdc6671e039727e504c7ef",
+    "M01.11_ROUND1_SECURITY_REPRO.json": "796334eaab4a198728688c89930049a3eb436f7bfe6289c54c73e6906463cb41"
+  }
+}

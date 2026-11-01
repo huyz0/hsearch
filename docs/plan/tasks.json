@@ -674,8 +674,17 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "review",
+          "evidence": [
+            {
+              "path": "source-proof.md",
+              "result": "Isolated immutable source proof implemented; R1 ancestry defect fixed with exact native Git controls, full final qualification and R2 pending. No coverage acceptance."
+            },
+            {
+              "path": "evidence/source-proof-review-history.json",
+              "result": "Both actual R1 blocking late-parent findings/reproduction hashes retained; original M01.07 remains hard3 blocked."
+            }
+          ]
         },
         {
           "id": "M01.12",

@@ -1,0 +1,53 @@
+{
+  "status": "historical native component measurement, not task acceptance",
+  "head": "82c50bff0afa6ed2ac9f4cb39be3906f25bd1376",
+  "tests": 189,
+  "skips": 0,
+  "log_sha256": "066bfe647cb912866ce41c1e849b10334cb5244ae591ccca16d2a73c6630c2b8",
+  "measurement": {
+    "source_delta_native_cost": {
+      "physical_input_lines": 400001,
+      "input_bytes": 8177790,
+      "added": [
+        100001,
+        200001
+      ],
+      "seconds": 0.09772989002522081,
+      "peak_rss_bytes": 95277056,
+      "operations": 300017,
+      "stored_frontier_cells": 7
+    }
+  },
+  "retired_parser_observation": {
+    "separator": "U+2028",
+    "fixture_clean_raw_source_binding": true,
+    "actual_added_function_body_line": 24,
+    "observed_changed": {
+      "crates/a/src/lib.rs": [
+        3
+      ],
+      "crates/b/src/lib.rs": [
+        1,
+        23,
+        24,
+        25
+      ]
+    },
+    "aggregate": {
+      "covered": 10,
+      "coverable": 11,
+      "percent": 90.91,
+      "status": "pass"
+    },
+    "changed": {
+      "covered": 0,
+      "coverable": 0,
+      "percent": null,
+      "status": "not_applicable"
+    },
+    "passed": true,
+    "correct_attribution_passed": false,
+    "scope": "Actual Git/source_fingerprint/changed_lines/evaluate with valid raw-string content and known mode-only changed B; no compiler/Docker execution"
+  },
+  "scope": "Source primitive only, no compiler/profile/shard or coverage acceptance. Retired blocked report unchanged."
+}
