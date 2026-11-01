@@ -580,11 +580,40 @@
             "M01.05",
             "M01.06",
             "M01.07",
-            "M19"
+            "M19",
+            "M01.09"
           ],
           "owner": "harness/integrator",
           "status": "planned",
           "evidence": []
+        },
+        {
+          "id": "M01.09",
+          "title": "Qualify cold diagnostics and preserve corpus failure evidence",
+          "goal": "Resolve the observed native ARM cold-diagnostic failure without weakening semantic or compiler assertions.",
+          "deliverables": [
+            "Bounded acknowledged CLI failure evidence and primary-error-preserving fixture cleanup",
+            "Reproduced cold-start cause, narrowly scoped repair and repeated native qualification"
+          ],
+          "validation": [
+            "Reproduce first diagnostics after fresh server/source changes and retain exact bounded CLI cause",
+            "Seed cleanup failure and unexpected source edits; primary failures remain visible and unknown work is preserved",
+            "Preserve strict semantic assertions and authoritative bad/valid cargo checks; run full native x86_64/ARM64 matrix"
+          ],
+          "definition_of_done": [
+            "Original failure has an evidenced cause and regression control, cold diagnostics remain bounded, and full relevant checks plus independent reviews pass."
+          ],
+          "depends_on": [
+            "M01.04"
+          ],
+          "owner": "harness/integrator",
+          "status": "in_progress",
+          "evidence": [
+            {
+              "path": "evidence/m01-09-cold-diagnostics.md",
+              "result": "Main996b84b run41283307456 failed the ARM semantic corpus after cold invalid-source diagnostics; original error masked by dirty fixture cleanup. Observability/reproduction repair in progress; no blind rerun or relaxed assertion."
+            }
+          ]
         }
       ]
     },

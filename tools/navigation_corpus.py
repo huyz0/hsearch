@@ -5,12 +5,35 @@ import json
 from pathlib import Path
 import runpy
 import subprocess
+import sys
 import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
 API = runpy.run_path(str(ROOT / "tools/context.py"))
 need, encoded = API["need"], API["encoded"]
+
+
+def cleanup_claims(store, claims, resources, query, known_edits, primary_error):
+    errors = []
+    for claim, role in reversed(claims):
+        try:
+            if store.get(claim)["phase"] == "interrupted":
+                store.resume(claim, role, resources)
+            stopped = query(claim, role, "stop")
+            need(stopped["status"] == "stopped", "Owned semantic cleanup uncertain; inspect retained evidence")
+            for path, before, after in known_edits.get(claim, []):
+                actual = path.read_bytes()
+                need(actual in (before, after), "Unexpected fixture edit preserved for inspection")
+                if actual == after:
+                    path.write_bytes(before)
+            store.cleanup(claim, role, resources)
+        except Exception as error:
+            errors.append({"claim": claim, "cleanup_error": str(error)[:256]})
+    for error in errors:
+        print(json.dumps(error), flush=True)
+    if errors and primary_error is None:
+        raise API["Refused"]("Owned corpus cleanup incomplete; inspect the recorded errors")
 
 
 def corpus(resources, evidence_parent):
@@ -43,7 +66,7 @@ def corpus(resources, evidence_parent):
     git(source, "add", ".")
     git(source, "commit", "-qm", "frozen navigation fixture")
     store = API["TASK"]["TaskStore"](area / "tasks", source)
-    claims, events, results = [], [], []
+    claims, events, results, known_edits = [], [], [], {}
 
     def query(claim, owner, operation, **fields):
         value = {"schema_version": 1, "operation": operation, **fields}
@@ -53,6 +76,10 @@ def corpus(resources, evidence_parent):
         events.append(event)
         results.append({"operation": operation, "owner": owner, "status": result["status"],
                         "elapsed_seconds": round(time.monotonic() - started, 3)})
+        if result.get("reason"):
+            results[-1]["reason"] = result["reason"]
+        if result.get("data", {}).get("semantic_failure"):
+            results[-1]["semantic_failure"] = result["data"]["semantic_failure"]
         with (area / "events.jsonl").open("a", encoding="utf-8") as log:
             log.write(json.dumps(event, ensure_ascii=False) + "\n")
         print(json.dumps(results[-1]), flush=True)
@@ -122,6 +149,7 @@ def corpus(resources, evidence_parent):
         # silently reuse it or represent literal matches as semantic results.
         need(query(first, owner, "start")["status"] == "ready", "Freshness fixture start failed")
         changed = files["src/lib.rs"].replace("user.id()", '"wrong type"')
+        known_edits[first] = [(first_root / "src/lib.rs", files["src/lib.rs"].encode(), changed.encode())]
         (first_root / "src/lib.rs").write_text(changed, encoding="utf-8", newline="\n")
         stale = query(first, owner, "outline", file="src/lib.rs")
         need(stale["status"] == "fallback" and not stale["semantic"] and "stale_semantic_session" in stale["reason"], "Stale server did not fall back honestly")
@@ -153,12 +181,7 @@ def corpus(resources, evidence_parent):
                             costs("two-role bounded retrieval of cleanup in actual task controller source", narrow_baseline, narrow_events)],
                   "observations": results, "evidence_directory": str(area)}
     finally:
-        for claim, role in reversed(claims):
-            if store.get(claim)["phase"] == "interrupted":
-                store.resume(claim, role, resources)
-            stopped = query(claim, role, "stop")
-            need(stopped["status"] == "stopped", "Owned semantic cleanup uncertain; inspect retained evidence")
-            store.cleanup(claim, role, resources)
+        cleanup_claims(store, claims, resources, query, known_edits, sys.exception())
     report["owned_claims_closed"] = True
     (area / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(json.dumps(report, sort_keys=True), flush=True)

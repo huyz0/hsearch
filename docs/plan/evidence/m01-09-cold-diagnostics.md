@@ -1,0 +1,5 @@
+# M01.09 cold diagnostics correction
+
+M01.05 merged normally in [PR8](https://github.com/huyz0/hsearch/pull/8) as `996b84b` after exact reviewed-head native PR qualification and the new actual integration gate passed. [Post-merge run41283307456](https://github.com/huyz0/hsearch/actions/runs/41283307456) then failed ARM64 first diagnostics after a fresh invalid-source restart; its fallback was followed by dirty-fixture cleanup masking the primary error. All other qualification jobs passed, and ci-ok correctly failed. The failure is retained, not counted as a pass or blindly retried.
+
+This separate correction owns navigation/corpus behavior and failure evidence; it does not change or reset M01.05's completed three-round protocol review. Bounded CLI stdout/stderr and original-error-preserving cleanup are being added before reproducing the exact cause. Semantic assertions and bad/valid cargo-check controls remain strict. Full qualification and independent review remain pending. M01.08 now explicitly depends on this corrective task.
