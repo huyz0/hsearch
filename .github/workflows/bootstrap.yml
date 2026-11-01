@@ -1,0 +1,54 @@
+name: bootstrap
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    name: bootstrap (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install exact bootstrap toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
+      - name: Prefetch locked dependencies
+        run: cargo fetch --locked
+      - name: Complete implemented bootstrap suite
+        run: cargo xtask check
+      - name: Install pinned coverage tool
+        run: cargo install cargo-llvm-cov --version 0.9.1 --locked
+      - name: Measure bootstrap production coverage
+        run: >-
+          cargo llvm-cov --locked --offline --workspace --all-features
+          --exclude xtask --exclude hsearch-testkit
+          --ignore-filename-regex '/tests/'
+          --fail-under-lines 90 --json --output-path target/bootstrap-coverage.json
+      - name: Check production file and crate coverage
+        run: python3 tools/coverage_check.py target/bootstrap-coverage.json
+
+  ci-ok:
+    if: ${{ always() }}
+    needs: [bootstrap]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    env:
+      BOOTSTRAP_RESULT: ${{ needs.bootstrap.result }}
+    steps:
+      - name: Require every native bootstrap job
+        run: test "$BOOTSTRAP_RESULT" = success

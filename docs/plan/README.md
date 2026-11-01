@@ -46,7 +46,7 @@ python docs/plan/tools/plan.py render
 python docs/plan/tools/plan.py selftest
 ```
 
-These commands validate planning artifacts only. The product build, container harness, review service, RustFS integration, and CI workflows are tasks in M01 onward. Proposed runtime commands in this plan are explicitly labeled; they are not installed interfaces.
+These commands validate planning artifacts only. M01.01 now has a workspace bootstrap under review; [development instructions](development.md) distinguish its executable checks from the broader container harness, review service, RustFS integration and impact-based CI still planned in M01 onward. Proposed runtime commands in this plan are explicitly labeled; they are not installed interfaces.
 
 For executable cost arithmetic, run `python docs/plan/tools/cost_model.py` (or `--json`, `--selftest`). The [input scenarios](cost-scenarios.json) are illustrative component counts and rates, not a full TCO or a current region quote. Run `python docs/plan/tools/cost_research.py --write` to reproduce the completed research experiments/model. [Former M18 IDs](milestones/M18.md) point to their new owning tasks; late cloud tests certify real implemented cost, not the first architecture decision.
 

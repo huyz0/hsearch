@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["crates/types", "crates/observe", "crates/engine", "crates/testkit", "xtask"]
+default-members = ["crates/types", "crates/observe", "crates/engine"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+repository = "https://github.com/huyz0/hsearch"
+
+[workspace.dependencies]
+hsearch-types = { path = "crates/types" }
+hsearch-observe = { path = "crates/observe" }
+hsearch-testkit = { path = "crates/testkit" }
+lucene-store = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a208544fb36ecd95932e89cd8bc5618" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+
+[workspace.lints.clippy]
+all = "deny"
+
+[profile.release]
+overflow-checks = true

@@ -1,6 +1,6 @@
 # Linux-first development and conditional CI
 
-Status: design. M01 delivers a common xtask/check interface, a pinned container, resource scheduling and CI; no Rust workspace or CI run exists yet in this repository.
+Status: broader CI/testing design. M01.01 adds a [Rust workspace and bootstrap CI](development.md). Its full bootstrap suite precedes the impact planner, complete coverage matrix, pinned dev topology and resource scheduling still required by the remaining M01 tasks. Hosted results must be observed before claiming either native target passed.
 
 ## Local environment
 

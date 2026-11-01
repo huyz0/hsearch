@@ -1,6 +1,6 @@
 # AI development, review, and operations harness
 
-Status: design, implemented in M01 and extended with each subsystem. Current executable tooling validates this plan only. The user's existing projects inform this design; [the audit](research/repository-audit.md) records what is adopted and changed.
+Status: broader harness design, implemented in M01 and extended with each subsystem. M01.01 adds the [bootstrap check entrypoint](development.md); it does not implement the operational worktree/resource/review harness described below. The user's existing projects inform this design; [the audit](research/repository-audit.md) records what is adopted and changed.
 
 ## Agent task lifecycle
 
