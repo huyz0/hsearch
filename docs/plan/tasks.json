@@ -656,11 +656,11 @@
             "M01.02"
           ],
           "owner": "engine/architecture",
-          "status": "in_progress",
+          "status": "review",
           "evidence": [
             {
-              "path": "research/api-adaptation-inventory.md",
-              "result": "Incomplete original corpus and selected pinned user-fork source/adaptation inventory; reference/client/native execution NOT-RUN, no task completion or compatibility claim."
+              "path": "evidence/m02-01-inventory.md",
+              "result": "Original selected corpus and source/adaptation inventory implemented. Local168Linux/Rust/TLS/auth/S3 plus detached pinned OpenSearch14search/4analyzer/34mutation checks passed. Final independent review and full native x86/ARM hosted qualification required; SDK/hsearch/native property/private workload execution not claimed."
             }
           ]
         },
