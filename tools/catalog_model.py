@@ -118,6 +118,8 @@ class Catalog:
         need(path.resolve() == path and path.is_file() and 0 < path.stat().st_size <= MAX_CATALOG_BYTES,
              "Missing, redirected or oversized model catalog")
         self.connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
+        self.path = path
+        self.file_identity = (path.stat().st_dev, path.stat().st_ino)
         try:
             self.connection.execute("PRAGMA query_only=ON")
             self.connection.execute("PRAGMA mmap_size=0")
@@ -180,6 +182,19 @@ class Catalog:
         key(tenant); key(collection)
         return [*self.connection.execute("EXPLAIN QUERY PLAN " + IDENTITY_SQL, (tenant, collection)).fetchall(),
                 *self.connection.execute("EXPLAIN QUERY PLAN " + ROUTE_SQL, (tenant, collection, 1, 1, HASH_SPACE, 0, 65)).fetchall()]
+
+    def identity(self, tenant, collection):
+        key(tenant); key(collection)
+        need((self.path.stat().st_dev, self.path.stat().st_ino) == self.file_identity, 'catalog_replaced')
+        rows = self._rows(IDENTITY_SQL, (tenant, collection), 1)
+        need(rows, 'unknown_collection')
+        return tuple(rows[0])
+
+    def generation_exists(self, tenant, collection, incarnation, generation):
+        key(tenant); key(collection)
+        integer(incarnation, 1, 2**31 - 1, 'incarnation'); integer(generation, 1, 2**31 - 1, 'generation')
+        return bool(self._rows('SELECT 1 FROM routes WHERE tenant=? AND name=? AND incarnation=? AND generation=? LIMIT 1',
+                               (tenant, collection, incarnation, generation), 1))
 
 
 def rss_bytes():
