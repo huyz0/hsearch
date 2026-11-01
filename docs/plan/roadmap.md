@@ -12,14 +12,14 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | --- | --- | --- | --- |
 | [M00: Research and delivery contract](milestones/M00.md) | done | 7/7 | None |
 | [M19: Scalability-first API and engineering contract](milestones/M19.md) | done | 1/1 | M00 |
-| [M01: Linux workspace and AI harness foundation](milestones/M01.md) | in_progress | 8/13 | M00 |
+| [M01: Linux workspace and AI harness foundation](milestones/M01.md) | in_progress | 11/13 | M00 |
 | [M02: API-scoped engine, catalog and cost feasibility](milestones/M02.md) | planned | 2/8 | M01 |
 | [M03: Storage semantics, cost-aware formats and metadata](milestones/M03.md) | planned | 0/8 | M01 |
 | [M04: Lucene Rust bridge and committed readers](milestones/M04.md) | planned | 0/6 | M02, M03 |
 | [M05: mTLS, tenant policy and BYOK](milestones/M05.md) | planned | 0/7 | M03 |
 | [M06: Object-durable search store on RustFS](milestones/M06.md) | planned | 0/6 | M04, M05 |
 | [M07: Distributed routing and query serving](milestones/M07.md) | planned | 0/8 | M06 |
-| [M08: Telemetry and AI-readable diagnostics](milestones/M08.md) | planned | 0/6 | M07 |
+| [M08: Telemetry and AI-readable diagnostics](milestones/M08.md) | in_progress | 0/6 | M07 |
 | [M09: Low-latency quorum journal module](milestones/M09.md) | planned | 0/8 | M07, M08 |
 | [M10: Snapshot, export and change-stream contracts](milestones/M10.md) | planned | 0/5 | M07, M09 |
 | [M11: Independent cross-cluster copy module](milestones/M11.md) | planned | 0/5 | M10 |

@@ -1,5 +1,11 @@
 # Progress and handoff
 
+## Current implementation checkpoint
+
+M13's native report/context3 and complete M12 successor pipeline are [accepted at295bbad](evidence/m01-13-integrated.md). Final independent R3 and all seven repaired-source PR/main/manual jobs passed with full log verification. The composite M07 goal is satisfied; original implementation gates and every failed review/run remain preserved.
+
+M08.01 is ready to resume its private typed event/outbox draft, including incarnation-aware scope and truthful committed-but-unavailable receipts. Its schema/runtime are unaccepted. M01.09's original ARM cause and dependent M01.08 remain open. No search service, SDK exporter, provider/fleet, release or deployment is claimed. The historical development record follows.
+
 Last updated: 1 November 2026 (Australia/Sydney).
 
 ## Current state
@@ -71,3 +77,7 @@ M02.08's earlier [bounded catalog/admission/snapshot model](research/catalog-adm
 M02.08 is [accepted for the synthetic catalog/admission/snapshot model](evidence/m02-08-integrated.md) after final independent R3 and all native PR/main checks. Its [final source-bound native samples](evidence/catalog-model-final-native.json) remain model evidence; no API runtime/fleet/physical-I/O/security qualification is inferred. M01.12 remains in progress.
 
 M01.12 merged as75f30dd after both final independent R3 reports cleared all11 prior keys. Full PR41339748484, main41340616696 and explicit-base manual41340639807 passed all seven jobs on the43-line bootstrap. A [real native-report counterexample](native-coverage-projection.md) from the next library blocks generic coverage acceptance: LCOV summary totals differ from physical DA records. M01.13 genuinely replaces that report interface; no fourth M01.12 review or relaxed parser/floor is allowed. M08.01's private typed event/facade draft and all earlier failures remain preserved and unaccepted until coverage qualification can resume. Original M01.07, M01.09 and M01.08 remain open.
+
+M13 is now [accepted with complete final-source review/native/event evidence](evidence/m01-13-integrated.md), resolving generic M12 acceptance and the composite M07 goal. Original b637/hard3gate, all M12/M13 issued history and the original failed manual remain frozen. M08 is ready to resume its unaccepted draft; original ARM cause/M01.09 and M01.08 remain open.
+
+M08.01 resumed in a fresh owned claim on accepted M13 plus factual readiness snapshot. Six original44b Rust/test/policy blobs are restored exactly. Incarnation/receipt correction and explicit layout receipts remain to implement; this is an unaccepted private draft with full qualification/reviews/CI pending. Original claims, source and failed evidence remain preserved.

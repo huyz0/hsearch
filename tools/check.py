@@ -20,6 +20,9 @@ CHECKS = [
     ["cargo", "test", "--locked", "--offline", "--workspace", "--all-features", "--doc"],
     ["cargo", "nextest", "run", "--locked", "--offline", "--workspace", "--all-features", "--release", "--profile", "hsearch", "--no-tests=fail"],
     ["cargo", "test", "--locked", "--offline", "--workspace", "--all-features", "--release", "--doc"],
+    # Retain actual target/profile layout receipts using the same attested test actor and policy.
+    ['cargo', 'nextest', 'run', '--locked', '--offline', '--package', 'hsearch-observe', '--all-features', '--profile', 'hsearch', '--no-tests=fail', '-E', 'test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension)', '--success-output', 'immediate'],
+    ['cargo', 'nextest', 'run', '--locked', '--offline', '--package', 'hsearch-observe', '--all-features', '--release', '--profile', 'hsearch', '--no-tests=fail', '-E', 'test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension)', '--success-output', 'immediate'],
     ["cargo", "build", "--locked", "--offline", "--release", "--package", "hsearch-engine", "--package", "hsearch-observe"],
     [sys.executable, "docs/plan/tools/plan.py", "check"],
     [sys.executable, "docs/plan/tools/plan.py", "selftest"],

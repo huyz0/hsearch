@@ -50,3 +50,5 @@ M01.11's interface, limits and explicit retired-semantics migrations are documen
 ## Native-report protocol successor
 
 M01.12's actual full PR/main/manual qualification passed on the43-line bootstrap, but a valid new library exposes function-accumulated LCOV summaries versus physical line records. [M01.13](native-coverage-projection.md) must genuinely replace this compiler-report interface with bounded typed segment projection and complete inherited qualification. M01.12's final R3 reports and original M01.07 failure remain immutable; neither receives another round or implied clearance. Generic/composite acceptance stays blocked until the replacement protocol is accepted, with all original floor and false-pass controls retained.
+
+M13 is now [accepted with complete final-source review/native/event evidence](evidence/m01-13-integrated.md), resolving generic M12 acceptance and the composite M07 goal. Original b637/hard3gate, all M12/M13 issued history and the original failed manual remain frozen. M08 is ready to resume its unaccepted draft; original ARM cause/M01.09 and M01.08 remain open.
