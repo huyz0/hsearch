@@ -1,0 +1,64 @@
+CHECK: /usr/bin/python3 docs/plan/tools/plan.py check
+PASS: 18 milestones, 118 tasks, dependency DAG, completion/evidence rules, 171 local links, generated output freshness
+CHECK: /usr/bin/python3 docs/plan/tools/plan.py selftest
+PASS: 16 negative controls: unknown dependency, self cycle, duplicate task, missing done evidence, false milestone completion, invalid status, missing task acceptance, unexplained blocker, path traversal, wrong field type, unknown schema, cross-task cycle, unfinished dependency, milestone completion cycle, evidence traversal, stale generated artifact
+CHECK: /usr/bin/python3 docs/plan/tools/cost_model.py --selftest
+PASS: 8 arithmetic/boundary checks and 7 invalid-input controls; component model only
+CHECK: /usr/bin/python3 -m unittest discover --start-directory tools/tests --verbose
+test_actual_docs_transitive_rename_delete_and_missing_base (test_ci.RealHistoryControls.test_actual_docs_transitive_rename_delete_and_missing_base) ... ok
+test_docs_skips_allowed_only_with_explicit_plan (test_ci.ResultControls.test_docs_skips_allowed_only_with_explicit_plan) ... ok
+test_every_selected_result_must_succeed (test_ci.ResultControls.test_every_selected_result_must_succeed) ... ok
+test_failed_planner_and_missing_selection_cannot_pass (test_ci.ResultControls.test_failed_planner_and_missing_selection_cannot_pass) ... ok
+test_full_cannot_omit_production_coverage (test_ci.ResultControls.test_full_cannot_omit_production_coverage) ... ok
+test_full_matrix_requires_both_sandbox_architectures (test_ci.ResultControls.test_full_matrix_requires_both_sandbox_architectures) ... ok
+test_invalid_package_strings_and_weakened_modes_refused (test_ci.ResultControls.test_invalid_package_strings_and_weakened_modes_refused) ... ok
+test_native_full_preserves_release_doctests_and_coverage (test_ci.ResultControls.test_native_full_preserves_release_doctests_and_coverage) ... ok
+test_stale_plan_cannot_launch_native_commands (test_ci.ResultControls.test_stale_plan_cannot_launch_native_commands) ... ok
+test_dev_dependency_and_coverage_forward_closure (test_ci.SelectionControls.test_dev_dependency_and_coverage_forward_closure) ... ok
+test_docs_only_skips_native_and_sandbox (test_ci.SelectionControls.test_docs_only_skips_native_and_sandbox) ... ok
+test_fallback_overrides_docs_optimization (test_ci.SelectionControls.test_fallback_overrides_docs_optimization) ... ok
+test_graph_uses_optional_build_dev_target_edges_and_renames (test_ci.SelectionControls.test_graph_uses_optional_build_dev_target_edges_and_renames) ... ok
+test_large_docs_diff_cannot_emit_a_partial_actions_plan (test_ci.SelectionControls.test_large_docs_diff_cannot_emit_a_partial_actions_plan) ... ok
+test_missing_base_graph_or_truncated_diff_falls_back_full (test_ci.SelectionControls.test_missing_base_graph_or_truncated_diff_falls_back_full) ... ok
+test_real_non_cargo_policy_cannot_omit_behavioral_or_unknown_edges (test_ci.SelectionControls.test_real_non_cargo_policy_cannot_omit_behavioral_or_unknown_edges) ... ok
+test_rename_uses_both_paths_and_deletion_uses_owner (test_ci.SelectionControls.test_rename_uses_both_paths_and_deletion_uses_owner) ... ok
+test_transitive_consumers_selected_not_unrelated_packages (test_ci.SelectionControls.test_transitive_consumers_selected_not_unrelated_packages) ... ok
+test_truncated_empty_or_conflicted_diff_refused (test_ci.SelectionControls.test_truncated_empty_or_conflicted_diff_refused) ... ok
+test_unknown_deleted_owner_manifest_and_shared_paths_run_full (test_ci.SelectionControls.test_unknown_deleted_owner_manifest_and_shared_paths_run_full) ... ok
+test_each_production_file_is_checked (test_coverage_check.CoverageControls.test_each_production_file_is_checked) ... ok
+test_explicit_selected_scope_preserves_threshold (test_coverage_check.CoverageControls.test_explicit_selected_scope_preserves_threshold) ... ok
+test_invalid_counts_fail (test_coverage_check.CoverageControls.test_invalid_counts_fail) ... ok
+test_missing_and_duplicate_reports_fail (test_coverage_check.CoverageControls.test_missing_and_duplicate_reports_fail) ... ok
+test_threshold_is_inclusive (test_coverage_check.CoverageControls.test_threshold_is_inclusive) ... ok
+test_uncovered_production_path_fails (test_coverage_check.CoverageControls.test_uncovered_production_path_fails) ... ok
+test_recorded_experiments_match_the_executable_model (test_planning.ResearchReproduction.test_recorded_experiments_match_the_executable_model) ... ok
+test_both_topologies_and_probe_fit_small_native_ci_capacity (test_sandbox.AdmissionControls.test_both_topologies_and_probe_fit_small_native_ci_capacity) ... ok
+test_disk_headroom_includes_outstanding_unconsumed_reservations (test_sandbox.AdmissionControls.test_disk_headroom_includes_outstanding_unconsumed_reservations) ... ok
+test_low_disk_and_invalid_values_refuse_before_allocation (test_sandbox.AdmissionControls.test_low_disk_and_invalid_values_refuse_before_allocation) ... ok
+test_two_bounded_builds_fit_but_overcommit_fails (test_sandbox.AdmissionControls.test_two_bounded_builds_fit_but_overcommit_fails) ... ok
+test_disk_accounting_does_not_follow_symlinks_and_is_bounded (test_sandbox.ExecutionControls.test_disk_accounting_does_not_follow_symlinks_and_is_bounded) ... ok
+test_disk_and_deadline_abort_only_the_owned_process_group (test_sandbox.ExecutionControls.test_disk_and_deadline_abort_only_the_owned_process_group) ... ok
+test_disk_scanner_does_not_follow_a_parent_symlink (test_sandbox.ExecutionControls.test_disk_scanner_does_not_follow_a_parent_symlink) ... ok
+test_backend_low_disk_refuses_topology_and_releases_known_empty_lease (test_sandbox.OwnershipControls.test_backend_low_disk_refuses_topology_and_releases_known_empty_lease) ... ok
+test_compose_snapshot_has_no_host_socket_or_static_secret (test_sandbox.OwnershipControls.test_compose_snapshot_has_no_host_socket_or_static_secret) ... ok
+test_down_refuses_foreign_container_before_mutation (test_sandbox.OwnershipControls.test_down_refuses_foreign_container_before_mutation) ... ok
+test_down_refuses_live_setup_and_concurrent_cleanup (test_sandbox.OwnershipControls.test_down_refuses_live_setup_and_concurrent_cleanup) ... ok
+test_engine_down_is_a_refusal_not_a_silent_mock (test_sandbox.OwnershipControls.test_engine_down_is_a_refusal_not_a_silent_mock) ... ok
+test_foreign_resources_cannot_pass_cleanup_guard (test_sandbox.OwnershipControls.test_foreign_resources_cannot_pass_cleanup_guard) ... ok
+test_paths_and_task_names_are_bounded (test_sandbox.OwnershipControls.test_paths_and_task_names_are_bounded) ... ok
+test_run_rechecks_backend_after_topology_start_before_workload (test_sandbox.OwnershipControls.test_run_rechecks_backend_after_topology_start_before_workload) ... ok
+test_unknown_create_keeps_lease_even_when_no_container_is_visible (test_sandbox.OwnershipControls.test_unknown_create_keeps_lease_even_when_no_container_is_visible) ... ok
+test_unknown_run_outcome_keeps_lease_and_blocks_cleanup (test_sandbox.OwnershipControls.test_unknown_run_outcome_keeps_lease_and_blocks_cleanup) ... ok
+test_kernel_lock_prevents_concurrent_oversubscription (test_sandbox.RegistryControls.test_kernel_lock_prevents_concurrent_oversubscription) ... ok
+test_process_identity_is_real_and_distinguishes_exit (test_sandbox.RegistryControls.test_process_identity_is_real_and_distinguishes_exit) ... ok
+test_reservations_persist_and_are_not_reclaimed_by_age (test_sandbox.RegistryControls.test_reservations_persist_and_are_not_reclaimed_by_age) ... ok
+test_diagnostics_rejects_the_all_unlimited_counterexample (test_sandbox.ResourceCapabilityControls.test_diagnostics_rejects_the_all_unlimited_counterexample) ... ok
+test_effective_caps_must_be_finite_and_within_each_declared_bound (test_sandbox.ResourceCapabilityControls.test_effective_caps_must_be_finite_and_within_each_declared_bound) ... ok
+test_engine_rejects_missing_resource_delegation (test_sandbox.ResourceCapabilityControls.test_engine_rejects_missing_resource_delegation) ... ok
+test_repository_command_cannot_start_before_effective_cap_verification (test_sandbox.ResourceCapabilityControls.test_repository_command_cannot_start_before_effective_cap_verification) ... ok
+
+----------------------------------------------------------------------
+Ran 51 tests in 4.572s
+
+OK
+PASS: completed final Python suite; exact container absent; qualification lease released

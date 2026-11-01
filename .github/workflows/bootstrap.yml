@@ -10,49 +10,92 @@ permissions:
   contents: read
 
 jobs:
-  bootstrap:
-    name: bootstrap (${{ matrix.runner }})
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
-    env:
-      CARGO_BUILD_JOBS: '2'
-      CARGO_TERM_COLOR: always
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      plan: ${{ steps.impact.outputs.plan }}
+      native: ${{ steps.impact.outputs.native }}
+      sandbox: ${{ steps.impact.outputs.sandbox }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - name: Install exact bootstrap toolchain
-        run: rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
-      - name: Prefetch locked dependencies
-        run: cargo fetch --locked
-      - name: Complete implemented bootstrap suite
-        run: cargo xtask check
-      - name: Install pinned coverage tool
-        run: cargo install cargo-llvm-cov --version 0.9.1 --locked
-      - name: Measure bootstrap production coverage
-        run: >-
-          cargo llvm-cov --locked --offline --workspace --all-features
-          --exclude xtask --exclude hsearch-testkit
-          --ignore-filename-regex '/tests/'
-          --fail-under-lines 90 --json --output-path target/bootstrap-coverage.json
-      - name: Check production file and crate coverage
-        run: python3 tools/coverage_check.py target/bootstrap-coverage.json
-      - name: Build pinned non-root development image
-        run: python3 tools/sandbox.py --state-root "${{ runner.temp }}/hsearch-leases" image
-      - name: Qualify private RustFS sandbox and cleanup isolation
-        run: python3 tools/sandbox.py --state-root "${{ runner.temp }}/hsearch-leases" smoke
+      - name: Install exact manifest reader
+        run: rustup toolchain install 1.97.1 --profile minimal
+      - name: Plan owned impact with conservative fallback
+        id: impact
+        env:
+          IMPACT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          IMPACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 tools/ci.py plan --base "$IMPACT_BASE" --head "$IMPACT_HEAD" --output "${{ runner.temp }}/impact.json"
+
+  docs:
+    needs: [plan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check planning, models and harness counterexamples
+        run: python3 tools/ci.py docs
+
+  linux-x64:
+    needs: [plan]
+    if: ${{ needs.plan.outputs.native == 'true' }}
+    uses: ./.github/workflows/native.yml
+    with:
+      runner: ubuntu-24.04
+      mode: native
+      plan: ${{ needs.plan.outputs.plan }}
+      head: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  linux-arm64:
+    needs: [plan]
+    if: ${{ needs.plan.outputs.native == 'true' }}
+    uses: ./.github/workflows/native.yml
+    with:
+      runner: ubuntu-24.04-arm
+      mode: native
+      plan: ${{ needs.plan.outputs.plan }}
+      head: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  sandbox-x64:
+    needs: [plan]
+    if: ${{ needs.plan.outputs.sandbox == 'true' }}
+    uses: ./.github/workflows/native.yml
+    with:
+      runner: ubuntu-24.04
+      mode: sandbox
+      plan: ${{ needs.plan.outputs.plan }}
+      head: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  sandbox-arm64:
+    needs: [plan]
+    if: ${{ needs.plan.outputs.sandbox == 'true' }}
+    uses: ./.github/workflows/native.yml
+    with:
+      runner: ubuntu-24.04-arm
+      mode: sandbox
+      plan: ${{ needs.plan.outputs.plan }}
+      head: ${{ github.event.pull_request.head.sha || github.sha }}
 
   ci-ok:
     if: ${{ always() }}
-    needs: [bootstrap]
+    needs: [plan, docs, linux-x64, linux-arm64, sandbox-x64, sandbox-arm64]
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    env:
-      BOOTSTRAP_RESULT: ${{ needs.bootstrap.result }}
+    timeout-minutes: 3
     steps:
-      - name: Require every native bootstrap job
-        run: test "$BOOTSTRAP_RESULT" = success
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Require every selected job and a successful planner
+        env:
+          CI_PLAN: ${{ needs.plan.outputs.plan }}
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: python3 tools/ci.py gate

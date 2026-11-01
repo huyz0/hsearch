@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "rules": [
+    {"path": "README.md", "impact": "docs"},
+    {"path": "docs/", "suffix": ".md", "impact": "docs"},
+    {"path": "docs/plan/evidence/", "suffix": ".txt", "impact": "docs"},
+    {"path": "docs/plan/cost-scenarios.json", "impact": "docs"},
+    {"path": "docs/plan/tasks.json", "impact": "full"},
+    {"path": "docs/plan/dependencies.json", "impact": "full"},
+    {"path": "docs/plan/tools/", "impact": "full"},
+    {"path": "docs/plan/architecture.md", "impact": "full"},
+    {"path": "docs/plan/modules.md", "impact": "full"},
+    {"path": "docs/plan/security.md", "impact": "full"},
+    {"path": "docs/plan/ci-testing.md", "impact": "full"},
+    {"path": "docs/plan/ai-harness.md", "impact": "full"},
+    {"path": "docs/plan/requirements.md", "impact": "full"},
+    {"path": "Cargo.toml", "impact": "full"},
+    {"path": "Cargo.lock", "impact": "full"},
+    {"path": "rust-toolchain.toml", "impact": "full"},
+    {"path": ".cargo/", "impact": "full"},
+    {"path": ".github/", "impact": "full"},
+    {"path": ".gitattributes", "impact": "full"},
+    {"path": ".gitignore", "impact": "full"},
+    {"path": ".dockerignore", "impact": "full"},
+    {"path": "ci/", "impact": "full"},
+    {"path": "tools/", "impact": "full"},
+    {"path": "dev/", "impact": "full"},
+    {"path": "xtask/", "impact": "full"}
+  ]
+}

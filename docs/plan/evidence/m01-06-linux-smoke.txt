@@ -1,0 +1,287 @@
+Updating git repository `https://github.com/huyz0/lucene-rust`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded cfg-if v1.0.5
+  Downloaded quote v1.0.47
+  Downloaded thiserror v1.0.69
+  Downloaded thiserror-impl v1.0.69
+  Downloaded unicode-ident v1.0.27
+  Downloaded memmap2 v0.9.12
+  Downloaded crc32fast v1.5.3
+  Downloaded proc-macro2 v1.0.107
+  Downloaded syn v2.0.119
+  Downloaded libc v0.2.191
+{"mode": "prefetch", "exit": 0, "elapsed_seconds": 18.61, "peak_disk_bytes": 605982737}
+{"uid": 10001, "architecture": "x86_64", "versions": {"rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)", "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)", "python": "Python 3.11.2", "openssl": "OpenSSL 3.0.20 7 Apr 2026 (Library: OpenSSL 3.0.20 7 Apr 2026)"}, "cgroup_limits": {"memory.max": "4294967296", "memory.swap.max": "0", "cpu.max": "200000 100000", "pids.max": "512"}}
+   Compiling xtask v0.1.0 (/workspace/xtask)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.51s
+     Running `/target/debug/xtask check`
+CHECK: /usr/bin/python3 tools/workspace.py check
+PASS: dependency ownership, all-edge cycle check, exact engine pin, release feature boundary, license inventory
+CHECK: /usr/bin/python3 tools/workspace.py selftest
+PASS: 18 dependency-policy negative controls: unknown crate, foundation imports adapter, foundation imports external adapter, testkit normal edge, dev cycle, Lucene outside boundary, wrong pin, upstream test feature, license declaration missing, testkit is default, publication enabled by default, release transitive feature, unowned path namesake, registry namesake, inactive declared path substitution, resolved alias substitution, workspace member path substitution, unowned path inventory
+CHECK: cargo fmt --all -- --check
+CHECK: cargo clippy --locked --offline --workspace --all-targets --all-features -- -D warnings
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling libc v0.2.191
+   Compiling crc32fast v1.5.3
+   Compiling thiserror v1.0.69
+    Checking cfg-if v1.0.5
+   Compiling syn v2.0.119
+    Checking memmap2 v0.9.12
+    Checking hsearch-types v0.1.0 (/workspace/crates/types)
+    Checking hsearch-testkit v0.1.0 (/workspace/crates/testkit)
+    Checking hsearch-observe v0.1.0 (/workspace/crates/observe)
+    Checking xtask v0.1.0 (/workspace/xtask)
+   Compiling thiserror-impl v1.0.69
+    Checking lucene-util v0.1.0 (https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc)
+    Checking lucene-store v0.1.0 (https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc)
+    Checking hsearch-engine v0.1.0 (/workspace/crates/engine)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.49s
+CHECK: cargo test --locked --offline --workspace --all-features
+   Compiling cfg-if v1.0.5
+   Compiling libc v0.2.191
+   Compiling crc32fast v1.5.3
+   Compiling thiserror v1.0.69
+   Compiling lucene-util v0.1.0 (https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc)
+   Compiling memmap2 v0.9.12
+   Compiling hsearch-types v0.1.0 (/workspace/crates/types)
+   Compiling hsearch-testkit v0.1.0 (/workspace/crates/testkit)
+   Compiling hsearch-observe v0.1.0 (/workspace/crates/observe)
+   Compiling xtask v0.1.0 (/workspace/xtask)
+   Compiling lucene-store v0.1.0 (https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc)
+   Compiling hsearch-engine v0.1.0 (/workspace/crates/engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.10s
+     Running unittests src/lib.rs (/target/debug/deps/hsearch_engine-e1129f491e49e0ba)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/input.rs (/target/debug/deps/input-685b324ddc82b3d7)
+
+running 2 tests
+test pinned_input_rejects_out_of_bounds_and_overflow ... ok
+test pinned_input_supports_shared_bounded_slices ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/target/debug/deps/hsearch_observe-2ccadbc9d3e2b52c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/target/debug/deps/hsearch_testkit-05a934335de3d840)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/target/debug/deps/hsearch_types-0387af7cec5fbf16)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/progress.rs (/target/debug/deps/progress-956f7dc6ccc5fe75)
+
+running 3 tests
+test exhaustive_small_prefixes_match_independent_ordering_oracle ... ok
+test independent_consumers_and_u64_boundary ... ok
+test invalid_relationships_have_stable_errors ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/target/debug/deps/xtask-435b892000f7ce73)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_observe
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_testkit
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_types
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+CHECK: cargo test --locked --offline --workspace --all-features --release
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling thiserror v1.0.69
+   Compiling crc32fast v1.5.3
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling syn v2.0.119
+   Compiling memmap2 v0.9.12
+   Compiling hsearch-types v0.1.0 (/workspace/crates/types)
+   Compiling hsearch-testkit v0.1.0 (/workspace/crates/testkit)
+   Compiling hsearch-observe v0.1.0 (/workspace/crates/observe)
+   Compiling thiserror-impl v1.0.69
+   Compiling xtask v0.1.0 (/workspace/xtask)
+   Compiling lucene-util v0.1.0 (https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc)
+   Compiling lucene-store v0.1.0 (https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc)
+   Compiling hsearch-engine v0.1.0 (/workspace/crates/engine)
+    Finished `release` profile [optimized] target(s) in 14.64s
+     Running unittests src/lib.rs (/target/release/deps/hsearch_engine-1502c0804cb1df11)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/input.rs (/target/release/deps/input-039a0985479bae77)
+
+running 2 tests
+test pinned_input_rejects_out_of_bounds_and_overflow ... ok
+test pinned_input_supports_shared_bounded_slices ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/target/release/deps/hsearch_observe-25e38f51768e9613)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/target/release/deps/hsearch_testkit-3c089068db5c50a5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/target/release/deps/hsearch_types-e96795639d71ab67)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/progress.rs (/target/release/deps/progress-f11b2fcd715b51dd)
+
+running 3 tests
+test exhaustive_small_prefixes_match_independent_ordering_oracle ... ok
+test independent_consumers_and_u64_boundary ... ok
+test invalid_relationships_have_stable_errors ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/target/release/deps/xtask-eebfec1b06e1174a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_observe
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_testkit
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_types
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+CHECK: cargo build --locked --offline --release --package hsearch-engine --package hsearch-observe
+    Finished `release` profile [optimized] target(s) in 0.13s
+CHECK: /usr/bin/python3 docs/plan/tools/plan.py check
+PASS: 18 milestones, 118 tasks, dependency DAG, completion/evidence rules, 171 local links, generated output freshness
+CHECK: /usr/bin/python3 docs/plan/tools/plan.py selftest
+PASS: 16 negative controls: unknown dependency, self cycle, duplicate task, missing done evidence, false milestone completion, invalid status, missing task acceptance, unexplained blocker, path traversal, wrong field type, unknown schema, cross-task cycle, unfinished dependency, milestone completion cycle, evidence traversal, stale generated artifact
+CHECK: /usr/bin/python3 docs/plan/tools/cost_model.py --selftest
+PASS: 8 arithmetic/boundary checks and 7 invalid-input controls; component model only
+CHECK: /usr/bin/python3 -m unittest discover --start-directory tools/tests --verbose
+test_actual_docs_transitive_rename_delete_and_missing_base (test_ci.RealHistoryControls.test_actual_docs_transitive_rename_delete_and_missing_base) ... ok
+test_docs_skips_allowed_only_with_explicit_plan (test_ci.ResultControls.test_docs_skips_allowed_only_with_explicit_plan) ... ok
+test_every_selected_result_must_succeed (test_ci.ResultControls.test_every_selected_result_must_succeed) ... ok
+test_failed_planner_and_missing_selection_cannot_pass (test_ci.ResultControls.test_failed_planner_and_missing_selection_cannot_pass) ... ok
+test_full_cannot_omit_production_coverage (test_ci.ResultControls.test_full_cannot_omit_production_coverage) ... ok
+test_full_matrix_requires_both_sandbox_architectures (test_ci.ResultControls.test_full_matrix_requires_both_sandbox_architectures) ... ok
+test_invalid_package_strings_and_weakened_modes_refused (test_ci.ResultControls.test_invalid_package_strings_and_weakened_modes_refused) ... ok
+test_native_full_preserves_release_doctests_and_coverage (test_ci.ResultControls.test_native_full_preserves_release_doctests_and_coverage) ... ok
+test_stale_plan_cannot_launch_native_commands (test_ci.ResultControls.test_stale_plan_cannot_launch_native_commands) ... ok
+test_dev_dependency_and_coverage_forward_closure (test_ci.SelectionControls.test_dev_dependency_and_coverage_forward_closure) ... ok
+test_docs_only_skips_native_and_sandbox (test_ci.SelectionControls.test_docs_only_skips_native_and_sandbox) ... ok
+test_fallback_overrides_docs_optimization (test_ci.SelectionControls.test_fallback_overrides_docs_optimization) ... ok
+test_graph_uses_optional_build_dev_target_edges_and_renames (test_ci.SelectionControls.test_graph_uses_optional_build_dev_target_edges_and_renames) ... ok
+test_large_docs_diff_cannot_emit_a_partial_actions_plan (test_ci.SelectionControls.test_large_docs_diff_cannot_emit_a_partial_actions_plan) ... ok
+test_missing_base_graph_or_truncated_diff_falls_back_full (test_ci.SelectionControls.test_missing_base_graph_or_truncated_diff_falls_back_full) ... ok
+test_rename_uses_both_paths_and_deletion_uses_owner (test_ci.SelectionControls.test_rename_uses_both_paths_and_deletion_uses_owner) ... ok
+test_transitive_consumers_selected_not_unrelated_packages (test_ci.SelectionControls.test_transitive_consumers_selected_not_unrelated_packages) ... ok
+test_truncated_empty_or_conflicted_diff_refused (test_ci.SelectionControls.test_truncated_empty_or_conflicted_diff_refused) ... ok
+test_unknown_deleted_owner_manifest_and_shared_paths_run_full (test_ci.SelectionControls.test_unknown_deleted_owner_manifest_and_shared_paths_run_full) ... ok
+test_each_production_file_is_checked (test_coverage_check.CoverageControls.test_each_production_file_is_checked) ... ok
+test_explicit_selected_scope_preserves_threshold (test_coverage_check.CoverageControls.test_explicit_selected_scope_preserves_threshold) ... ok
+test_invalid_counts_fail (test_coverage_check.CoverageControls.test_invalid_counts_fail) ... ok
+test_missing_and_duplicate_reports_fail (test_coverage_check.CoverageControls.test_missing_and_duplicate_reports_fail) ... ok
+test_threshold_is_inclusive (test_coverage_check.CoverageControls.test_threshold_is_inclusive) ... ok
+test_uncovered_production_path_fails (test_coverage_check.CoverageControls.test_uncovered_production_path_fails) ... ok
+test_recorded_experiments_match_the_executable_model (test_planning.ResearchReproduction.test_recorded_experiments_match_the_executable_model) ... ok
+test_both_topologies_and_probe_fit_small_native_ci_capacity (test_sandbox.AdmissionControls.test_both_topologies_and_probe_fit_small_native_ci_capacity) ... ok
+test_disk_headroom_includes_outstanding_unconsumed_reservations (test_sandbox.AdmissionControls.test_disk_headroom_includes_outstanding_unconsumed_reservations) ... ok
+test_low_disk_and_invalid_values_refuse_before_allocation (test_sandbox.AdmissionControls.test_low_disk_and_invalid_values_refuse_before_allocation) ... ok
+test_two_bounded_builds_fit_but_overcommit_fails (test_sandbox.AdmissionControls.test_two_bounded_builds_fit_but_overcommit_fails) ... ok
+test_disk_accounting_does_not_follow_symlinks_and_is_bounded (test_sandbox.ExecutionControls.test_disk_accounting_does_not_follow_symlinks_and_is_bounded) ... ok
+test_disk_and_deadline_abort_only_the_owned_process_group (test_sandbox.ExecutionControls.test_disk_and_deadline_abort_only_the_owned_process_group) ... ok
+test_disk_scanner_does_not_follow_a_parent_symlink (test_sandbox.ExecutionControls.test_disk_scanner_does_not_follow_a_parent_symlink) ... ok
+test_backend_low_disk_refuses_topology_and_releases_known_empty_lease (test_sandbox.OwnershipControls.test_backend_low_disk_refuses_topology_and_releases_known_empty_lease) ... ok
+test_compose_snapshot_has_no_host_socket_or_static_secret (test_sandbox.OwnershipControls.test_compose_snapshot_has_no_host_socket_or_static_secret) ... ok
+test_down_refuses_foreign_container_before_mutation (test_sandbox.OwnershipControls.test_down_refuses_foreign_container_before_mutation) ... ok
+test_down_refuses_live_setup_and_concurrent_cleanup (test_sandbox.OwnershipControls.test_down_refuses_live_setup_and_concurrent_cleanup) ... ok
+test_engine_down_is_a_refusal_not_a_silent_mock (test_sandbox.OwnershipControls.test_engine_down_is_a_refusal_not_a_silent_mock) ... ok
+test_foreign_resources_cannot_pass_cleanup_guard (test_sandbox.OwnershipControls.test_foreign_resources_cannot_pass_cleanup_guard) ... ok
+test_paths_and_task_names_are_bounded (test_sandbox.OwnershipControls.test_paths_and_task_names_are_bounded) ... ok
+test_run_rechecks_backend_after_topology_start_before_workload (test_sandbox.OwnershipControls.test_run_rechecks_backend_after_topology_start_before_workload) ... ok
+test_unknown_create_keeps_lease_even_when_no_container_is_visible (test_sandbox.OwnershipControls.test_unknown_create_keeps_lease_even_when_no_container_is_visible) ... ok
+test_unknown_run_outcome_keeps_lease_and_blocks_cleanup (test_sandbox.OwnershipControls.test_unknown_run_outcome_keeps_lease_and_blocks_cleanup) ... ok
+test_kernel_lock_prevents_concurrent_oversubscription (test_sandbox.RegistryControls.test_kernel_lock_prevents_concurrent_oversubscription) ... ok
+test_process_identity_is_real_and_distinguishes_exit (test_sandbox.RegistryControls.test_process_identity_is_real_and_distinguishes_exit) ... ok
+test_reservations_persist_and_are_not_reclaimed_by_age (test_sandbox.RegistryControls.test_reservations_persist_and_are_not_reclaimed_by_age) ... ok
+test_diagnostics_rejects_the_all_unlimited_counterexample (test_sandbox.ResourceCapabilityControls.test_diagnostics_rejects_the_all_unlimited_counterexample) ... ok
+test_effective_caps_must_be_finite_and_within_each_declared_bound (test_sandbox.ResourceCapabilityControls.test_effective_caps_must_be_finite_and_within_each_declared_bound) ... ok
+test_engine_rejects_missing_resource_delegation (test_sandbox.ResourceCapabilityControls.test_engine_rejects_missing_resource_delegation) ... ok
+test_repository_command_cannot_start_before_effective_cap_verification (test_sandbox.ResourceCapabilityControls.test_repository_command_cannot_start_before_effective_cap_verification) ... ok
+
+----------------------------------------------------------------------
+Ran 50 tests in 4.430s
+
+OK
+PASS: complete bootstrap suite; remaining milestone/runtime gates are recorded in the ledger
+{"mode": "check", "exit": 0, "elapsed_seconds": 35.22, "peak_disk_bytes": 883966617}
+{"bucket": "hsearch-smoke-a-9efec470880d", "tls_verified": true, "wrong_ca_rejected": true, "bad_credential_rejected": true, "round_trip": "pass", "scope": "local harness smoke only"}
+{"bucket": "hsearch-smoke-b-2600347baf26", "tls_verified": true, "wrong_ca_rejected": true, "bad_credential_rejected": true, "round_trip": "pass", "scope": "local harness smoke only"}
+{"bucket": "hsearch-smoke-b-2600347baf26", "tls_verified": true, "wrong_ca_rejected": true, "bad_credential_rejected": true, "round_trip": "pass", "scope": "local harness smoke only"}
+{"smoke": "pass", "isolated_private_ports": true, "published_host_ports": false, "isolated_buckets": true, "other_topology_survived_cleanup": true}

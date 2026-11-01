@@ -2,7 +2,7 @@
   "schema_version": 1,
   "updated": "2026-11-01",
   "timezone": "Australia/Sydney",
-  "scope": "Research and comprehensive implementation plan, with M01.01 integrated and M01.02 sandbox under review. M00 cost research is complete; all remaining implementation and qualification obligations retain their owning milestones.",
+  "scope": "Research and comprehensive implementation plan, with M01.01/M01.02 integrated and M01.06 impact CI under review. All remaining implementation and qualification obligations retain their owning milestones.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
   "milestones": [
     {
@@ -320,7 +320,7 @@
             "M01.01"
           ],
           "owner": "harness/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m01-02-sandbox.md",
@@ -337,6 +337,10 @@
             {
               "path": "evidence/m01-02-command-admission-check.txt",
               "result": "Complete fresh smoke passed with 30 tests after final command-time backend/actual-volume admission fix; final third-round delta review and hosted native CI pending."
+            },
+            {
+              "path": "evidence/m01-02-integrated.md",
+              "result": "Both final independent reviewers found no blockers at d542b45; native x86_64/ARM64 and ci-ok passed run41264469947; PR#2 normally merged as f630dc8d20860b7765e7b7e021ce3bd59a87e39b."
             }
           ],
           "owner_session": "sandbox-integrator",
@@ -429,8 +433,21 @@
             "M01.01"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "review",
+          "evidence": [
+            {
+              "path": "evidence/m01-06-impact-ci.md",
+              "result": "Conservative selector/ownership graph and conditional fail-closed CI implemented; fresh full Linux smoke50 plus final51 Python cases and workflow lint pass; independent review/hosted checks/protection pending."
+            },
+            {
+              "path": "evidence/m01-06-linux-smoke.txt",
+              "result": "Fresh full offline Rust/plan/model suite and50 Linux Python controls passed under finite caps; real two-store TLS/auth/S3 isolation and cleanup passed."
+            },
+            {
+              "path": "evidence/m01-06-python-final.txt",
+              "result": "Final51 Linux Python cases, including real Git/Cargo history and actual non-Cargo ownership red controls, plus plan/model checks passed; exact container absent and resource lease released."
+            }
+          ]
         },
         {
           "id": "M01.07",

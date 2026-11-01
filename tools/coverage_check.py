@@ -8,13 +8,15 @@ import sys
 PRODUCTION = ("types", "observe", "engine")
 
 
-def check(report):
-    counts = {name: [0, 0] for name in PRODUCTION}
+def check(report, production=PRODUCTION):
+    if not production or not set(production).issubset(PRODUCTION):
+        raise ValueError("Unknown or empty production coverage scope")
+    counts = {name: [0, 0] for name in production}
     files = set()
     for unit in report["data"]:
         for entry in unit["files"]:
             filename = entry["filename"].replace("\\", "/")
-            for name in PRODUCTION:
+            for name in production:
                 if f"/crates/{name}/src/" not in filename:
                     continue
                 if filename in files:
@@ -31,7 +33,7 @@ def check(report):
     # Types currently owns all executable production Rust lines. Observe is a
     # trait and engine is constants/reexports. M01.07 must handle the growing
     # source/binary matrix and reject missing instrumentation for later crates.
-    if not counts["types"][1]:
+    if "types" in counts and not counts["types"][1]:
         raise ValueError("Missing production types coverage")
     for name, (covered, total) in counts.items():
         if total and covered * 100 < total * 90:
@@ -42,9 +44,11 @@ def check(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", type=Path)
+    parser.add_argument("--package", action="append", choices=[f"hsearch-{name}" for name in PRODUCTION])
     args = parser.parse_args()
     try:
-        counts = check(json.loads(args.report.read_text(encoding="utf-8")))
+        production = tuple(name.removeprefix("hsearch-") for name in args.package) if args.package else PRODUCTION
+        counts = check(json.loads(args.report.read_text(encoding="utf-8")), production)
         for name, (covered, total) in counts.items():
             if total:
                 print(f"PASS: hsearch-{name}: {covered}/{total} production lines ({100 * covered / total:.2f}%)")
