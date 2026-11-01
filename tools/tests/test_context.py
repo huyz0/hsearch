@@ -173,6 +173,14 @@ class RetrievalControls(unittest.TestCase):
         self.assertEqual([first["data"]["matches"][0]["line"], second["data"]["matches"][0]["line"]], [3, 4])
         self.assertFalse(second["data"]["has_more"])
 
+    def test_acknowledged_cli_failure_details_survive_the_lexical_fallback(self):
+        details = {"exit_code": 1, "stderr_head": "LSP request error -32801", "stdout_head": ""}
+        result = self.route("diagnostics", file="src/main.rs", semantic=lambda *_args:
+                            {"status": "unavailable", "reason": "navigation_cli_query_failed", "data": details})
+        self.assertEqual(result["status"], "fallback")
+        self.assertEqual(result["data"]["semantic_failure"], details)
+        self.assertTrue(result["cargo_check_required"])
+
     def test_aliases_and_oversized_source_units_refuse(self):
         outside = self.area / "outside.rs"
         outside.write_text("// private fixture\n")

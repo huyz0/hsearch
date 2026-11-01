@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 import runpy
+import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -23,10 +25,25 @@ def cleanup_claims(store, claims, resources, query, known_edits, primary_error):
             stopped = query(claim, role, "stop")
             need(stopped["status"] == "stopped", "Owned semantic cleanup uncertain; inspect retained evidence")
             for path, before, after in known_edits.get(claim, []):
-                actual = path.read_bytes()
+                worktree = Path(store.get(claim)["worktree"])
+                need(path.is_relative_to(worktree) and path.resolve() == path.absolute(), "Redirected fixture edit preserved")
+                info = path.lstat()
+                need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size <= max(len(before), len(after)),
+                     "Unexpected fixture type/size/link preserved")
+                with path.open("rb") as source:
+                    actual = source.read(max(len(before), len(after)) + 1)
                 need(actual in (before, after), "Unexpected fixture edit preserved for inspection")
                 if actual == after:
-                    path.write_bytes(before)
+                    descriptor, temporary = tempfile.mkstemp(prefix=".hsearch-restore-", dir=path.parent)
+                    try:
+                        with os.fdopen(descriptor, "wb") as restored:
+                            restored.write(before)
+                            restored.flush()
+                            os.fsync(restored.fileno())
+                        os.chmod(temporary, info.st_mode & 0o777)
+                        os.replace(temporary, path)
+                    finally:
+                        Path(temporary).unlink(missing_ok=True)
             store.cleanup(claim, role, resources)
         except Exception as error:
             errors.append({"claim": claim, "cleanup_error": str(error)[:256]})
@@ -154,8 +171,17 @@ def corpus(resources, evidence_parent):
         stale = query(first, owner, "outline", file="src/lib.rs")
         need(stale["status"] == "fallback" and not stale["semantic"] and "stale_semantic_session" in stale["reason"], "Stale server did not fall back honestly")
         need(query(first, owner, "start")["status"] == "ready", "Explicit stale-session replacement failed")
-        invalid = query(first, owner, "diagnostics", file="src/lib.rs")
-        need(invalid["cargo_check_required"] and invalid["status"] == "semantic", "Diagnostic limitations not declared")
+        cold_diagnostic_sessions = []
+        for repetition in range(5):
+            if repetition:
+                need(query(first, owner, "stop")["status"] == "stopped", "Cold diagnostic session did not stop")
+                need(query(first, owner, "start")["status"] == "ready", "Cold diagnostic session did not start")
+            invalid = query(first, owner, "diagnostics", file="src/lib.rs")
+            need(invalid["cargo_check_required"] and invalid["status"] == "semantic", "Cold diagnostics must return semantic data with compiler authority declared")
+            need(any(item.get("severity") == "error" and item.get("code") == "E0308" and item.get("line") == 2
+                     for item in invalid["data"]["items"]), "Cold diagnostic E0308 location oracle mismatch")
+            cold_diagnostic_sessions.append({"repetition": repetition, "source_digest": invalid["source"]["digest"],
+                                             "expected_code": "E0308", "expected_line": 2})
         failed = query(first, owner, "compile")
         need(failed["status"] == "compile" and failed["data"]["passed"] is False, "Authoritative cargo check accepted type error")
         store.resume(first, owner, resources)
@@ -175,6 +201,7 @@ def corpus(resources, evidence_parent):
                   "independent_location_oracle": True, "rename_writes": False, "concurrent_isolated_worktrees": True,
                   "warm_manager_reused": True, "other_worktree_survived_cleanup": True, "stale_fallback": True,
                   "cargo_check_type_error_failed": True, "cargo_check_valid_passed": True,
+                  "cold_diagnostic_sessions": cold_diagnostic_sessions,
                   "accounting_scope": "Complete deterministic fixture JSON transcript including both roles, commands, responses and fixed review; excludes model internals, actual token billing, transport framing and unrelated tools",
                   "tokenizer": None, "token_counts_are_estimates": True, "actual_agent_trial": "M01.08 remains separate",
                   "costs": [costs("tiny Rust semantic workflow including cold/warm lifecycle", baseline, semantic_events),
