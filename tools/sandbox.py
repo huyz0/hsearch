@@ -428,8 +428,9 @@ class Sandbox:
         # and another BUILD reservation on small native runners.
         owner = secrets.token_hex(16)
         record = {"namespace": lease_id, "owner": owner, "image": image}
-        self.registry.update(lease_id, owner=owner, namespace=lease_id, image=image,
-                             phase="tool-preflight", create_pending=False, container_id=None)
+        with self.registry.edit() as data:
+            data["leases"][lease_id].update(owner=owner, namespace=lease_id, image=image,
+                                           phase="tool-preflight", create_pending=False, container_id=None)
         self.require_backend_reserve(self.backend_free(record, lease_id + "-admission"))
         folder = self.registry.root / "images" / (lease_id + "-build")
         need(folder.resolve() == folder.absolute() and not folder.exists(), "Build snapshot path redirected/reused")
