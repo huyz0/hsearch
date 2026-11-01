@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import selectors
 import signal
+import stat
 import subprocess
 import time
 
@@ -22,6 +23,20 @@ MAX_OUTPUT = 131072
 
 def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def read_ready():
+    descriptor = os.open(STATE / "ready.json", os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 32768:
+            raise RuntimeError("navigation_health_limit_or_type")
+        content = os.read(descriptor, 32769)
+        if len(content) > 32768:
+            raise RuntimeError("navigation_health_limit_or_type")
+        return json.loads(content)
+    finally:
+        os.close(descriptor)
 
 
 def digest_file(path, limit=256 * 1024**2):
@@ -107,13 +122,13 @@ def check_storage(reserve):
     import shutil
     used = usage(("/cargo", "/target"))
     free = min(shutil.disk_usage(path).free for path in ("/cargo", "/target"))
-    if used > 8 * 1024**3 or free < reserve:
+    if used > 4 * 1024**3 or free < reserve:
         raise RuntimeError("navigation_disk_budget_or_reserve")
     return {"used_bytes": used, "actual_volume_free_bytes": free}
 
 
 def serve(reserve, idle, lifetime):
-    verify_limits(2000, 4 * 1024**3, 512)
+    verify_limits(1000, 2 * 1024**3, 256)
     check_storage(reserve)
     if ctypes.CDLL(None, use_errno=True).prctl(4, 0, 0, 0, 0) != 0:
         raise RuntimeError("navigation_monitor_isolation_unavailable")
@@ -143,7 +158,7 @@ def serve(reserve, idle, lifetime):
                 raise RuntimeError("navigation_daemon_not_ready")
             time.sleep(0.05)
         (STATE / "ready.json").write_text(json.dumps({"source_digest": os.environ["HSEARCH_SOURCE_DIGEST"],
-            "manager_pid": manager.pid, "identity": identity, "caps": verify_limits(2000, 4 * 1024**3, 512)}))
+            "manager_pid": manager.pid, "identity": identity, "caps": verify_limits(1000, 2 * 1024**3, 256)}))
         while not stopping:
             if manager.poll() is not None:
                 raise RuntimeError("navigation_daemon_exited")
@@ -176,7 +191,7 @@ def serve(reserve, idle, lifetime):
 def query(value):
     if len(encoded(value)) > 8192 or value["source_digest"] != os.environ["HSEARCH_SOURCE_DIGEST"]:
         raise RuntimeError("navigation_stale_request")
-    ready = json.loads((STATE / "ready.json").read_text())
+    ready = read_ready()
     if ready["source_digest"] != value["source_digest"] or not (STATE / "state/manager.sock").exists():
         raise RuntimeError("navigation_stale_server")
     with (STATE / "query.lock").open("a+b") as lock:
@@ -236,11 +251,12 @@ def main():
             if not path.exists():
                 print('{"ready":false}')
             else:
-                if path.stat().st_size > 32768:
-                    raise RuntimeError("navigation_health_limit")
-                value = json.loads(path.read_text())
+                value = read_ready()
                 value["ready"] = value["source_digest"] == os.environ["HSEARCH_SOURCE_DIGEST"]
-                print(encoded(value).decode())
+                wire = encoded(value)
+                if len(wire) > 32768:
+                    raise RuntimeError("navigation_health_limit")
+                print(wire.decode())
             return 0
         result = query(json.loads(args.value))
         wire = encoded(result)

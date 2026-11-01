@@ -22,6 +22,21 @@ FIELDS = {"packet": set(), "stats": set(), "start": set(), "stop": set(), "docto
           "definition": {"file", "line", "find"}, "reference": {"file", "line", "find", "max_items", "cursor"},
           "rename-preview": {"file", "line", "find", "new_name"}}
 MAX_FILE = 65536
+BODY_FIELDS = {"status", "backend", "semantic", "reason", "data", "notices", "tool_identity", "cargo_check_required"}
+
+
+def checked_body(body, operation):
+    need(type(body) is dict and set(body).issubset(BODY_FIELDS), "Backend cannot replace host context envelope fields")
+    expected = {"packet": {"metadata"}, "stats": {"accounting"}, "search": {"lexical"}, "slice": {"source"}, "full": {"source"},
+                "start": {"ready", "unavailable"}, "stop": {"stopped", "unavailable"}, "doctor": {"doctor", "unavailable"},
+                "compile": {"compile", "unavailable"}}
+    need(body.get("status") in expected.get(operation, {"semantic", "fallback", "unavailable"}), "Backend status does not match requested operation")
+    need(body["status"] == "unavailable" or type(body.get("data")) is dict, "Backend data must be an object")
+    if body["status"] == "semantic":
+        need(body.get("semantic") is True, "Semantic backend must declare its result type")
+    if body["status"] == "fallback":
+        need(body.get("semantic") is False, "Fallback cannot advertise semantic authority")
+    return body
 
 
 def request(value):
@@ -113,7 +128,7 @@ def lexical(root, value, reason):
         text = value["find"].split("<|>", 1)[1]
         token = re.match(r"[A-Za-z_][A-Za-z0-9_]*", text)
         need(token is not None, "Fallback requires an identifier after the cursor")
-        data = search(root, {"pattern": token[0], "max_items": value.get("max_items", 20)})
+        data = search(root, {"pattern": token[0], "max_items": value.get("max_items", 20), "cursor": value.get("cursor", 0)})
         data["not_a_semantic_result_or_rename_plan"] = True
     else:
         data = {"authoritative_cargo_check_required": True}
@@ -160,6 +175,8 @@ def route(store, claim, owner, value, resource_root, *, semantic=None):
             module = runpy.run_path(str(ROOT / "tools/navigation.py"))
             semantic = module["navigate"]
         body = semantic(store, claim, owner, value, resource_root, before)
+        need(type(body) is dict and set(body).issubset(BODY_FIELDS), "Backend cannot replace host context envelope fields")
+        need("data" not in body or type(body["data"]) is dict, "Backend data must be an object")
         if body.get("status") == "unavailable" and operation in {"outline", "definition", "reference", "rename-preview", "diagnostics"}:
             body = lexical(root, value, body.get("reason", "Pinned semantic session unavailable"))
         if operation == "rename-preview" and body.get("status") == "semantic":
@@ -167,7 +184,8 @@ def route(store, claim, owner, value, resource_root, *, semantic=None):
         if operation == "diagnostics":
             body["cargo_check_required"] = True
     need(store.fingerprint(store.get(claim, owner))["digest"] == before["digest"], "Context changed during retrieval; result is stale")
-    response = {"schema_version": 1, "claim": claim, "source": before, "operation": operation, **body,
+    body = checked_body(body, operation)
+    response = {**body, "schema_version": 1, "claim": claim, "source": before, "operation": operation,
                 "evidence_sha256": "0" * 64, "response_payload_bytes": 0, "estimated_tokens_bytes_div4": 0, "token_count_is_estimate": True}
     for _ in range(6):
         size = len(encoded(response))

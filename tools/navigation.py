@@ -75,7 +75,7 @@ class Navigation:
         args = ["create", "--name", name, "--label", f"{self.helpers['LABEL']}={record['owner']}",
                 "--label", f"io.hsearch.namespace={namespace}", "--log-driver", "local", "--log-opt", "max-size=16m",
                 "--log-opt", "max-file=1", "--log-opt", "compress=false", "--user", "10001:10001", "--read-only",
-                "--cpus", "2", "--memory", str(4 * 1024**3), "--memory-swap", str(4 * 1024**3), "--pids-limit", "512",
+                "--cpus", "1", "--memory", str(2 * 1024**3), "--memory-swap", str(2 * 1024**3), "--pids-limit", "256",
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--network", network,
                 "--tmpfs", "/tmp:rw,nosuid,nodev,size=67108864", "--env", "CARGO_NET_OFFLINE=true" if network == "none" else "CARGO_NET_OFFLINE=false",
                 "--env", "CARGO_TARGET_DIR=/target/navigation/analysis", "--env", "LSP_CLI_HOME=/target/navigation/state",
@@ -109,9 +109,15 @@ class Navigation:
                   "image": image["id"], "lsp_sha256": image["navigation_artifact"]["binary_sha256"],
                   "source_digest": self.source["digest"], "phase": "preflight", "query_pending": None,
                   "prefetch_container_id": None, "container_id": None, "create_pending": False}
-        self.registry.acquire(namespace, self.helpers["BUILD"], self.docker.capacity, self.docker.engine, record)
+        self.registry.acquire(namespace, self.helpers["NAVIGATION"], self.docker.capacity, self.docker.engine, record)
         free = self.sandbox.backend_free(record, namespace + "-preflight")
-        self.sandbox.require_backend_reserve(free)
+        try:
+            self.sandbox.require_backend_reserve(free)
+        except self.Refused:
+            # The admission probe completed and removed itself; no service,
+            # cache volume or pending create exists at this point.
+            self.registry.release(namespace)
+            raise
         with self.registry.edit() as data:
             reserve = sum(item["budget"]["disk_bytes"] for item in data["leases"].values()) + 10 * 1024**3
         record["reserve_bytes"] = reserve
@@ -140,7 +146,7 @@ class Navigation:
         self.registry.update(namespace, harness=str(harness), harness_hashes=hashes, volumes_complete=True,
                              phase="prefetch_creating", create_pending=True)
         cid = self.create(record, namespace + "-prefetch", ["python3", "/harness/execute.py", "prefetch", "--disk-bytes",
-                          str(8 * 1024**3), "--timeout", "1200", "--output-bytes", str(1024**2)], network="bridge")
+                          str(4 * 1024**3), "--timeout", "1200", "--output-bytes", str(1024**2)], network="bridge")
         self.registry.update(namespace, prefetch_container_id=cid, create_pending=False, phase="prefetch")
         self.docker.command("start", cid)
         status = self.docker.command("wait", cid, timeout=1250).strip()
@@ -161,7 +167,7 @@ class Navigation:
         while True:
             info = self.inspect(record, cid)
             self.need(info["State"]["Running"], "Semantic controller exited before readiness; close owned resources")
-            health = json.loads(self.docker.command("exec", cid, "python3", "/harness/navigation.py", "health", timeout=30))
+            health = json.loads(self.docker.command("exec", cid, "python3", "/harness/navigation.py", "health", timeout=30, output_bytes=32769))
             if health.get("ready") is True:
                 self.need(health["source_digest"] == self.source["digest"] and health["identity"]["lsp_sha256"] == record["lsp_sha256"],
                           "Semantic readiness identity mismatch")
@@ -201,7 +207,7 @@ class Navigation:
         with self.registry.edit() as data:
             reserve = sum(item["budget"]["disk_bytes"] for item in data["leases"].values()) + 10 * 1024**3
         raw = self.docker.command("exec", record["container_id"], "python3", "/harness/navigation.py", "query",
-                                  json.dumps({**value, "source_digest": self.source["digest"], "reserve_bytes": reserve}, separators=(",", ":")), timeout=140)
+                                  json.dumps({**value, "source_digest": self.source["digest"], "reserve_bytes": reserve}, separators=(",", ":")), timeout=140, output_bytes=131073)
         self.need(len(raw.encode()) <= 131073, "Semantic response exceeded frozen controller bound")
         result = json.loads(raw)
         with self.registry.edit() as data:

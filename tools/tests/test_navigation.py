@@ -10,6 +10,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 API = runpy.run_path(str(ROOT / "tools/navigation.py"))
@@ -132,6 +133,26 @@ class LifecycleControls(unittest.TestCase):
         self.assertEqual(self.nav.query({"operation": "doctor"})["status"], "unavailable")
         self.assertEqual(self.docker.calls, [])
 
+    def test_known_empty_low_space_preflight_releases_but_unknown_probe_retains(self):
+        self.registry.release(NAMESPACE)
+        self.nav.image = lambda: {"id": "image", "navigation_artifact": {"binary_sha256": "c" * 64}}
+        self.nav.sandbox.namespace = lambda _kind: NAMESPACE
+        self.docker.capacity = {"cpu_millis": 3000, "memory_bytes": 8 * BASE["GIB"], "pids": 2048, "disk_bytes": 40 * BASE["GIB"]}
+        self.nav.sandbox.backend_free = lambda *_args: 0
+        def refuses(_free):
+            raise Refused("low backend reserve")
+        self.nav.sandbox.require_backend_reserve = refuses
+        with self.assertRaisesRegex(Refused, "low backend"):
+            self.nav.start()
+        with self.assertRaisesRegex(Refused, "Unknown"):
+            self.registry.get(NAMESPACE)
+        def unknown(*_args):
+            raise Refused("probe outcome unknown")
+        self.nav.sandbox.backend_free = unknown
+        with self.assertRaisesRegex(Refused, "probe outcome unknown"):
+            self.nav.start()
+        self.assertEqual(self.registry.get(NAMESPACE)["phase"], "preflight")
+
     def test_foreign_cache_volume_refuses_queries_and_is_never_removed(self):
         self.docker.volumes[NAMESPACE + "-target"]["Labels"][BASE["LABEL"]] = "someone-else"
         with self.assertRaisesRegex(Refused, "owner does not match"):
@@ -204,6 +225,21 @@ class GuestControls(unittest.TestCase):
             self.guest["bounded"]([sys.executable, "-c", "import sys; sys.stdout.write('x'*800); sys.stderr.write('x'*800)"], limit=1024)
         with self.assertRaisesRegex(RuntimeError, "deadline"):
             self.guest["bounded"]([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.1)
+
+    def test_untrusted_health_state_rejects_fifo_symlink_and_oversized_regular_file(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(self.guest["read_ready"].__globals__, STATE=Path(folder)):
+            path = Path(folder) / "ready.json"
+            os.mkfifo(path)
+            with self.assertRaisesRegex(RuntimeError, "limit_or_type"):
+                self.guest["read_ready"]()
+            path.unlink()
+            path.symlink_to(Path(folder) / "other")
+            with self.assertRaises(OSError):
+                self.guest["read_ready"]()
+            path.unlink()
+            path.write_text("x" * 32769)
+            with self.assertRaisesRegex(RuntimeError, "limit_or_type"):
+                self.guest["read_ready"]()
 
     def test_dead_cli_with_descendant_holding_pipes_cannot_escape_deadline_cleanup(self):
         with tempfile.TemporaryDirectory() as folder:

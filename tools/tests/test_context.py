@@ -158,6 +158,21 @@ class RetrievalControls(unittest.TestCase):
         self.assertTrue(result["token_counts_are_estimates"])
         self.assertIsNone(result["tokenizer"])
 
+    def test_untrusted_backend_cannot_replace_host_identity_or_compile_authority(self):
+        for forged in ({"schema_version": 99}, {"claim": "foreign"}, {"source": {"digest": "0" * 64}},
+                       {"operation": "compile"}, {"evidence_sha256": "0" * 64},
+                       {"status": "compile", "data": {"passed": True}}):
+            with self.subTest(forged=forged), self.assertRaises(Refused):
+                self.route("outline", file="src/main.rs", semantic=lambda *_args: {"status": "semantic", "semantic": True, "data": {}, **forged})
+
+    def test_missing_reference_pagination_preserves_offset_and_source_binding(self):
+        missing = lambda *_args: {"status": "unavailable", "reason": "missing"}
+        first = self.route("reference", file="src/main.rs", line=3, find="fn <|>greet", max_items=1, semantic=missing)
+        second = self.route("reference", file="src/main.rs", line=3, find="fn <|>greet", max_items=1,
+                            cursor=first["data"]["next_cursor"], expected_source=first["source"]["digest"], semantic=missing)
+        self.assertEqual([first["data"]["matches"][0]["line"], second["data"]["matches"][0]["line"]], [3, 4])
+        self.assertFalse(second["data"]["has_more"])
+
     def test_aliases_and_oversized_source_units_refuse(self):
         outside = self.area / "outside.rs"
         outside.write_text("// private fixture\n")

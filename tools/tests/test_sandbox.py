@@ -21,6 +21,18 @@ CAPACITY = {"cpu_millis": 8000, "memory_bytes": 16 * GIB, "pids": 2048, "disk_by
 
 
 class AdmissionControls(unittest.TestCase):
+    def test_source_compile_and_two_daemons_fit_the_admitted_native_runner_pool(self):
+        native = {"cpu_millis": 3000, "memory_bytes": 8 * GIB - 1024**2, "pids": 2048, "disk_bytes": 40 * GIB}
+        MODULE["admit"](BUILD, [], native, 100 * GIB)
+        MODULE["admit"](MODULE["NAVIGATION"], [{"budget": MODULE["NAVIGATION"]}], native, 100 * GIB)
+
+    def test_image_identity_changes_with_each_artifact_controller(self):
+        original = Path.read_bytes
+        initial = MODULE["image_digest"]()
+        for name in ("install_navigation.py", "execute.py", "sandbox.py"):
+            with self.subTest(name=name), patch.object(Path, "read_bytes", lambda path: original(path) + (b"\n# changed\n" if path.name == name else b"")):
+                self.assertNotEqual(MODULE["image_digest"](), initial)
+
     def test_two_bounded_builds_fit_but_overcommit_fails(self):
         leases = [{"budget": BUILD}]
         MODULE["admit"](BUILD, leases, CAPACITY, 100 * GIB)
@@ -89,6 +101,14 @@ class RegistryControls(unittest.TestCase):
 
 
 class OwnershipControls(unittest.TestCase):
+    def test_host_capture_bounds_untrusted_stdout_stderr_and_deadlines_before_decode(self):
+        for code, limit, message in (("import sys; sys.stdout.write('x'*1000000)", 1024, "output exceeds"),
+                                     ("import sys; sys.stderr.write('x'*1000000)", 1024, "output exceeds"),
+                                     ("import time; time.sleep(10)", 1024, "deadline")):
+            with self.subTest(code=code), self.assertRaisesRegex(Refused, message):
+                MODULE["bounded_capture"]([sys.executable, "-c", code], timeout=0.2, limit=limit)
+        self.assertEqual(MODULE["bounded_capture"]([sys.executable, "-c", "print('bounded')"], timeout=3, limit=100).splitlines(), ["bounded"])
+
     def test_foreign_resources_cannot_pass_cleanup_guard(self):
         MODULE["assert_owned"]([{"Labels": {MODULE["LABEL"]: "mine"}}], "mine")
         for item in ({"Labels": None}, {"Labels": {MODULE["LABEL"]: "other"}}, {"Config": {"Labels": {}}}):

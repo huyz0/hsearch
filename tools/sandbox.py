@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from string import Template
 
@@ -23,6 +24,7 @@ NAMESPACE = re.compile(r"hsearch-[a-z0-9-]{1,25}-[0-9a-f]{12}\Z")
 VOLUMES = ("ca", "server", "client", "credentials", "data", "cargo", "target")
 HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py")
 BUILD = {"cpu_millis": 2000, "memory_bytes": 4 * GIB, "pids": 512, "disk_bytes": 8 * GIB}
+NAVIGATION = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 4 * GIB}
 STORAGE = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 10 * GIB}
 PROBE = {"cpu_millis": 500, "memory_bytes": 256 * 1024**2, "pids": 64, "disk_bytes": 1024**2}
 
@@ -178,6 +180,44 @@ class Registry:
             del data["leases"][namespace]
 
 
+def bounded_capture(command, *, timeout, limit):
+    """Bound both host pipes before decoding untrusted guest output."""
+    child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    captured, failed, overflow = {}, [], threading.Event()
+
+    def read(stream, key):
+        try:
+            captured[key] = stream.read(limit + 1)
+            if len(captured[key]) > limit:
+                overflow.set()
+                if child.poll() is None:
+                    child.kill()
+        except OSError:
+            failed.append(key)
+            if child.poll() is None:
+                child.kill()
+        finally:
+            stream.close()
+
+    readers = [threading.Thread(target=read, args=(pipe, name), daemon=True)
+               for pipe, name in ((child.stdout, "out"), (child.stderr, "err"))]
+    for reader in readers:
+        reader.start()
+    try:
+        child.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.wait(timeout=3)
+        raise Refused("Docker exec deadline; operation outcome requires inspection") from None
+    finally:
+        for reader in readers:
+            reader.join(timeout=3)
+    need(not any(reader.is_alive() for reader in readers) and not failed, "Docker exec pipe completion uncertain")
+    need(not overflow.is_set() and sum(map(len, captured.values())) <= limit, "Docker exec output exceeds bound; inspect owned resources")
+    need(child.returncode == 0, "Docker exec failed; operation outcome requires inspection")
+    return captured["out"].decode("utf-8", errors="strict")
+
+
 class Docker:
     def __init__(self):
         self.context = self.command("context", "show").strip()
@@ -192,9 +232,13 @@ class Docker:
         self.capacity = {"cpu_millis": min(8000, max(1000, (self.info["NCPU"] - 1) * 1000)),
                          "memory_bytes": min(16 * GIB, self.info["MemTotal"] // 2), "pids": 2048, "disk_bytes": 40 * GIB}
 
-    def command(self, *args, stream=False, timeout=180, input_text=None, merge_output=False):
+    def command(self, *args, stream=False, timeout=180, input_text=None, merge_output=False, output_bytes=None):
         prefix = ["docker"] + (["--context", self.context] if hasattr(self, "context") else [])
         try:
+            if output_bytes is not None:
+                need(not stream and input_text is None and not merge_output and 0 < output_bytes <= 1024**2,
+                     "Invalid bounded Docker exec profile")
+                return bounded_capture([*prefix, *args], timeout=timeout, limit=output_bytes)
             options = {} if stream else ({"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT} if merge_output else {"capture_output": True})
             result = subprocess.run([*prefix, *args], text=True, errors="replace", input=input_text, timeout=timeout, **options)
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -222,7 +266,8 @@ def assert_owned(objects, owner):
 
 def image_digest():
     inputs = {name: hashlib.sha256((ROOT / "dev" / name).read_bytes()).hexdigest()
-              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json")}
+              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json", "install_navigation.py", "execute.py")}
+    inputs["assembly_controller"] = hashlib.sha256((ROOT / "tools/sandbox.py").read_bytes()).hexdigest()
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
 
 
@@ -317,7 +362,7 @@ class Sandbox:
                 return cached["id"]
         lease_id = self.namespace("image")
         self.registry.acquire(lease_id, BUILD, self.docker.capacity, self.docker.engine, {"kind": "image"})
-        complete, bootstrap = False, None
+        complete = False
         try:
             source = (ROOT / "dev/Dockerfile").read_bytes()
             need(source.decode().splitlines()[0] == "FROM " + self.images["rust"], "Development base image pin disagrees with inventory")
@@ -333,14 +378,7 @@ class Sandbox:
             base = json.loads(self.docker.command("image", "inspect", base_id))[0]
             need(base["Config"]["User"] == "10001:10001", "Development base must be non-root")
             self.registry.update(lease_id, bootstrap_image_id=base_id, build_inputs_sha256=digest)
-            self.docker.command("pull", self.images["rustfs"], stream=True, timeout=300)
-            image_record = {"id": base_id, "engine": self.docker.engine, "build_inputs_sha256": digest,
-                            "dockerfile_sha256": hashlib.sha256(source).hexdigest(), "bootstrap_owner": lease_id}
-            bootstrap = self.up("navigation-toolbuild", _bootstrap_image=image_record)
-            output = self.snapshot(self.registry.get(bootstrap)) / "artifacts"
-            self.run(bootstrap, "navigation-build", artifact_directory=output)
-            self.down(bootstrap)
-            bootstrap = None
+            output = self.build_navigation(lease_id, base_id)
             need(output.resolve() == output.absolute() and {item.name for item in output.iterdir()} == {"lsp", "attestation.json"},
                  "Unexpected navigation build artifact")
             for name in ("lsp", "attestation.json"):
@@ -379,12 +417,69 @@ class Sandbox:
             complete = True
             return info["Id"]
         finally:
-            if bootstrap is not None:
-                self.down(bootstrap)
             if complete:
                 self.registry.release(lease_id)
             else:
                 self.registry.update(lease_id, phase="uncertain-image-operation")
+
+    def build_navigation(self, lease_id, image):
+        # BuildKit has completed. Reuse this image workflow's existing BUILD
+        # reservation for one compile container; do not stack a RustFS topology
+        # and another BUILD reservation on small native runners.
+        owner = secrets.token_hex(16)
+        record = {"namespace": lease_id, "owner": owner, "image": image}
+        self.registry.update(lease_id, owner=owner, namespace=lease_id, image=image,
+                             phase="tool-preflight", create_pending=False, container_id=None)
+        self.require_backend_reserve(self.backend_free(record, lease_id + "-admission"))
+        folder = self.registry.root / "images" / (lease_id + "-build")
+        need(folder.resolve() == folder.absolute() and not folder.exists(), "Build snapshot path redirected/reused")
+        folder.mkdir(mode=0o700)
+        freeze_harness(folder / "harness")
+        output = folder / "artifacts"
+        output.mkdir(mode=0o1777)
+        output.chmod(0o1777)
+        names = [lease_id + "-" + suffix for suffix in ("cargo", "target")]
+        for name in names:
+            self.docker.command("volume", "create", "--label", f"{LABEL}={owner}", "--label", f"io.hsearch.namespace={lease_id}", name)
+        volumes = self.docker.inspect("volume", names)
+        assert_owned(volumes, owner)
+        need({item["Name"] for item in volumes} == set(names) and
+             all(item["Labels"].get("io.hsearch.namespace") == lease_id for item in volumes), "Build volume identity changed")
+        with self.registry.edit() as data:
+            reserve = sum(item["budget"]["disk_bytes"] for item in data["leases"].values()) + 10 * GIB
+        self.registry.update(lease_id, phase="tool-creating", create_pending=True, build_volumes=names,
+                             artifact_directory=str(output))
+        args = ["create", "--name", lease_id + "-compile", "--label", f"{LABEL}={owner}", "--label", f"io.hsearch.namespace={lease_id}",
+                "--log-driver", "local", "--log-opt", "max-size=16m", "--log-opt", "max-file=1", "--log-opt", "compress=false",
+                "--user", "10001:10001", "--read-only", "--cpus", "2", "--memory", str(4 * GIB), "--memory-swap", str(4 * GIB),
+                "--pids-limit", "512", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--network", "bridge",
+                "--tmpfs", "/tmp:rw,nosuid,nodev,size=67108864", "--env", f"HSEARCH_BACKEND_RESERVE_BYTES={reserve}",
+                "--mount", f"type=volume,source={names[0]},target=/cargo", "--mount", f"type=volume,source={names[1]},target=/target",
+                "--mount", f"type=bind,source={folder / 'harness'},target=/harness,readonly",
+                "--mount", f"type=bind,source={output},target=/navigation-output", image, "python3", "/harness/execute.py",
+                "navigation-build", "--disk-bytes", str(8 * GIB), "--timeout", "1200", "--output-bytes", str(1024**2)]
+        cid = self.docker.command(*args).strip()
+        need(re.fullmatch(r"[a-f0-9]{64}", cid), "Unacknowledged tool-build create; retain image lease")
+        self.registry.update(lease_id, container_id=cid, create_pending=False, phase="tool-compiling")
+        self.run_container(record, cid)
+        self.docker.command("start", cid)
+        print(json.dumps({"navigation_build": "running", "container_id": cid, "reservation": BUILD}), flush=True)
+        self.docker.command("logs", "--follow", cid, stream=True, timeout=1250)
+        status = self.docker.command("wait", cid, timeout=10).strip()
+        info = self.run_container(record, cid)
+        need(status.isdigit() and not info["State"]["Running"] and info["State"]["ExitCode"] == int(status), "Tool-build outcome uncertain")
+        self.docker.command("container", "rm", cid)
+        self.registry.update(lease_id, container_id=None, phase="tool-exited", exit_code=int(status))
+        volumes = self.docker.inspect("volume", names)
+        assert_owned(volumes, owner)
+        need({item["Name"] for item in volumes} == set(names) and
+             all(item["Labels"].get("io.hsearch.namespace") == lease_id for item in volumes), "Build volume identity changed")
+        self.docker.command("volume", "rm", *names)
+        need(not self.docker.command("volume", "ls", "--filter", f"label=io.hsearch.namespace={lease_id}", "--format", "{{.Name}}").strip(),
+             "Build volume cleanup uncertain")
+        self.registry.update(lease_id, build_volumes=[], phase="tool-complete")
+        need(int(status) == 0, "Navigation compilation failed; terminal image evidence retained")
+        return output
 
     def up(self, task, *, task_claim=None, _bootstrap_image=None):
         need(task_claim is None or re.fullmatch(r"m[0-9]{2}-[0-9]{2}-[0-9a-f]{12}", task_claim), "Invalid task claim")

@@ -71,8 +71,9 @@ def diagnostics():
 
 def run(mode, disk_bytes, timeout, output_bytes=8 * 1024**2):
     verify_limits(2000, 4 * 1024**3, 512)
+    writable = ("/cargo", "/target", "/navigation-output") if mode == "navigation-build" else ("/cargo", "/target")
     reserve = int(os.environ.get("HSEARCH_BACKEND_RESERVE_BYTES", "0"))
-    if reserve and (reserve < 10 * 1024**3 or min(shutil.disk_usage(path).free for path in ("/cargo", "/target")) < reserve):
+    if reserve and (reserve < 10 * 1024**3 or min(shutil.disk_usage(path).free for path in writable) < reserve):
         raise RuntimeError("Actual task volume reserve is unavailable")
     if mode == "diagnostics":
         diagnostics()
@@ -92,7 +93,7 @@ def run(mode, disk_bytes, timeout, output_bytes=8 * 1024**2):
         signal.signal(signal.SIGTERM, requested_stop)
         while selector.get_map() or child.poll() is None:
             if time.monotonic() >= next_sample:
-                peak = max(peak, usage(("/cargo", "/target")))
+                peak = max(peak, usage(writable))
                 if peak > disk_bytes:
                     raise RuntimeError("Declared cache/target disk budget exceeded")
                 next_sample = time.monotonic() + 0.5
