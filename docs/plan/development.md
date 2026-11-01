@@ -1,6 +1,6 @@
 # Bootstrap development
 
-Current status: [complete M13 native-report successor accepted](evidence/m01-13-integrated.md). Context3/versioned JSON3.1 physical segments and independently rederived raw native receipts are authoritative. Earlier prototype/review/pending stages below are historical provenance; original failed gates remain frozen. M08/runtime are unaccepted.
+Current status: [complete M13 native-report successor accepted](evidence/m01-13-integrated.md). Context3/versioned JSON3.1 physical segments and independently rederived raw native receipts are authoritative. Earlier prototype/review/pending stages below are historical provenance; original failed gates remain frozen. M08.01's [typed contract/facade is accepted](evidence/m08-01-integrated.md); SDK/exporter/runtime remain unimplemented.
 
 This checkout contains the integrated M01.01 workspace bootstrap and M01.02 [local sandbox](sandbox.md), and integrated M01.06 [impact CI](impact-ci.md). It is not a running search store. The [task ledger](tasks.json) retains all later product and qualification obligations. The bootstrap defines checkpoint relationships, an observation trait, a pinned engine boundary and a development entrypoint. It has no hsearch storage API, node binary, network service or persisted format.
 

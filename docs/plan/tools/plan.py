@@ -56,6 +56,36 @@ def task_dependencies(task: dict, milestones: dict, tasks: dict) -> list[str]:
     return result
 
 
+def research_gate_contract(milestones: dict, tasks: dict) -> None:
+    """Keep preliminary coordinator research separate from original acceptance."""
+    required = {
+        "M01.08": {"M01.04", "M01.05", "M01.06", "M01.07", "M19", "M01.09"},
+        "M02.02": {"M19", "M01", "M02.09"},
+        "M02.04": {"M01", "M02.10"},
+        "M03.01": {"M01"},
+        "M07.02": {"M05", "M01"},
+        "M16.04": {"M01", "M08", "M16.02"},
+        "M02.03": {"M02.02"},
+        "M02.05": {"M02.01", "M02.02", "M02.04", "M02.07", "M02.08", "M08.01"},
+        "M02.06": {"M02.03", "M02.05", "M02.07"},
+        "M02.07": {"M02.01", "M02.04"},
+        "M01.14": {"M19", "M01.13", "M08.01"},
+    }
+    prerequisites = {"M19", "M01.02", "M01.03", "M01.04", "M01.05",
+                     "M01.06", "M01.07", "M01.13", "M01.14",
+                     "M02.01", "M02.08", "M08.01"}
+    for task_id in ("M02.09", "M02.10"):
+        need(task_id in tasks, f"Missing coordinator research task: {task_id}")
+        need(tasks[task_id].get("execution_scope") == "coordinator-research",
+             f"Research execution scope changed: {task_id}")
+        required[task_id] = prerequisites
+    for task_id, dependencies in required.items():
+        need(task_id in tasks and dependencies <= set(tasks[task_id]["depends_on"]),
+             f"Research acceptance gate missing: {task_id}")
+    need("M01" in milestones["M02"]["depends_on"],
+         "Research acceptance gate missing: milestone M02")
+
+
 def validate(data: dict, files: bool = True) -> None:
     need(isinstance(data, dict), "Ledger must be an object")
     need(data.get("schema_version") == 1, "Unsupported ledger schema")
@@ -145,6 +175,7 @@ def validate(data: dict, files: bool = True) -> None:
         if task["status"] in {"in_progress", "review", "done"}:
             need(all(tasks[d]["status"] == "done" for d in edges[tid]),
                  f"Active/done task has unfinished dependency: {tid}")
+    research_gate_contract(milestones, tasks)
 
 
 def bullet(items: list[str]) -> str:

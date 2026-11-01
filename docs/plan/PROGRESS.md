@@ -2,6 +2,13 @@
 
 ## Current implementation checkpoint
 
+M08.01's [typed contract/facade is accepted](evidence/m08-01-integrated.md). M01.14's [coordinator-only feasibility split](coordinator-research.md) is in progress; no new research task is yet claimable. Original M01.09 ARM cause remains UNCONFIRMED, M01.08 open, and original engine/runtime/format/release gates remain. No SDK/exporter/service/provider/fleet/release/deploy acceptance.
+
+The prior checkpoints below are historical provenance.
+
+
+## Current implementation checkpoint
+
 M13's native report/context3 and complete M12 successor pipeline are [accepted at295bbad](evidence/m01-13-integrated.md). Final independent R3 and all seven repaired-source PR/main/manual jobs passed with full log verification. The composite M07 goal is satisfied; original implementation gates and every failed review/run remain preserved.
 
 M08.01 is ready to resume its private typed event/outbox draft, including incarnation-aware scope and truthful committed-but-unavailable receipts. Its schema/runtime are unaccepted. M01.09's original ARM cause and dependent M01.08 remain open. No search service, SDK exporter, provider/fleet, release or deployment is claimed. The historical development record follows.

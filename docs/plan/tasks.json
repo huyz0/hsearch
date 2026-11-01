@@ -758,6 +758,32 @@
               "result": "Accepted genuine native-report/context3 and complete inherited successor integration: actual finalR3clear, protected PR16, all7 finalPR/main/manual. Composite goal only; originalM07hard3blocked and allM12/M13issuedhistories remain frozen; originalmanualfailure retained."
             }
           ]
+        },
+        {
+          "id": "M01.14",
+          "title": "Separate bounded coordinator research from harness acceptance",
+          "goal": "Allow useful pinned-source feasibility research while preserving unresolved agent-baseline and original product gates.",
+          "deliverables": [
+            "Explicit coordinator-only M02.09/.10 scopes, fixed resource/workload envelopes and evidence limitations",
+            "Executable DAG regression guard retaining original whole-M01 and downstream runtime/format gates; factual M08 acceptance record"
+          ],
+          "validation": [
+            "Independently review exact ledger/document/validator patch and both original incident evidence and proposed graph",
+            "Weaken original dependencies and falsely mark research as product/harness acceptance; controls must refuse, while valid graph exposes only declared research after this task is accepted",
+            "Run full plan/API/docs/component and applicable native/hosted checks; no waived shared CI failure"
+          ],
+          "definition_of_done": [
+            "Concrete revised graph and scope are independently reviewed and fully checked, then normally integrated; original M01.09 cause and M01.08 remain open",
+            "No research result alone accepts native lifecycle/durability/format/runtime, delegated-agent productivity, provider/fleet or release work"
+          ],
+          "depends_on": [
+            "M19",
+            "M01.13",
+            "M08.01"
+          ],
+          "owner": "harness/integrator",
+          "status": "in_progress",
+          "evidence": []
         }
       ]
     },
@@ -846,6 +872,82 @@
           ]
         },
         {
+          "id": "M02.09",
+          "title": "Run bounded native engine feasibility experiments",
+          "goal": "Collect coordinator-run native embedding evidence while agent-harness qualification remains unresolved.",
+          "deliverables": [
+            "Pinned native source-symbol and capability inventory for selected core-v1 operators",
+            "Bounded writer/reader/insert/update/delete/merge/commit/reopen and identity-preserving replay experiments, including failed preparation before concurrent refresh",
+            "Public/reference differential fixtures and explicit unsupported-native port/profile proposals; inputs for M02.02, not its acceptance"
+          ],
+          "validation": [
+            "Coordinator-run pinned-source/public-fixture component experiments only; independent sessions review code/results, with no delegated implementation claim",
+            "Freeze exact feature/target/profile/workload and CPU/RAM/disk/PID/output/deadline envelope before execution; retain raw failure/ambiguity and deliberately failing controls",
+            "Both native targets dev/release/applicable allfeatures/doctests/lint and >=90% aggregate/percrate/changed production coverage, exact-source independent review and required full CI",
+            "Use direct compiler outcomes and independent Java/reference histories; semantic navigation is fallible and never an authority"
+          ],
+          "definition_of_done": [
+            "Raw observations, independent oracles, rejected candidates and unresolved questions are reviewable; no final persisted format, runtime authority/service, provider/fleet, baseline or release acceptance",
+            "Original downstream task keeps whole-M01 dependency and every original deliverable/validation/DoD; final-source requalification remains required"
+          ],
+          "depends_on": [
+            "M19",
+            "M01.02",
+            "M01.03",
+            "M01.04",
+            "M01.05",
+            "M01.06",
+            "M01.07",
+            "M01.13",
+            "M01.14",
+            "M02.01",
+            "M02.08",
+            "M08.01"
+          ],
+          "owner": "coordinator/engine-research",
+          "status": "planned",
+          "execution_scope": "coordinator-research",
+          "evidence": []
+        },
+        {
+          "id": "M02.10",
+          "title": "Run bounded local durability and metadata experiments",
+          "goal": "Collect local candidate and ambiguity/cost measurements without selecting runtime authority or cloud contracts.",
+          "deliverables": [
+            "Local private RustFS request/contended-CAS/batching measurements, with every attempt and directed payload counted",
+            "Pinned existing quorum-candidate persistence/network/membership comparison, ambiguity/failure schedules and bounded per-group resource observations",
+            "Raw local measurements separated from provider-price/failure-domain estimates; inputs for M02.04, not its acceptance"
+          ],
+          "validation": [
+            "Coordinator-run pinned-source/public-fixture component experiments only; independent sessions review code/results, with no delegated implementation claim",
+            "Freeze exact feature/target/profile/workload and CPU/RAM/disk/PID/output/deadline envelope before execution; retain raw failure/ambiguity and deliberately failing controls",
+            "Both native targets dev/release/applicable allfeatures/doctests/lint and >=90% aggregate/percrate/changed production coverage, exact-source independent review and required full CI",
+            "Compare matched sparse/busy/skewed workloads; account for retries, CAS/root/page/KMS/network paths explicitly; never invent consensus or real-provider evidence"
+          ],
+          "definition_of_done": [
+            "Raw observations, independent oracles, rejected candidates and unresolved questions are reviewable; no final persisted format, runtime authority/service, provider/fleet, baseline or release acceptance",
+            "Original downstream task keeps whole-M01 dependency and every original deliverable/validation/DoD; final-source requalification remains required"
+          ],
+          "depends_on": [
+            "M19",
+            "M01.02",
+            "M01.03",
+            "M01.04",
+            "M01.05",
+            "M01.06",
+            "M01.07",
+            "M01.13",
+            "M01.14",
+            "M02.01",
+            "M02.08",
+            "M08.01"
+          ],
+          "owner": "coordinator/durability-research",
+          "status": "planned",
+          "execution_scope": "coordinator-research",
+          "evidence": []
+        },
+        {
           "id": "M02.02",
           "title": "Exercise native engine lifecycle",
           "goal": "Find the actual embedding boundary rather than rely on stale docs.",
@@ -861,7 +963,8 @@
           ],
           "depends_on": [
             "M19",
-            "M01"
+            "M01",
+            "M02.09"
           ],
           "owner": "engine/architecture",
           "status": "planned",
@@ -902,7 +1005,8 @@
             "Selection rationale includes costs, ambiguous outcomes and failure limits; no custom consensus protocol."
           ],
           "depends_on": [
-            "M01"
+            "M01",
+            "M02.10"
           ],
           "owner": "engine/architecture",
           "status": "planned",
@@ -1887,7 +1991,7 @@
             "M01.13"
           ],
           "owner": "operations",
-          "status": "in_progress",
+          "status": "done",
           "evidence": [
             {
               "path": "native-coverage-projection.md",
@@ -1896,9 +2000,12 @@
             {
               "path": "evidence/m01-13-integrated.md",
               "result": "Coverage prerequisite accepted; original-model fixture is scoped report evidence, not finalM08/schema acceptance."
+            },
+            {
+              "path": "evidence/m08-01-integrated.md",
+              "result": "Actual finalsource R1clear, protected PR17 merge with identical reviewed tree; all7 PR/main native/sandbox jobs and full decoded288/compiler/source/catalog/reference/coverage/layout proof. Typed contract/facade only."
             }
-          ],
-          "next_action": "Resume exact preserved draft in fresh owned claim; align incarnation identity and committed-but-unavailable receipt semantics; qualify schema/privacy/bounded queue/goldens/actual coverage, independent finalsource review and full nativeCI."
+          ]
         },
         {
           "id": "M08.02",
