@@ -8,9 +8,11 @@ M00 research and M01.01 bootstrap are integrated. M01.01 merged normally as `81b
 
 M01.02 is integrated as `f630dc8d20860b7765e7b7e021ce3bd59a87e39b`. Two independent reviewers found no blockers at final head d542b45, and native x86_64/ARM64 CI plus ci-ok passed the complete Rust/coverage/image/private-store smoke. [Integration evidence](evidence/m01-02-integrated.md) records the immutable checks and normal PR#2 merge. Its corrected contract uses distinct internal networks, no published host ports, effective non-root hard caps, uncertain-lease retention and actual-volume disk sensing.
 
-M01.06 is under independent review, implemented locally on `codex/m01-impact-ci`: [impact CI](impact-ci.md) maps complete declared Cargo edges and non-Cargo ownership, selects transitive consumers, defaults ambiguous history/paths to the full matrix, and rejects every missing/cancelled/skipped selected result. Fresh full Linux smoke50, final51 Python cases without skips and checksum-verified workflow lint pass. First independent review found two P2 gaps (zero-line LLVM threshold and broad Markdown ownership); both fixes passed all54 Linux controls and the actual engine-only LLVM/N/A command. Exact-tree follow-up review and hosted acceptance remain pending. No command is stalled.
+M01.06 is integrated as `69d9163` after both independent reviews, full/docs/types/engine hosted qualification, protected normal PR#3 merge and integrated main CI. [Exact acceptance](evidence/m01-06-integrated.md) includes verified required ci-ok enforcement.
 
-The ledger has 18 milestones and 118 tasks: nine done (M00 plus M01.01/M01.02), one in review (M01.06), and 108 planned. M01 as a whole remains in progress. The hsearch storage/search runtime, remaining operational harness, providers, native optimization and release qualification remain open.
+The user's 1 November 2026 direction makes scalability-first OpenSearch-inspired partial compatibility the current priority. M19's [matrix](api-compatibility.md), [standards](engineering-standards.md) and dependency revision are being qualified. There is no HTTP/search runtime and all profile support remains planned. M01.03 is [preserved unfinished](evidence/m01-03-preserved.md), with no source changes lost or unrelated resources pruned.
+
+The ledger now has 19 active milestones and 121 tasks: 10 done, M19.01 in review, M01.03 in progress, 109 planned. M00 and completed infrastructure evidence remain valid; API assumptions/future gates are explicitly revised. No release/deployment occurred.
 
 ## Public hosting and integration
 
@@ -46,9 +48,9 @@ Initial results are recorded in [planning validation evidence](evidence/planning
 
 ## Next implementation action
 
-Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. Continue the dependency-ready M01 harness tasks, then run the engine and storage spikes in M02/M03 as their task dependencies allow. Set up Git hosting/authorization through the actual chosen repository before claiming protected CI or external PRs exist.
+Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. Complete current-priority M19 review and protected integration, then rebase preserved M01.03 and continue dependency-ready harness/API feasibility tasks. M02/M03 spikes follow their revised prerequisites. Public Git hosting and protected impact CI are already integrated with the evidence above.
 
-The main open risks are K01 remote engine inputs, K03 provider conditional semantics, K04 pin/GC coordination, K07 durable consensus integration, K08-K10 crypto/cache lifecycle, and K18 exact required OpenSearch API coverage. Real cloud credentials/fleet/hardware/spend are not available as evidence in this planning task; M15/M17 cannot be marked done without them.
+The main open risks are K01 remote engine inputs, K03 provider conditional semantics, K04 pin/GC coordination, K07 durable consensus integration, K08-K10 crypto/cache lifecycle, and K18 selected API-profile coverage and truthful adaptation. Real cloud credentials/fleet/hardware/spend are not available as evidence in this planning task; M15/M17 cannot be marked done without them.
 
 ## Updating progress during development
 

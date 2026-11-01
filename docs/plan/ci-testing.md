@@ -1,6 +1,6 @@
 # Linux-first development and conditional CI
 
-Status: broader CI/testing design. M01.01 adds a [Rust workspace and bootstrap CI](development.md). Its full bootstrap suite precedes the impact planner, complete coverage matrix, pinned dev topology and resource scheduling still required by the remaining M01 tasks. Hosted results must be observed before claiming either native target passed.
+Status: M01.01 workspace, M01.02 sandbox and M01.06 impact CI are integrated; remaining harness/coverage tasks retain their own acceptance. The [scalability-first API contract](api-compatibility.md) and [engineering standards](engineering-standards.md) add profile/oracle/budget checks. Hosted native results and branch protection are evidence, not inferred from workflow files.
 
 ## Local environment
 
@@ -46,6 +46,12 @@ Enforce >=90% line coverage for all shipped first-party Rust code in aggregate a
 Run clean coverage with `cargo-llvm-cov`; merge only matching commit/toolchain/instrumentation reports from unit, integration and instrumented service-process tests. Include disabled optional modules in their feature jobs, then merge the declared release feature matrix. Dependency/generated code exclusions are explicit and reviewed; handwritten error paths, main wiring and unsafe wrappers cannot be excluded just to pass. Integration-only main paths need coverage instrumentation or a verified reachable-library refactor, not a blanket binary exclusion. [Coverage tool](https://github.com/taiki-e/cargo-llvm-cov).
 
 Coverage does not prove useful tests. Critical storage/security invariants require independent reference/history oracles, corruption/fault controls, and selective mutation testing. A new gate must be observed failing on a seeded defect and passing after its removal. Preserve that control as a regression test of the gate. Report denominator and exclusions along with the number.
+
+## API profile validation
+
+`python tools/api_contract.py check` validates authoritative sources, alternatives, finite limits, unmeasured status, owning tasks, early dependency gates and generated matrix freshness. It runs in both full workspace checks and every CI docs job. Red controls reject fake implemented/measured claims, missing alternatives/oracles, unlimited/bool budgets, missing total-work/pin limits, non-authoritative references, removed admission/format prerequisites and stale generated content.
+
+M02 pins actual OpenSearch/client/configuration fixtures for selected semantics. M06/M07 run matching, deliberately different and unsupported-case conformance before broader M16 migration. Runtime capabilities must reflect passing code, not the design matrix. An out-of-profile request must fail explicitly; an intentional difference uses its native oracle and adaptation test, rather than being hidden as a parity success.
 
 ## Test layers and evidence
 

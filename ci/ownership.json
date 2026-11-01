@@ -2,6 +2,10 @@
   "schema_version": 1,
   "rules": [
     {"path": "README.md", "impact": "docs"},
+    {"path": "AGENTS.md", "impact": "full"},
+    {"path": "docs/plan/api-profile.json", "impact": "full"},
+    {"path": "docs/plan/api-compatibility.md", "impact": "full"},
+    {"path": "docs/plan/engineering-standards.md", "impact": "full"},
     {"path": "docs/plan/README.md", "impact": "docs"},
     {"path": "docs/plan/PROGRESS.md", "impact": "docs"},
     {"path": "docs/plan/roadmap.md", "impact": "docs"},

@@ -1,6 +1,6 @@
 # Bootstrap development
 
-This checkout contains the integrated M01.01 workspace bootstrap and M01.02 [local sandbox](sandbox.md), with M01.06 [impact CI](impact-ci.md) under review. It is not a running search store. The [task ledger](tasks.json) retains all later product and qualification obligations. The bootstrap defines checkpoint relationships, an observation trait, a pinned engine boundary and a development entrypoint. It has no hsearch storage API, node binary, network service or persisted format.
+This checkout contains the integrated M01.01 workspace bootstrap and M01.02 [local sandbox](sandbox.md), and integrated M01.06 [impact CI](impact-ci.md). It is not a running search store. The [task ledger](tasks.json) retains all later product and qualification obligations. The bootstrap defines checkpoint relationships, an observation trait, a pinned engine boundary and a development entrypoint. It has no hsearch storage API, node binary, network service or persisted format.
 
 ## Run the implemented checks
 
@@ -26,7 +26,7 @@ python3 tools/coverage_check.py target/bootstrap-coverage.json
 
 The coverage denominator is current first-party production `src` code. Integration tests are in separate `tests` directories and excluded from the report. Development-only xtask and testkit are not shipped. `hsearch-types` owns the executable production lines at this stage; engine constants/reexports and the observe trait have no executable lines and are reported as N/A. Every production file present in the report and every production crate with executable lines must reach 90%. All current production lines are new in this bootstrap, so that measurement also covers this change's production lines. M01.07 still owns generic changed-line accounting, missing-instrumentation/stale-merge controls and the future service/feature coverage matrix.
 
-`.github/workflows/bootstrap.yml` uses the [impact planner](impact-ci.md) to select package consumers or the full native Linux x86_64/ARM64 matrix when impact is shared or uncertain. The always-run `ci-ok` rejects missing, skipped, cancelled or failed selected jobs. Observed hosted selection and the main-branch check requirement remain M01.06 acceptance work. Runner labels are listed in [GitHub's public-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+`.github/workflows/bootstrap.yml` uses the [impact planner](impact-ci.md) to select package consumers or the full native Linux x86_64/ARM64 matrix when impact is shared or uncertain. The always-run `ci-ok` rejects missing, skipped, cancelled or failed selected jobs. [M01.06 integration evidence](evidence/m01-06-integrated.md) records observed hosted selection and the enforced main-branch check requirement. Runner labels are listed in [GitHub's public-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
 ## Dependency ownership
 
@@ -44,4 +44,6 @@ No hsearch redistribution license has been selected. Public GitHub visibility pe
 
 ## Continue delivery
 
-Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02 is integrated and M01.06 impact CI is under review. The remaining M01 tasks still require the safe resource/worktree task runner, LSP/context budgets, durable independent review protocol, impact planner, complete coverage gate and concurrent recovery qualification. The broader engine/storage/security/search/replication/provider work remains M02-M17. Keep the original acceptance criteria; bootstrap/sandbox success cannot close those milestones.
+Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02 and M01.06 impact CI are integrated. The remaining M01 tasks still require the safe resource/worktree task runner, LSP/context budgets, durable independent review protocol, complete coverage gate and concurrent recovery qualification. The broader engine/storage/security/search/replication/provider work remains M02-M17. Keep the original acceptance criteria; bootstrap/sandbox success cannot close those milestones.
+
+API-dependent work follows [core-v1](api-compatibility.md) and [engineering standards](engineering-standards.md). M19 is the current priority; preserve/rebase unfinished M01.03 work before resuming it. Run `python tools/api_contract.py check` alongside workspace/plan checks.

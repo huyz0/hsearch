@@ -20,8 +20,9 @@
 | D14 | Regional object baseline with zone-local serving and explicit alternative profiles | Minimize routine peer payload crossings; selected quorum/compute failure model and actual provider path determine paid traffic |
 | D15 | Optimize cost only within declared latency/freshness/RPO/RTO/security constraints | Research/profiles established in M00; early component gates and M15 qualify Pareto curves/usage/bills without silent reliability downgrade |
 | D16 | Ordered fenced append commit, compatible domains, inline initial wrapped DEK and amortized checkpoints | Selected now from direct fork/SlateDB inspection and executed bounded/batching models. Saves per-batch root/key-sidecar PUTs; requires strict poisoning/fencing and paid latest/tail barriers |
+| D17 | Scalability-first core-v1; useful OpenSearch-inspired partial compatibility | User revision 1 November 2026: preserve bounded matching behavior; document evidence-backed differences/native alternatives and early API/cost/admission gates; no full/drop-in requirement |
 
-These are recommended directions, not final protocol specifications. High-consequence choices have validation gates before production activation. No new optional user question is needed for these reversible planning decisions.
+D17 is the current user-authorized API priority. The other directions retain their implementation qualification gates; they are not final protocol proofs. High-consequence choices have validation gates before production activation. No new optional user question is needed for these reversible planning decisions.
 
 ## Risk register
 
@@ -44,7 +45,7 @@ These are recommended directions, not final protocol specifications. High-conseq
 | K15 | Agent worktrees overwhelm host or leak processes | WSL failure, state interference | M01 resource leases, handle-based liveness, isolated services, safe cleanup |
 | K16 | Observability leaks data or becomes a bottleneck | Tenant exposure, incident amplification | Producer redaction, cardinality/output limits, stalled-exporter tests, scoped AI access |
 | K17 | Hardware/cloud access and workload budgets not yet supplied | Cannot verify absolute SLOs/provider semantics | Continue emulator/simulation work; real release claims remain NOT-RUN until authorized infrastructure exists |
-| K18 | Required OpenSearch client feature set is not enumerated | Incomplete replacement | M02 workload/API inventory from user repos/traffic, explicit supported/blocked matrix before API freeze |
+| K18 | Unpinned client workload or accidental universal compatibility claim | Misleading migration and unbounded API work | M19 matrix/standards, M02 pinned selected corpus and early M06/M07 conformance; unsupported workloads get explicit adaptation reports and do not silently redefine core |
 | K19 | Payload packing hides per-shard CAS, metadata-page or key-operation floor | High cost despite larger objects | M02.07/M03.08 complete operation ledger, compatible-domain experiments and traffic trace counts gate M03/M06 |
 | K20 | Wrong NAT/endpoint/LB path, byte unit or payer accounting | Unexpected network bill and incorrect policy ranking | M03.07/M15.07 inspect actual infrastructure path and reconcile provider usage; DNS alone is insufficient |
 | K21 | Bundling crosses crypto/tenant policy or leaves references unbounded | Security/isolation failure or GC/read amplification | Same-tenant compatible domains first; separate proof and accounting for cross-domain extents, keys, pages and pins |

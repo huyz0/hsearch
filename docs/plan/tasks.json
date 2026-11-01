@@ -2,7 +2,7 @@
   "schema_version": 1,
   "updated": "2026-11-01",
   "timezone": "Australia/Sydney",
-  "scope": "Research and comprehensive implementation plan, with M01.01/M01.02 integrated and M01.06 impact CI under review. All remaining implementation and qualification obligations retain their owning milestones.",
+  "scope": "Scalability-first OpenSearch-inspired partial API compatibility is the current direction. M00 and M01.01/M01.02/M01.06 remain integrated; M19 revision is in progress and M01.03 is safely preserved unfinished. Runtime, provider, scale and release obligations remain explicit.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
   "milestones": [
     {
@@ -236,6 +236,55 @@
       ]
     },
     {
+      "id": "M19",
+      "title": "Scalability-first API and engineering contract",
+      "goal": "Freeze useful OpenSearch-inspired partial compatibility and measurable bounded alternatives before API-dependent implementation; preserve valid completed work.",
+      "owner": "architecture/integrator",
+      "status": "review",
+      "depends_on": [
+        "M00"
+      ],
+      "definition_of_done": [
+        "Official-source compatibility matrix distinguishes planned matching subset, intentional differences, unsupported semantics and native adaptation paths; no implemented or universal drop-in claim.",
+        "Scalability/resource/cost gates and revised dependency ordering are concrete; correctness/security/durability and valid completed evidence remain intact.",
+        "Independent architecture and plan-consistency reviews, API/plan negative controls and required CI pass; reviewed revision is published under existing authorization."
+      ],
+      "document": "milestones/M19.md",
+      "tasks": [
+        {
+          "id": "M19.01",
+          "title": "Revise API direction, specification and delivery standards",
+          "goal": "Apply the user's scalability-first partial-compatibility direction to authoritative plans and engineering gates now.",
+          "deliverables": [
+            "api-profile.json and generated api-compatibility.md; engineering-standards.md and AGENTS router",
+            "Revised requirement/architecture/risk/performance/CI contracts and dependency-ordered milestones",
+            "Independent architectural-tradeoff and plan-consistency reports plus checked publication evidence"
+          ],
+          "validation": [
+            "Consult current official OpenSearch behavior; distinguish source facts, design inferences and unmeasured targets",
+            "Reject unsupported feature claims without alternatives, fake implemented/observed status, unbounded limits, missing prerequisite edges and stale generated matrix",
+            "Separate review sessions inspect tradeoffs and whole-plan consistency; run docs/plan and relevant regression/hosted checks"
+          ],
+          "definition_of_done": [
+            "User's partial compatibility priority is authoritative; every selected/excluded surface has explicit scope, rationale, owning work and decisive tests",
+            "No accepted implementation or immutable historical result is relabeled as invalid or newly proven; future runtime/provider/fleet work stays incomplete",
+            "Final reviewed/check-passing revision is public and normally merged without protection bypass or release/deployment"
+          ],
+          "depends_on": [
+            "M00"
+          ],
+          "owner": "architecture/integrator",
+          "status": "review",
+          "evidence": [
+            {
+              "path": "evidence/api-direction-revision.md",
+              "result": "Concrete 16-area official-source matrix and reordered plan; first architecture review clear, consistency review findings fixed with mandatory-budget/qualification-owner controls; full local Rust/Python/two-store smoke passed before those fixes; final review and hosted qualification pending."
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "M01",
       "title": "Linux workspace and AI harness foundation",
       "goal": "Create a reproducible Rust workspace and a measured, safe parallel-agent development loop before storage code grows.",
@@ -373,8 +422,13 @@
             "M01.02"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "in_progress",
+          "evidence": [
+            {
+              "path": "evidence/m01-03-preserved.md",
+              "result": "Unfinished local work saved asb563042;72Linux pure controls passed, live smoke failed known logging configuration; exact owned resources cleaned. No publication/completion claim."
+            }
+          ]
         },
         {
           "id": "M01.04",
@@ -433,7 +487,7 @@
             "M01.01"
           ],
           "owner": "harness/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m01-06-impact-ci.md",
@@ -454,6 +508,10 @@
             {
               "path": "evidence/m01-06-engine-coverage.txt",
               "result": "Actual pinned cargo-llvm-cov0.9.1 engine-only compile/two integration tests/report and N/A-aware gate pass under finite caps; full hosted native entrypoint still pending."
+            },
+            {
+              "path": "evidence/m01-06-integrated.md",
+              "result": "Both independent reviews clear687f645; full/docs/types/engine hosted qualification and protected normal PR3 merge69d9163; integrated main CI41267554420 passed."
             }
           ]
         },
@@ -495,7 +553,8 @@
             "M01.04",
             "M01.05",
             "M01.06",
-            "M01.07"
+            "M01.07",
+            "M19"
           ],
           "owner": "harness/integrator",
           "status": "planned",
@@ -505,8 +564,8 @@
     },
     {
       "id": "M02",
-      "title": "Engine, workload and cost feasibility",
-      "goal": "Resolve the major unknowns with executable spikes and freeze the initial compatibility/performance contract.",
+      "title": "API-scoped engine, catalog and cost feasibility",
+      "goal": "Prove the selected core API and scalable catalog/resource model before format and runtime freeze, with matched cost/failure envelopes.",
       "owner": "engine/architecture",
       "status": "planned",
       "depends_on": [
@@ -516,27 +575,56 @@
         "Pinned Lucene Rust opens/indexes/updates/deletes/commits/refreshes through native Rust with independent correctness evidence.",
         "Remote-read strategy is proved on affected codecs or engine patches are concretely scoped; materialization alone cannot close the range-native requirement.",
         "API/workload inventory, failure-model SLOs and candidate decisions have measured baselines and explicit rejection criteria.",
-        "Workload/SLO freeze includes profile-specific API/network/KMS cost envelopes and no unpriced or unproven failure-domain assumptions."
+        "Workload/SLO freeze includes profile-specific API/network/KMS cost envelopes and no unpriced or unproven failure-domain assumptions.",
+        "Selected API, paged-catalog and total/concurrent query/retention budgets have explicit measured or unresolved gates; full OpenSearch equivalence is not required."
       ],
       "document": "milestones/M02.md",
       "tasks": [
         {
           "id": "M02.01",
-          "title": "Inventory replacement API and workloads",
-          "goal": "Define which OpenSearch clients, queries and data models the initial release must replace.",
+          "title": "Inventory selected API/client workloads and adaptation gaps",
+          "goal": "Pin representative workloads and client/reference versions for the declared profile, rather than require every OpenSearch feature.",
           "deliverables": [
-            "Supported/partial/required API and DSL matrix; analyzer/aggregation/script/vector inventory; dataset hashes"
+            "Pinned selected-operator/client corpus, schema/analyzer and dataset hashes; matching/different/unsupported fixture inventory",
+            "Application adaptation report for out-of-profile updates/scripts/joins/plugins and native alternatives"
           ],
           "validation": [
-            "Inspect user's relevant client/proxy/fork sources and representative fixtures; compare stock OpenSearch results."
+            "Inspect available user client/proxy/fork sources and representative fixtures; compare intended matching semantics against pinned OpenSearch configurations",
+            "List unavailable user-specific fixtures explicitly; do not invent client-compatibility or migration evidence"
           ],
           "definition_of_done": [
-            "Required missing engine/API features remain blocking tasks, not silently removed promises."
+            "Core-v1 promises have real fixtures; missing selected features block their matching capability, while excluded features are visible adaptation gaps and do not imply universal replacement"
           ],
           "depends_on": [
-            "M01"
+            "M19",
+            "M01.01",
+            "M01.02"
           ],
           "owner": "engine/architecture",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M02.08",
+          "title": "Prototype bounded catalog, routing and query work",
+          "goal": "Expose cardinality/fanout/retention costs before persistent formats and public API harden.",
+          "deliverables": [
+            "Executable paged-catalog/routing and admission model with separate total-target, concurrent-RPC, bucket, pin and retry budgets",
+            "Fixed-selected-work experiments with10x idle cardinality and an online-split/token design; raw counters and limit counterexamples"
+          ],
+          "validation": [
+            "Measure hot-path metadata/RSS versus total catalog size at fixed selected work; detect accidental full scans/per-index timers",
+            "Exercise limit+one, high-cardinality aggregation, oversized scope, snapshot retention, skew and bounded retry/cancellation cases; separate synthetic/model results from deployed fleet evidence"
+          ],
+          "definition_of_done": [
+            "Complexity and budget schema are concrete enough for M03 formats/M13 catalog/M07 admission; no model closes real runtime/fleet qualification",
+            "Per-profile thresholds and exceptions are passed to M02.05/M02.07 explicitly; failures cannot be hidden as supported compatibility"
+          ],
+          "depends_on": [
+            "M19",
+            "M01.02"
+          ],
+          "owner": "architecture/scale",
           "status": "planned",
           "evidence": []
         },
@@ -545,7 +633,8 @@
           "title": "Exercise native engine lifecycle",
           "goal": "Find the actual embedding boundary rather than rely on stale docs.",
           "deliverables": [
-            "Adapter spike for writer/readers/updates/deletes/merge/commit; failure semantics report"
+            "Adapter spike for writer/readers/updates/deletes/merge/commit; failure semantics report",
+            "Inventory and exercise every selected core-v1 analyzer/query/operator engine dependency; missing native capabilities get concrete port tasks or reviewed profile amendment"
           ],
           "validation": [
             "Java differential fixtures; reopen and identity-preserving replay; concurrent refresh with failed mutation preparation."
@@ -554,6 +643,7 @@
             "Native lifecycle and supported writer combinations are demonstrated with pinned source symbols."
           ],
           "depends_on": [
+            "M19",
             "M01"
           ],
           "owner": "engine/architecture",
@@ -568,7 +658,7 @@
             "Materialized baseline plus read-at/range-input patch prototype; file-access trace and upstream patch plan"
           ],
           "validation": [
-            "Run term/filter/doc-values/stored-fields/vector queries with working set larger than cache and injected range errors."
+            "Run selected term/filter/doc-values/stored-fields queries with working set larger than cache and injected range errors; optional vector reader/API tests apply only when their capability is advertised."
           ],
           "definition_of_done": [
             "No uninitialized bytes, hidden network dereference or full-file heap allocation; all touched reader paths are enumerated."
@@ -630,19 +720,23 @@
           "title": "Freeze benchmark and failure contracts",
           "goal": "Make performance claims reproducible and falsifiable.",
           "deliverables": [
-            "Workload/hardware/arrival profiles, SLO worksheet, independent receipt ledger design and capacity model"
+            "Workload/hardware/arrival profiles, SLO worksheet, independent receipt ledger design and capacity model",
+            "G06 workload and numerical scale-efficiency/latency/cost thresholds frozen from calibration; no claim of implemented multi-worker service qualification"
           ],
           "validation": [
             "Reproduce single-node baseline twice with raw histograms/configs; calculate batch/egress/retention costs."
           ],
           "definition_of_done": [
-            "Targets in performance-scale.md are accepted or explicitly revised with evidence and no hidden exclusions."
+            "Targets in performance-scale.md are accepted or explicitly revised with evidence and no hidden exclusions.",
+            "Component/single-node calibration is recorded separately from later M15.06 provider curves and M17.03 real-service G06 qualification; no future runtime result is required or implied here"
           ],
           "depends_on": [
             "M02.01",
             "M02.02",
             "M02.04",
-            "M02.07"
+            "M02.07",
+            "M02.08",
+            "M08.01"
           ],
           "owner": "engine/architecture",
           "status": "planned",
@@ -735,7 +829,8 @@
           "title": "Specify bounded on-disk formats",
           "goal": "Version objects/manifests/WAL/schema/checkpoint envelopes.",
           "deliverables": [
-            "Format specifications, parsers/encoders, size limits and golden corpus"
+            "Format specifications, parsers/encoders, size limits and golden corpus",
+            "Versioned API/profile/schema, opaque version and bounded cursor/pin identity requirements from the early scale model"
           ],
           "validation": [
             "Every-byte truncation/corruption and oversized/overflow fuzz inputs; roundtrip plus independent fixture checks."
@@ -744,7 +839,10 @@
             "Unknown mandatory versions fail, lengths are checked before allocation, ETags are not hashes."
           ],
           "depends_on": [
-            "M03.01"
+            "M03.01",
+            "M19",
+            "M02.08",
+            "M02.05"
           ],
           "owner": "storage/consistency",
           "status": "planned",
@@ -897,11 +995,13 @@
             "M02 corpus against pinned engine; missing feature, unsupported writer mode, panic/corruption handling."
           ],
           "definition_of_done": [
-            "No runtime crate bypasses the adapter to engine internals; revision upgrade has a dedicated test command."
+            "No runtime crate bypasses the adapter to engine internals; revision upgrade has a dedicated test command.",
+            "Only selected core-v1 capabilities are promised; unsupported engine/API features remain explicit and cannot be silently ignored."
           ],
           "depends_on": [
             "M02",
-            "M03"
+            "M03",
+            "M19"
           ],
           "owner": "engine",
           "status": "planned",
@@ -1284,17 +1384,23 @@
           "title": "Deliver lifecycle and standalone API",
           "goal": "Make local end-to-end use operationally complete.",
           "deliverables": [
-            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls"
+            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls",
+            "Native /v1 capabilities/receipts and explicitly selected thin adapter routes; core request/response/queue/retention admission",
+            "Early selected OpenSearch-reference and intentional-difference/unsupported conformance corpus; no broad SDK promise"
           ],
           "validation": [
-            "External process client against RustFS with encrypted data and identity checks; delete/recreate name races."
+            "External process client against RustFS with encrypted data and identity checks; delete/recreate name races.",
+            "Run profile G02 plus parser/admission/unknown-parameter, CRUD/bulk/item order, latest GET and postcommit visibility-timeout histories before standalone qualification"
           ],
           "definition_of_done": [
-            "Client-visible semantics match M02 matrix and lifecycle never reuses old authority/history."
+            "Client-visible semantics match M02 matrix and lifecycle never reuses old authority/history.",
+            "All advertised standalone core-v1 operations and limits have runtime evidence; deferred/unsupported semantics remain visible and do not trigger fake responses."
           ],
           "depends_on": [
             "M06.03",
-            "M06.04"
+            "M06.04",
+            "M19",
+            "M13.01"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -1335,7 +1441,8 @@
         "Multiple nodes accept routed writes and fan out queries with correct document routing, reduce semantics and tenant isolation.",
         "Latest/at-least/PIT reads validate receiver checkpoints; stale placement cannot downgrade freshness.",
         "Node loss, hot tenant overload and shard movement preserve declared results or return explicit incomplete/unavailable status.",
-        "Zone-local serving and eligible fallback pass normal and zone-loss cost/capacity tests; direct object access is compared with paid cross-zone peers."
+        "Zone-local serving and eligible fallback pass normal and zone-loss cost/capacity tests; direct object access is compared with paid cross-zone peers.",
+        "Core-v1 matching/different/unsupported semantics and total/concurrent work budgets pass early distributed conformance; later migration cannot retroactively define an unbounded API."
       ],
       "document": "milestones/M07.md",
       "tasks": [
@@ -1354,7 +1461,8 @@
             "Routing hints cannot create writer authority or bypass receiver authorization/freshness."
           ],
           "depends_on": [
-            "M06"
+            "M06",
+            "M13.01"
           ],
           "owner": "query/cluster",
           "status": "planned",
@@ -1403,23 +1511,51 @@
           "evidence": []
         },
         {
+          "id": "M07.08",
+          "title": "Implement distributed API admission and tenant budgets",
+          "goal": "Preserve finite work and tenant isolation across routing/fanout before distributed query integration.",
+          "deliverables": [
+            "Separate total-target/inflight-RPC budgets, byte/CPU/queue/retry accounting, deadline propagation and tenant share admission",
+            "Bounded scope resolution, cancellation cleanup and large-job handoff with truthful typed errors"
+          ],
+          "validation": [
+            "Profile G03: target/concurrency limit+one, hot-tenant skew, stalled peers, retry storms and coordinator cancellation",
+            "Measure actual queued/RPC/remote bytes and verify rejected or incomplete work cannot appear as an exact successful result"
+          ],
+          "definition_of_done": [
+            "Every distributed request and retry uses the admitted envelope; no full-catalog hot scan or unlimited fanout",
+            "Initial runtime fairness is qualified here; later M13 placement/fleet tests still prove large-scale behavior"
+          ],
+          "depends_on": [
+            "M06",
+            "M07.01",
+            "M07.02",
+            "M02.08",
+            "M08.01"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
           "id": "M07.04",
           "title": "Implement distributed query and reduction",
           "goal": "Preserve pinned shard semantics with bounded fanout.",
           "deliverables": [
-            "Typed query IR/DSL subset, top-k/ties, sort/search_after, aggregations, pruning and optional DFS"
+            "Selected core-v1 typed DSL/IR, bounded top-k/ties/sort, exact-or-refused finite aggregation profiles, pruning and explicit later optional global-statistics scoring"
           ],
           "validation": [
-            "Compare OpenSearch reference; query/fetch concurrent deletes; wrong pruning metadata and huge fanout controls.",
+            "Compare intended matching profile against pinned OpenSearch fixtures and intentional differences against native independent oracles; concurrent deletes, unsafe pruning, bucket and scope/fanout controls.",
             "Compare eager versus leaf-reduced/delayed-fetch fanout and count encoded response bytes on each zone edge."
           ],
           "definition_of_done": [
-            "Required query contract passes; memory/fanout bounded; partial results require explicit opt-in."
+            "Declared profile contract passes; memory/total work/concurrency bounded; exactness and partial results are truthful and explicit."
           ],
           "depends_on": [
             "M07.01",
             "M07.02",
-            "M04"
+            "M04",
+            "M07.08"
           ],
           "owner": "query/cluster",
           "status": "planned",
@@ -1431,7 +1567,8 @@
           "goal": "Serve required prefixes from eligible immutable readers.",
           "deliverables": [
             "Published/latest/at_least modes, replica catch-up, PIT vectors/pins and token limits",
-            "Authoritative latest barriers and bounded WAL-tail discovery from structural checkpoints; cached manifests alone cannot certify latest"
+            "Authoritative latest barriers and bounded WAL-tail discovery from structural checkpoints; cached manifests alone cannot certify latest",
+            "TTL/count/retained-byte snapshot quotas, stable query/sort cursors, routing/schema/profile binding and typed expiry; per-partition consistency is not global serializability"
           ],
           "validation": [
             "Stale node and unavailable authority, refresh races, deadline expiry, topology change and PIT GC."
@@ -1479,14 +1616,16 @@
             "3+ node RustFS test topology, tenant fairness/failover report and reference corpus"
           ],
           "validation": [
-            "External clients across node kill/rejoin, overload, disk pressure and mTLS/key faults."
+            "External clients across node kill/rejoin, overload, disk pressure and mTLS/key faults.",
+            "Run selected API conformance and G03-G05 bounded-scale/completeness controls now, before optional modules or late migration qualification"
           ],
           "definition_of_done": [
             "Correctness and L1 baseline evidence pass; query/index resources scale separately."
           ],
           "depends_on": [
             "M07.05",
-            "M07.07"
+            "M07.07",
+            "M19"
           ],
           "owner": "query/cluster",
           "status": "planned",
@@ -1516,7 +1655,8 @@
           "title": "Define observability and error schemas",
           "goal": "Land instrumentation contracts before subsystems diverge.",
           "deliverables": [
-            "Stable tracing/error/checkpoint/resource fields, OTel facade and redaction policy"
+            "Stable tracing/error/checkpoint/resource fields, OTel facade and redaction policy",
+            "Early API admission/completeness/receipt, fanout, pin, retry and cost fields used by feasibility and first runtime gates"
           ],
           "validation": [
             "Schema compatibility/cardinality tests; secret/document fixtures never emitted."
@@ -1525,7 +1665,8 @@
             "Modules use one versioned event model and producer-side redaction."
           ],
           "depends_on": [
-            "M01"
+            "M19",
+            "M01.01"
           ],
           "owner": "operations",
           "status": "planned",
@@ -2234,7 +2375,7 @@
     },
     {
       "id": "M13",
-      "title": "Catalog, hot-shard and fleet scaling",
+      "title": "Catalog foundation, elasticity and fleet scaling",
       "goal": "Remove per-index resource floors and deliver safe hot-partition growth.",
       "owner": "cluster/scale",
       "status": "planned",
@@ -2262,11 +2403,13 @@
             "1M tenants/50M-index model with >=99% idle, burst activation and catalog repair."
           ],
           "definition_of_done": [
-            "No O(total indexes) per-node polling/resource cost; model assumptions and real tested sizes are separate."
+            "No O(total indexes) per-node polling/resource cost; model assumptions and real tested sizes are separate.",
+            "Paged catalog/cold-activation mechanisms land before standalone/distributed API integration; later M13 tasks still own full elasticity/fleet proof."
           ],
           "depends_on": [
-            "M07",
-            "M09"
+            "M03.05",
+            "M02.08",
+            "M05.01"
           ],
           "owner": "cluster/scale",
           "status": "planned",
@@ -2626,7 +2769,8 @@
           ],
           "validation": [
             "Run matched logical correctness/security histories and each selected failure envelope, including zone loss, rebuild, catch-up, copy/CCR and key rotation",
-            "Use rate snapshots plus actual compute/disk/cache inventory; include KMS, retries, page writes, network services and recovery debt"
+            "Use rate snapshots plus actual compute/disk/cache inventory; include KMS, retries, page writes, network services and recovery debt",
+            "Measure implemented multi-worker scale/cost curves against M02.05 thresholds; provider results support but do not replace M17.03 full-service G06 qualification"
           ],
           "definition_of_done": [
             "Every advertised profile meets its own frozen constraints or stays blocked; weakened semantics are explicit in comparisons",
@@ -2703,7 +2847,7 @@
         "M15"
       ],
       "definition_of_done": [
-        "Supported OpenSearch clients migrate via measured shadow/replay/copy workflows with discrepancy reports and explicit unsupported APIs.",
+        "Declared core/module profiles and explicitly adapted workloads pass shadow/replay/copy workflows with pinned discrepancy reports; out-of-profile OpenSearch semantics are documented application gaps, not universal replacement obligations.",
         "Rolling engine/protocol/format changes respect old readers and downgrade limits; a published engine release can replace its Git pin safely.",
         "AI harness achieves bounded context/review/worktree behavior on realistic tasks; Linux remains primary and optional native ports are honestly qualified.",
         "Profile selection, budget diagnostics and authorized cost/reliability transitions are usable without silently changing prior receipt guarantees."
@@ -2712,8 +2856,8 @@
       "tasks": [
         {
           "id": "M16.01",
-          "title": "Deliver OpenSearch migration and compatibility suite",
-          "goal": "Turn API support into a real replacement workflow.",
+          "title": "Qualify supported-profile migration and client adapters",
+          "goal": "Prove migration for declared supported/adapted workloads without a universal OpenSearch replacement promise.",
           "deliverables": [
             "Bulk/query/error compatibility fixtures, shadow read/dual-write reconciliation and import tooling"
           ],
@@ -2721,12 +2865,13 @@
             "Supported client versions and M02 corpus; routing/version/deletes/aliases/aggregations under shadow traffic."
           ],
           "definition_of_done": [
-            "Every required difference is fixed or a visible migration blocker; internal OpenSearch APIs are not falsely advertised."
+            "Selected matching behavior passes pinned client/config fixtures; every intentional difference has an adaptation report and every out-of-profile workload blocks only its own migration claim."
           ],
           "depends_on": [
             "M07",
             "M12",
-            "M15"
+            "M15",
+            "M19"
           ],
           "owner": "integration/developer-experience",
           "status": "planned",
@@ -2899,7 +3044,8 @@
             "Release matrix linking R01-R23 to test/run/commit artifacts and unresolved blockers"
           ],
           "validation": [
-            "Inspect actual commands, runtime behaviors, coverage denominator, module/provider/hardware claims and reviews."
+            "Inspect actual commands, runtime behaviors, coverage denominator, module/provider/hardware claims and reviews.",
+            "Audit the actual runtime capability manifest against core-v1 and module profiles; no unimplemented API, unsupported client or invented exactness claim may ship"
           ],
           "definition_of_done": [
             "No requirement is treated as passed by intent, a file name, skipped job, indirect test or a narrower substitute."
@@ -2916,7 +3062,8 @@
             "M09.08",
             "M15.06",
             "M15.07",
-            "M16.07"
+            "M16.07",
+            "M19"
           ],
           "owner": "release/integrator",
           "status": "planned",
@@ -2950,7 +3097,8 @@
             "72-hour mixed workload, L1/L2 scale results, leak/cost/latency and capacity report"
           ],
           "validation": [
-            "Concurrent compaction/copy/CCR, working set >cache, hot tenants, split/rebalance, overload/recovery on x86/ARM."
+            "Concurrent compaction/copy/CCR, working set >cache, hot tenants, split/rebalance, overload/recovery on x86/ARM.",
+            "Qualify G06 on the actual service at increasing worker counts against the M02.05 frozen numerical scale-efficiency, latency and cost bounds; retain matched workload and offered/completed/rejected load"
           ],
           "definition_of_done": [
             "Frozen SLOs pass with no growing replay/archive/GC/RSS debt; raw histograms/config/hardware evidence retained.",
