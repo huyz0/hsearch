@@ -1,0 +1,121 @@
+{
+  "scope": "Initial local qualification, not final-source review/CI or M08 acceptance",
+  "source_head": "a74224a4adc8a85c462778159840950ee4741392",
+  "native_projection_source_sha256": "dd36ccc7a3ff3457b6d1b50479a289c99be5217f0c43e63f2c2d158838c90e8b",
+  "full_smoke_log_sha256": "0a5425e29b501ca8c5becddcade0f9fe2e90acba907a860f9f02a8672f0f7584",
+  "linux_component_tests": 286,
+  "component_skips": 0,
+  "actual_compiler_controls": 10,
+  "whole_check_elapsed_seconds": 78.36,
+  "whole_check_peak_disk_bytes": 915663225,
+  "caps": {
+    "cpu_millis": 2000,
+    "memory_bytes": 4294967296,
+    "swap_bytes": 0,
+    "pids": 512
+  },
+  "native_observations": [
+    {
+      "native_physical_overlap": "pass",
+      "profile": "dev",
+      "uncovered_seed": {
+        "covered": 3,
+        "coverable": 4,
+        "percent": 75.0,
+        "status": "fail"
+      },
+      "test_repair": {
+        "covered": 4,
+        "coverable": 4,
+        "percent": 100.0,
+        "status": "pass"
+      },
+      "unchanged_production_source": true,
+      "native_receipts": [
+        {
+          "baseline_raw_sha256": "0bf9148075d40f0fda2679cde2b45d4aff0008d9ed3c03c645b8c7e606e9c620",
+          "runtime_raw_sha256": "e8c512cedd3d0630065e476b0f7b944750f0585e8ce4851931f2e358c82d76ee",
+          "baseline_physical_lines": 4,
+          "native_summary_count": 5,
+          "legacy_refused_mismatch": true
+        },
+        {
+          "baseline_raw_sha256": "09392226c1e8c2037bca5dacc8ceb7cec77ac8a0ee6ac8763c4c14c01f57d30d",
+          "runtime_raw_sha256": "b367a7cba4d6180df31c652feaf9f3d81c3a27a4123c7228b8a123b61f44b705",
+          "baseline_physical_lines": 4,
+          "native_summary_count": 5,
+          "legacy_refused_mismatch": true
+        }
+      ],
+      "protocol": {
+        "type": "llvm.coverage.json.export",
+        "version": "3.1.0",
+        "algorithm": "llvm22-physical-line-v1"
+      }
+    },
+    {
+      "native_physical_overlap": "pass",
+      "profile": "release",
+      "uncovered_seed": {
+        "covered": 3,
+        "coverable": 4,
+        "percent": 75.0,
+        "status": "fail"
+      },
+      "test_repair": {
+        "covered": 4,
+        "coverable": 4,
+        "percent": 100.0,
+        "status": "pass"
+      },
+      "unchanged_production_source": true,
+      "native_receipts": [
+        {
+          "baseline_raw_sha256": "32831a5f6351d7c4a8774a1a02171e7d92b2799906735d9fbc32f120c140c21c",
+          "runtime_raw_sha256": "4c99d4b85891246bd222c8957940987becc212654594b577d5352605c022b088",
+          "baseline_physical_lines": 4,
+          "native_summary_count": 5,
+          "legacy_refused_mismatch": true
+        },
+        {
+          "baseline_raw_sha256": "c14f2b29bfdb2a5891b8894b76eb6eb43804e2fa017ddbac391de029ca6b8b32",
+          "runtime_raw_sha256": "68d22f9e3a4e2ae288ece32b5a9ee1d0a527dfddf80d074235da4b9d7faa6710",
+          "baseline_physical_lines": 4,
+          "native_summary_count": 5,
+          "legacy_refused_mismatch": true
+        }
+      ],
+      "protocol": {
+        "type": "llvm.coverage.json.export",
+        "version": "3.1.0",
+        "algorithm": "llvm22-physical-line-v1"
+      }
+    },
+    {
+      "native_projection_cost": "pass",
+      "scope": "fresh Linux subprocess per admitted sample; measured peak RSS, not a separate process memory cap or maximum-profile qualification",
+      "samples": [
+        {
+          "segments": 1001,
+          "physical_lines": 1001,
+          "raw_bytes": 32213,
+          "seconds": 0.002824431052431464,
+          "maximum_rss_kib": 33592,
+          "raw_sha256": "66fad4d58168a302f89aac6f7a350a06f4676685cadb652f00d15f6b86b6c82b",
+          "module_sha256": "dd36ccc7a3ff3457b6d1b50479a289c99be5217f0c43e63f2c2d158838c90e8b"
+        },
+        {
+          "segments": 100001,
+          "physical_lines": 100001,
+          "raw_bytes": 3389221,
+          "seconds": 0.27599395404104143,
+          "maximum_rss_kib": 71224,
+          "raw_sha256": "aa11485294c01aa779e1bcba593b7866d26595d761e147d902ad10cb96f9538c",
+          "module_sha256": "dd36ccc7a3ff3457b6d1b50479a289c99be5217f0c43e63f2c2d158838c90e8b"
+        }
+      ]
+    }
+  ],
+  "storage": "TLS/wrongCA/badcredential/objectroundtrip/two-private-topology-isolation/cleanupPASS",
+  "limits": "100001segments3.39MBsample cost is observed; maximum-profile/hardware/fleet/SDK/exporter qualification not inferred"
+}

@@ -1,6 +1,6 @@
 # Native physical-line coverage projection
 
-Status: M01.13 is a proposed compiler-report protocol redesign, not an accepted implementation. M01.12 was independently reviewed and normally merged as75f30ddc74b727dd6cff8dda6c23cf29e2facca7. Its PR41339748484, main41340616696 and explicit-base manual41340639807 each passed all seven jobs, including the complete native x86_64/ARM64 matrix. Those runs qualify the existing43-line Rust bootstrap; a new actual library exposes a report assumption outside that demonstrated case. Generic coverage/composite acceptance is held. M08.01's unpublished event/facade draft is preserved and cannot qualify until this protocol is repaired. No product runtime or release is accepted.
+Status: M01.13 has a private implementation candidate with initial local qualification, not an accepted implementation. M01.12 was independently reviewed and normally merged as75f30ddc74b727dd6cff8dda6c23cf29e2facca7. Its PR41339748484, main41340616696 and explicit-base manual41340639807 each passed all seven jobs, including the complete native x86_64/ARM64 matrix. Those runs qualify the existing43-line Rust bootstrap; a new actual library exposes a report assumption outside that demonstrated case. Generic coverage/composite acceptance is held. M08.01's unpublished event/facade draft is preserved and cannot qualify until this protocol is repaired. No product runtime or release is accepted.
 
 ## Observed counterexample and preserved history
 
@@ -31,3 +31,10 @@ Do not alter the90% aggregate/per-crate/per-file/changed production floors, sele
 Before acceptance: deterministic framing/projection/negative tests; actual pinned native failure/repair and report-coordinate oracles; complete integration qualification in both profiles; independent correctness and architecture/security review of the whole final retained tree; full native x86_64/ARM64 PR/main and explicit-base manual CI; durable exact-source gate and normal protected merge. Two review rounds are planned, hard ceiling three, with every earlier counterexample and finding retained in context. No gate is cleared merely because its review budget is exhausted.
 
 M01.13 precedes generic M01.12/composite M01.07 acceptance and resumption of M08.01 qualification. Current43-line bootstrap passes are retained as scoped evidence; M01.09's original ARM cause and M01.08 remain open. The source-only proof, synthetic catalog model and new observation draft do not establish a running search store.
+
+
+## Initial implementation observations
+
+The [initial local record](evidence/native-projection-local.json) binds sourcea74224a and its actual native projection module hash. Complete Linux qualification passed286 component tests without skips and10 real compiler controls, plus full Rust/lint/format and TLS/object/isolation/cleanup checks. Fresh dev/release overlap fixtures each show LF5 versus4 physical lines; uncovered3/4 fails and test-only repair4/4 passes, with changed0/1 then1/1. All original policy and1/3-to3/3 controls remain.
+
+Two fresh native projection samples measure1001 and100001 segments. The larger3,389,221-byte input took0.276s and its subprocess peaked at71,224KiB RSS in that observed environment. These are scoped sample measurements, not maximum-profile or fleet claims. The candidate additionally checks character count before making its UTF-8 byte copy. Final-source coverage, source-bound whole-suite requalification, independent reviews and hosted native qualification remain pending; no current M08 or composite acceptance is asserted.

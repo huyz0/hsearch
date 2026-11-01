@@ -43,6 +43,7 @@ def unsigned(value, maximum):
 def decode(text):
     """Validate bounded JSON framing/types before any physical projection."""
     need(type(text) is str, "Native report must be text")
+    need(0 < len(text) <= MAX_BYTES, "Native report character preflight bound")
     content = text.encode("utf-8")
     need(0 < len(content) <= MAX_BYTES, "Native report byte bound")
     depth, quoted, escaped = 0, False, False
