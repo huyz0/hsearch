@@ -1,0 +1,316 @@
+{
+  "schema_version": 1,
+  "kind": "derived technical extract; original report hashes retained",
+  "original_task": "M01.07",
+  "rounds_issued": 3,
+  "original_gate": "blocked",
+  "reports": [
+    {
+      "packet_sha256": "bcc2ee2b963b75d1b0038c3adf9f96be50ba19618436dfa6c4c11628edaa4ee6",
+      "head": "90b23dc993365845b63100331f1fabd1b27f8de7",
+      "tree": "5a6965cfe7d5a5e660fc1064924fd568823c104b",
+      "source_digest": "453c0fdd847390781376a4f128813518f16b15e94172af1e4173b531aef1480c",
+      "role": "correctness_tests_claims",
+      "reviewer_session": "/root/publication_review",
+      "conclusion": "blocked",
+      "findings": [
+        {
+          "id": "UNOWNED_CHECKOUT_PRODUCTION_MAPS_EXCLUDED",
+          "priority": "P2",
+          "file": "tools/coverage.py",
+          "line": 258,
+          "reproduction": "Create a tracked workspace-level shared.rs and a selected production crate lib.rs declaring #[path=\"../../../shared.rs\"] pub mod shared. Replay actual normalize_report and evaluate with two production LCOV maps: a covered lib function and an uncovered shared.rs function. Independently executed external fixture: physical production maps=2, covered=1, normalized sources only crates/prod/src/lib.rs; gate reports1/1=100% PASS instead of1/2=50%. No LLVM/compiler/Docker execution or reviewed-source edit was needed to replay the actual normalization path.",
+          "expected": "Mapped first-party source compiled into selected production must have explicit reviewed ownership and enter the denominator, or fail closed. Unowned checkout source must not silently use the dependency/unselected-source exclusion path.",
+          "observed": "owner=None outside the selected package directories falls through lines259-261 to False. The guard repeats the same directory predicate, so it cannot reject a checkout-owned shared module. Initial source inventory only scans package src/entry paths, leaving the excluded executable file absent from missing-map and changed-line gates."
+        },
+        {
+          "id": "FULL_CI_OMITS_NEW_PRODUCTION_MEMBERS",
+          "priority": "P2",
+          "file": "tools/ci.py",
+          "line": 147,
+          "reproduction": "Extend the actual CI workspace fixture with ordinary hsearch-new-production at crates/new-production/ and select a full fallback. validate_plan accepts it and packages includes the new member. Independently execute actual native with command/output mocks and external CARGO_TARGET_DIR: emitted coverage command lists only hsearch-engine, hsearch-observe and hsearch-types, omitting the new production member. The collector classifies non-xtask/non-testkit metadata members as production but accepts that old requested subset.",
+          "expected": "Full production coverage must reflect the actual admitted workspace and reviewed development exclusions, or refuse any undeclared production-scope mismatch before native commands. A future member admission must require the corresponding coverage-policy update rather than silently lose its denominator.",
+          "observed": "select, validate_plan and native rely on the fixed three-name PRODUCTION set. Full tests/builds can include a newly admitted member while coverage still validates only the old three. Current bootstrap workspace ownership rejects unowned additions, but admitting a legitimate future production member does not make this CI scope fail closed."
+        },
+        {
+          "id": "RAW_STRING_DIFF_CONTENT_SWITCHES_CHANGED_OWNER",
+          "priority": "P2",
+          "file": "tools/coverage.py",
+          "line": 223,
+          "reproduction": "Use a real Git fixture with A containing an existing public Rust raw string and ten tested public functions, plus an audited declaration-only B. In the first change hunk insert the valid raw-string content line ++ b/crates/b/src/lib.rs; Git emits it as +++ b/crates/b/src/lib.rs. In a later separate hunk add an uncovered public function at A lines8-10. Actual changed_lines returned A:[3], B:[8,9,10], although B was unchanged. Actual evaluate with ten covered production functions and one uncovered function reports10/11=90.91%, changed=N/A, PASS. Supplying the correct changed A lines3,8,9,10 makes the same report fail. This entire real-Git/normalizer/gate counterexample was independently executed.",
+          "expected": "Only actual diff file headers outside hunk bodies may select the current production source. Added Rust string contents must not move subsequent changed lines to another file; the uncovered changed function must fail the90% changed-line floor.",
+          "observed": "The parser treats every line beginning +++ b/ as a file header without tracking hunk state. An added raw-string payload can therefore redirect a later genuine hunk to a known unchanged non-executable file and evade the changed-line requirement while aggregate/per-file coverage remains above90%."
+        }
+      ],
+      "resolutions": [],
+      "round": 1,
+      "original_report_sha256": "770c9b134b405e33747a2d6d4ef530725af7d8be363ea4f16caead5d63151920"
+    },
+    {
+      "packet_sha256": "bcc2ee2b963b75d1b0038c3adf9f96be50ba19618436dfa6c4c11628edaa4ee6",
+      "head": "90b23dc993365845b63100331f1fabd1b27f8de7",
+      "tree": "5a6965cfe7d5a5e660fc1064924fd568823c104b",
+      "source_digest": "453c0fdd847390781376a4f128813518f16b15e94172af1e4173b531aef1480c",
+      "role": "architecture_security",
+      "reviewer_session": "/root/sandbox_security_review",
+      "conclusion": "blocked",
+      "findings": [
+        {
+          "id": "SEC-01-exited-leader-group-cleanup",
+          "priority": "P2",
+          "file": "tools/coverage.py",
+          "line": 111,
+          "reproduction": "Execute actual Runner.command with an exited direct child (poll/returncode0) and a descendant retaining an inherited stdout/stderr pipe. The controlled process/selector model reaches Coverage command deadline exceeded, but the cleanup branch sends no process-group signal because child.poll() is no longer None. Model result is saved in M01.07_ROUND1_SECURITY_CHECKS.json. Native POSIX repro to add: leader spawns a same-group sleeping descendant with inherited pipes and exits immediately; deadline must stop that owned group and leave an independent bystander alive. Native POSIX execution was NOT-RUN by this Windows reviewer.",
+          "expected": "Deadline/output failure must stop the owned process group even if its leader has exited. Cleanup should retain the original failure, terminate owned descendants with a finite grace/hard stop, and avoid unrelated processes. A direct-child exit is not proof that the group is gone.",
+          "observed": "The only killpg calls are guarded by child.poll() is None. An exited leader therefore disables both TERM and KILL even while its remaining group keeps the command pipes open. The wrapper times out yet can leave resource-consuming descendants alive, contrary to its bounded subprocess lifecycle."
+        },
+        {
+          "id": "SEC-02-cargo-compiler-override-unbound",
+          "priority": "P2",
+          "file": "tools/coverage.py",
+          "line": 155,
+          "reproduction": "Set RUSTC to an alternate compiler path. Actual tool_identity accepts it: its override list excludes RUSTC, its probes still invoke PATH rustc, and Runner.env copies the conflicting RUSTC into Cargo child environments. In an inert modeled tool prerequisite/receipt fixture, the actual guards return a qualified PATH rustc identity while retaining RUSTC=alternate-rustc. Cargo documents that RUSTC selects the compiler it executes, independently of the rustc queried on PATH. See the saved environment_override_model and official Cargo environment-variable reference.",
+          "expected": "Bind Cargo compilation to the exact compiler whose identity/hash is recorded, or refuse a conflicting RUSTC selection before execution. An explicitly supplied identical resolved pinned compiler may be accepted if verified. The context must not attest one compiler while Cargo uses another.",
+          "observed": "The source/toolchain context records PATH rustc/sysroot hashes, but Cargo can execute the inherited RUSTC override. Artifact/profile bytes are hashed afterward without proving they came from the attested compiler, breaking the declared exact toolchain binding."
+        },
+        {
+          "id": "SEC-03-nextest-env-overrides-policy",
+          "priority": "P2",
+          "file": "tools/coverage.py",
+          "line": 72,
+          "reproduction": "Set NEXTEST_RETRIES=1 and NEXTEST_TEST_THREADS=99. The actual nextest_policy accepts the unchanged checked-in retries0/two-thread config, tool_identity accepts the environment, and Runner.env propagates both variables unchanged. The actual cargo nextest run commands supply --profile hsearch but no overriding --retries/--test-threads flags. Pinned nextest configuration documentation places environment variables above repository profiles. Thus a test failing initially but passing on retry can return overall success, while the recorded context still advertises the fixed no-retry policy. Guard/propagation model was executed; native nextest retry execution was NOT-RUN by this reviewer.",
+          "expected": "Reject, sanitize or explicitly override supported behavior-affecting nextest environment settings before all correctness/coverage runs, and bind the effective retry/selection/concurrency policy. No inherited retry/thread override may silently weaken the fixed no-retry/two-thread declaration.",
+          "observed": "Validating only .config/nextest.toml does not establish the effective policy. NEXTEST_RETRIES and NEXTEST_TEST_THREADS can override it without a source/context change; the same inherited environment also reaches direct nextest calls in tools/check.py and tools/ci.py. The promised override rejection and deterministic retry/concurrency policy are not enforced."
+        }
+      ],
+      "resolutions": [],
+      "round": 1,
+      "original_report_sha256": "e6a3baf0981dcf33e1657ae2c37e00ca98c3fd97ae415f8c97d5ce35880b17fb"
+    },
+    {
+      "packet_sha256": "df9e61640b82be0339baf8779a967b08c68bf5d1a43552a73e9fc6831056288f",
+      "head": "c4fd2d660d8e97e3a35bb04962798d019ea951c1",
+      "tree": "2be309ed3a30fe6c910593474243918d2b647b60",
+      "source_digest": "bc2be58dea004ce277edb5832e0ec9747c3b34ad2e475c2046b15f57cc25a7df",
+      "role": "correctness_tests_claims",
+      "reviewer_session": "/root/publication_review",
+      "conclusion": "blocked",
+      "findings": [
+        {
+          "id": "BINARY_DIFF_SILENTLY_ERASES_CHANGED_SCOPE",
+          "priority": "P2",
+          "file": "tools/coverage.py",
+          "line": 247,
+          "reproduction": "Run taskroot/M01.07_ROUND2_BINARY_DIFF_REPRO.py against this frozen source. It creates a fresh task-temp Git repository containing10 existing valid Rust functions, then commits an added uncovered function at lines31-33 plus tracked .gitattributes entry crates/a/src/lib.rs -diff. Actual git diff with the production --no-ext-diff/--no-textconv/--no-renames/--no-color/--unified=0 arguments emits Binary files ... differ, with no +++ or @@ hunk. Actual changed_lines returns {}. Actual evaluate with ten covered body lines and uncovered line32 reports aggregate10/11=90.91%, changed0/0=N/A, passed=true. With the correct changed lines31-33, the identical actual gate reports changed0/1=0%, passed=false. Measured code/output retained in M01.07_ROUND2_BINARY_DIFF_REPRO.json. This runs only native Git and pure production Python; it does not execute any Git clean/filter, compiler or Docker.",
+          "expected": "Changed production code cannot become an empty changed scope because Git attributes or binary classification suppress text hunks. Force a qualified text diff and/or refuse or conservatively count changed owned source without qualified hunks; keep the90% changed-line and per-file floors. The added uncovered function must fail this fixture.",
+          "observed": "The parser silently ignores Binary files records and never verifies that changed production files produced qualified changed-line evidence. Its empty result is interpreted as honest N/A by evaluate. Thus a normal tracked -diff attribute can bypass the changed-line requirement while aggregate/file/crate coverage remains above90%. The raw-string ownership repair does not cover this remaining path."
+        }
+      ],
+      "resolutions": [
+        {
+          "review_key": "1:architecture_security:SEC-01-exited-leader-group-cleanup",
+          "evidence": "tools/coverage.py:109-133 now enters owned-group cleanup on a primary failure even after the leader exits, signals TERM, waits a finite five-second grace, then KILLs the remaining group; cleanup failures preserve the primary exception. The actual exited-leader/retained-pipe/bystander negative failed in retained M01.07_R1_NATIVE_RED_CONTROLS.log and passes in the source-bound R2 full213-case Linux log. I inspected the lifecycle code and actual regression oracle; native process execution was not repeated by this Windows reviewer."
+        },
+        {
+          "review_key": "1:architecture_security:SEC-02-cargo-compiler-override-unbound",
+          "evidence": "tools/coverage.py:172-192 verifies an inherited RUSTC resolves to the attested real compiler or qualified PATH proxy, then always pins Runner.env RUSTC to the real sysroot/bin/rustc before any Cargo probe/build; line209 records that exact selection alongside its hash. Independently reran matching/conflicting inert-path controls in the56-case suite. Source-bound R2 smoke also records actual rustc probes followed by conflicting-selection refusal before Cargo."
+        },
+        {
+          "review_key": "1:architecture_security:SEC-03-nextest-env-overrides-policy",
+          "evidence": "tools/coverage.py:265-271 refuses every inherited NEXTEST_* name before validating the exact retries0/two-thread/deadline config; collect and merge call it at333/439. tools/check.py:31-36 and tools/ci.py:243 invoke it before correctness workloads. Independently executed NEXTEST_RETRIES=1 through both actual entrypoints with workload mocks: check exit1, native ValueError, zero workload calls. Retry/thread pure controls passed. R2 actual compiler log demonstrates retry-induced false success without policy and production refusal; original floor is unchanged."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:UNOWNED_CHECKOUT_PRODUCTION_MAPS_EXCLUDED",
+          "evidence": "tools/coverage.py:290-293 now requires any excluded checkout source to belong to known package ownership; a root shared.rs map raises Unowned first-party coverage requires explicit reviewed ownership instead of disappearing. Independently reran actual normalizer shared-file fixture in the56-case suite. Retained pre-fix host/native red logs show the same assertion failed; R2 actual compiler control generated two maps and observed refusal for the unowned shared source. Intentional known development/unselected/dependency exclusions remain explicit."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:FULL_CI_OMITS_NEW_PRODUCTION_MEMBERS",
+          "evidence": "tools/ci.py:234-242 obtains actual metadata for both full and narrow execution and requires actual members minus exactly xtask/testkit to equal reviewed PRODUCTION ownership before run() workloads. Independently reran the extended-workspace actual native fixture: the new ordinary member triggers ValueError with no workload commands. The same real regression failed pre-fix in retained host/native red logs. Metadata-unavailable planning still falls back full; execution cannot claim unknown new-member coverage."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:RAW_STRING_DIFF_CONTENT_SWITCHES_CHANGED_OWNER",
+          "evidence": "tools/coverage.py:248-259 now resets ownership at genuine diff file boundaries and recognizes +++ b/ only outside a hunk. Independently reran the real-Git raw-string spoof against the actual changed_lines/evaluate path: the uncovered body stays in source A and the changed gate fails. This resolves the recorded owner-redirection counterexample. The broader changed-line contract is still blocked by separate R2 finding BINARY_DIFF_SILENTLY_ERASES_CHANGED_SCOPE; the six prior resolutions do not imply acceptance."
+        }
+      ],
+      "round": 2,
+      "original_report_sha256": "e2d84ece8a2e68b376a0dd024e1a0ff20faf5277800717800391024364c44ad3"
+    },
+    {
+      "packet_sha256": "df9e61640b82be0339baf8779a967b08c68bf5d1a43552a73e9fc6831056288f",
+      "head": "c4fd2d660d8e97e3a35bb04962798d019ea951c1",
+      "tree": "2be309ed3a30fe6c910593474243918d2b647b60",
+      "source_digest": "bc2be58dea004ce277edb5832e0ec9747c3b34ad2e475c2046b15f57cc25a7df",
+      "role": "architecture_security",
+      "reviewer_session": "/root/sandbox_security_review",
+      "conclusion": "blocked",
+      "findings": [
+        {
+          "id": "SEC-04-baseline-known-package-role-exclusion",
+          "priority": "P2",
+          "file": "tools/coverage.py",
+          "line": 291,
+          "reproduction": "A selected production lib uses #[path=\"../../testkit/src/helper.rs\"] pub mod shared, where the tracked helper function is physically under the known development package hsearch-testkit. Supply two empty-profile production maps from that selected lib: covered prod/src/lib.rs and uncovered testkit/src/helper.rs. Independently executed actual normalize_report(runtime=False), normalize_report(runtime=True) and evaluate with both package manifests in metadata and only prod selected. The helper map is silently excluded because it is inside some packages.values() directory. Observed normalized sources contains only prod lib, and gate reports1/1=100% PASS rather than exposing physical1/2. This used valid Rust source layout plus controlled LCOV, no compiler/Docker execution. Saved in M01.07_ROUND2_SECURITY_CHECKS.json.",
+          "expected": "A selected production-object baseline must not silently discard checkout-owned executable maps solely because their files are under a known dev/unselected package. Require selected explicit production ownership and include the lines or refuse. Runtime-only known test/dev/dependency maps can use separate explicit exclusion rules; compilation role must determine that distinction.",
+          "observed": "The R1 root shared.rs case now refuses, but the replacement owner=None guard permits any known package directory and returns False. Production code imported from a development/unselected directory can still disappear from the denominator. The original production ownership requirement is therefore only partially fixed."
+        },
+        {
+          "id": "SEC-05-binary-attributes-hide-changed-lines",
+          "priority": "P2",
+          "file": "tools/coverage.py",
+          "line": 247,
+          "reproduction": "In a fresh real Git fixture commit .gitattributes containing *.rs -diff and a Rust source with ten covered functions. Commit an added uncovered public function at line11. Independently run the actual changed_lines(base,sources) and evaluate with ten covered baseline lines and the uncovered line11. Git reports a binary difference without hunks, so changed_lines returns{}. The gate reports10/11=90.91% aggregate, changed=N/A, and PASS. The actual Git/changed-lines/gate result is retained in M01.07_ROUND2_SECURITY_CHECKS.json; no compiler or reviewed-source edit was required.",
+          "expected": "Raw changed-production-line accounting must not become empty merely because Git attributes classify a source as binary. Force/verify text hunks from actual source bytes or fail closed on a changed production file lacking a trustworthy line inventory. The uncovered added function must fail the changed-line floor.",
+          "observed": "The diff-header hunk-state fix closes the raw-string header injection, but the git diff invocation still honors binary attributes and the parser accepts absence of hunks as no changed lines. A source change can evade the90% changed-line requirement while retaining aggregate/per-file coverage above90%."
+        }
+      ],
+      "resolutions": [
+        {
+          "review_key": "1:architecture_security:SEC-01-exited-leader-group-cleanup",
+          "evidence": "Runner.command now enters group cleanup on an active failure even if child.poll() reports exit, sends TERM, probes the owned group through a finite five-second grace, sends KILL if needed and waits for the direct child. Cleanup errors add notes to an existing primary failure. The hash-verified exact-head213-test Linux log includes the real exited-leader/retained-pipe control and bystander-preservation assertion; R1 native-red evidence retains its prior failure. Native POSIX execution was not repeated by this Windows reviewer."
+        },
+        {
+          "review_key": "1:architecture_security:SEC-02-cargo-compiler-override-unbound",
+          "evidence": "tool_identity now calls bind_compiler after the actual PATH rustc/sysroot probes, validates a supplied RUSTC against the resolved real compiler or current proxy and sets runner.env[RUSTC] to the exact sysroot compiler whose bytes are hashed. The context includes cargo_compiler. Host compiler-selection control passed. Exact-head native corpus demonstrates conflicting inert RUSTC refused after two real probes and before any Cargo command."
+        },
+        {
+          "review_key": "1:architecture_security:SEC-03-nextest-env-overrides-policy",
+          "evidence": "nextest_policy now refuses every NEXTEST_* parent environment entry before validating the immutable profile. tools/check.py invokes it before its check loop and tools/ci.py before correctness commands; collect/merge retain it too. Host retries/thread override controls passed. Native evidence demonstrates actual retry-induced false success, explicit no-retry failure and production environment refusal, with the original no-retry/two-thread policy unchanged."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:UNOWNED_CHECKOUT_PRODUCTION_MAPS_EXCLUDED",
+          "evidence": "PARTIALLY FIXED, NOT FULLY RESOLVED: owner=None now rejects the original tracked workspace-root shared.rs outside every package, and both host normalization and actual compiler two-map controls pass. However, the required compilation-role ownership boundary still fails for production maps under a known development/unselected package. Current SEC-04 independently reproduces that residual1/1 false pass. This entry records inspected fix evidence and preserves the unresolved blocker; it does not certify the broader ownership requirement as resolved."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:FULL_CI_OMITS_NEW_PRODUCTION_MEMBERS",
+          "evidence": "tools/ci.py native now reads actual full offline all-feature workspace metadata for both full and narrow plans, then unconditionally requires actual workspace members excluding xtask/testkit to equal the reviewed PRODUCTION set. New admitted production members therefore require a policy update rather than silently losing coverage. The host new-production-member control refuses before its recorded native commands; full/narrow CI mock matrix controls pass."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:RAW_STRING_DIFF_CONTENT_SWITCHES_CHANGED_OWNER",
+          "evidence": "changed_lines now resets file state only at real diff --git headers and accepts +++ b/ file headers only outside hunk bodies. The actual real-Git raw-string control passed on this host: added raw-string payload does not change owner, the uncovered added A function stays changed in A, and the changed-line gate refuses despite aggregate coverage above90%. The distinct current SEC-05 binary-attribute case remains blocked; this evidence resolves the old hunk-content injection, not all possible diff suppression."
+        }
+      ],
+      "round": 2,
+      "original_report_sha256": "0abd77ed971ef11cc22e6122f97e6c3001a26dc37568ab8d0d4c7e8c77af9f74"
+    },
+    {
+      "packet_sha256": "2a30174f079962ca2eca373d6a95ead45a391745227cc276546b1075fb57b5c4",
+      "head": "b637769fe34c324d9a92e7ed519ace9917560aee",
+      "tree": "75c606c9bfcf8ba587c4c0526ed998be196f30f8",
+      "source_digest": "8434c6dbcd738b520aafc05618abfd3195eea0baad7888c2730c91f46fd7797d",
+      "role": "correctness_tests_claims",
+      "reviewer_session": "/root/publication_review",
+      "conclusion": "clear",
+      "findings": [
+        {
+          "id": "SPACED_SOURCE_FILENAME_REFUSES_DIFF",
+          "priority": "P3",
+          "file": "tools/coverage.py",
+          "line": 286,
+          "reproduction": "Run taskroot/M01.07_ROUND3_CORRECTNESS_ADVERSARIAL.py. In a fresh Git fixture, commit valid Rust at crates/a/src/space name.rs, then append an uncovered function. Actual Git emits the header +++ b/crates/a/src/space name.rs followed by a tab separator. changed_lines takes the complete suffix including that separator as the name, so current not in sources raises Unknown changed production source. Plain and bracket-name controls in the same fixture correctly fail changed0/1. The result occurs with and without glob pathspec mode; raw header lines are retained in the JSON output.",
+          "expected": "If whitespace-containing source filenames are supported later, parse Git header path/separator encoding without changing the exact-owner check and add a real-Git control. Otherwise document an explicit supported filename restriction before introducing such paths.",
+          "observed": "The parser refuses a legitimate spaced filename rather than evaluating it. This is a conservative false refusal, not a coverage false pass. No current tracked Rust source has whitespace in its path, so it does not block this current bootstrap/CI increment."
+        }
+      ],
+      "resolutions": [
+        {
+          "review_key": "1:architecture_security:SEC-01-exited-leader-group-cleanup",
+          "evidence": "The retained R2 repair is unchanged: tools/coverage.py:109-137 signals the owned group on a primary failure even after its leader exited, allows finite five-second TERM grace, then KILL, and preserves the primary exception if cleanup fails. I re-inspected it and the native regression oracle. The exact-head R3 full220-case Linux log contains the passing exited-leader/retained-pipe/bystander control; retained R1 native red evidence had failed that assertion. Native process execution was not repeated on Windows."
+        },
+        {
+          "review_key": "1:architecture_security:SEC-02-cargo-compiler-override-unbound",
+          "evidence": "tools/coverage.py:172-192 still rejects conflicting inherited RUSTC and pins Runner.env RUSTC to the actual hashed sysroot compiler before any Cargo probe/build; its exact selection is recorded in toolchain identity. The matching/conflicting inert compiler-path control passed again in my82-case suite. Exact-head R3 actual compiler control logs two real rustc probes then conflict refusal before Cargo. No alternate compiler can retain the previous accepted PATH-only attestation through this guard."
+        },
+        {
+          "review_key": "1:architecture_security:SEC-03-nextest-env-overrides-policy",
+          "evidence": "tools/coverage.py nextest_policy refuses every inherited NEXTEST_* key and validates the exact retries0/two-thread/deadline config; collect and merge call it, as do check.main before CHECKS and ci.native before workloads. These entrypoint guards are unchanged from my independently executed R2 zero-workload refusals; current82-case suite reruns retry/thread negative controls. Exact-head real nextest evidence retains the retry-induced false success demonstration, explicit no-retry failure and production override refusal. Debug/release ordinary tests and explicit doctests remain."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:UNOWNED_CHECKOUT_PRODUCTION_MAPS_EXCLUDED",
+          "evidence": "tools/coverage.py normalize_report now requires selected ownership for every checkout map in the production-object baseline; root shared.rs refuses. R3 also closes the later known-development-directory loophole instead of relying on the partial R2 any-known-package guard. My current82-case suite reran actual root-shared and development-helper LCOV cases. Exact-head actual compiler control emitted two maps in each checkout/development/external case and verified refusal. Runtime-only known-package exclusions remain separate."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:FULL_CI_OMITS_NEW_PRODUCTION_MEMBERS",
+          "evidence": "tools/ci.py:234-242 still obtains actual metadata for full and narrow execution and requires actual workspace members minus exactly xtask/testkit to equal reviewed PRODUCTION ownership before native workload calls. Independently reran the extended-member regression in current82-case suite: refusal with no workload commands. Metadata-unavailable selection remains conservative full; metadata is mandatory at execution. A future admitted crate therefore requires explicit reviewed policy expansion rather than silently omitting its denominator."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:RAW_STRING_DIFF_CONTENT_SWITCHES_CHANGED_OWNER",
+          "evidence": "The R3 parser resets at real diff boundaries, recognizes +++ only before hunks, consumes actual hunk body counts and treats added header-like content as data. Independently reran the actual real-Git raw-string owner-redirection regression in my82-case suite: the later uncovered body stays in source A and the changed gate fails. The new parser also rejects truncated/inconsistent bodies rather than accepting partial scope. Original90% thresholds are unchanged."
+        },
+        {
+          "review_key": "2:correctness_tests_claims:BINARY_DIFF_SILENTLY_ERASES_CHANGED_SCOPE",
+          "evidence": "tools/coverage.py changed_lines now forces --text/fixed prefixes/--no-relative, obtains independent NUL-delimited changed names, counts actual added hunk-body lines and conservatively counts all physical lines for changed sources lacking hunks under a2M-line bound. Independently executed real-Git attribute/context controls, including the original10/11 aggregate seed, GIT_DIFF_OPTS=--unified=100, prefix/relative settings and glob pathspec mode. Ordinary/bracket-name cases now return only31-33 and fail changed0/1 instead of passing N/A. Actual outputs and executable reproduction are M01.07_ROUND3_CORRECTNESS_ADVERSARIAL.json/.py. Missing-hunk fallback and oversized/truncated controls also pass in the82-case suite."
+        },
+        {
+          "review_key": "2:architecture_security:SEC-04-baseline-known-package-role-exclusion",
+          "evidence": "tools/coverage.py normalize_report allows owner=None inside a known package only with runtime=True. A production-object baseline map under testkit or an unselected package now raises Unowned first-party; it cannot disappear as development coverage. Independently reran actual development-helper LCOV refusal plus explicit runtime-only exclusion in my82-case suite, and inspected real compiler development-role map/refusal in the exact-head Linux log. This is compilation-role separation, not a filesystem-directory exception."
+        },
+        {
+          "review_key": "2:architecture_security:SEC-05-binary-attributes-hide-changed-lines",
+          "evidence": "The same forced-text and independently inventoried/body-counted changed-line repair resolves this independently reported duplicate. My real-Git *.rs -diff and context100 controls now produce changed0/1 FAIL while aggregate remains10/11=90.91%; retained pre-fix R2 red log records both0-versus1 and11-versus1 failures. Current pure controls also validate conservative no-hunk fallback and finite line count. Reproduction evidence is retained separately from immutable R2 reports; neither threshold nor review budget was reset."
+        }
+      ],
+      "round": 3,
+      "original_report_sha256": "7e9756e58981caf880d80ac1a0db5c83facf338489c61ab48ab9f34f480075bc"
+    },
+    {
+      "packet_sha256": "2a30174f079962ca2eca373d6a95ead45a391745227cc276546b1075fb57b5c4",
+      "head": "b637769fe34c324d9a92e7ed519ace9917560aee",
+      "tree": "75c606c9bfcf8ba587c4c0526ed998be196f30f8",
+      "source_digest": "8434c6dbcd738b520aafc05618abfd3195eea0baad7888c2730c91f46fd7797d",
+      "role": "architecture_security",
+      "reviewer_session": "/root/sandbox_security_review",
+      "conclusion": "blocked",
+      "findings": [
+        {
+          "id": "SEC-06-unicode-diff-record-injection",
+          "priority": "P2",
+          "file": "tools/coverage.py",
+          "line": 281,
+          "reproduction": "Run taskroot/M01.07_ROUND3_SEPARATOR_REPRO.py with TEMP/TMP set to taskroot/test-temp and PYTHONDONTWRITEBYTECODE=1. It creates a fresh real Git repository containing A=crates/a/src/lib.rs (an existing public raw string, ten existing functions) and B=crates/b/src/lib.rs (audited declaration-only source). Commit one physical added raw-string-content line in A containing U+2028-separated x, diff --git a/B b/B, --- a/B, +++ b/B, @@ -0,0 +1,1 @@, +fake records; separately append a valid uncovered function at A lines23-25 with executable body24. Make B genuinely mode-only changed, so it legitimately appears in the independent changed-name inventory. The actual source_fingerprint accepts the clean committed fixture. Actual changed_lines returns A:[3], B:[1,23,24,25]. Use the actual evaluate with A's ten original executable lines covered, new executable line24 uncovered, and B's unchanged hash-bound N/A audit. It returns aggregate10/11=90.91%, changed0/0=N/A, passed=true. Correctly attributing A lines3,23,24,25 makes the identical gate fail. Script and results are saved outside the source tree; no compiler, Docker, filter or reviewed-source modification is involved.",
+          "expected": "Git patch records must follow their physical LF wire boundaries, and only genuine file headers outside actual hunk bodies may change source ownership. Unicode separators in valid raw-string content must remain content. An uncovered added function must enter the changed-production denominator or fail closed; the clean source binding and independent name inventory must not authorize forged record provenance.",
+          "observed": "output.splitlines() recognizes U+2028 and turns one physical added content line into synthetic diff/header/hunk records. After its first synthetic record consumes the real hunk count, the forged B header is accepted because B really has a mode change. A's subsequent real function hunk is then assigned to B, and B is marked parsed so fallback does not correct the attribution. The hash-audited declaration-only B contributes no executable lines; the new uncovered A function disappears from changed coverage, producing an actual false pass."
+        }
+      ],
+      "resolutions": [
+        {
+          "review_key": "1:architecture_security:SEC-01-exited-leader-group-cleanup",
+          "evidence": "Resolved for the reported lifecycle defect. Runner.command now signals its owned POSIX process group on primary failure independently of child.poll(), probes group existence for a finite TERM grace, then KILLs and waits while preserving the primary exception. The real exited-leader/retained-pipe/bystander regression remains in test_coverage_collector.py. My focused host run passes the applicable controls; POSIX process-group executions are NOT-RUN on this Windows host. Exact-head coordinator SMOKE2 has 220 Linux tests without skips and the process-group control passes there. No new lifecycle bypass was found in this final delta."
+        },
+        {
+          "review_key": "1:architecture_security:SEC-02-cargo-compiler-override-unbound",
+          "evidence": "Resolved for the reported compiler-selection defect. tools/coverage.py bind_compiler resolves the hashed sysroot compiler, refuses a conflicting inherited RUSTC, and writes that exact compiler path into Cargo's environment; collection and merge bind its identity again. The compiler-conflict host regression passes. Coordinator SMOKE2 contains the real pinned-compiler conflict refusal before Cargo and five actual compiler/runner controls. These are coordinator logs with SHA-256 independently verified here, not compiler runs performed by this reviewer."
+        },
+        {
+          "review_key": "1:architecture_security:SEC-03-nextest-env-overrides-policy",
+          "evidence": "Resolved for the reported override defect. nextest_policy refuses every inherited NEXTEST_* key and validates the complete fixed profile. tools/check.py, tools/ci.py and collection/merge invoke the guard before correctness commands. Host environment/policy regressions pass. Verified exact-head SMOKE2 records the real retry override producing false success in its isolated seed, explicit no-retry rejection, and production override refusal; no retry or concurrency waiver was introduced."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:UNOWNED_CHECKOUT_PRODUCTION_MAPS_EXCLUDED",
+          "evidence": "Resolved for production-map ownership. normalize_report(runtime=False) now refuses every checkout map with no selected production owner; belonging to a known development/unselected package is insufficient. Runtime-only known-package exclusions remain distinct. Root-shared and known-development-package tests pass. Exact-head real compiler controls in SMOKE2 refuse checkout, development and unknown-external role seeds. External exclusions now require actual offline Cargo dependency roots, exact toolchain roots or sealed actual dependency build-script OUT_DIR evidence, and merge independently reconstructs those roots."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:FULL_CI_OMITS_NEW_PRODUCTION_MEMBERS",
+          "evidence": "Resolved for the reported fixed-scope admission defect. tools/ci.py requires the actual workspace minus the explicit xtask/testkit development exclusions to equal reviewed PRODUCTION before native commands, for full and selected plans. Host CI tests include admitted-new-member refusal and pass. The final ordinary-test fallback for current zero-test observe/xtask scopes uses the workspace corpus with no-tests still failing; it does not reduce the production coverage denominator."
+        },
+        {
+          "review_key": "1:correctness_tests_claims:RAW_STRING_DIFF_CONTENT_SWITCHES_CHANGED_OWNER",
+          "evidence": "PARTIALLY RESOLVED; the broader ownership requirement remains blocked by SEC-06-unicode-diff-record-injection in this verdict. The original ASCII +++ raw-string seed now stays within hunk state and its real-Git regression passes. However changed_lines still uses Python splitlines(), which creates synthetic records from U+2028 inside one physical raw-string content line. My clean-source real-Git fixture gives B a legitimate mode-only change, then redirects A's uncovered-function lines to audited B. Actual gate falsely passes. Thus the original concrete ASCII seed is repaired, but raw string contents can still switch the changed source through this distinct record-tokenization path."
+        },
+        {
+          "review_key": "2:correctness_tests_claims:BINARY_DIFF_SILENTLY_ERASES_CHANGED_SCOPE",
+          "evidence": "Resolved for the reported binary-attribute/context defect, without clearing the separate SEC-06 blocker. changed_lines forces --text, fixed source/destination prefixes and --no-relative, checks actual +/-/context hunk counts, obtains independent NUL-delimited changed names, and conservatively includes all physical lines for changed sources with no qualified hunk. It checks the combined 2,000,000-line bound before allocating fallback lists. The actual Git -diff and inherited GIT_DIFF_OPTS=100 controls pass in my host run and the exact-head Linux suite; the R2 red evidence is retained."
+        },
+        {
+          "review_key": "2:architecture_security:SEC-04-baseline-known-package-role-exclusion",
+          "evidence": "Resolved. The former known-package-directory escape is now guarded by runtime=True; a selected production-object baseline cannot use that exclusion. My applicable collector controls pass, including production_map_inside_known_dev_package_is_not_a_development_exclusion. The exact-head coordinator real compiler development-role fixture emits two maps and refuses the unowned helper. Runtime-only known test/dev maps retain their separately explicit exclusion, while production-source requirements are unchanged."
+        },
+        {
+          "review_key": "2:architecture_security:SEC-05-binary-attributes-hide-changed-lines",
+          "evidence": "Resolved for the exact reported real-Git attribute counterexample. The --text diff and independent changed-name inventory now prevent *.rs -diff from silently erasing changed scope; whole-physical-file fallback handles mode-only/non-hunk sources, bounded before allocation. The direct actual-Git attribute/context host control passes. The independent U+2028-plus-mode-only replay in SEC-06 shows a different remaining parser-owner failure and is retained as a blocker rather than being called resolved by this evidence."
+        }
+      ],
+      "round": 3,
+      "original_report_sha256": "133e92acf49fd4d9d5be1ef403466b41718eb3fe723ae0c8972c14890f15bab8"
+    }
+  ]
+}

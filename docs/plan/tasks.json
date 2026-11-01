@@ -556,11 +556,21 @@
           ],
           "depends_on": [
             "M01.01",
-            "M01.06"
+            "M01.06",
+            "M01.10",
+            "M01.11",
+            "M01.12"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "blocked",
+          "evidence": [
+            {
+              "path": "evidence/m01-07-blocked.md",
+              "result": "Original implementation attempt blocked at round3; no original gate pass. Composite goal can close only after separately reviewed redesigned source protocol and complete final integration, all inherited counterexamples and full native PR/main qualification."
+            }
+          ],
+          "blocker": "Original patch-text implementation b637769 reached the hard three-round review ceiling with an actual Unicode separator false coverage pass; no publication or gate clearance.",
+          "next_action": "Complete genuinely redesigned M01.10 planning, M01.11 immutable-blob source proof and M01.12 integration; preserve the original blocked review registry and all regression obligations."
         },
         {
           "id": "M01.08",
@@ -614,6 +624,84 @@
               "result": "Main996b84b run41283307456 failed the ARM semantic corpus after cold invalid-source diagnostics; original error masked by dirty fixture cleanup. Observability/reproduction repair in progress; no blind rerun or relaxed assertion."
             }
           ]
+        },
+        {
+          "id": "M01.10",
+          "title": "Review genuine coverage decomposition",
+          "goal": "Replace the failed source-parsing architecture without resetting its review budget.",
+          "deliverables": [
+            "Authoritative source-proof and integration boundaries, unchanged acceptance obligations and retained failed review ledger"
+          ],
+          "validation": [
+            "Two independent sessions audit genuine redesign versus task-ID laundering; plan/DAG/API checks and complete applicable CI"
+          ],
+          "definition_of_done": [
+            "Original M01.07 registry remains blocked at three rounds; no fourth attempt or old-source clearance",
+            "Successor scopes have distinct interfaces, explicit inherited counterexamples and final integration review; only composite accepted replacements can close the parent goal"
+          ],
+          "depends_on": [
+            "M01.05",
+            "M01.06"
+          ],
+          "owner": "harness/integrator",
+          "status": "review",
+          "evidence": [
+            {
+              "path": "coverage-redesign.md",
+              "result": "Concrete decomposition and source-proof contract prepared; independent plan review and hosted qualification pending, no successor acceptance."
+            }
+          ]
+        },
+        {
+          "id": "M01.11",
+          "title": "Prove immutable source and byte-line deltas",
+          "goal": "Derive bounded changed-line evidence from immutable Git blobs without parsing human patches.",
+          "deliverables": [
+            "Isolated source-proof module/schema with base/head blob identities, exact byte-LF framing and bounded deterministic line-delta algorithm",
+            "Versioned proof binding actual tracked source bytes, file ownership, algorithm and resource limits"
+          ],
+          "validation": [
+            "Preserve all original M01.07 controls and exact final Unicode false-pass reproduction; exercise separator/header/attribute/context/file-name/new/deleted/mode-only cases",
+            "Independent small reference oracle plus stale/missing/corrupt blobs, repetitive/large inputs, resource limits and concurrent mutation controls"
+          ],
+          "definition_of_done": [
+            "No diff-text parser, source-filter/textconv/attribute or Unicode framing can alter proof; unsupported or incomplete evidence refuses a score",
+            "Source proof is independently reviewed and natively qualified; it does not implement compiler/test/shard execution or claim coverage acceptance"
+          ],
+          "depends_on": [
+            "M01.10",
+            "M01.03",
+            "M01.06"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.12",
+          "title": "Integrate coverage over reviewed source proofs",
+          "goal": "Replace the failed parser path and qualify the complete redesigned coverage pipeline.",
+          "deliverables": [
+            "Collector/merge/CI integration consuming the accepted M01.11 interface and removing retired patch parsing",
+            "Preserved effective compiler/test policy, production denominator/ownership, sealed profiles/shards, visible N/A audits and all original floors"
+          ],
+          "validation": [
+            "Full inherited finding/control matrix including the final Unicode counterexample; dev/release, doctests, lint/unsafe, missing/stale and cleanup negatives",
+            "Independent review of the entire final integration tree, complete native x86_64/ARM64 PR CI, durable gate, protected expected-head merge and full main CI"
+          ],
+          "definition_of_done": [
+            "No original M01.07 review state or finding is erased or reported cleared; replacement acceptance has its own genuine redesign evidence",
+            "Original >=90 aggregate/per-crate/per-file/changed production floors and all feature/target/profile obligations remain; no targeted-only closure",
+            "Composite M01.07 closure cites accepted M01.10/11/12 evidence and final replacement source, never a fourth M01.07 packet or the blocked original gate"
+          ],
+          "depends_on": [
+            "M01.11",
+            "M01.05",
+            "M01.06"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
         }
       ]
     },
@@ -656,11 +744,11 @@
             "M01.02"
           ],
           "owner": "engine/architecture",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
-              "path": "evidence/m02-01-inventory.md",
-              "result": "Original selected corpus and source/adaptation inventory implemented. Local168Linux/Rust/TLS/auth/S3 plus detached pinned OpenSearch14search/4analyzer/34mutation checks passed. Final independent review and full native x86/ARM hosted qualification required; SDK/hsearch/native property/private workload execution not claimed."
+              "path": "evidence/m02-01-integrated.md",
+              "result": "Two independent R2clear reports, exact-head durable gate, normal PR10 merge02abc722 and full PR/main native x86_64/ARM64 checks passed, including actual14search/4analyzer/34mutation reference steps and strict cold navigation. Inventory accepted; SDK/hsearch/native-property/private/scale/provider execution not claimed."
             }
           ]
         },
