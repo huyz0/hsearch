@@ -207,6 +207,10 @@ class WorktreeControls(unittest.TestCase):
         with patch.dict(self.store.fingerprint.__globals__, SOURCE_FILE_BYTES=1024):
             with self.assertRaisesRegex(Refused, "bounded regular"):
                 self.store.fingerprint(record)
+        (root / "a.txt").write_text("first\n")
+        with patch.dict(self.store.fingerprint.__globals__, SOURCE_TOTAL_BYTES=1):
+            with self.assertRaisesRegex(Refused, "aggregate byte"):
+                self.store.fingerprint(record)
 
     def test_canonical_aliases_refuse_even_when_not_reported_as_symlinks(self):
         claim = self.claim()
@@ -220,10 +224,6 @@ class WorktreeControls(unittest.TestCase):
         # A real redirect with that classification suppressed must still refuse.
         with patch.object(Path, "is_symlink", return_value=False):
             with self.assertRaisesRegex(Refused, "redirected"):
-                self.store.fingerprint(record)
-        (root / "a.txt").write_text("first\n")
-        with patch.dict(self.store.fingerprint.__globals__, SOURCE_TOTAL_BYTES=1):
-            with self.assertRaisesRegex(Refused, "aggregate byte"):
                 self.store.fingerprint(record)
 
     def test_git_pipe_overflow_is_refused_without_unbounded_capture(self):
