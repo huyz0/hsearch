@@ -657,7 +657,12 @@
           ],
           "owner": "engine/architecture",
           "status": "in_progress",
-          "evidence": []
+          "evidence": [
+            {
+              "path": "research/api-adaptation-inventory.md",
+              "result": "Incomplete original corpus and selected pinned user-fork source/adaptation inventory; reference/client/native execution NOT-RUN, no task completion or compatibility claim."
+            }
+          ]
         },
         {
           "id": "M02.08",

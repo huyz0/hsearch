@@ -21,7 +21,7 @@
     "analyzer-cases.json": "b726cc2a4ea175517b4b10f088a6950980eaf4f00d5a0b12798357afdcff39aa"
   },
   "missing": [
-    "User application/client/proxy workload source and representative datasets have not been identified in current project docs.",
+    "The pinned user OpenSearch fork/serverless request tests are available and selectively inspected; current application-specific client/proxy configuration and private representative traces/datasets have not been supplied or identified.",
     "CRUD/bulk mutation histories, native receipt/OCC/visibility/pagination/admission properties and unsupported request fixtures remain to be added.",
     "Pinned reference execution, analyzer golden tokens and native adapter/service conformance remain NOT-RUN."
   ],
