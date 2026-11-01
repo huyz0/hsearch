@@ -6,15 +6,18 @@ mutations or distributed atomicity. Keys stand in for independent reader views.
 from dataclasses import dataclass
 from pathlib import Path
 import json
-import runpy
 import sqlite3
+from tools import catalog_model
 
-MODEL = runpy.run_path(str(Path(__file__).with_name('catalog_model.py')))
+if Path(catalog_model.__file__).resolve() != Path(__file__).with_name('catalog_model.py').resolve():
+    raise RuntimeError('model_source_module_mismatch')
+MODEL = vars(catalog_model)
 need, integer, key, Refused = (MODEL[name] for name in ['need', 'integer', 'key', 'Refused'])
 
 
 class MutableCatalog:
     def __init__(self, catalog):
+        need(type(catalog) is MODEL['Catalog'], 'unsupported_catalog_controller')
         catalog.guard_identity()
         self.catalog = catalog
         self.path = catalog.path
@@ -144,6 +147,7 @@ class View:
 class Pins:
     def __init__(self, catalog, *, tenants=('synthetic', 'other'), tenant_limit=2, global_limit=4,
                  tenant_bytes=8192, global_bytes=16384, max_ttl=900):
+        need(type(catalog) is MODEL['Catalog'], 'unsupported_catalog_controller')
         catalog.guard_identity()
         need(catalog.pin_registry is None, 'model_pin_authority_conflict')
         need(type(tenants) is tuple and 0 < len(tenants) <= 64 and len(set(tenants)) == len(tenants), 'tenant_policy')
@@ -279,7 +283,10 @@ class Version:
 
 class Versions:
     """Symbolic CAS history; no mutation durability or native token format."""
-    def __init__(self, catalog): self.catalog, self.values = catalog, {}
+    def __init__(self, catalog):
+        need(type(catalog) is MODEL['Catalog'], 'unsupported_catalog_controller')
+        catalog.guard_identity()
+        self.catalog, self.values = catalog, catalog.version_values
 
     def replace(self, tenant, collection, document, *, expected=None, preparation_valid=True):
         key(tenant); key(collection); integer(document, 0, MODEL['HASH_SPACE'] - 1, 'document_key')

@@ -1,13 +1,13 @@
 """Original indexed-catalog controls; these do not certify runtime scalability."""
 from pathlib import Path
-import runpy
 import tempfile
 import unittest
 import os
 import platform
 import json
 
-MODEL = runpy.run_path(str(Path(__file__).resolve().parents[1] / "catalog_model.py"))
+from tools import catalog_model
+MODEL = vars(catalog_model)
 
 
 class CatalogModelControls(unittest.TestCase):

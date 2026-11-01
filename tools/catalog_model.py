@@ -126,6 +126,7 @@ class Catalog:
         need(self.file_identity not in ACTIVE_CATALOGS and len(ACTIVE_CATALOGS) < 64, 'model_catalog_authority_conflict_or_limit')
         self.closed, self.pin_registry = False, None
         self.authority_nonce = uuid.uuid4().hex  # Model lifecycle identity, not authentication.
+        self.version_values = {}  # One bounded symbolic CAS history per catalog authority.
         ACTIVE_CATALOGS[self.file_identity] = self
         try:
             self.connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)

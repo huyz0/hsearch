@@ -1,96 +1,214 @@
 {
-  "scope": "Derived technical failed-review excerpts with only local taskroot redaction; immutable original reports/store retained unchanged",
   "task": "M02.08",
-  "round": 1,
-  "head": "f9995eab44543e28aedef85f1917098fce585b70",
-  "status": "blocked; repairs require independent round2/final qualification",
-  "reports": [
+  "scope": "Derived technical failed-review reports; only local taskroot redaction, original reports/store unchanged",
+  "status": "two real blocked rounds retained; final R3 unissued pending accepted-main integration and complete final checks",
+  "rounds": [
     {
-      "artifact": "M02.08_ROUND1_CORRECTNESS.json",
-      "original_sha256": "e56ea0678ea0e247f45115ea1582b72833bca12774ff90c40727fce586352ee7",
-      "report": {
-        "schema_version": 1,
-        "packet_sha256": "f7f41300b042f8ef50fdc25fac7b16d021721e10b361a154bf64c7be2d3c0b53",
-        "head": "f9995eab44543e28aedef85f1917098fce585b70",
-        "tree": "2e0ecc9adad1c82d67a652201d573e2325746bc4",
-        "source_digest": "d06146c685ef7d924ff1fe756d3a9365e38b9ab77ecd445cc2bb2d7b5a22d7e7",
-        "role": "correctness_tests_claims",
-        "reviewer_session": "/root/publication_review",
-        "conclusion": "blocked",
-        "basis": "Independent complete original-base model/code/test/docs/evidence review at exact clean f9995eab44543e28aedef85f1917098fce585b70. Two P2 counterexamples remain inside the claimed serial-model scope: a second same-catalog empty pin registry permits collection of an active snapshot generation; a permitted late clock step computes receipt expiries beyond the declared maximum clock. Their actual public-method histories and output are retained outside source. One malformed-success-tag cleanup/documentation mismatch is P3 advice under my independent judgment because no exact result is returned and reservations stay finitely bounded until cancellation/deadline. Existing host suite ran26 cases:25passed, one native-Linux RSS case skipped; no failures. Independently passed plan125/DAG/generated270links,16plan negative controls,API profile check,cost model8arithmetic+7invalid controls,diff check and read-only actual-source binding without constructing/mutating a review store. Manual seven-count/three-key sum, bucket/count overflow, incomplete scope, quotas, stale preparation, split/version/ABA/revocation and exact key pagination oracles are meaningful; their passing cases do not cover the new histories. Recomputed all public18sample groups, medians/ratios/work/plans and outcomes; the recorded module hash equals current catalog_model.py. Verified final smoke SHA256 and its exact-module18fresh probes plus201Linux/no-skips/Rust/TLS/S3/isolation success; those are retained coordinator executions, not native reruns by this Windows reviewer. Indexed timer-record variant fails the independent work gate despite RSS ratio<1.10. SQL statements/returned rows are not physical page or object attempts; VmHWM includes interpreter/cache, and model limits are seed/calibration screens, not runtime/G01/crypto/distributed-atomicity claims. Downstream M02.05/07,M03/M13/M07 handoffs and finite model exceptions are explicit. M02.08 dependencies are done and its status remains in_progress/review-pending. M01.10 accepted-tree/main-log correction is consistent with retained evidence; M01.07 remains hard3blocked, M01.09causeunconfirmed/M01.08blocked. Scoped14file publication scan found no private-root/credential pattern,new dependency/license manifest or copied third-party source; existing no-license status unchanged. No source edits, review-store mutation, Docker/Cargo/native benchmark duplicate, denied action, publication or formal GitHub approval. Hosted final-tree ci-ok remains pending and no model/runtime acceptance is granted.",
-        "findings": [
-          {
-            "id": "SECOND_PIN_REGISTRY_CAN_COLLECT_LIVE_GENERATION",
-            "priority": "P2",
-            "file": "tools/catalog_snapshots.py",
-            "line": 91,
-            "reproduction": "Run taskroot/M02.08_ROUND1_CORRECTNESS_REPRO.py. Create one catalog and MutableCatalog plus two independent Pins(catalog) registries. Open generation1 snapshot [1,42] in the first, split collection hot from(1,1) to(1,2), then call writer.gc(second_empty_registry,\"synthetic\",\"hot\"). Both registries reference the same exact Catalog, so file_identity equality passes. Actual gc returns[(1,1)] and deletes the first snapshot's retained generation while its pin is still active. FirstRegistry.page then raises snapshot_unavailable. The initial page[1,42], live reference(1,1), deletion and typed failure are retained in M02.08_ROUND1_CORRECTNESS_REPRO.json. This uses only public serial model methods and a fresh task-temp SQLite fixture.",
-            "expected": "GC must use the authoritative pin registry for that catalog, or account for every active registry, and refuse a foreign/replacement authority before mutation. A live active snapshot must keep its generation until release/expiry/revocation/incarnation invalidation; the existing snapshot must still return[1,42] after a split and eligible GC. Define and test the shared-registry identity/lifecycle across catalog/writer handles.",
-            "observed": "Checking only database file identity treats any fresh empty Pins instance as complete pin authority. Serial GC therefore collects a genuinely live reader generation and invalidates an otherwise valid snapshot. The explicit model claim that live active pins protect old generations is false; the distributed-concurrency disclaimer does not exclude this serial history."
-          },
-          {
-            "id": "LATE_DEADLINE_CLOSE_OVERFLOWS_RECEIPT_CLOCK",
-            "priority": "P2",
-            "file": "tools/catalog_admission.py",
-            "line": 209,
-            "reproduction": "Run the same independent reproduction. maximum=2**63-1; Admission(Limits(terminal_receipts=2,receipt_ticks=maximum-100)); reserve one request each for a and b with selected[0],deadline_ticks=1; advance(5000). All inputs pass the current public finite-integer guards. The two deadline closures store expires=9223372036854780707 while maximum admitted clock is9223372036854775807. Both receipt slots remain held; another reserve refuses idempotency_retention. Exact state is retained in the reproduction JSON. No internal now mutation or failed/unsupported input is used.",
-            "expected": "Every computed receipt expiry must remain in the declared finite clock domain. Account for late deadline observation, not just reserve-time nominal deadline: refuse an unsafe transition without partial state mutation or define/validate finite expiry semantics before publishing receipts. Add a boundary history where one permitted clock step overshoots the request deadline.",
-            "observed": "reserve validates now+deadline+receipt_ticks, but advance may close after that deadline and _close uses actual now+receipt_ticks without checking overflow. The resulting receipt expiry is unreachable by any permitted logical clock, so receipt-pool capacity cannot expire as specified. This violates finite-accounting/retention behavior even in the serial synthetic model."
-          },
-          {
-            "id": "MALFORMED_SUCCESS_TAG_RETAINS_OWNED_RPC",
-            "priority": "P3",
-            "file": "tools/catalog_admission.py",
-            "line": 174,
-            "reproduction": "Admission(); r=reserve(\"a\",[0]); start_rpc(\"a\",r,0); finish_rpc(\"a\",r,0,success=1). Actual Refused(\"partition_state\") leaves r active, partition0 in its active set, rpc_pool.used[\"a\"]=1 and request_pool.used[\"a\"]=1. An invalid count/bucket/body field for that same active response instead enters the cleanup try and closes the request.",
-            "expected": "Make the owned malformed-response policy explicit: either close/reclaim an invalid success tag like other invalid worker payloads, or qualify the document's broad assertion that every refused worker response closes/reclaims its request. Unknown/foreign partition or owner failures must continue preserving unrelated work.",
-            "observed": "The success-tag type guard is outside the cleanup try. It refuses exact success and remains bounded by explicit cancellation/deadline, so I rate this nonblocking consistency advice; the current documentation's blanket refusal-cleanup description is broader than observed behavior."
+      "scope": "Derived technical failed-review excerpts with only local taskroot redaction; immutable original reports/store retained unchanged",
+      "task": "M02.08",
+      "round": 1,
+      "head": "f9995eab44543e28aedef85f1917098fce585b70",
+      "status": "blocked; repairs require independent round2/final qualification",
+      "reports": [
+        {
+          "artifact": "M02.08_ROUND1_CORRECTNESS.json",
+          "original_sha256": "e56ea0678ea0e247f45115ea1582b72833bca12774ff90c40727fce586352ee7",
+          "report": {
+            "schema_version": 1,
+            "packet_sha256": "f7f41300b042f8ef50fdc25fac7b16d021721e10b361a154bf64c7be2d3c0b53",
+            "head": "f9995eab44543e28aedef85f1917098fce585b70",
+            "tree": "2e0ecc9adad1c82d67a652201d573e2325746bc4",
+            "source_digest": "d06146c685ef7d924ff1fe756d3a9365e38b9ab77ecd445cc2bb2d7b5a22d7e7",
+            "role": "correctness_tests_claims",
+            "reviewer_session": "/root/publication_review",
+            "conclusion": "blocked",
+            "basis": "Independent complete original-base model/code/test/docs/evidence review at exact clean f9995eab44543e28aedef85f1917098fce585b70. Two P2 counterexamples remain inside the claimed serial-model scope: a second same-catalog empty pin registry permits collection of an active snapshot generation; a permitted late clock step computes receipt expiries beyond the declared maximum clock. Their actual public-method histories and output are retained outside source. One malformed-success-tag cleanup/documentation mismatch is P3 advice under my independent judgment because no exact result is returned and reservations stay finitely bounded until cancellation/deadline. Existing host suite ran26 cases:25passed, one native-Linux RSS case skipped; no failures. Independently passed plan125/DAG/generated270links,16plan negative controls,API profile check,cost model8arithmetic+7invalid controls,diff check and read-only actual-source binding without constructing/mutating a review store. Manual seven-count/three-key sum, bucket/count overflow, incomplete scope, quotas, stale preparation, split/version/ABA/revocation and exact key pagination oracles are meaningful; their passing cases do not cover the new histories. Recomputed all public18sample groups, medians/ratios/work/plans and outcomes; the recorded module hash equals current catalog_model.py. Verified final smoke SHA256 and its exact-module18fresh probes plus201Linux/no-skips/Rust/TLS/S3/isolation success; those are retained coordinator executions, not native reruns by this Windows reviewer. Indexed timer-record variant fails the independent work gate despite RSS ratio<1.10. SQL statements/returned rows are not physical page or object attempts; VmHWM includes interpreter/cache, and model limits are seed/calibration screens, not runtime/G01/crypto/distributed-atomicity claims. Downstream M02.05/07,M03/M13/M07 handoffs and finite model exceptions are explicit. M02.08 dependencies are done and its status remains in_progress/review-pending. M01.10 accepted-tree/main-log correction is consistent with retained evidence; M01.07 remains hard3blocked, M01.09causeunconfirmed/M01.08blocked. Scoped14file publication scan found no private-root/credential pattern,new dependency/license manifest or copied third-party source; existing no-license status unchanged. No source edits, review-store mutation, Docker/Cargo/native benchmark duplicate, denied action, publication or formal GitHub approval. Hosted final-tree ci-ok remains pending and no model/runtime acceptance is granted.",
+            "findings": [
+              {
+                "id": "SECOND_PIN_REGISTRY_CAN_COLLECT_LIVE_GENERATION",
+                "priority": "P2",
+                "file": "tools/catalog_snapshots.py",
+                "line": 91,
+                "reproduction": "Run taskroot/M02.08_ROUND1_CORRECTNESS_REPRO.py. Create one catalog and MutableCatalog plus two independent Pins(catalog) registries. Open generation1 snapshot [1,42] in the first, split collection hot from(1,1) to(1,2), then call writer.gc(second_empty_registry,\"synthetic\",\"hot\"). Both registries reference the same exact Catalog, so file_identity equality passes. Actual gc returns[(1,1)] and deletes the first snapshot's retained generation while its pin is still active. FirstRegistry.page then raises snapshot_unavailable. The initial page[1,42], live reference(1,1), deletion and typed failure are retained in M02.08_ROUND1_CORRECTNESS_REPRO.json. This uses only public serial model methods and a fresh task-temp SQLite fixture.",
+                "expected": "GC must use the authoritative pin registry for that catalog, or account for every active registry, and refuse a foreign/replacement authority before mutation. A live active snapshot must keep its generation until release/expiry/revocation/incarnation invalidation; the existing snapshot must still return[1,42] after a split and eligible GC. Define and test the shared-registry identity/lifecycle across catalog/writer handles.",
+                "observed": "Checking only database file identity treats any fresh empty Pins instance as complete pin authority. Serial GC therefore collects a genuinely live reader generation and invalidates an otherwise valid snapshot. The explicit model claim that live active pins protect old generations is false; the distributed-concurrency disclaimer does not exclude this serial history."
+              },
+              {
+                "id": "LATE_DEADLINE_CLOSE_OVERFLOWS_RECEIPT_CLOCK",
+                "priority": "P2",
+                "file": "tools/catalog_admission.py",
+                "line": 209,
+                "reproduction": "Run the same independent reproduction. maximum=2**63-1; Admission(Limits(terminal_receipts=2,receipt_ticks=maximum-100)); reserve one request each for a and b with selected[0],deadline_ticks=1; advance(5000). All inputs pass the current public finite-integer guards. The two deadline closures store expires=9223372036854780707 while maximum admitted clock is9223372036854775807. Both receipt slots remain held; another reserve refuses idempotency_retention. Exact state is retained in the reproduction JSON. No internal now mutation or failed/unsupported input is used.",
+                "expected": "Every computed receipt expiry must remain in the declared finite clock domain. Account for late deadline observation, not just reserve-time nominal deadline: refuse an unsafe transition without partial state mutation or define/validate finite expiry semantics before publishing receipts. Add a boundary history where one permitted clock step overshoots the request deadline.",
+                "observed": "reserve validates now+deadline+receipt_ticks, but advance may close after that deadline and _close uses actual now+receipt_ticks without checking overflow. The resulting receipt expiry is unreachable by any permitted logical clock, so receipt-pool capacity cannot expire as specified. This violates finite-accounting/retention behavior even in the serial synthetic model."
+              },
+              {
+                "id": "MALFORMED_SUCCESS_TAG_RETAINS_OWNED_RPC",
+                "priority": "P3",
+                "file": "tools/catalog_admission.py",
+                "line": 174,
+                "reproduction": "Admission(); r=reserve(\"a\",[0]); start_rpc(\"a\",r,0); finish_rpc(\"a\",r,0,success=1). Actual Refused(\"partition_state\") leaves r active, partition0 in its active set, rpc_pool.used[\"a\"]=1 and request_pool.used[\"a\"]=1. An invalid count/bucket/body field for that same active response instead enters the cleanup try and closes the request.",
+                "expected": "Make the owned malformed-response policy explicit: either close/reclaim an invalid success tag like other invalid worker payloads, or qualify the document's broad assertion that every refused worker response closes/reclaims its request. Unknown/foreign partition or owner failures must continue preserving unrelated work.",
+                "observed": "The success-tag type guard is outside the cleanup try. It refuses exact success and remains bounded by explicit cancellation/deadline, so I rate this nonblocking consistency advice; the current documentation's blanket refusal-cleanup description is broader than observed behavior."
+              }
+            ],
+            "resolutions": []
           }
-        ],
-        "resolutions": []
+        },
+        {
+          "artifact": "M02.08_ROUND1_SECURITY.json",
+          "original_sha256": "56d990e0d46c8ac0eaf1477f7d8c22e1c2a36b0f5c4397f3d8fa49f1786c06d0",
+          "report": {
+            "schema_version": 1,
+            "packet_sha256": "f7f41300b042f8ef50fdc25fac7b16d021721e10b361a154bf64c7be2d3c0b53",
+            "head": "f9995eab44543e28aedef85f1917098fce585b70",
+            "tree": "2e0ecc9adad1c82d67a652201d573e2325746bc4",
+            "source_digest": "d06146c685ef7d924ff1fe756d3a9365e38b9ab77ecd445cc2bb2d7b5a22d7e7",
+            "role": "architecture_security",
+            "reviewer_session": "/root/sandbox_security_review",
+            "conclusion": "blocked",
+            "basis": "Independent R1 architecture/security/scalability review of the complete14-file M02.08 artifact at exact clean f9995eab44543e28aedef85f1917098fce585b70, base8ff36e7932a70d0e8bc51bf35325cc6ab0fa824b. Canonical actual packet SHA/1983-byte payload and fresh raw source/head/tree independently verified. Reviewed all catalog/admission/snapshot model code and tests, measured report, authoritative task requirements, ownership/cancellation/fence/retention invariants and downstream handoffs. Two concrete P2 model-contract failures were independently executed: an owned response with nonboolean success escapes terminal cleanup and retains admission; valid mutable-catalog writes publish beyond the configured main-file cap. The latter uses small calibrated limits on valid tiny fixtures, not a claim of executed128MiB or production/journal accounting. Supporting executable and JSON preserve exact observations. Also independently replayed the separate correctness role's alternate-empty-pin-registry GC and late-deadline receipt-overflow cases; these must remain inherited alongside the two findings here and are recorded in supporting evidence rather than duplicate IDs. Focused host suite26:25pass/1nativeLinuxRSSskip; plan/DAG/270links/generated/API/16negative and cost-model8+7 controls pass. Verified exact coordinator smoke hash and terminal201Linux/no-skips/Rust/TLS/auth/S3/two-topology pass. Independently recomputed all18 public scale samples' medians/ratios and current module hash matching historicalf791408 evidence; bounded model passes while fullscan/indexed-per-index-record variants fail. Measurements are correctly limited to synthetic SQL statements/returned rows, logical counters and processRSS; no physical page/object IO, wallclock service deadline, fleet scale, token crypto or distributed atomicity is inferred. Downstream M02.05/07 calibration and M03/M13/M07 runtime/format/pin obligations remain explicit; no public defaults or API gates are promoted. New code uses standard library/original synthetic fixtures, with no observed obvious credential leak or new dependency/license grant. No source edit, review-store mutation, Docker/heavy duplicate run, publishing/merge/formal GitHub review or denied action was performed. Hosted final-tree native CI remains pending; original M01.07 stays hard3 blocked and M01.09 cause unconfirmed/M01.08 blocked. Supporting artifacts: M02.08_ROUND1_SECURITY_REPRO.py/.json and M02.08_ROUND1_SECURITY_CHECKS.json.",
+            "findings": [
+              {
+                "id": "SEC-01-malformed-response-retains-admission",
+                "priority": "P2",
+                "file": "tools/catalog_admission.py",
+                "line": 174,
+                "reproduction": "Execute M02.08_ROUND1_SECURITY_REPRO.py against this head. With actual Admission, reserve tenant a/partition0 with request_bytes=5,decoded_bytes=7, then start_rpc(a,id,0). Call finish_rpc(a,id,0,success=1). It raises Refused('partition_state'), but the owned request remains admitted with active={0}, one request reservation, one RPC reservation,12 queued bytes and no terminal receipt. A subsequent correctly typed finish_rpc(count=1) and complete still return relation=eq,complete=true. This is actual model code with a valid owned active partition; no malformed foreign identity, worker process or runtime behavior is involved.",
+                "expected": "After establishing tenant ownership and an active partition, a malformed worker response must take the documented terminal refusal path and reclaim all owned request/RPC/queue reservations, including when success has the wrong type. Invalid foreign identities/partitions must continue to preserve other work. A later response must not complete the terminally refused request.",
+                "observed": "The active-partition and success-type checks are combined before the try/except that calls _close. A non-boolean status raises outside cleanup, leaving every reservation live until an additional cancel/deadline action and permitting later exact completion. Other malformed count/byte/bucket fields enter the terminal refusal branch, so the stated response-refusal invariant is not implemented consistently."
+              },
+              {
+                "id": "SEC-02-mutable-catalog-file-cap-not-enforced",
+                "priority": "P2",
+                "file": "tools/catalog_snapshots.py",
+                "line": 48,
+                "reproduction": "Run the same independent executable. It builds a valid tiny catalog, opens actual Catalog/MutableCatalog, and calibrates the model's MAX_CATALOG_BYTES scalar to the existing main-file size12288 (no source edit).113 valid create calls publish a20480-byte database and return success; the inserted collection is readable as identity(1,1). In a second valid80-idle fixture with the same initial cap,18 valid recreate calls publish20480 bytes and return identity(2,1). The small calibrated threshold exercises the same main-file guard without a128MiB fixture. Both observations are saved in M02.08_ROUND1_SECURITY_REPRO.json.",
+                "expected": "The declared main fixture-file cap must constrain every mutation path. A mutation that would cross that bound must refuse without publishing its collection/routing transition; admission/transaction enforcement must precede irreversible commit. This requirement concerns the claimed model main-file bound only; transaction journals and production storage remain explicitly unqualified.",
+                "observed": "create and split inspect path.stat().st_size before SQLite commit, while new pages can reach the main file at commit. Therefore success can publish a file larger than the checked cap. recreate has no file-cap check at all. The stated finite catalog-file bound is not preserved by the valid serial model mutation interface, independently of deferred journal or production accounting."
+              }
+            ],
+            "resolutions": []
+          }
+        }
+      ],
+      "reproduction_sha256": {
+        "M02.08_ROUND1_CORRECTNESS_REPRO.py": "46e2685d922733a707519307ed3ed7de68f6eb96ab3a7df09a2240baf9b3741b",
+        "M02.08_ROUND1_CORRECTNESS_REPRO.json": "1373fa140c3f511d1c675740c168b40754758c899e486e60eff559630446db9d",
+        "M02.08_ROUND1_SECURITY_REPRO.py": "9cd5df5d9a966f0c69d221f7c0dd1203f843bcfb3b7fbca2f5958ce553800c44",
+        "M02.08_ROUND1_SECURITY_REPRO.json": "7a8aaedd85e229a55f82cfc03c43d7dbff58b18a990ac2db72f74fae30825651"
       }
     },
     {
-      "artifact": "M02.08_ROUND1_SECURITY.json",
-      "original_sha256": "56d990e0d46c8ac0eaf1477f7d8c22e1c2a36b0f5c4397f3d8fa49f1786c06d0",
-      "report": {
-        "schema_version": 1,
-        "packet_sha256": "f7f41300b042f8ef50fdc25fac7b16d021721e10b361a154bf64c7be2d3c0b53",
-        "head": "f9995eab44543e28aedef85f1917098fce585b70",
-        "tree": "2e0ecc9adad1c82d67a652201d573e2325746bc4",
-        "source_digest": "d06146c685ef7d924ff1fe756d3a9365e38b9ab77ecd445cc2bb2d7b5a22d7e7",
-        "role": "architecture_security",
-        "reviewer_session": "/root/sandbox_security_review",
-        "conclusion": "blocked",
-        "basis": "Independent R1 architecture/security/scalability review of the complete14-file M02.08 artifact at exact clean f9995eab44543e28aedef85f1917098fce585b70, base8ff36e7932a70d0e8bc51bf35325cc6ab0fa824b. Canonical actual packet SHA/1983-byte payload and fresh raw source/head/tree independently verified. Reviewed all catalog/admission/snapshot model code and tests, measured report, authoritative task requirements, ownership/cancellation/fence/retention invariants and downstream handoffs. Two concrete P2 model-contract failures were independently executed: an owned response with nonboolean success escapes terminal cleanup and retains admission; valid mutable-catalog writes publish beyond the configured main-file cap. The latter uses small calibrated limits on valid tiny fixtures, not a claim of executed128MiB or production/journal accounting. Supporting executable and JSON preserve exact observations. Also independently replayed the separate correctness role's alternate-empty-pin-registry GC and late-deadline receipt-overflow cases; these must remain inherited alongside the two findings here and are recorded in supporting evidence rather than duplicate IDs. Focused host suite26:25pass/1nativeLinuxRSSskip; plan/DAG/270links/generated/API/16negative and cost-model8+7 controls pass. Verified exact coordinator smoke hash and terminal201Linux/no-skips/Rust/TLS/auth/S3/two-topology pass. Independently recomputed all18 public scale samples' medians/ratios and current module hash matching historicalf791408 evidence; bounded model passes while fullscan/indexed-per-index-record variants fail. Measurements are correctly limited to synthetic SQL statements/returned rows, logical counters and processRSS; no physical page/object IO, wallclock service deadline, fleet scale, token crypto or distributed atomicity is inferred. Downstream M02.05/07 calibration and M03/M13/M07 runtime/format/pin obligations remain explicit; no public defaults or API gates are promoted. New code uses standard library/original synthetic fixtures, with no observed obvious credential leak or new dependency/license grant. No source edit, review-store mutation, Docker/heavy duplicate run, publishing/merge/formal GitHub review or denied action was performed. Hosted final-tree native CI remains pending; original M01.07 stays hard3 blocked and M01.09 cause unconfirmed/M01.08 blocked. Supporting artifacts: M02.08_ROUND1_SECURITY_REPRO.py/.json and M02.08_ROUND1_SECURITY_CHECKS.json.",
-        "findings": [
-          {
-            "id": "SEC-01-malformed-response-retains-admission",
-            "priority": "P2",
-            "file": "tools/catalog_admission.py",
-            "line": 174,
-            "reproduction": "Execute M02.08_ROUND1_SECURITY_REPRO.py against this head. With actual Admission, reserve tenant a/partition0 with request_bytes=5,decoded_bytes=7, then start_rpc(a,id,0). Call finish_rpc(a,id,0,success=1). It raises Refused('partition_state'), but the owned request remains admitted with active={0}, one request reservation, one RPC reservation,12 queued bytes and no terminal receipt. A subsequent correctly typed finish_rpc(count=1) and complete still return relation=eq,complete=true. This is actual model code with a valid owned active partition; no malformed foreign identity, worker process or runtime behavior is involved.",
-            "expected": "After establishing tenant ownership and an active partition, a malformed worker response must take the documented terminal refusal path and reclaim all owned request/RPC/queue reservations, including when success has the wrong type. Invalid foreign identities/partitions must continue to preserve other work. A later response must not complete the terminally refused request.",
-            "observed": "The active-partition and success-type checks are combined before the try/except that calls _close. A non-boolean status raises outside cleanup, leaving every reservation live until an additional cancel/deadline action and permitting later exact completion. Other malformed count/byte/bucket fields enter the terminal refusal branch, so the stated response-refusal invariant is not implemented consistently."
-          },
-          {
-            "id": "SEC-02-mutable-catalog-file-cap-not-enforced",
-            "priority": "P2",
-            "file": "tools/catalog_snapshots.py",
-            "line": 48,
-            "reproduction": "Run the same independent executable. It builds a valid tiny catalog, opens actual Catalog/MutableCatalog, and calibrates the model's MAX_CATALOG_BYTES scalar to the existing main-file size12288 (no source edit).113 valid create calls publish a20480-byte database and return success; the inserted collection is readable as identity(1,1). In a second valid80-idle fixture with the same initial cap,18 valid recreate calls publish20480 bytes and return identity(2,1). The small calibrated threshold exercises the same main-file guard without a128MiB fixture. Both observations are saved in M02.08_ROUND1_SECURITY_REPRO.json.",
-            "expected": "The declared main fixture-file cap must constrain every mutation path. A mutation that would cross that bound must refuse without publishing its collection/routing transition; admission/transaction enforcement must precede irreversible commit. This requirement concerns the claimed model main-file bound only; transaction journals and production storage remain explicitly unqualified.",
-            "observed": "create and split inspect path.stat().st_size before SQLite commit, while new pages can reach the main file at commit. Therefore success can publish a file larger than the checked cap. recreate has no file-cap check at all. The stated finite catalog-file bound is not preserved by the valid serial model mutation interface, independently of deferred journal or production accounting."
+      "task": "M02.08",
+      "round": 2,
+      "head": "546ad32453187a7a9a40ad08f1a6dc64cb31a9bf",
+      "status": "blocked by ordinary-import pin authority and shared-target CAS history reset",
+      "reports": [
+        {
+          "artifact": "M02.08_ROUND2_CORRECTNESS.json",
+          "original_sha256": "68740b312b74f2a62d54fd47262101a91cb093a721a6aa2bdf98b7c3cd3a849f",
+          "report": {
+            "schema_version": 1,
+            "packet_sha256": "df1946bb3dd042a0481a5927a3c748c55ccf710562df572fd088c087f25ffc5e",
+            "head": "546ad32453187a7a9a40ad08f1a6dc64cb31a9bf",
+            "tree": "517bc3c7705d05169921911a5a083556cc897eeb",
+            "source_digest": "eeb79e3867f5c84666850d916912edc4e06533a298351875f8e8e28b36b46750",
+            "role": "correctness_tests_claims",
+            "reviewer_session": "/root/publication_review",
+            "conclusion": "blocked",
+            "basis": "Independent planned R2 review at exact clean546ad32453187a7a9a40ad08f1a6dc64cb31a9bf, original base unchanged. Inspected all R1 repairs, authority/nonce/SQLite/receipt transitions, tests, explicit model restrictions and full original scope. Every prior blocking key has concrete evidence below; the pin-authority requirement remains only partially repaired. Two independently executed public serial histories still fail: normal project modules carry different controller registries, permitting live-generation GC; separate Versions handles for one Catalog reset the same catalog/document state and accept a stale token with the same authority. The latter is scoped to the single catalog logical version target, not a durable/distributed CAS promise. Existing31host cases ran:30passed, one native-Linux RSS case skipped, no failures. Calibrated main-file create/recreate, clock-domain/elapsed-retention, owned-malformed cleanup, original exact count/bucket/quota/pagination/split/ABA and close/reopen controls pass; no old quota/floor was relaxed. Independent plan125/DAG/generated272links,16negative controls,API,cost8+7model controls,diff and actual-source fingerprint pass without review-store mutation. Full retained R2 Linux206/no skips/Rust/TLS/S3/isolation log hash matches packet; its18fresh probes bind current catalog module hash, bounded model gate passes and both bad variants refuse. Recomputed raw medians/ratios/work criteria; historical public v2 evidence still binds its labelled f791408 source, not the changed module. Both immutable R1 reports and all reproduction hashes remain exact in the public history. Serial SQLite/controller limits and independent fixture migration are explicit; no physicalIO/runtimeG01/tokencrypto/distributed/fleet acceptance is claimed. Scoped15file publication inspection found no credential/private-root pattern or dependency/license manifest change; no new copied third-party code or redistribution grant identified. Hosted final-tree ci-ok remains pending. No source edits, store mutation, heavy duplicate Docker/Cargo/native scale run, denied action, publication or formal GitHub approval. Two issued rounds/planned2/hard3 persist; blocked original M01.07 and unconfirmed M01.09/M01.08 state remain separate.",
+            "findings": [
+              {
+                "id": "PUBLIC_MODULES_SPLIT_CATALOG_AUTHORITY",
+                "priority": "P2",
+                "file": "tools/catalog_snapshots.py",
+                "line": 12,
+                "reproduction": "Run taskroot/M02.08_ROUND2_CORRECTNESS_REPRO.py. Import tools.catalog_model as direct and tools.catalog_snapshots as snap normally, with no reload or private-state mutation. Open direct.Catalog(path), then snap.Pins(first) and a live generation1 snapshot[1,42]. snap.MODEL[\"Catalog\"](same path) also succeeds because runpy created a different ACTIVE_CATALOGS dictionary. It receives a different nonce and its own accepted Pins. Its valid MutableCatalog splits to generation2 and gc(secondPins) returns[(1,1)], deleting the first authority's live generation; firstPins.page raises snapshot_unavailable. Raw before/after state and the ordinary import script are preserved in the reproduction JSON. This is the Catalog implementation exposed/used by the snapshot module, not an arbitrary copied module or forged registry.",
+                "expected": "The project's normal module composition must share one authoritative catalog/controller registry per backing file. Refuse the competing controller before mutation, or explicitly coordinate all live pins, so the original snapshot continues returning[1,42]. Canonicalize the internal model import and exercise public module composition in the controls; retain old controller/lifecycle fences.",
+                "observed": "The new singleton applies only within each separately executed catalog_model globals dictionary. The snapshot module executes that file again with runpy, while the normal model import owns a separate registry. Both per-controller checks succeed and GC still collects a live pin in one process. This violates the explicit revised single-controller model contract and leaves the broader R1 active-pin issue unresolved."
+              },
+              {
+                "id": "VERSIONS_HANDLES_RESET_SHARED_CATALOG_CAS_HISTORY",
+                "priority": "P2",
+                "file": "tools/catalog_snapshots.py",
+                "line": 282,
+                "reproduction": "The same reproduction creates exactly one Catalog and v1=Versions(catalog). v1.replace(doc42) yields token t1/version1; v1.replace(expected=t1) advances to2, and v1 then correctly rejects t1 as stale. Create v2=Versions(the_same_catalog), call replace(doc42) once, then replace(expected=t1). The v2 fresh version1 token equals t1 including the same catalog authority nonce, and the stale t1 is accepted with result version2. Exact dataclass tokens and both refusal/acceptance results are retained. No controller close, restart, catalog recreation, concurrency or internal values mutation is used.",
+                "expected": "Versions handles for the same catalog/document logical target must share one bounded version state or refuse independent replacement authority. A stale token already invalidated by a successful update must remain stale through another handle. If histories are intentionally distinct experiments, they need distinct enforced identities/backing scope and cannot accept each other's tokens. Preserve the lifecycle nonce and the1024-entry bound.",
+                "observed": "Each Versions constructor resets values={}, while tokens bind only the catalog-wide nonce and numeric version. Two histories on the same authoritative Catalog therefore issue equal old tokens and disagree on the current CAS state. The close/reopen nonce repair works for that literal case but does not prevent same-controller handle resets. This is a serial symbolic-model consistency defect, not a claim about durable storage or authenticated tokens."
+              }
+            ],
+            "resolutions": [
+              {
+                "review_key": "1:correctness_tests_claims:SECOND_PIN_REGISTRY_CAN_COLLECT_LIVE_GENERATION",
+                "evidence": "PARTIAL; broader authority remains blocked by PUBLIC_MODULES_SPLIT_CATALOG_AUTHORITY below. Exact same-instance duplicate Pins now refuses before mutation, a substitute object fails exact registry identity, duplicate Catalog from the same loaded model refuses, and controller close fences old handles. I independently reran those controls and a close/reopen snapshot/CAS nonce history in the31-case host suite. Original calibration tests now use separate backing files without changing their byte/count limit+one expectations. However tools.catalog_snapshots runpy-loads its own catalog_model globals, so ordinary direct and snapshot-module Catalog implementations admit two authorities for one backing file. Their valid per-controller GC can still collect a live generation. The literal original constructor case is repaired; the stated one-controller-per-file invariant is not fully resolved."
+              },
+              {
+                "review_key": "1:correctness_tests_claims:LATE_DEADLINE_CLOSE_OVERFLOWS_RECEIPT_CLOCK",
+                "evidence": "tools/catalog_admission.py _close validates the computed expiry before popping state; advance passes request.deadline as the terminal tick. The original maximum-100 receipt/one-tick request/advance5000 case now records maximum-99, within the clock domain. Independently reran new public clock-boundary controls: advancing to maximum releases both receipt slots, and retention already elapsed at observation is removed in the same advance. Explicit early closures use current time, safely before the admission-checked deadline+retention bound. Original overflow-before-admission test remains. No receipt limit or original oracle was weakened."
+              },
+              {
+                "review_key": "1:architecture_security:SEC-01-malformed-response-retains-admission",
+                "evidence": "finish_rpc first proves actual tenant ownership and an active partition, then checks the success tag inside the same refusal-cleanup try as count/cost/bucket validation. Independently reran the actual malformed-owned-status test: both owned RPC reservations, request slot and12 queued bytes are reclaimed, response_refused is terminal, and later complete refuses. A wrong-tenant call still leaves the owner untouched. This also addresses my earlier P3 MALFORMED_SUCCESS_TAG_RETAINS_OWNED_RPC advice; per protocol only previous blocking keys appear in this resolution array."
+              },
+              {
+                "review_key": "1:architecture_security:SEC-02-mutable-catalog-file-cap-not-enforced",
+                "evidence": "MutableCatalog._prepare_write configures SQLite max_page_count from the current bounded main-file cap/page size before each write transaction, including recreate and GC. SQLITE_FULL is converted to catalog_disk_budget after rollback. Independently ran exact calibrated initial0-idle create and80-idle recreate controls in the host suite: attempted growth refuses at/below the initial cap and the failed collection/incarnation transition remains absent/unchanged. Original byte/count quota controls remain, using separate fixtures only to comply with the explicit single-controller policy. Journal/temp/production storage remain excluded as documented, not counted as verified."
+              }
+            ]
           }
-        ],
-        "resolutions": []
+        },
+        {
+          "artifact": "M02.08_ROUND2_SECURITY.json",
+          "original_sha256": "c75e99d8a51c0699ecc8036b5944a084176a718fb2d9f882e242d2edaf4c8cb2",
+          "report": {
+            "schema_version": 1,
+            "packet_sha256": "df1946bb3dd042a0481a5927a3c748c55ccf710562df572fd088c087f25ffc5e",
+            "head": "546ad32453187a7a9a40ad08f1a6dc64cb31a9bf",
+            "tree": "517bc3c7705d05169921911a5a083556cc897eeb",
+            "source_digest": "eeb79e3867f5c84666850d916912edc4e06533a298351875f8e8e28b36b46750",
+            "role": "architecture_security",
+            "reviewer_session": "/root/sandbox_security_review",
+            "conclusion": "blocked",
+            "basis": "Independent R2 architecture/security review at exact clean546ad32453187a7a9a40ad08f1a6dc64cb31a9bf, original base8ff36e7932a70d0e8bc51bf35325cc6ab0fa824b. Actual packet SHA/9864-byte payload and current raw-source/head/tree independently bound. Inspected the full final model scope and all nine R1-to-R2 changed artifacts. All four previous P2 keys are concretely resolved below; the related P3 owned-status advice is fixed and excluded from the required key set. Original R1 reports/reproduction hashes and redacted technical extracts verified unchanged. Independently replayed all four repair histories through actual serial model methods, including exact calibrated create/recreate rejection and rollback. One further P2 remains: two Versions handles under the same live Catalog carry independent version dictionaries but the same authority nonce. After the first advances a document1->2->3, the second resets it to1, emits a token identical to stale version1 and accepts that stale token, returning2 while the first remains3. This is a same-controller public-method history, not restart/durable storage/distributed/token-authentication behavior. Executable and JSON evidence retain it. Host model suite31:30pass/1nativeLinuxRSSskip; plan/DAG/272links/generated/16negative/API/cost8+7/diff controls pass. Verified exact206Linux-no-skips/Rust/TLS/auth/S3/isolation smoke hash, exact-head18fresh scale probes/current module hash and all scale medians/ratios. Those native runs were not duplicated. Current and historical scale evidence remains correctly labelled synthetic SQL statement/returned-row/logical-counter/processRSS observation, with no physicalIO/service/fleet/crypto/distributed atomicity claim. Controller/file/pin authority restriction is explicit and bounded to64active model catalogs; nonce is lifecycle identity, not authentication. Main-file limits deliberately exclude journals/temp/production bytes. M02.05/07 calibration and M03/M13/M07 runtime/format/pin handoffs remain mandatory, no API defaults/gates promoted. Standard-library-only changes introduce no identified dependency/license or obvious secret issue. No source edit, real review-store mutation, Docker/heavy duplicate run, publication/merge/formalGitHub review or denied action occurred. Hosted final-tree CI remains pending; original M01.07 remains hard3blocked and M01.09 causeunconfirmed/M01.08blocked. Supporting artifacts: M02.08_ROUND2_SECURITY_REPRO.py/.json and M02.08_ROUND2_SECURITY_CHECKS.json.",
+            "findings": [
+              {
+                "id": "SEC-03-version-state-alias-within-controller",
+                "priority": "P2",
+                "file": "tools/catalog_snapshots.py",
+                "line": 282,
+                "reproduction": "Run taskroot/M02.08_ROUND2_SECURITY_REPRO.py at this head. In one live Catalog over a fresh owned SQLite fixture, first=Versions(catalog); stale=first.replace(synthetic,hot,42) gives version1; two valid expected-token replacements advance first to version3. Construct second=Versions(the_same_catalog); second.replace(synthetic,hot,42) unconditionally emits version1. That token equals stale, including the new authority nonce. second.replace(synthetic,hot,42,expected=stale) is accepted and returns version2, while first.values for that exact target is still3. No catalog close/reopen, private attribute mutation, native service, crypto, parallelism or durability assumption is involved.",
+                "expected": "Within one live catalog authority, symbolic CAS handles for the same tenant/collection/incarnation/document must compare/update the same bounded version state, or competing/replacement authorities must be explicitly fenced and assigned non-aliasing identity. A stale version1 token must not become valid again simply by constructing another public Versions handle. Preserve split-stable versions, collection-incarnation and close/reopen fences, typed refusals and finite history bounds.",
+                "observed": "Every Versions constructor allocates a fresh values dictionary while token comparison binds only catalog.authority_nonce. Multiple simultaneously live version states therefore share one token namespace and can reset numerical versions under the same authority. The close/reopen nonce regression passes, but it does not prevent this same-controller stale-token acceptance."
+              }
+            ],
+            "resolutions": [
+              {
+                "review_key": "1:correctness_tests_claims:SECOND_PIN_REGISTRY_CAN_COLLECT_LIVE_GENERATION",
+                "evidence": "Resolved for the recorded pin/GC history. Catalog now admits only one active authority per backing-file identity in its module/process and Pins registers once on that exact controller. GC requires pins is catalog.pin_registry and pins.catalog is catalog before data mutation. Independently replayed the original live[1,42] split history: second Pins and second Catalog constructors refuse; a substitute empty registry is refused; authoritative GC retains generation(1,1) and returns the exact page, then collects it only after release. Closing/reopening produces a new lifecycle nonce and old view/writer operations fail; the explicit single-controller serial restriction remains distinct from distributed exclusion. The new symbolic Versions-state blocker is separate and does not undo this exact registry repair."
+              },
+              {
+                "review_key": "1:correctness_tests_claims:LATE_DEADLINE_CLOSE_OVERFLOWS_RECEIPT_CLOCK",
+                "evidence": "Resolved. _close validates expiry before releasing/publishing state, and advance closes expired requests with terminal_tick=request.deadline rather than late observation time. Independently replayed receipt_ticks=maximum-100, two tenants/deadline1, advance5000: both expiries are maximum-99 and representable. Advancing to maximum removes both receipts and releases both receipt-pool slots. The original maximal-step/default-retention case is covered by the passing regression and cannot create an unreachable expiry. Active explicit closes occur before a still-live fixed deadline whose deadline+retention was admitted; no deadline extension or receipt-capacity waiver was added."
+              },
+              {
+                "review_key": "1:architecture_security:SEC-01-malformed-response-retains-admission",
+                "evidence": "Resolved, including the correctness role's related P3 success-tag advice. Active owned partition validation stays outside the protected response parse, while the success-type check now occurs inside the same try/terminal refusal path as costs/counts/buckets. Independent two-RPC replay: a foreign-tenant malformed response preserves the request and both RPCs; the owned success=1 response closes response_refused, releases all RPC/request/12 queue-byte reservations and refuses subsequent completion. Host regression and exact-head206Linux suite pass. The documented broad cleanup invariant now matches the owned malformed-status case."
+              },
+              {
+                "review_key": "1:architecture_security:SEC-02-mutable-catalog-file-cap-not-enforced",
+                "evidence": "Resolved for the calibrated main-file histories. _prepare_write validates the cap/file identity and sets PRAGMA max_page_count from the actual page size before every create/split/recreate/GC transaction. SQLITE_FULL is rolled back and typed catalog_disk_budget. Independently reran the original calibrated fixtures with the same test0000 names and80-idle recreation: mutation113 create and mutation18 recreate now refuse at12288 bytes, no oversize main file, and the rejected collection is absent/recreated identity remains(1,1). The original failures/repro hashes are retained unchanged. This enforces the claimed main-file bound only; excluded journal/temp/production accounting remains explicitly unqualified."
+              }
+            ]
+          }
+        }
+      ],
+      "reproduction_sha256": {
+        "M02.08_ROUND2_CORRECTNESS_REPRO.py": "c3d5f58a7f4142f7836ea6fd268df114e62cbbea242b722a6a299d579d1ec9be",
+        "M02.08_ROUND2_CORRECTNESS_REPRO.json": "5c96f3c60cdde481e66a22f8f6c62b2a22bc58b355346c02e813aa4253fba3b7",
+        "M02.08_ROUND2_SECURITY_REPRO.py": "32c597b4ce8f323200a7cb5e8c94116377b169db2b66f5d8cd7150d5b1b4043a",
+        "M02.08_ROUND2_SECURITY_REPRO.json": "b82380e2bd3c181eff035a1305f01802b1ab863c974508b7f9491d3d007bb15d"
       }
     }
-  ],
-  "reproduction_sha256": {
-    "M02.08_ROUND1_CORRECTNESS_REPRO.py": "46e2685d922733a707519307ed3ed7de68f6eb96ab3a7df09a2240baf9b3741b",
-    "M02.08_ROUND1_CORRECTNESS_REPRO.json": "1373fa140c3f511d1c675740c168b40754758c899e486e60eff559630446db9d",
-    "M02.08_ROUND1_SECURITY_REPRO.py": "9cd5df5d9a966f0c69d221f7c0dd1203f843bcfb3b7fbca2f5958ce553800c44",
-    "M02.08_ROUND1_SECURITY_REPRO.json": "7a8aaedd85e229a55f82cfc03c43d7dbff58b18a990ac2db72f74fae30825651"
-  }
+  ]
 }

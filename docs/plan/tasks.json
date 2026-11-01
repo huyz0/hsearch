@@ -785,7 +785,7 @@
             },
             {
               "path": "evidence/catalog-model-review-history.json",
-              "result": "Both actual R1 reports blocked; four serial-model P2s retained. Repairs and exact regression controls prepared; full final native/hosted checks and independent R2 remain pending."
+              "result": "Both actual R1/R2 reports remain blocked/retained. Final canonical-module pin authority and catalog-owned CAS history repairs prepared; R3 awaits accepted-main integration and complete final checks. No runtime acceptance."
             }
           ]
         },

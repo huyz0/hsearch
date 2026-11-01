@@ -1,10 +1,10 @@
 """Independent synthetic-key and version histories across split/pin/GC transitions."""
 from pathlib import Path
-import runpy
 import tempfile
 import unittest
 
-MOD = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'catalog_snapshots.py'))
+from tools import catalog_snapshots
+MOD = vars(catalog_snapshots)
 Catalog, create = MOD['MODEL']['Catalog'], MOD['MODEL']['create_catalog']
 Mutable, Pins, Versions, Refused = (MOD[name] for name in ['MutableCatalog', 'Pins', 'Versions', 'Refused'])
 
@@ -193,3 +193,30 @@ class SnapshotModelHistories(unittest.TestCase):
             with self.assertRaisesRegex(Refused, 'version_conflict'):
                 versions.replace('synthetic', 'hot', 42, expected=version)
             self.assertEqual(current.page('synthetic', fresh)[0], [2])
+
+    def test_ordinary_public_imports_share_pin_authority(self):
+        import tools.catalog_model as direct
+        import tools.catalog_snapshots as snapshot_module
+        path = direct.create_catalog(Path(self.directory.name) / 'public-imports.sqlite', idle_collections=0)
+        with direct.Catalog(path) as first, snapshot_module.MutableCatalog(first) as writer:
+            owner = snapshot_module.Pins(first)
+            token = owner.open('synthetic', 'hot', [1, 42])
+            writer.split('synthetic', 'hot', expected=(1, 1), partition=0, point=2048)
+            with self.assertRaisesRegex(direct.Refused, 'model_catalog_authority_conflict'):
+                snapshot_module.MODEL['Catalog'](path)
+            self.assertEqual(writer.gc(owner, 'synthetic', 'hot'), [])
+            self.assertEqual(owner.page('synthetic', token)[0], [1, 42])
+
+    def test_version_handles_share_the_same_catalog_history_without_counter_reset(self):
+        first = Versions(self.catalog)
+        old = first.replace('synthetic', 'hot', 42)
+        two = first.replace('synthetic', 'hot', 42, expected=old)
+        three = first.replace('synthetic', 'hot', 42, expected=two)
+        second = Versions(self.catalog)
+        with self.assertRaisesRegex(Refused, 'version_conflict'):
+            second.replace('synthetic', 'hot', 42, expected=old)
+        four = second.replace('synthetic', 'hot', 42, expected=three)
+        self.assertEqual(four.version, 4)
+        with self.assertRaisesRegex(Refused, 'version_conflict'):
+            first.replace('synthetic', 'hot', 42, expected=three)
+        self.assertEqual(first.replace('synthetic', 'hot', 42, expected=four).version, 5)
