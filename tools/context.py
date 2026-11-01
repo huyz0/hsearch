@@ -178,7 +178,11 @@ def route(store, claim, owner, value, resource_root, *, semantic=None):
         need(type(body) is dict and set(body).issubset(BODY_FIELDS), "Backend cannot replace host context envelope fields")
         need("data" not in body or type(body["data"]) is dict, "Backend data must be an object")
         if body.get("status") == "unavailable" and operation in {"outline", "definition", "reference", "rename-preview", "diagnostics"}:
-            body = lexical(root, value, body.get("reason", "Pinned semantic session unavailable"))
+            failure = body
+            body = lexical(root, value, failure.get("reason", "Pinned semantic session unavailable"))
+            if failure.get("data"):
+                need(len(encoded(failure["data"])) <= 4096, "Semantic failure details exceed diagnostic allowance")
+                body["data"]["semantic_failure"] = failure["data"]
         if operation == "rename-preview" and body.get("status") == "semantic":
             need(body["data"].get("applied") is False, "Rename preview cannot advertise applied edits")
         if operation == "diagnostics":

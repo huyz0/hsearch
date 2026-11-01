@@ -227,6 +227,13 @@ class GuestControls(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "deadline"):
             self.guest["bounded"]([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.1)
 
+    def test_acknowledged_cli_error_details_have_utf8_byte_bounds(self):
+        error = self.guest["CliFailure"]({"exit_code": 1, "stdout": "雪" * 2000, "stderr": "λ" * 2000})
+        for stream in ("stdout", "stderr"):
+            self.assertLessEqual(len(error.details[stream + "_head"].encode()), 1024)
+            self.assertTrue(error.details[stream + "_truncated"])
+        self.assertLess(len(self.guest["encoded"](error.details)), 4096)
+
     def test_untrusted_health_state_rejects_fifo_symlink_and_oversized_regular_file(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(self.guest["read_ready"].__globals__, STATE=Path(folder)):
             path = Path(folder) / "ready.json"

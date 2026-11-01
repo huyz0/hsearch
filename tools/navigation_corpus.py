@@ -4,13 +4,58 @@ import argparse
 import json
 from pathlib import Path
 import runpy
+import os
+import stat
 import subprocess
+import sys
 import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
 API = runpy.run_path(str(ROOT / "tools/context.py"))
 need, encoded = API["need"], API["encoded"]
+
+
+def cleanup_claims(store, claims, resources, query, known_edits, primary_error):
+    errors = []
+    for claim, role in reversed(claims):
+        try:
+            if store.get(claim)["phase"] == "interrupted":
+                store.resume(claim, role, resources)
+            stopped = query(claim, role, "stop")
+            need(stopped["status"] == "stopped", "Owned semantic cleanup uncertain; inspect retained evidence")
+            for path, before, after in known_edits.get(claim, []):
+                worktree = Path(store.get(claim)["worktree"])
+                need(path.is_relative_to(worktree) and path.resolve() == path.absolute(), "Redirected fixture edit preserved")
+                info = path.lstat()
+                need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size <= max(len(before), len(after)),
+                     "Unexpected fixture type/size/link preserved")
+                with path.open("rb") as source:
+                    actual = source.read(max(len(before), len(after)) + 1)
+                need(actual in (before, after), "Unexpected fixture edit preserved for inspection")
+                if actual == after:
+                    descriptor, temporary = tempfile.mkstemp(prefix=".hsearch-restore-", dir=path.parent)
+                    try:
+                        with os.fdopen(descriptor, "wb") as restored:
+                            restored.write(before)
+                            restored.flush()
+                            os.fsync(restored.fileno())
+                        os.chmod(temporary, info.st_mode & 0o777)
+                        os.replace(temporary, path)
+                    finally:
+                        Path(temporary).unlink(missing_ok=True)
+            store.cleanup(claim, role, resources)
+        except Exception as error:
+            errors.append({"claim": claim, "cleanup_error": str(error)[:256]})
+    for error in errors:
+        try:
+            print(json.dumps(error), flush=True)
+        except (OSError, ValueError):
+            # A closed diagnostic sink cannot replace the original failure.
+            # Cleanup still fails below if it is the only primary error.
+            pass
+    if errors and primary_error is None:
+        raise API["Refused"]("Owned corpus cleanup incomplete; inspect the recorded errors")
 
 
 def corpus(resources, evidence_parent):
@@ -43,7 +88,7 @@ def corpus(resources, evidence_parent):
     git(source, "add", ".")
     git(source, "commit", "-qm", "frozen navigation fixture")
     store = API["TASK"]["TaskStore"](area / "tasks", source)
-    claims, events, results = [], [], []
+    claims, events, results, known_edits = [], [], [], {}
 
     def query(claim, owner, operation, **fields):
         value = {"schema_version": 1, "operation": operation, **fields}
@@ -53,6 +98,10 @@ def corpus(resources, evidence_parent):
         events.append(event)
         results.append({"operation": operation, "owner": owner, "status": result["status"],
                         "elapsed_seconds": round(time.monotonic() - started, 3)})
+        if result.get("reason"):
+            results[-1]["reason"] = result["reason"]
+        if result.get("data", {}).get("semantic_failure"):
+            results[-1]["semantic_failure"] = result["data"]["semantic_failure"]
         with (area / "events.jsonl").open("a", encoding="utf-8") as log:
             log.write(json.dumps(event, ensure_ascii=False) + "\n")
         print(json.dumps(results[-1]), flush=True)
@@ -122,12 +171,22 @@ def corpus(resources, evidence_parent):
         # silently reuse it or represent literal matches as semantic results.
         need(query(first, owner, "start")["status"] == "ready", "Freshness fixture start failed")
         changed = files["src/lib.rs"].replace("user.id()", '"wrong type"')
+        known_edits[first] = [(first_root / "src/lib.rs", files["src/lib.rs"].encode(), changed.encode())]
         (first_root / "src/lib.rs").write_text(changed, encoding="utf-8", newline="\n")
         stale = query(first, owner, "outline", file="src/lib.rs")
         need(stale["status"] == "fallback" and not stale["semantic"] and "stale_semantic_session" in stale["reason"], "Stale server did not fall back honestly")
         need(query(first, owner, "start")["status"] == "ready", "Explicit stale-session replacement failed")
-        invalid = query(first, owner, "diagnostics", file="src/lib.rs")
-        need(invalid["cargo_check_required"] and invalid["status"] == "semantic", "Diagnostic limitations not declared")
+        cold_diagnostic_sessions = []
+        for repetition in range(5):
+            if repetition:
+                need(query(first, owner, "stop")["status"] == "stopped", "Cold diagnostic session did not stop")
+                need(query(first, owner, "start")["status"] == "ready", "Cold diagnostic session did not start")
+            invalid = query(first, owner, "diagnostics", file="src/lib.rs")
+            need(invalid["cargo_check_required"] and invalid["status"] == "semantic", "Cold diagnostics must return semantic data with compiler authority declared")
+            need(any(item.get("severity") == "error" and item.get("code") == "E0308" and item.get("line") == 2
+                     for item in invalid["data"]["items"]), "Cold diagnostic E0308 location oracle mismatch")
+            cold_diagnostic_sessions.append({"repetition": repetition, "source_digest": invalid["source"]["digest"],
+                                             "expected_code": "E0308", "expected_line": 2})
         failed = query(first, owner, "compile")
         need(failed["status"] == "compile" and failed["data"]["passed"] is False, "Authoritative cargo check accepted type error")
         store.resume(first, owner, resources)
@@ -147,18 +206,14 @@ def corpus(resources, evidence_parent):
                   "independent_location_oracle": True, "rename_writes": False, "concurrent_isolated_worktrees": True,
                   "warm_manager_reused": True, "other_worktree_survived_cleanup": True, "stale_fallback": True,
                   "cargo_check_type_error_failed": True, "cargo_check_valid_passed": True,
+                  "cold_diagnostic_sessions": cold_diagnostic_sessions,
                   "accounting_scope": "Complete deterministic fixture JSON transcript including both roles, commands, responses and fixed review; excludes model internals, actual token billing, transport framing and unrelated tools",
                   "tokenizer": None, "token_counts_are_estimates": True, "actual_agent_trial": "M01.08 remains separate",
                   "costs": [costs("tiny Rust semantic workflow including cold/warm lifecycle", baseline, semantic_events),
                             costs("two-role bounded retrieval of cleanup in actual task controller source", narrow_baseline, narrow_events)],
                   "observations": results, "evidence_directory": str(area)}
     finally:
-        for claim, role in reversed(claims):
-            if store.get(claim)["phase"] == "interrupted":
-                store.resume(claim, role, resources)
-            stopped = query(claim, role, "stop")
-            need(stopped["status"] == "stopped", "Owned semantic cleanup uncertain; inspect retained evidence")
-            store.cleanup(claim, role, resources)
+        cleanup_claims(store, claims, resources, query, known_edits, sys.exception())
     report["owned_claims_closed"] = True
     (area / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(json.dumps(report, sort_keys=True), flush=True)

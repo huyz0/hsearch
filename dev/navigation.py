@@ -21,6 +21,23 @@ ROOT = Path("/workspace")
 MAX_OUTPUT = 131072
 
 
+class CliFailure(RuntimeError):
+    def __init__(self, result):
+        super().__init__("navigation_cli_query_failed")
+        self.details = {"exit_code": result["exit_code"]}
+        for stream in ("stdout", "stderr"):
+            raw = result[stream].encode("utf-8")
+            self.details[stream + "_head"] = raw[:1024].decode("utf-8", errors="ignore")
+            self.details[stream + "_truncated"] = len(raw) > 1024
+        # Escaping control characters can expand a raw byte sixfold. Bound the
+        # serialized object consumed by the host as well as each raw prefix.
+        while len(encoded(self.details)) > 4096:
+            stream = max(("stdout", "stderr"), key=lambda name: len(encoded(self.details[name + "_head"])))
+            head = self.details[stream + "_head"]
+            self.details[stream + "_head"] = head[:len(head) // 2]
+            self.details[stream + "_truncated"] = True
+
+
 def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
@@ -225,7 +242,7 @@ def query(value):
             args += ["--new-name", value["new_name"]]
         result = bounded(args, timeout=90)
         if result["exit_code"]:
-            raise RuntimeError("navigation_cli_query_failed")
+            raise CliFailure(result)
         data = json.loads(result["stdout"])
         if operation == "rename-preview" and data.get("applied") is not False:
             raise RuntimeError("navigation_rename_was_not_preview")
@@ -265,7 +282,10 @@ def main():
         print(wire.decode(), flush=True)
         return 0
     except (OSError, ValueError, KeyError, RuntimeError) as error:
-        print(json.dumps({"status": "unavailable", "reason": str(error)[:256]}), flush=True)
+        result = {"status": "unavailable", "reason": str(error)[:256]}
+        if isinstance(error, CliFailure):
+            result["data"] = error.details
+        print(json.dumps(result), flush=True)
         return 1 if args.mode == "serve" else 0
 
 
