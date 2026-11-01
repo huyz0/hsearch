@@ -1,0 +1,44 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "fixture_text_v1": {
+          "type": "standard",
+          "max_token_length": 255,
+          "stopwords": "_none_"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "uid": {
+        "type": "keyword"
+      },
+      "tenant": {
+        "type": "keyword"
+      },
+      "category": {
+        "type": "keyword"
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "fixture_text_v1"
+      },
+      "price": {
+        "type": "integer",
+        "coerce": false
+      },
+      "active": {
+        "type": "boolean"
+      },
+      "created_at": {
+        "type": "date",
+        "format": "strict_date_optional_time"
+      }
+    }
+  }
+}

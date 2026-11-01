@@ -1,0 +1,13 @@
+# Core-v1 reference fixture inventory
+
+Status: **unqualified local work in progress**. No reference server/client execution or hsearch conformance has run. There is no hsearch HTTP/search service. Integrity checks cannot close M02.01 or establish client compatibility.
+
+The original public toy dataset has eleven explicitly identified documents, an explicit strict schema and a named standard-analyzer configuration. Thirteen search requests have manually enumerated document/count/sort oracles; four analyzer inputs have token, position and UTF-16 offset expectations. File and profile hashes are in `manifest.json`. The tenant field is sample data, not an authorization proof. Scores are not compared bit for bit, and this small corpus is not a workload or scale result.
+
+Reference candidates are [OpenSearch 3.9.0](https://github.com/opensearch-project/OpenSearch/releases/tag/3.9.0), revision `4ee42a94e87f66fbf1e62a9871b1b87f91e02472`, and [opensearch-py 3.2.0](https://github.com/opensearch-project/opensearch-py/releases/tag/v3.2.0), revision `8991792d3fcdfc221c9aef62d7e82c3d15ff0206`. Their official registry image index and native architecture digests were inspected, not pulled or run. Upstream's [client compatibility statement](https://github.com/opensearch-project/opensearch-py/blob/8991792d3fcdfc221c9aef62d7e82c3d15ff0206/COMPATIBILITY.md) does not establish hsearch compatibility. No dependency source, binary or copied server response is vendored.
+
+Run `python tools/api_fixtures.py` for bounded file/hash/profile/schema/identity checks. Its output explicitly reports reference execution and hsearch conformance as NOT-RUN. Negative controls reject dataset tampering, stale profile identity, invented execution and unknown inventory paths. This tool is an inventory checker, not a search implementation or reference executor.
+
+Remaining M02.01 work includes CRUD/bulk histories, native receipt/OCC/visibility/pagination/admission properties, unsupported requests and adaptation reports for all sixteen [profile areas](../../../docs/plan/api-compatibility.md). The finite aggregation cases are reference baselines for bounded native semantics; they do not promise universal aggregation DSL support. The analyzer is a candidate reference configuration and does not freeze hsearch's eventual analyzer profile or prove engine equivalence.
+
+Pinned reference execution must produce actual independent observations before expectations are described as validated goldens. Native adapter/service conformance remains a later gate. User application/client/proxy sources and representative private workloads have not been identified in current project docs; missing fixtures must stay explicit and no universal migration claim is made.

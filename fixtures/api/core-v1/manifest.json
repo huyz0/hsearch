@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "status": "inventory in progress; reference execution and native conformance not run",
+  "hsearch_runtime_implemented": false,
+  "reference": {
+    "server_version": "3.9.0",
+    "server_revision": "4ee42a94e87f66fbf1e62a9871b1b87f91e02472",
+    "client_version": "3.2.0",
+    "client_revision": "8991792d3fcdfc221c9aef62d7e82c3d15ff0206",
+    "image_index": "sha256:3b55f6b6249cfdb92b52ee59adc8a266203ba9ef9f5d82544fad6f1af2f3609e",
+    "linux_amd64": "sha256:5c20af6b5cb472a74ba99f663bee3dd03afbeced14b3897b220a87fc75278445",
+    "linux_arm64": "sha256:bbdf65cb3d35c61a8ba495f22c1a42d7d7f0df23412e3419bf1e6cfca3ba4774",
+    "source_license": "Apache-2.0; no dependency source or binary is vendored",
+    "reference_observed": false
+  },
+  "profile_sha256": "7f4e729404b38dabd1090da78543f0398a2732ab8a1bd9254e0f5cc9ed354a5a",
+  "files": {
+    "documents.json": "5d96ef5b991a66d2757bbc8e1bf5feaba02d2a3a29343a6327b88f1d30517f04",
+    "schema.json": "38e6c912a21e096ea0ff0388c9045bd430a36026f967030bee28d6c2c89f173f",
+    "search-cases.json": "82a44b311c3c8c706f9341689ea5f4e015047ea81bb656bf086433bee8e5ba61",
+    "analyzer-cases.json": "b726cc2a4ea175517b4b10f088a6950980eaf4f00d5a0b12798357afdcff39aa"
+  },
+  "missing": [
+    "User application/client/proxy workload source and representative datasets have not been identified in current project docs.",
+    "CRUD/bulk mutation histories, native receipt/OCC/visibility/pagination/admission properties and unsupported request fixtures remain to be added.",
+    "Pinned reference execution, analyzer golden tokens and native adapter/service conformance remain NOT-RUN."
+  ],
+  "constraints": [
+    "Original public toy documents; no private user workload or copied reference responses.",
+    "The tenant field is sample data, not an authorization/isolation proof.",
+    "Scores are not compared bit for bit; selected document IDs/counts and bounded sort order have independent manually enumerated oracles.",
+    "The fixture standard analyzer is an exact reference configuration candidate; it does not freeze the eventual hsearch analyzer profile or prove engine equivalence."
+  ]
+}

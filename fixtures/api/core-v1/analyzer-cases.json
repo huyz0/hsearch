@@ -1,0 +1,97 @@
+[
+  {
+    "id": "ascii-lowercase",
+    "text": "Quick brown fox",
+    "tokens": [
+      {
+        "token": "quick",
+        "position": 0,
+        "start_offset": 0,
+        "end_offset": 5
+      },
+      {
+        "token": "brown",
+        "position": 1,
+        "start_offset": 6,
+        "end_offset": 11
+      },
+      {
+        "token": "fox",
+        "position": 2,
+        "start_offset": 12,
+        "end_offset": 15
+      }
+    ],
+    "analyzer": "fixture_text_v1",
+    "reference_observed": false,
+    "hsearch_observed": false
+  },
+  {
+    "id": "accent-preserved",
+    "text": "QUICK café fox",
+    "tokens": [
+      {
+        "token": "quick",
+        "position": 0,
+        "start_offset": 0,
+        "end_offset": 5
+      },
+      {
+        "token": "café",
+        "position": 1,
+        "start_offset": 6,
+        "end_offset": 10
+      },
+      {
+        "token": "fox",
+        "position": 2,
+        "start_offset": 11,
+        "end_offset": 14
+      }
+    ],
+    "analyzer": "fixture_text_v1",
+    "reference_observed": false,
+    "hsearch_observed": false
+  },
+  {
+    "id": "no-default-stopword-removal",
+    "text": "The quick blue hare",
+    "tokens": [
+      {
+        "token": "the",
+        "position": 0,
+        "start_offset": 0,
+        "end_offset": 3
+      },
+      {
+        "token": "quick",
+        "position": 1,
+        "start_offset": 4,
+        "end_offset": 9
+      },
+      {
+        "token": "blue",
+        "position": 2,
+        "start_offset": 10,
+        "end_offset": 14
+      },
+      {
+        "token": "hare",
+        "position": 3,
+        "start_offset": 15,
+        "end_offset": 19
+      }
+    ],
+    "analyzer": "fixture_text_v1",
+    "reference_observed": false,
+    "hsearch_observed": false
+  },
+  {
+    "id": "empty-text",
+    "text": "",
+    "tokens": [],
+    "analyzer": "fixture_text_v1",
+    "reference_observed": false,
+    "hsearch_observed": false
+  }
+]

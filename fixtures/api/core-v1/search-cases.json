@@ -1,0 +1,549 @@
+[
+  {
+    "id": "match-all",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "match_all": {}
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "001",
+        "002",
+        "003",
+        "004",
+        "005",
+        "006",
+        "007",
+        "008",
+        "009",
+        "010",
+        "011"
+      ],
+      "exact_total": 11
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "keyword-term",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "term": {
+            "category": "book"
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "001",
+        "002",
+        "004",
+        "007",
+        "009",
+        "010",
+        "011"
+      ],
+      "exact_total": 7
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "keyword-terms",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "terms": {
+            "category": [
+              "music",
+              "tool"
+            ]
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "003",
+        "005",
+        "006",
+        "008"
+      ],
+      "exact_total": 4
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "integer-range",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "range": {
+            "price": {
+              "gte": 10,
+              "lt": 30
+            }
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "001",
+        "002",
+        "004",
+        "005",
+        "011"
+      ],
+      "exact_total": 5
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "integer-threshold-bool",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "bool": {
+            "filter": [
+              {
+                "term": {
+                  "category": "book"
+                }
+              },
+              {
+                "term": {
+                  "active": true
+                }
+              }
+            ],
+            "must_not": [
+              {
+                "range": {
+                  "price": {
+                    "gte": 30
+                  }
+                }
+              }
+            ],
+            "should": [
+              {
+                "match": {
+                  "title": "quick"
+                }
+              },
+              {
+                "term": {
+                  "tenant": "acct-d"
+                }
+              }
+            ],
+            "minimum_should_match": 1
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "001",
+        "004",
+        "009",
+        "011"
+      ],
+      "exact_total": 4
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "standard-match",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "match": {
+            "title": "quick"
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "001",
+        "002",
+        "004",
+        "011"
+      ],
+      "exact_total": 4
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "standard-phrase",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "match_phrase": {
+            "title": "brown fox"
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "001",
+        "004",
+        "009"
+      ],
+      "exact_total": 3
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "standard-accent-preserved",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "match": {
+            "title": "café"
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "011"
+      ],
+      "exact_total": 1
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "analyzed-text-term-is-case-sensitive",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "term": {
+            "title": "Quick"
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [],
+      "exact_total": 0
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "bounded-field-sort",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 3,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "price": "asc"
+          },
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "match_all": {}
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "010",
+        "009",
+        "001"
+      ],
+      "exact_total": 11
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "date-range",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "range": {
+            "created_at": {
+              "gte": "2026-01-01T00:00:00Z",
+              "lt": "2026-01-02T00:00:00Z"
+            }
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "001",
+        "002",
+        "003",
+        "004",
+        "005",
+        "006",
+        "007",
+        "008",
+        "009",
+        "010",
+        "011"
+      ],
+      "exact_total": 11
+    },
+    "hsearch_observed": false
+  },
+  {
+    "id": "finite-metrics",
+    "area": "A09",
+    "profile_class": "difference",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 0,
+        "track_total_hits": true,
+        "aggs": {
+          "sum_price": {
+            "sum": {
+              "field": "price"
+            }
+          },
+          "min_price": {
+            "min": {
+              "field": "price"
+            }
+          },
+          "max_price": {
+            "max": {
+              "field": "price"
+            }
+          },
+          "count_price": {
+            "value_count": {
+              "field": "price"
+            }
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "aggregations",
+      "values": {
+        "sum_price": 240,
+        "min_price": 0,
+        "max_price": 50,
+        "count_price": 11
+      }
+    },
+    "hsearch_observed": false,
+    "adaptation": "Reference baseline for bounded native metrics/group semantics; no universal aggregation DSL compatibility."
+  },
+  {
+    "id": "finite-key-ordered-terms",
+    "area": "A09",
+    "profile_class": "difference",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 0,
+        "track_total_hits": true,
+        "aggs": {
+          "categories": {
+            "terms": {
+              "field": "category",
+              "size": 3,
+              "order": {
+                "_key": "asc"
+              }
+            }
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "aggregations",
+      "values": {
+        "categories": [
+          {
+            "key": "book",
+            "doc_count": 7
+          },
+          {
+            "key": "music",
+            "doc_count": 2
+          },
+          {
+            "key": "tool",
+            "doc_count": 2
+          }
+        ]
+      }
+    },
+    "hsearch_observed": false,
+    "adaptation": "Reference baseline for bounded native metrics/group semantics; no universal aggregation DSL compatibility."
+  }
+]
