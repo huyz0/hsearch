@@ -60,11 +60,18 @@ class ActualOverrideControls(unittest.TestCase):
             config.write_text('[build]\nbuild-dir=' + json.dumps(str(shared_build)) + '\n[env]\nRUSTC_BOOTSTRAP={value="1",force=true}\n')
             source.write_text('#![feature(coverage_attribute)]\npub fn live(x:u32) -> u32 { x+1 }\n#[coverage(off)]\npub fn dead() -> u32 { 41 }\n')
             unqualified_env = dict(runner.env, CARGO_BUILD_BUILD_DIR=str(shared_build))
-            unqualified = invoke(["cargo", "build", "--lib", "--offline"], env=unqualified_env)
+            build_args = ["cargo", "build", "--lib", "--offline", "--message-format=json"]
+            unqualified = invoke(build_args, env=unqualified_env)
             self.assertEqual(unqualified.returncode, 0, unqualified.stdout)
-            def actual_map(label, environment):
-                archives = list((Path(environment["CARGO_TARGET_DIR"]) / host).glob("debug/deps/libconfiguration_policy_fixture-*.rlib"))
+            def actual_map(label, build):
+                archives = []
+                for line in build.stdout.split("\n"):
+                    try: event = json.loads(line)
+                    except ValueError: continue
+                    if type(event) is dict and event.get("reason") == "compiler-artifact":
+                        archives.extend(Path(path) for path in event["filenames"] if path.endswith(".rlib"))
                 self.assertEqual(len(archives), 1)
+                self.assertTrue(archives[0].resolve() == archives[0] and archives[0].is_relative_to(parent))
                 objects, output = [], parent / label
                 output.mkdir()
                 members = subprocess.check_output(["ar", "t", str(archives[0])], text=True, timeout=20).split("\n")
@@ -76,24 +83,24 @@ class ActualOverrideControls(unittest.TestCase):
                 raw = subprocess.check_output([str(llvm / "llvm-cov"), "export", "--empty-profile", "--format=lcov", objects[0],
                                                *[arg for item in objects[1:] for arg in ("--object", item)]], text=True, timeout=20)
                 return sorted(cov["GATE"]["parse_lcov"](raw)[str(source)])
-            self.assertEqual(actual_map("suppressed", runner.env), [2])
+            self.assertEqual(actual_map("suppressed", unqualified), [2])
             reused_env = dict(unqualified_env, CARGO_TARGET_DIR=str(parent / "unqualified-new-target"))
-            reused = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]), env=reused_env)
+            reused = invoke(cov["cargo_command"](build_args), env=reused_env)
             self.assertEqual(reused.returncode, 0, reused.stdout)
             protected = cov["Runner"](parent / "protected-context")
             cov["tool_identity"](protected)
             # Production collection and ordinary checks use fresh policy-owned
             # targets: Cargo does not fingerprint this compiler-child variable.
-            fixed_build = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]), env=protected.env)
+            fixed_build = invoke(cov["cargo_command"](build_args), env=protected.env)
             self.assertNotEqual(fixed_build.returncode, 0)
             self.assertIn("E0554", fixed_build.stdout)
             fixed_list = invoke(cov["nextest_command"](tools, "list", "--offline"), env=protected.env)
             self.assertNotEqual(fixed_list.returncode, 0)
             self.assertIn("E0554", fixed_list.stdout)
             source.write_text('\npub fn live(x:u32) -> u32 { x+1 }\n\npub fn dead() -> u32 { 41 }\n')
-            repaired = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]), env=protected.env)
+            repaired = invoke(cov["cargo_command"](build_args), env=protected.env)
             self.assertEqual(repaired.returncode, 0, repaired.stdout)
-            self.assertEqual(actual_map("plain", protected.env), [2, 4])
+            self.assertEqual(actual_map("plain", repaired), [2, 4])
             config.write_text('[build]\ntarget="unqualified-target-does-not-exist"\n')
             unbound = dict(protected.env); unbound.pop("CARGO_BUILD_TARGET")
             unbound_target = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]), env=unbound)
