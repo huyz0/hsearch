@@ -152,7 +152,7 @@ class SelectionControls(unittest.TestCase):
 
 
 class ResultControls(unittest.TestCase):
-    def test_current_zero_case_scope_runs_strict_workspace_corpus_in_both_profiles(self):
+    def test_observe_only_preserves_workspace_corpus_and_layout_in_both_profiles(self):
         workspace = copy.deepcopy(WORKSPACE)
         workspace['hsearch-engine']['dependencies'] = ['hsearch-types', 'hsearch-testkit']
         value = CI['select']([{'status': 'M', 'paths': ['crates/observe/src/lib.rs']}], workspace, OWNERSHIP, base=BASE, head=HEAD)
@@ -163,11 +163,21 @@ class ResultControls(unittest.TestCase):
                         COVERAGE=fixture_coverage(),
                         qualified_coverage_base=lambda base, head: base):
             CI['native'](value)
-        ordinary = [command for command in commands if command[:3] == ['/verified/cargo-nextest', 'nextest', 'run']]
+        ordinary = [command for command in commands if command[:3] == ['/verified/cargo-nextest', 'nextest', 'run'] and '-E' not in command]
         self.assertEqual(len(ordinary), 2)
         self.assertTrue(all('--workspace' in command and '--no-tests=fail' in command for command in ordinary))
         self.assertTrue(all('--config' in command and any(str(arg).endswith('cargo-correctness.toml') for arg in command) for command in ordinary))
         self.assertEqual(sum('--release' in command for command in ordinary), 1)
+        layouts = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "-E" in command]
+        self.assertEqual(len(layouts), 2)
+        self.assertEqual(sum("--release" in command for command in layouts), 1)
+        for command in layouts:
+            self.assertEqual(command[command.index("--package") + 1], "hsearch-observe")
+            self.assertEqual(command[command.index("-E") + 1], "test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension)")
+            self.assertEqual(command[command.index("--success-output") + 1], "immediate")
+            self.assertTrue(all(flag in command for flag in ["--locked", "--offline", "--all-features", "--no-tests=fail"]))
+            self.assertEqual(command[command.index("--profile") + 1], "hsearch")
+            self.assertTrue("--config" in command and any(str(arg).endswith("cargo-correctness.toml") for arg in command))
 
     def test_full_native_refuses_unqualified_new_production_member_before_commands(self):
         workspace = copy.deepcopy(WORKSPACE)
@@ -254,12 +264,22 @@ class ResultControls(unittest.TestCase):
         self.assertTrue(all("--workspace" in command and "--all-features" in command for command in tests))
         self.assertEqual(sum("--release" in command for command in tests), 1)
         self.assertTrue(all("--doc" in command for command in tests))
-        ordinary = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"]]
+        ordinary = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "-E" not in command]
         self.assertEqual(len(ordinary), 2)
         self.assertTrue(all('--config' in command and any(str(arg).endswith('cargo-correctness.toml') for arg in command) for command in ordinary))
         self.assertTrue(all("--workspace" in command and "--all-features" in command and
                             command[-3:] == ["--profile", "hsearch", "--no-tests=fail"] for command in ordinary))
         self.assertEqual(sum("--release" in command for command in ordinary), 1)
+        layouts = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "-E" in command]
+        self.assertEqual(len(layouts), 2)
+        self.assertEqual(sum("--release" in command for command in layouts), 1)
+        for command in layouts:
+            self.assertEqual(command[command.index("--package") + 1], "hsearch-observe")
+            self.assertEqual(command[command.index("-E") + 1], "test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension)")
+            self.assertEqual(command[command.index("--success-output") + 1], "immediate")
+            self.assertTrue(all(flag in command for flag in ["--locked", "--offline", "--all-features", "--no-tests=fail"]))
+            self.assertEqual(command[command.index("--profile") + 1], "hsearch")
+            self.assertTrue("--config" in command and any(str(arg).endswith("cargo-correctness.toml") for arg in command))
         coverage = next(command for command in commands if "tools/coverage.py" in command)
         self.assertTrue(CI["PRODUCTION"].issubset(coverage))
         self.assertIn("run", coverage)  # Collector run requires both dev and release production gates.

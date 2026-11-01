@@ -194,7 +194,7 @@ pub struct Projection {
 
 impl Projection {
     fn push(&mut self, key: &'static str, value: Value) {
-        // The complete version-one mapping below has at most31 fields.
+        // The complete version-one mapping below has at most32 fields.
         assert!(self.len < MAX_FIELDS, "fixed projection field bound");
         self.fields[self.len] = Some(Attribute { key, value });
         self.len += 1;
@@ -249,6 +249,10 @@ pub fn project(event: Observation) -> Projection {
         output.push("span_id", hexadecimal(&correlation.span_id()));
     }
     if let Some(scope) = event.scope() {
+        output.push(
+            "hsearch.shard.incarnation",
+            hexadecimal(&scope.incarnation.bytes()),
+        );
         output.push("hsearch.activation", coordinate(scope.activation));
         output.push("hsearch.shard", coordinate(scope.shard));
     }

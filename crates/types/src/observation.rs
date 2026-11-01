@@ -228,7 +228,7 @@ pub enum InvalidObservation {
     Completion,
     /// Resource counters are inconsistent.
     Resources,
-    /// Two observations refer to different activation/shard scopes.
+    /// Two observations refer to different incarnation/activation/shard scopes.
     Scope,
     /// Receipt state, operation and outcome disagree.
     Receipt,
@@ -236,9 +236,33 @@ pub enum InvalidObservation {
     Correlation,
 }
 
+/// Owner-supplied non-nil shard-incarnation UUID bytes.
+/// This carries identity only: it does not generate UUIDs, validate routing or grant authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ShardIncarnation([u8; 16]);
+
+impl ShardIncarnation {
+    /// Refuse the nil UUID; the protocol owner supplies globally unique incarnation identity.
+    pub fn try_new(bytes: [u8; 16]) -> Result<Self, InvalidObservation> {
+        if bytes == [0; 16] {
+            return Err(InvalidObservation::Scope);
+        }
+        Ok(Self(bytes))
+    }
+
+    /// Preserve all 128 identity bits without hashing, truncation or numeric coercion.
+    #[must_use]
+    pub const fn bytes(self) -> [u8; 16] {
+        self.0
+    }
+}
+
 /// Trusted diagnostic coordinates, never authorization or metric dimensions.
+/// This is not the complete tenant/index routing key or an authenticated receipt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Scope {
+    /// Incarnation changes when a shard identity is recreated, even if numbers are reused.
+    pub incarnation: ShardIncarnation,
     /// Opaque activation number supplied by its protocol owner.
     pub activation: u64,
     /// Opaque logical shard number supplied by its protocol owner.
@@ -492,7 +516,7 @@ impl ReceiptObservation {
         self.id
     }
 
-    /// Activation/shard scope supplied by the owner.
+    /// Incarnation/activation/shard scope supplied by the owner.
     #[must_use]
     pub const fn scope(self) -> Scope {
         self.scope
@@ -570,7 +594,7 @@ impl Observation {
         Ok(self)
     }
 
-    /// Add validated checkpoints under one explicit activation/shard scope.
+    /// Add validated checkpoints under one explicit incarnation/activation/shard scope.
     pub fn with_progress(
         self,
         scope: Scope,

@@ -264,12 +264,17 @@ def native(value):
     package_flags = ["--workspace"] if value["full"] else [part for name in value["packages"] for part in ("--package", name)]
     common = ["--locked", "--offline", "--all-features", *package_flags]
     native_run(["cargo", "clippy", *common, "--all-targets", "--", "-D", "warnings"])
-    # Current observe/xtask-only selections have no test cases. Keep the strict
-    # no-tests failure by conservatively exercising the known workspace corpus.
+    # Preserve the conservative workspace fallback for selections that can lack
+    # their own cases; no-tests remains a failure, including measurement filters.
     ordinary = common if value["full"] or set(value["packages"]) & {"hsearch-types", "hsearch-engine"} else ["--locked", "--offline", "--all-features", "--workspace"]
     for profile in ([], ["--release"]):
         native_run(coverage["nextest_command"](tools, "run", *ordinary, *profile, "--profile", "hsearch", "--no-tests=fail"))
         native_run(["cargo", "test", *common, *profile, "--doc"])
+        if value["full"] or "hsearch-observe" in value["packages"]:
+            native_run(coverage["nextest_command"](tools, "run", "--locked", "--offline",
+                "--package", "hsearch-observe", "--all-features", *profile, "--profile", "hsearch",
+                "--no-tests=fail", "-E", "test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension)",
+                "--success-output", "immediate"))
     production = sorted(PRODUCTION if value["full"] else set(value["packages"]) & PRODUCTION)
     if production:
         native_run(["cargo", "build", "--locked", "--offline", "--release", "--lib",

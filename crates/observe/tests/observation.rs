@@ -16,6 +16,7 @@ fn success() -> Observation {
 #[test]
 fn schema_golden_projection_preserves_all_fields_and_full_u64() {
     let scope = Scope {
+        incarnation: ShardIncarnation::try_new([0x12; 16]).unwrap(),
         activation: u64::MAX,
         shard: 7,
     };
@@ -78,6 +79,7 @@ fn schema_golden_projection_preserves_all_fields_and_full_u64() {
             "error.type",
             "trace_id",
             "span_id",
+            "hsearch.shard.incarnation",
             "hsearch.activation",
             "hsearch.shard",
             "hsearch.progress.committed",
@@ -106,6 +108,14 @@ fn schema_golden_projection_preserves_all_fields_and_full_u64() {
         ]
     );
     let value = |key| attributes.iter().find(|a| a.key == key).unwrap().value;
+
+    assert_eq!(
+        value("hsearch.shard.incarnation"),
+        Value::Hex {
+            bytes: *b"12121212121212121212121212121212",
+            len: 32
+        }
+    );
     assert_eq!(
         value("hsearch.activation"),
         Value::Decimal(*b"18446744073709551615")
@@ -155,8 +165,8 @@ fn schema_golden_projection_preserves_all_fields_and_full_u64() {
     );
     assert_eq!(value("hsearch.count.value"), Value::Integer(17));
     assert_eq!(value("hsearch.object.attempts"), Value::Integer(3));
-    assert_eq!(attributes.len(), 31);
-    assert_eq!(keys.iter().copied().collect::<BTreeSet<_>>().len(), 31);
+    assert_eq!(attributes.len(), 32);
+    assert_eq!(keys.iter().copied().collect::<BTreeSet<_>>().len(), 32);
     assert_eq!(project(event), project(event).clone());
 }
 
@@ -191,6 +201,7 @@ fn minimization_discards_hostile_text_before_queueing_or_projection() {
 #[test]
 fn all_receipt_states_and_absence_are_explicit() {
     let scope = Scope {
+        incarnation: ShardIncarnation::try_new([0x12; 16]).unwrap(),
         activation: 0,
         shard: 0,
     };
@@ -279,6 +290,7 @@ fn metric_dimensions_are_finite_and_exclude_every_diagnostic_identity() {
     }
     assert!(observed.len() <= 864);
     let scope = Scope {
+        incarnation: ShardIncarnation::try_new([0x12; 16]).unwrap(),
         activation: u64::MAX,
         shard: u64::MAX,
     };
@@ -367,6 +379,7 @@ fn scoped_progress_uses_existing_producer_and_preserves_all_coordinates() {
     assert_send_sync::<ScopedProgressObserver<'_>>();
     let (producer, consumer) = outbox(1).unwrap();
     let scope = Scope {
+        incarnation: ShardIncarnation::try_new([0x12; 16]).unwrap(),
         activation: 33,
         shard: 44,
     };
@@ -528,4 +541,122 @@ fn missing_resource_fields_are_not_projected_as_zero_measurements() {
         }),
         Err(InvalidObservation::Resources)
     );
+}
+
+#[test]
+fn incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension() {
+    let first = Scope {
+        incarnation: ShardIncarnation::try_new([
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+        ])
+        .unwrap(),
+        activation: u64::MAX,
+        shard: u64::MAX,
+    };
+    let second = Scope {
+        incarnation: ShardIncarnation::try_new([0xff; 16]).unwrap(),
+        ..first
+    };
+    let a = success().with_progress(first, Progress::default()).unwrap();
+    let b = success()
+        .with_progress(second, Progress::default())
+        .unwrap();
+    let incarnation = |event| {
+        project(event)
+            .attributes()
+            .find(|attribute| attribute.key == "hsearch.shard.incarnation")
+            .unwrap()
+            .value
+    };
+    assert_eq!(
+        incarnation(a),
+        Value::Hex {
+            bytes: *b"000102030405060708090a0b0c0d0e0f",
+            len: 32
+        }
+    );
+    assert_ne!(incarnation(a), incarnation(b));
+    assert_eq!(metric_dimensions(a), metric_dimensions(b));
+    assert_eq!(
+        measurements(a).collect::<Vec<_>>(),
+        measurements(b).collect::<Vec<_>>()
+    );
+    let (producer, consumer) = outbox(1).unwrap();
+    let scoped = producer.scoped(second);
+    assert_eq!(scoped.try_record(Progress::default()), Delivery::Queued);
+    assert_eq!(consumer.try_recv().unwrap().scope(), Some(second));
+    println!(
+        r#"{{"observability_layout":"pass","profile":"{}","architecture":"{}","record_bytes":{},"max_capacity":{},"queued_payload_bytes":{},"max_fields":{}}}"#,
+        if cfg!(debug_assertions) {
+            "dev"
+        } else {
+            "release"
+        },
+        std::env::consts::ARCH,
+        RECORD_BYTES,
+        MAX_CAPACITY,
+        MAX_QUEUED_PAYLOAD_BYTES,
+        MAX_FIELDS
+    );
+}
+
+#[test]
+fn committed_but_unavailable_projection_preserves_the_owner_facts() {
+    let scope = Scope {
+        incarnation: ShardIncarnation::try_new([0x12; 16]).unwrap(),
+        activation: 17,
+        shard: 3,
+    };
+    let progress = Progress::try_new(
+        Sequence::new(12),
+        Sequence::new(7),
+        Sequence::new(5),
+        Sequence::new(9),
+    )
+    .unwrap();
+    let receipt =
+        ReceiptObservation::committed([0x34; 16], scope, Sequence::new(12), Visibility::Pending);
+    let event = Observation::try_new(
+        1,
+        Operation::Receipt,
+        Outcome::Failed,
+        Some(FailureClass::Unavailable),
+    )
+    .unwrap()
+    .with_receipt(receipt)
+    .unwrap()
+    .with_progress(scope, progress)
+    .unwrap();
+    let attributes: Vec<_> = project(event).attributes().collect();
+    let value = |key| {
+        attributes
+            .iter()
+            .find(|attribute| attribute.key == key)
+            .unwrap()
+            .value
+    };
+    assert_eq!(value("hsearch.outcome"), Value::Text("failed"));
+    assert_eq!(value("error.type"), Value::Text("hsearch.unavailable"));
+    assert_eq!(value("hsearch.receipt.state"), Value::Text("committed"));
+    assert_eq!(
+        value("hsearch.receipt.id"),
+        Value::Hex {
+            bytes: *b"34343434343434343434343434343434",
+            len: 32
+        }
+    );
+    assert_eq!(
+        value("hsearch.receipt.committed"),
+        Value::Decimal(*b"00000000000000000012")
+    );
+    for (key, digits) in [
+        ("hsearch.progress.committed", *b"00000000000000000012"),
+        ("hsearch.progress.applied", *b"00000000000000000007"),
+        ("hsearch.progress.searchable", *b"00000000000000000005"),
+        ("hsearch.progress.archived", *b"00000000000000000009"),
+    ] {
+        assert_eq!(value(key), Value::Decimal(digits));
+    }
+    assert_eq!(event.receipt(), Some(receipt));
+    assert_eq!(event.progress(), Some(progress));
 }

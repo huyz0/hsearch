@@ -87,7 +87,7 @@ fn metric_boundaries_and_addition_preserve_exact_counts() {
 
 use hsearch_types::observation::{
     Completeness, Completion, Correlation, CountRelation, InvalidObservation, Observation,
-    ReceiptObservation, ResourceUsage, Scope, Visibility,
+    ReceiptObservation, ResourceUsage, Scope, ShardIncarnation, Visibility,
 };
 use hsearch_types::{Progress, Sequence};
 
@@ -263,6 +263,7 @@ fn resource_subsets_retries_and_overflow_are_checked() {
 #[test]
 fn receipt_scope_checkpoint_and_visibility_timeout_do_not_rollback() {
     let scope = Scope {
+        incarnation: ShardIncarnation::try_new([0x12; 16]).unwrap(),
         activation: 5,
         shard: u64::MAX,
     };
@@ -343,8 +344,16 @@ fn receipt_scope_checkpoint_and_visibility_timeout_do_not_rollback() {
     for visibility in [Visibility::Pending, Visibility::Visible] {
         let receipt = ReceiptObservation::committed([5; 16], scope, committed, visibility);
         assert!(event(Outcome::Success, None).with_receipt(receipt).is_ok());
+        // Explicit migration of the private Success-only oracle: architecture
+        // requires known commitment to survive a downstream application failure.
+        let downstream = event(Outcome::Failed, Some(FailureClass::Internal))
+            .with_receipt(receipt)
+            .unwrap();
+        assert_eq!(downstream.receipt(), Some(receipt));
+        assert_eq!(downstream.outcome(), Outcome::Failed);
+        assert_eq!(downstream.failure(), Some(FailureClass::Internal));
         assert_eq!(
-            event(Outcome::Failed, Some(FailureClass::Internal)).with_receipt(receipt),
+            event(Outcome::Rejected, Some(FailureClass::Overloaded)).with_receipt(receipt),
             Err(InvalidObservation::Receipt)
         );
         assert_eq!(
@@ -381,4 +390,216 @@ fn trusted_correlation_rejects_all_zero_without_text_or_allocations() {
             .correlation(),
         Some(correlation)
     );
+}
+
+#[test]
+fn incarnation_validation_and_cross_incarnation_composition_preserve_identity() {
+    assert_eq!(
+        ShardIncarnation::try_new([0; 16]),
+        Err(InvalidObservation::Scope)
+    );
+    for index in 0..16 {
+        let mut bytes = [0; 16];
+        bytes[index] = 1;
+        let incarnation = ShardIncarnation::try_new(bytes).unwrap();
+        assert_eq!(incarnation.bytes(), bytes);
+    }
+    let scope = Scope {
+        incarnation: ShardIncarnation::try_new([1; 16]).unwrap(),
+        activation: 7,
+        shard: 11,
+    };
+    let recreated = Scope {
+        incarnation: ShardIncarnation::try_new([2; 16]).unwrap(),
+        ..scope
+    };
+    assert_eq!(scope.activation, recreated.activation);
+    assert_eq!(scope.shard, recreated.shard);
+    assert_ne!(scope, recreated);
+    let receipt =
+        ReceiptObservation::committed([3; 16], scope, Sequence::new(0), Visibility::Visible);
+    let start = event(Outcome::Success, None);
+    assert_eq!(
+        start
+            .with_progress(recreated, Progress::default())
+            .unwrap()
+            .with_receipt(receipt),
+        Err(InvalidObservation::Scope)
+    );
+    assert_eq!(
+        start
+            .with_receipt(receipt)
+            .unwrap()
+            .with_progress(recreated, Progress::default()),
+        Err(InvalidObservation::Scope)
+    );
+    assert!(
+        start
+            .with_receipt(receipt)
+            .unwrap()
+            .with_progress(scope, Progress::default())
+            .is_ok()
+    );
+}
+
+#[test]
+fn known_commit_and_application_failure_are_independent_in_both_orders() {
+    let scope = Scope {
+        incarnation: ShardIncarnation::try_new([0x12; 16]).unwrap(),
+        activation: 17,
+        shard: 3,
+    };
+    let progress = Progress::try_new(
+        Sequence::new(12),
+        Sequence::new(7),
+        Sequence::new(5),
+        Sequence::new(9),
+    )
+    .unwrap();
+    let receipt =
+        ReceiptObservation::committed([0x34; 16], scope, Sequence::new(12), Visibility::Pending);
+    let start = event(Outcome::Failed, Some(FailureClass::Unavailable));
+    let first = start
+        .with_progress(scope, progress)
+        .unwrap()
+        .with_receipt(receipt)
+        .unwrap();
+    let second = start
+        .with_receipt(receipt)
+        .unwrap()
+        .with_progress(scope, progress)
+        .unwrap();
+    assert_eq!(first, second);
+    assert_eq!(first.receipt(), Some(receipt));
+    assert_eq!(first.progress(), Some(progress));
+    assert_eq!(first.outcome(), Outcome::Failed);
+    assert_eq!(first.failure(), Some(FailureClass::Unavailable));
+    assert_eq!(receipt.sequence(), Some(Sequence::new(12)));
+    for wrong_scope in [
+        Scope {
+            activation: 18,
+            ..scope
+        },
+        Scope { shard: 4, ..scope },
+        Scope {
+            incarnation: ShardIncarnation::try_new([0x56; 16]).unwrap(),
+            ..scope
+        },
+    ] {
+        assert_eq!(
+            start
+                .with_progress(wrong_scope, progress)
+                .unwrap()
+                .with_receipt(receipt),
+            Err(InvalidObservation::Scope)
+        );
+        assert_eq!(
+            start
+                .with_receipt(receipt)
+                .unwrap()
+                .with_progress(wrong_scope, progress),
+            Err(InvalidObservation::Scope)
+        );
+    }
+    let beyond =
+        ReceiptObservation::committed([0x34; 16], scope, Sequence::new(13), Visibility::Pending);
+    assert_eq!(
+        start
+            .with_progress(scope, progress)
+            .unwrap()
+            .with_receipt(beyond),
+        Err(InvalidObservation::Receipt)
+    );
+    assert_eq!(
+        start
+            .with_receipt(beyond)
+            .unwrap()
+            .with_progress(scope, progress),
+        Err(InvalidObservation::Receipt)
+    );
+
+    // Literal contract table from the architecture/design review, not a match-arm oracle.
+    // Columns: outcome, error, known Pending/Visible, explicit Timeout, unknown receipt.
+    for (outcome, failure, known, timeout, unknown) in [
+        (Outcome::Success, None, true, false, false),
+        (
+            Outcome::Failed,
+            Some(FailureClass::Unavailable),
+            true,
+            false,
+            false,
+        ),
+        (
+            Outcome::Failed,
+            Some(FailureClass::Internal),
+            true,
+            false,
+            false,
+        ),
+        (
+            Outcome::Failed,
+            Some(FailureClass::Corrupt),
+            true,
+            false,
+            false,
+        ),
+        (
+            Outcome::Rejected,
+            Some(FailureClass::Overloaded),
+            false,
+            false,
+            false,
+        ),
+        (
+            Outcome::Partial,
+            Some(FailureClass::Unavailable),
+            false,
+            false,
+            false,
+        ),
+        (
+            Outcome::Cancelled,
+            Some(FailureClass::DeadlineExceeded),
+            false,
+            true,
+            false,
+        ),
+        (
+            Outcome::Cancelled,
+            Some(FailureClass::Cancelled),
+            false,
+            false,
+            false,
+        ),
+        (
+            Outcome::Unknown,
+            Some(FailureClass::UnknownOutcome),
+            false,
+            false,
+            true,
+        ),
+    ] {
+        for visibility in [
+            Visibility::Pending,
+            Visibility::Visible,
+            Visibility::Timeout,
+        ] {
+            let receipt =
+                ReceiptObservation::committed([0x34; 16], scope, Sequence::new(12), visibility);
+            let expected = match visibility {
+                Visibility::Pending | Visibility::Visible => known,
+                Visibility::Timeout => timeout,
+            };
+            assert_eq!(
+                event(outcome, failure).with_receipt(receipt).is_ok(),
+                expected
+            );
+        }
+        assert_eq!(
+            event(outcome, failure)
+                .with_receipt(ReceiptObservation::unknown([0x34; 16], scope))
+                .is_ok(),
+            unknown
+        );
+    }
 }
