@@ -240,7 +240,7 @@
       "title": "Scalability-first API and engineering contract",
       "goal": "Freeze useful OpenSearch-inspired partial compatibility and measurable bounded alternatives before API-dependent implementation; preserve valid completed work.",
       "owner": "architecture/integrator",
-      "status": "review",
+      "status": "done",
       "depends_on": [
         "M00"
       ],
@@ -274,11 +274,15 @@
             "M00"
           ],
           "owner": "architecture/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/api-direction-revision.md",
               "result": "Concrete 16-area official-source matrix and reordered plan; first architecture review clear, consistency review findings fixed with mandatory-budget/qualification-owner controls; full local Rust/Python/two-store smoke passed before those fixes; final review and hosted qualification pending."
+            },
+            {
+              "path": "evidence/api-direction-integrated.md",
+              "result": "Both independent final reviews clear at5c911665; full local66-case/Rust/live-store and all7 hosted jobs pass; protected normal PR5 merge367760ad with identical reviewed tree."
             }
           ]
         }
@@ -427,6 +431,10 @@
             {
               "path": "evidence/m01-03-preserved.md",
               "result": "Unfinished local work saved asb563042;72Linux pure controls passed, live smoke failed known logging configuration; exact owned resources cleaned. No publication/completion claim."
+            },
+            {
+              "path": "evidence/m01-03-task-runner.md",
+              "result": "Resumed in a fresh worktree from integrated API direction367760ad, preserving original WIPb563042; single-file Docker local log compression disabled; complete qualification/reviews pending."
             }
           ]
         },

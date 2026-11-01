@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Run known development checks within the surrounding container's resource caps."""
 import argparse
+import ctypes
 import json
 import os
 from pathlib import Path
 import signal
+import selectors
 import subprocess
+import sys
 import time
 
 COMMANDS = {"prefetch": ["cargo", "fetch", "--locked"], "check": ["cargo", "xtask", "check"]}
@@ -63,32 +66,59 @@ def diagnostics():
     print(json.dumps({"uid": os.getuid(), "architecture": platform.machine(), "versions": versions, "cgroup_limits": caps}))
 
 
-def run(mode, disk_bytes, timeout):
+def run(mode, disk_bytes, timeout, output_bytes=8 * 1024**2):
     verify_limits(2000, 4 * 1024**3, 512)
     if mode == "diagnostics":
         diagnostics()
         return 0
+    # Repository children must not reopen the monitor's original log descriptors
+    # or ptrace its counters through /proc while sharing its unprivileged UID.
+    if ctypes.CDLL(None, use_errno=True).prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE=0
+        raise RuntimeError("Could not isolate the command monitor")
     started = time.monotonic()
-    child = subprocess.Popen(COMMANDS[mode], start_new_session=True)
-    peak = 0
+    child = subprocess.Popen(COMMANDS[mode], start_new_session=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    selector = selectors.DefaultSelector()
+    selector.register(child.stdout, selectors.EVENT_READ)
+    peak, emitted, next_sample = 0, 0, 0
     try:
-        while child.poll() is None:
-            peak = max(peak, usage(("/cargo", "/target")))
-            if peak > disk_bytes:
-                raise RuntimeError("Declared cache/target disk budget exceeded")
+        while selector.get_map() or child.poll() is None:
+            if time.monotonic() >= next_sample:
+                peak = max(peak, usage(("/cargo", "/target")))
+                if peak > disk_bytes:
+                    raise RuntimeError("Declared cache/target disk budget exceeded")
+                next_sample = time.monotonic() + 0.5
             if time.monotonic() - started > timeout:
                 raise RuntimeError("Development command deadline exceeded")
-            time.sleep(0.5)
-        print(json.dumps({"mode": mode, "exit": child.returncode, "elapsed_seconds": round(time.monotonic() - started, 2), "peak_disk_bytes": peak}))
+            for key, _ in selector.select(timeout=0.05):
+                chunk = os.read(key.fd, 65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                emitted += len(chunk)
+                if emitted > output_bytes:
+                    raise RuntimeError("Declared command output budget exceeded")
+                sys.stdout.buffer.write(chunk)
+                sys.stdout.buffer.flush()
+        child.wait(timeout=3)
+        print(json.dumps({"mode": mode, "exit": child.returncode, "elapsed_seconds": round(time.monotonic() - started, 2),
+                          "peak_disk_bytes": peak, "output_bytes": emitted}))
         return child.returncode if child.returncode >= 0 else 1
     finally:
+        selector.close()
+        child.stdout.close()
         if child.poll() is None:
             # Only the process group created above, never an ambient host process.
-            os.killpg(child.pid, signal.SIGTERM)
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
             try:
                 child.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 child.wait(timeout=3)
 
 
@@ -97,7 +127,8 @@ if __name__ == "__main__":
     parser.add_argument("mode", choices=(*COMMANDS, "diagnostics"))
     parser.add_argument("--disk-bytes", type=int, required=True)
     parser.add_argument("--timeout", type=int, required=True)
+    parser.add_argument("--output-bytes", type=int, default=8 * 1024**2)
     args = parser.parse_args()
-    if not 1 <= args.disk_bytes <= 64 * 1024**3 or not 1 <= args.timeout <= 1800:
+    if not 1 <= args.disk_bytes <= 64 * 1024**3 or not 1 <= args.timeout <= 1800 or not 4096 <= args.output_bytes <= 8 * 1024**2:
         parser.error("Budget outside the supported bounded range")
-    raise SystemExit(run(args.mode, args.disk_bytes, args.timeout))
+    raise SystemExit(run(args.mode, args.disk_bytes, args.timeout, args.output_bytes))

@@ -4,7 +4,7 @@
       "image": "${DEV_IMAGE}",
       "pull_policy": "never",
       "user": "10001:10001",
-      "command": ["python3", "/workspace/dev/init.py"],
+      "command": ["python3", "/harness/init.py"],
       "restart": "no",
       "network_mode": "none",
       "read_only": true,
@@ -17,7 +17,7 @@
       "tmpfs": ["/tmp:size=67108864,mode=1777"],
       "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"},
       "volumes": [
-        {"type": "bind", "source": "${SOURCE_ROOT}", "target": "/workspace", "read_only": true},
+        {"type": "bind", "source": "${HARNESS_ROOT}", "target": "/harness", "read_only": true},
         "ca:/hsearch-state/ca", "server:/hsearch-state/server", "client:/hsearch-state/client", "credentials:/hsearch-state/credentials"
       ]
     },

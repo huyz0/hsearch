@@ -176,8 +176,13 @@ class OwnershipControls(unittest.TestCase):
                 if args[0] == "run":
                     if any(str(arg).endswith("-admission") for arg in args):
                         return str(100 * GIB)
+                if args[0] == "create":
+                    return "a" * 64
+                if args[0] == "start":
                     raise Refused("unknown run outcome")
                 return "live-cid\n"
+            def inspect(self, kind, names):
+                return [{"Id": names[0], "Config": {"Labels": {MODULE["LABEL"]: "mine", "io.hsearch.namespace": "hsearch-test-0123456789ab"}}}]
         with tempfile.TemporaryDirectory() as directory:
             sandbox = Sandbox(directory, docker=FakeDocker())
             namespace = "hsearch-test-0123456789ab"
@@ -195,6 +200,7 @@ class OwnershipControls(unittest.TestCase):
                 if args[0] == "run":
                     if any(str(arg).endswith("-admission") for arg in args):
                         return str(100 * GIB)
+                if args[0] == "create":
                     raise Refused("unknown create result")
                 return ""
         with tempfile.TemporaryDirectory() as directory:
@@ -234,7 +240,7 @@ class OwnershipControls(unittest.TestCase):
         for forbidden in ("docker.sock", "privileged", "rustfsadmin", "latest"):
             self.assertNotIn(forbidden, template)
         from string import Template
-        parsed = json.loads(Template(template).substitute(DEV_IMAGE="sha256:abc", RUSTFS_IMAGE="rustfs@sha256:def", OWNER="owner", NAMESPACE="test", SOURCE_ROOT="/repo"))
+        parsed = json.loads(Template(template).substitute(DEV_IMAGE="sha256:abc", RUSTFS_IMAGE="rustfs@sha256:def", OWNER="owner", NAMESPACE="test", SOURCE_ROOT="/repo", HARNESS_ROOT="/trusted-frozen"))
         for service in parsed["services"].values():
             self.assertEqual(service["user"], "10001:10001")
             self.assertTrue(service["read_only"])
