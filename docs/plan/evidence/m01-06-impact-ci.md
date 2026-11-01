@@ -11,3 +11,15 @@ Checksum-verified official actionlint1.7.12 passed both workflow files with shel
 Independent final-tree reviews, hosted full native workflow, observed hosted docs-only selection, and an observed main-branch `ci-ok` requirement remain acceptance work. No merge or delivery claim follows from the current targeted controls alone. M01.03-M01.05/M01.07-M01.08 and all runtime qualification remain in their original owning tasks.
 
 The restricted Windows host run encountered denied redirected temporary-directory writes; those paths were not inspected or retried. The supported resource-leased Linux path supplied the complete passing suite. No tests were weakened.
+
+## Independent review corrections
+
+Separate correctness and security sessions reviewed `20019a0314c65737b0a697e03e59e933fbe20f5a`. Two P2 blockers were found: LLVM's global 90% option treated a zero-coverable engine-only scope as 0% before the N/A-aware checker; a broad Markdown rule incorrectly admitted behavioral/unknown documentation into docs-only qualification.
+
+The corrected selector uses an explicit narrative allowlist (README/progress/generated roadmap/milestones/evidence); all other Markdown, contracts and unknown paths select the full matrix. Existing actual-policy controls now include replication/copy, operating profiles, sandbox/impact contracts and an unknown new Markdown file. Populated current coverage scopes retain LLVM's global90 threshold; all scopes always pass through the N/A-aware per-file/per-crate90 checker. Engine-only zero-line scopes reach N/A; a populated engine report below90 still fails. Exact-reader installation in the docs job makes real Git/Cargo counterexamples reproducible on fresh runners. Added stale-graph refusal before native commands.
+
+[Final correction validation](m01-06-review-fix-python.txt) passed all54 Linux Python cases without skips plus model/planning controls under finite caps. The [actual pinned engine-only LLVM command](m01-06-engine-coverage.txt) compiled/tested the engine's two integration cases, generated its real JSON report and passed the N/A-aware checker with cargo-llvm-cov0.9.1. It ran offline, non-root, kernel-capped, resource-leased and disk-monitored with independent cache/target; peak accounted disk642481670 bytes. Final lease registry was empty. The earlier complete Rust/sandbox smoke is unchanged-source evidence for the rest of the workspace.
+
+A one-off local cache-copy attempt stopped at an inaccessible Windows cached symlink before workload creation; a fresh independent public dependency cache was used instead. A local attempt at the whole native entrypoint could not resolve Windows worktree refs through Linux bind mounts, so it is not claimed as a passing native workflow. The actual LLVM command above is observed; complete clean-checkout native execution remains required in hosted CI. Partial task-local caches were retained, no denied path was retried and no unrelated data was pruned.
+
+Second-round exact-tree reviews and hosted full/docs/selective (including engine-only) workflows remain required. Review counters remain tied to M01.06, not reset by the new diff.

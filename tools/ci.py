@@ -248,9 +248,13 @@ def native(value):
         run(["cargo", "build", "--locked", "--offline", "--release", "--lib",
              *[part for name in production for part in ("--package", name)]])
     if value["coverage_packages"]:
+        # LLVM reports zero-coverable-line scopes as 0%, not N/A. Types is the
+        # current executable owner. Always run our N/A-aware file/crate gate;
+        # retain LLVM's additional global floor for populated current scopes.
+        threshold = ["--fail-under-lines", "90"] if "hsearch-types" in value["coverage_packages"] else []
         run(["cargo", "llvm-cov", "--locked", "--offline", "--all-features",
              *[part for name in value["coverage_packages"] for part in ("--package", name)],
-             "--ignore-filename-regex", "/tests/", "--fail-under-lines", "90", "--json",
+             "--ignore-filename-regex", "/tests/", *threshold, "--json",
              "--output-path", "target/bootstrap-coverage.json"])
         run([sys.executable, "tools/coverage_check.py", "target/bootstrap-coverage.json",
              *[part for name in value["coverage_packages"] for part in ("--package", name)]])

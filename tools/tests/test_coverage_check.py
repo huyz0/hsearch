@@ -50,6 +50,14 @@ class CoverageControls(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "scope"):
                 CHECK(self.report, scope)
 
+    def test_empty_engine_scope_is_na_but_executable_engine_lines_keep_floor(self):
+        self.assertEqual(CHECK({"data": [{"files": []}]}, ("engine",)), {"engine": [0, 0]})
+        report = copy.deepcopy(self.report)
+        report["data"][0]["files"][0]["filename"] = "/work/crates/engine/src/lib.rs"
+        report["data"][0]["files"][0]["summary"]["lines"]["covered"] = 89
+        with self.assertRaisesRegex(ValueError, "Below 90%"):
+            CHECK(report, ("engine",))
+
 
 if __name__ == "__main__":
     unittest.main()

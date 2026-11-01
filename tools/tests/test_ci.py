@@ -131,7 +131,9 @@ class SelectionControls(unittest.TestCase):
     def test_real_non_cargo_policy_cannot_omit_behavioral_or_unknown_edges(self):
         policy = json.loads((Path(__file__).resolve().parents[2] / "ci/ownership.json").read_text())
         for path in ("docs/plan/tools/plan.py", "docs/plan/dependencies.json", "docs/plan/tasks.json",
-                     "docs/plan/security.md", "docs/new/generated.rs", "fixtures/generated.bin"):
+                     "docs/plan/security.md", "docs/plan/replication-copy.md", "docs/plan/operating-profiles.md",
+                     "docs/plan/sandbox.md", "docs/plan/impact-ci.md", "docs/new/unmapped.md",
+                     "docs/new/generated.rs", "fixtures/generated.bin"):
             value = CI["select"]([{"status": "M", "paths": [path]}], WORKSPACE, policy, base=BASE, head=HEAD)
             with self.subTest(path=path):
                 self.assertTrue(value["full"])
@@ -218,6 +220,31 @@ class ResultControls(unittest.TestCase):
         with patch.dict(CI["native"].__globals__, output=lambda _command: BASE.encode(),
                         run=lambda command: commands.append(command)):
             with self.assertRaisesRegex(ValueError, "Stale CI plan"):
+                CI["native"](self.value)
+        self.assertEqual(commands, [])
+
+    def test_zero_coverable_engine_scope_reaches_na_aware_gate(self):
+        workspace = copy.deepcopy(WORKSPACE)
+        workspace["hsearch-engine"]["dependencies"] = ["hsearch-testkit"]
+        value = CI["select"]([{"status": "M", "paths": ["crates/engine/src/lib.rs"]}],
+                             workspace, OWNERSHIP, base=BASE, head=HEAD)
+        self.assertEqual(value["coverage_packages"], ["hsearch-engine"])
+        commands = []
+        with patch.dict(CI["native"].__globals__,
+                        output=lambda command: HEAD.encode() if command[0] == "git" else b"{}",
+                        graph=lambda _metadata, _root: workspace, run=lambda command: commands.append(command)):
+            CI["native"](value)
+        coverage = next(command for command in commands if command[:2] == ["cargo", "llvm-cov"])
+        self.assertNotIn("--fail-under-lines", coverage)
+        self.assertEqual(commands[-1][-2:], ["--package", "hsearch-engine"])
+        self.assertIn("tools/coverage_check.py", commands[-1])
+
+    def test_stale_dependency_graph_cannot_launch_native_commands(self):
+        commands = []
+        with patch.dict(CI["native"].__globals__,
+                        output=lambda command: HEAD.encode() if command[0] == "git" else b"{}",
+                        graph=lambda _metadata, _root: {}, run=lambda command: commands.append(command)):
+            with self.assertRaisesRegex(ValueError, "Stale dependency graph"):
                 CI["native"](self.value)
         self.assertEqual(commands, [])
 

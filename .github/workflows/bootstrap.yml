@@ -36,11 +36,15 @@ jobs:
     needs: [plan]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      RUSTUP_TOOLCHAIN: '1.97.1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Install exact reader for real Git and Cargo counterexamples
+        run: rustup toolchain install 1.97.1 --profile minimal
       - name: Check planning, models and harness counterexamples
         run: python3 tools/ci.py docs
 
