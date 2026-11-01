@@ -236,6 +236,35 @@ class ImmutableSources(unittest.TestCase):
         self.git('replace', self.base, unrelated)
         with self.assertRaisesRegex(Refused, 'replacement_refs'):
             prove(self.root, head=self.base, base=self.base, sources={})
+
+    def test_native_ignored_late_parent_metadata_cannot_invent_ancestry(self):
+        tree = self.git('rev-parse', self.base + '^{tree}').decode().strip()
+        raw = ('tree ' + tree + '\nauthor Fixture <fixture@example.invalid> 1 +0000\n'
+               'committer Fixture <fixture@example.invalid> 1 +0000\nparent ' + self.base +
+               '\n\nignored late parent metadata\n').encode('ascii')
+        head = subprocess.check_output(['git', 'hash-object', '-t', 'commit', '-w', '--stdin'],
+            input=raw, cwd=self.root, stderr=subprocess.PIPE, timeout=20).decode().strip()
+        self.git('update-ref', 'HEAD', head)
+        self.assertEqual(self.git('rev-list', '--parents', head).decode().strip(), head)
+        native = subprocess.run(['git', 'merge-base', '--is-ancestor', self.base, head],
+            cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+        self.assertEqual(native.returncode, 1)
+        self.assertEqual(self.git('fsck', '--strict'), b'')  # Valid Git object, not an ancestry edge.
+        for base in [self.base, None]:
+            with self.assertRaisesRegex(Refused, 'unsupported_commit_header_order'):
+                prove(self.root, head=head, base=base, sources=self.sources('src/a.rs'))
+
+    def test_ordinary_contiguous_merge_parents_remain_qualified(self):
+        tree = self.git('rev-parse', self.base + '^{tree}').decode().strip()
+        side = self.git('commit-tree', tree, '-p', self.base, '-m', 'side').decode().strip()
+        self.write('src/a.rs', b'changed\n'); ordinary = self.commit()
+        new_tree = self.git('rev-parse', ordinary + '^{tree}').decode().strip()
+        head = self.git('commit-tree', new_tree, '-p', ordinary, '-p', side, '-m', 'merge').decode().strip()
+        self.git('update-ref', 'HEAD', head)
+        for base in [self.base, ordinary, side]:
+            self.git('merge-base', '--is-ancestor', base, head)
+            proof = prove(self.root, head=head, base=base, sources=self.sources('src/a.rs'))
+            self.assertEqual(proof['files']['src/a.rs']['added_head_lines'], [] if base == ordinary else [1])
         common = self.root / '.git'
         (common / 'shallow').write_text(self.base + '\n', encoding='ascii')
         with self.assertRaisesRegex(Refused, 'unsupported_git_view'):

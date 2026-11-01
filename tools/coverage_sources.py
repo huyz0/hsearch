@@ -73,6 +73,13 @@ class Budget:
         need(self.lines <= self.limits.lines, 'line_inventory_limit')
         self.remaining()
 
+    def cell(self):
+        # Charge before allocating each frontier entry, including the working
+        # frontier not yet retained in trace. Cumulative across the proof.
+        self.cells += 1
+        need(self.cells <= self.limits.frontier_cells, 'delta_frontier_limit')
+        self.remaining()
+
 
 def physical_lines(raw):
     """Keep LF in terminated lines, making final-LF and CR changes explicit."""
@@ -101,10 +108,9 @@ def added_lines(before, after, budget=None):
         budget.step(m)
         return list(range(prefix + 1, prefix + m + 1))
     if not m: return []
+    budget.cell()
     frontier, trace = {1: 0}, []
     for distance in range(n + m + 1):
-        budget.cells += len(frontier)
-        need(budget.cells <= budget.limits.frontier_cells, 'delta_frontier_limit')
         trace.append(frontier)
         next_frontier = {}
         for diagonal in range(-distance, distance + 1, 2):
@@ -116,6 +122,7 @@ def added_lines(before, after, budget=None):
                 budget.step()
                 if left[x] != right[y]: break
                 x += 1; y += 1
+            budget.cell()
             next_frontier[diagonal] = x
             if x >= n and y >= m:
                 added = []
@@ -259,7 +266,15 @@ class GitObjects:
         need(records[0].startswith(b'tree '), 'invalid_commit_tree')
         try:
             tree = oid(records[0][5:].decode('ascii'))
-            parents = [oid(line[7:].decode('ascii')) for line in records[1:] if line.startswith(b'parent ')]
+            # Native Git recognizes parent records only directly after tree.
+            # Later metadata may legally spell "parent" but is not ancestry.
+            # Refuse that ambiguous supported-format extension explicitly.
+            parents, index = [], 1
+            while index < len(records) and records[index].startswith(b'parent '):
+                parents.append(oid(records[index][7:].decode('ascii')))
+                index += 1
+            need(not any(line.startswith((b'parent ', b'tree ')) for line in records[index:]),
+                 'unsupported_commit_header_order')
         except UnicodeError: raise Refused('invalid_commit_identity') from None
         need(len(parents) <= 64, 'commit_parent_limit')
         return tree, parents
