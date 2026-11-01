@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run the complete implemented bootstrap suite, stopping on the first failure.
 
-This is not the M01.06 impact planner or the M01.07 coverage gate. Those tasks
-remain incomplete until their negative controls and hosted/native matrix run.
+The impact planner is integrated. M01.07 still owns the complete generic
+coverage matrix and its missing-instrumentation/stale-profile controls.
 """
 from pathlib import Path
 import subprocess
@@ -10,6 +10,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKS = [
+    [sys.executable, "tools/api_contract.py", "check"],
     [sys.executable, "tools/workspace.py", "check"],
     [sys.executable, "tools/workspace.py", "selftest"],
     ["cargo", "fmt", "--all", "--", "--check"],

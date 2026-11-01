@@ -217,7 +217,8 @@ def run(command, root=ROOT):
 
 
 def docs():
-    for command in ([sys.executable, "docs/plan/tools/plan.py", "check"],
+    for command in ([sys.executable, "tools/api_contract.py", "check"],
+                    [sys.executable, "docs/plan/tools/plan.py", "check"],
                     [sys.executable, "docs/plan/tools/plan.py", "selftest"],
                     [sys.executable, "docs/plan/tools/cost_model.py", "--selftest"],
                     [sys.executable, "-m", "unittest", "discover", "--start-directory", "tools/tests", "--verbose"]):

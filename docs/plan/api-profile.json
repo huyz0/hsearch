@@ -1,0 +1,449 @@
+{
+  "schema_version": 1,
+  "profile_id": "core-v1",
+  "revision": "2026-11-01-scalability-first",
+  "status": "design",
+  "runtime_implemented": false,
+  "authority": "User direction: useful OpenSearch-inspired partial compatibility; scalability governs API choices. Full compatibility is not a delivery requirement.",
+  "upstream_basis": "Official OpenSearch latest documentation retrieved 2026-11-01. M02.01 must pin actual server/client versions and fixture hashes before any compatibility claim.",
+  "sources": {
+    "bulk": "https://docs.opensearch.org/latest/api-reference/document-apis/bulk/",
+    "get": "https://docs.opensearch.org/latest/api-reference/document-apis/get-documents/",
+    "search": "https://docs.opensearch.org/latest/api-reference/search-apis/search/",
+    "pagination": "https://docs.opensearch.org/latest/search-plugins/searching-data/paginate/",
+    "pit": "https://docs.opensearch.org/latest/search-plugins/searching-data/point-in-time/",
+    "terms": "https://docs.opensearch.org/latest/aggregations/bucket/terms/",
+    "composite": "https://docs.opensearch.org/latest/aggregations/bucket/composite/",
+    "scripts": "https://docs.opensearch.org/latest/query-dsl/specialized/script/",
+    "has_child": "https://docs.opensearch.org/latest/query-dsl/joining/has-child/",
+    "nested": "https://docs.opensearch.org/latest/mappings/supported-field-types/nested/",
+    "mapping": "https://docs.opensearch.org/latest/mappings/mapping-explosion/",
+    "split": "https://docs.opensearch.org/latest/api-reference/index-apis/split/"
+  },
+  "example_local_limits": {
+    "max_bulk_bytes": 10485760,
+    "max_bulk_items": 5000,
+    "max_document_id_bytes": 512,
+    "max_page_hits": 1000,
+    "max_offset_plus_size": 1000,
+    "max_selected_partitions": 64,
+    "max_inflight_partition_rpcs": 16,
+    "max_aggregation_buckets": 512,
+    "max_query_clauses": 256,
+    "max_interactive_deadline_ms": 5000,
+    "max_pit_ttl_seconds": 900
+  },
+  "required_profile_limits": [
+    "request_bytes",
+    "response_bytes",
+    "selected_partitions",
+    "inflight_rpcs",
+    "decoded_bytes",
+    "cpu_work",
+    "remote_attempts",
+    "remote_bytes",
+    "queue_bytes",
+    "concurrent_requests_per_tenant",
+    "active_pits_per_tenant",
+    "global_active_pits",
+    "pin_bytes_per_tenant",
+    "global_pin_bytes",
+    "idempotency_retention_bytes",
+    "maintenance_debt"
+  ],
+  "gates": [
+    {
+      "id": "G01",
+      "owner": "M02.08",
+      "measurement": "Grow total idle catalog cardinality 10x while keeping selected partitions, dataset, concurrency and query fixed.",
+      "pass": "No full-catalog scan/timer/reader allocation; measured hot-request RSS and metadata attempts grow at most 10 percent, with repetitions/noise reported.",
+      "observed": false
+    },
+    {
+      "id": "G02",
+      "owner": "M06.05",
+      "measurement": "Exceed every configured byte/count/deadline limit by one; include malformed NDJSON tail, oversized IDs and unsupported parameters.",
+      "pass": "Bounded typed refusal; structural bulk validation precedes commits; no unbounded allocation and no hidden successful write on a precommit refusal.",
+      "observed": false
+    },
+    {
+      "id": "G03",
+      "owner": "M07.08",
+      "measurement": "Count total selected partitions separately from concurrent RPCs; include retries, cancellation, tenant skew and stalled peers.",
+      "pass": "Both configured limits and queue/remote-byte budgets hold; no retry outside the budget; an overloaded tenant cannot consume another tenant's reserved share.",
+      "observed": false
+    },
+    {
+      "id": "G04",
+      "owner": "M07.05",
+      "measurement": "Page while indexing, deleting, splitting, moving readers, expiring snapshots and revoking keys.",
+      "pass": "No duplicate/omitted item within a valid snapshot and stable sort; exact generation or typed expiry/unavailability; quotas and GC pin invariants hold.",
+      "observed": false
+    },
+    {
+      "id": "G05",
+      "owner": "M07.04",
+      "measurement": "Run high-cardinality buckets, bounded metrics, tie scores and approximate/limited total-hit cases against independent fixtures.",
+      "pass": "Never label incomplete counts exact; never silently truncate buckets; all advertised operator results and intentional differences match their declared oracle.",
+      "observed": false
+    },
+    {
+      "id": "G06",
+      "owner": "M02.05",
+      "measurement": "Calibrate matched workload/profile latency, throughput, CPU/RSS, object attempts and directed network bytes; repeat at increasing worker counts.",
+      "pass": "Meet frozen per-profile minimum scale efficiency and latency/cost bounds; publish offered/completed/rejected load and curves. An unfrozen threshold, example limit or theoretical model cannot pass.",
+      "observed": false
+    },
+    {
+      "id": "G07",
+      "owner": "M16.01",
+      "measurement": "Pin actual client/server versions and replay only the advertised profile, including error/timeout/idempotency and unsupported cases.",
+      "pass": "Only tested operations/versions earn compatibility claims; out-of-profile workloads receive an explicit adaptation report rather than a drop-in promise.",
+      "observed": false
+    }
+  ],
+  "matrix": [
+    {
+      "id": "A01",
+      "kind": "difference",
+      "surface": "Collection creation and mappings",
+      "upstream": "OpenSearch provides dynamic mapping and field/depth/nested limits to control mapping growth.",
+      "contract": "Explicit versioned schemas; keyword, boolean, bounded numeric/date and one frozen text analyzer profile. Unknown indexed fields fail unless a declared source-only field policy applies. No automatic field/type growth.",
+      "alternative": "Schema migration creates a new generation and a bounded alias cutover; unindexed source-only attributes remain retrievable, not searchable.",
+      "scalability": "Mandatory schema/field caps bound per-tenant metadata and indexing amplification. This selects a stricter policy, not a claim that OpenSearch lacks such controls.",
+      "sources": [
+        "mapping"
+      ],
+      "owners": [
+        "M03.03",
+        "M06.05"
+      ],
+      "acceptance": "Unknown fields/types, schema evolution and field-count overflow have explicit fixtures; no silent type coercion."
+    },
+    {
+      "id": "A02",
+      "kind": "subset",
+      "surface": "Document index/create/get/delete",
+      "upstream": "OpenSearch exposes ID-addressed document operations; GET is real-time by default.",
+      "contract": "Target familiar /{collection}/_doc/{id} operations and core _id/_index/_source/found/result fields. GET targets authoritative latest state within its deadline; search visibility remains a separate checkpoint. Exact response/client compatibility awaits fixtures.",
+      "alternative": "Native /v1 document operations expose explicit receipts and read modes.",
+      "scalability": "Point requests route by logical identity without exposing a fixed physical shard map; no stale fallback to make a latest GET appear successful.",
+      "sources": [
+        "get",
+        "bulk"
+      ],
+      "owners": [
+        "M04.03",
+        "M06.05",
+        "M07.03"
+      ],
+      "acceptance": "Create conflicts, missing deletes, lost replies, recreate/incarnation and post-write GET histories pass."
+    },
+    {
+      "id": "A03",
+      "kind": "subset",
+      "surface": "POST /_bulk NDJSON",
+      "upstream": "OpenSearch actions are independent and item results are returned in submitted order.",
+      "contract": "Target index/create/delete only; general update is excluded from core-v1. No cross-item transaction. Bounded whole-request structural validation precedes commits; item semantic failures do not erase other receipts. Preserve response item order and per-document mutation order.",
+      "alternative": "Large imports use bounded batches and resumable import jobs; retries use stable IDs/idempotency keys.",
+      "scalability": "Explicit item/byte/response admission bounds buffering and fanout while retaining batching benefits.",
+      "sources": [
+        "bulk"
+      ],
+      "owners": [
+        "M04.03",
+        "M06.05",
+        "M07.03"
+      ],
+      "acceptance": "Mixed success, repeated same-ID actions, invalid tails, partial failures and uncertain acknowledgements are covered."
+    },
+    {
+      "id": "A04",
+      "kind": "difference",
+      "surface": "Optimistic concurrency and versions",
+      "upstream": "OpenSearch supports if_seq_no with if_primary_term and several versioning modes.",
+      "contract": "Native opaque if_version tokens bind tenant, collection incarnation and document version. Do not synthesize OpenSearch election/sequence fields or silently accept external/external_gte modes.",
+      "alternative": "Read a native version token and submit conditional replace/delete; an adapter translates only a separately proved mode.",
+      "scalability": "Logical version identity survives routing movement without exposing physical journal/group coordinates.",
+      "sources": [
+        "bulk"
+      ],
+      "owners": [
+        "M04.03",
+        "M06.05",
+        "M07.03"
+      ],
+      "acceptance": "Stale token, ABA recreation, split/move, duplicate retry and restore cannot overwrite a newer document."
+    },
+    {
+      "id": "A05",
+      "kind": "difference",
+      "surface": "refresh and durability controls",
+      "upstream": "OpenSearch refresh=false, true and wait_for distinguish deferred visibility, forced refresh and waiting.",
+      "contract": "Target refresh=false and bounded wait_for. Forced refresh=true and shard-copy-count durability parameters are excluded from core-v1. Durable receipts precede an optional searchable wait; a postcommit visibility timeout retains the committed identity.",
+      "alternative": "Use at_least(receipt) or native visibility wait, and a versioned object/quorum durability profile. Maintenance is an admitted job, not per-write segment forcing.",
+      "scalability": "Coalesce reader publication and avoid tiny-refresh work; never reduce accepted durability or misreport a committed write as rolled back.",
+      "sources": [
+        "bulk"
+      ],
+      "owners": [
+        "M06.05",
+        "M07.05",
+        "M09.08"
+      ],
+      "acceptance": "Lost replies, visibility timeout, overload and retry preserve receipts and the selected failure envelope."
+    },
+    {
+      "id": "A06",
+      "kind": "subset",
+      "surface": "Search DSL and response core",
+      "upstream": "OpenSearch search_type can use shard-local or global term/document frequencies.",
+      "contract": "Target match_all, term/terms, range, integer-threshold bool, match and match_phrase on declared fields/analyzer, bounded field sorting and source projection. Start with documented shard-local BM25; scores are not promised bit-identical across topology changes. Unknown operators/options fail.",
+      "alternative": "Typed native query IR and capability discovery; global-statistics scoring is a later budgeted profile if justified.",
+      "scalability": "Limits cover clauses, decoded data, candidates, total targets and concurrency. A stable snapshot/sort provides deterministic paging without universal score parity.",
+      "sources": [
+        "search"
+      ],
+      "owners": [
+        "M02.02",
+        "M04.01",
+        "M07.04"
+      ],
+      "acceptance": "Pinned analyzer/query golden cases and ranking tolerances are explicit; unsupported syntax cannot return empty success."
+    },
+    {
+      "id": "A07",
+      "kind": "difference",
+      "surface": "Deep pagination, scroll and PIT",
+      "upstream": "Deep from/size increases sorting/merge work; OpenSearch recommends PIT plus search_after and PIT retains segment resources.",
+      "contract": "Allow a shallow bounded offset window. Deep traversal uses a quota/TTL-bound native snapshot and stable cursor; target an explicitly tested PIT/search_after adapter subset. No unbounded scroll session or promise of one globally serializable instant.",
+      "alternative": "POST /v1/search-snapshots and cursor pages; bulk export uses resumable jobs. Tokens pin routing/catalog and per-partition reader generations.",
+      "scalability": "Separate total selected partitions from in-flight RPCs; enforce active snapshot and retained-byte quotas. Never expire pins silently to serve newer data under an old cursor.",
+      "sources": [
+        "pagination",
+        "pit"
+      ],
+      "owners": [
+        "M07.05",
+        "M10.01"
+      ],
+      "acceptance": "Concurrent mutation/split, repeated pages, expiration, key revocation and GC preserve results or return typed failure."
+    },
+    {
+      "id": "A08",
+      "kind": "difference",
+      "surface": "Total hits and global count",
+      "upstream": "The Search API provides track_total_hits controls.",
+      "contract": "Return exact counts only when evaluation completes within the admitted scope/budget; otherwise an explicitly requested lower-bound/limited result or a typed limit error. No mandatory unlimited exact count on every top-k request.",
+      "alternative": "Budgeted count requests or resumable snapshot count jobs; relation/completeness fields state what was established.",
+      "scalability": "Avoid coupling cheap top-k retrieval to unbounded full-scope counting.",
+      "sources": [
+        "search"
+      ],
+      "owners": [
+        "M06.05",
+        "M07.04"
+      ],
+      "acceptance": "Threshold, missing partition and timeout cases never report an incomplete count as exact."
+    },
+    {
+      "id": "A09",
+      "kind": "difference",
+      "surface": "Metrics, terms and composite-style groups",
+      "upstream": "OpenSearch terms can trade shard_size for accuracy; composite pages source-key-ordered buckets using after/after_key.",
+      "contract": "Target bounded sum/min/max/value_count and finite bucket profiles. Exact terms require all necessary cardinality to fit the budget; otherwise refuse rather than silently truncate or invent an error bound. No universal aggregation-DSL compatibility.",
+      "alternative": "Key-ordered snapshot group pages or admitted materialized views. Key order is not a substitute for global count-descending top-k.",
+      "scalability": "Budget per-worker and coordinator buckets/bytes; asynchronous analytics handles work exceeding interactive limits.",
+      "sources": [
+        "terms",
+        "composite"
+      ],
+      "owners": [
+        "M07.04",
+        "M07.08"
+      ],
+      "acceptance": "High cardinality, skew and ties distinguish exact, limited and unsupported outcomes using independent counts."
+    },
+    {
+      "id": "A10",
+      "kind": "unsupported",
+      "surface": "Parent/child and nested query semantics",
+      "upstream": "OpenSearch documents has_child performance costs; nested objects are stored as additional Lucene documents.",
+      "contract": "Exclude joins and nested query semantics from core-v1. A plain JSON object is not advertised as a nested join.",
+      "alternative": "Denormalized search documents, precomputed views or explicitly bounded application-side key lookups; these change the data model and are not equivalent joins.",
+      "scalability": "Avoid mandatory join/hidden-document amplification in the initial massive-tenancy path. A later module needs workload and amplification evidence.",
+      "sources": [
+        "has_child",
+        "nested"
+      ],
+      "owners": [
+        "M02.01",
+        "M07.04"
+      ],
+      "acceptance": "Nested/has_child/has_parent requests fail explicitly; migration reports the required remodel."
+    },
+    {
+      "id": "A11",
+      "kind": "unsupported",
+      "surface": "Painless/scripted update/query/runtime expressions",
+      "upstream": "OpenSearch documents script queries as computationally expensive.",
+      "contract": "No general _update, arbitrary per-document scripting or script-language compatibility in core-v1. A native bounded set/remove patch would require its own specification; unknown update options fail.",
+      "alternative": "Typed client-side transforms and precomputed indexed fields; future bounded declarative transforms require replay determinism and CPU budgets.",
+      "scalability": "Keep per-document CPU, replay and security costs predictable; exclusion is a product choice, not a claim that all scripts are unscalable.",
+      "sources": [
+        "scripts"
+      ],
+      "owners": [
+        "M04.03",
+        "M06.05"
+      ],
+      "acceptance": "Scripts and unadvertised update modes refuse before mutation; replay never reexecutes nondeterministic user code."
+    },
+    {
+      "id": "A12",
+      "kind": "unsupported",
+      "surface": "Vector/hybrid, SQL/PPL and arbitrary plugins",
+      "upstream": "These surfaces are outside the chosen core profile; no claim is made that they inherently cannot scale.",
+      "contract": "No initial compatibility promise. Existing native kernel/extension research remains valid, but it does not imply these API features are shipped.",
+      "alternative": "Separate opt-in modules/profiles only after workload value, engine capability, recall/quality, resource and cost evidence; use external analytics where appropriate.",
+      "scalability": "Avoid turning all OpenSearch extensions into mandatory launch dependencies.",
+      "sources": [],
+      "owners": [
+        "M02.01",
+        "M14.01",
+        "M16.06"
+      ],
+      "acceptance": "Capabilities report absence; unsupported workloads remain adaptation gaps, not silent substitutes."
+    },
+    {
+      "id": "A13",
+      "kind": "difference",
+      "surface": "Routing and shard topology",
+      "upstream": "OpenSearch exposes custom document routing and a Split Index API that creates a target index with more primary shards.",
+      "contract": "Use stable logical partition keys and opaque routing generations; do not promise OpenSearch physical shard IDs/count settings, node pinning or split/shrink wire semantics.",
+      "alternative": "Native topology policy, bounded paged catalog and online split/cutover jobs; routing hints never grant authority or replace tenant authorization.",
+      "scalability": "Separate logical tenancy from active engines and physical journal groups, preserving hot-split flexibility and zero-idle control traffic.",
+      "sources": [
+        "bulk",
+        "split"
+      ],
+      "owners": [
+        "M02.08",
+        "M13.01",
+        "M07.03",
+        "M13.03"
+      ],
+      "acceptance": "Stale routes, hot keys, split under load and 10x idle catalog growth preserve identity/fencing and resource bounds."
+    },
+    {
+      "id": "A14",
+      "kind": "unsupported",
+      "surface": "_cluster/_cat settings, flush/force-merge and snapshot internals",
+      "upstream": "No compatibility is promised for another system's operational internals.",
+      "contract": "Reject unadvertised cluster-manager, replica-count, maintenance and repository APIs. Do not return fabricated shard/replica status fields.",
+      "alternative": "Bounded authorized /v1 diagnostics, paginated catalog, admitted maintenance and native snapshot/export/copy contracts.",
+      "scalability": "Avoid whole-cluster state responses and accidental all-partition maintenance storms.",
+      "sources": [],
+      "owners": [
+        "M08.03",
+        "M10.01",
+        "M16.01"
+      ],
+      "acceptance": "Unknown operational calls refuse; diagnostics and maintenance enforce scope, pagination and I/O budgets."
+    },
+    {
+      "id": "A15",
+      "kind": "unsupported",
+      "surface": "Synchronous cross-cluster search",
+      "upstream": "This profile makes no comparative claim about OpenSearch cross-cluster implementation.",
+      "contract": "No initial remote-cluster query syntax/semantics. Existing independent copy and CCR deliverables remain required optional modules.",
+      "alternative": "Replicate/copy into a local read model; a future federation profile must price remote failure, latency and fanout separately.",
+      "scalability": "Keep interactive authority, residency, latency and network budgets explicit rather than hiding remote work.",
+      "sources": [],
+      "owners": [
+        "M10.01",
+        "M11.01",
+        "M12.01"
+      ],
+      "acceptance": "Unsupported federation fails explicitly; copying/replication never weakens tenant/key or retention contracts."
+    },
+    {
+      "id": "A16",
+      "kind": "difference",
+      "surface": "Errors, capabilities and client promises",
+      "upstream": "Endpoint similarity alone does not establish client-version compatibility.",
+      "contract": "Native /v1/capabilities lists implemented operations, limits and profile revision. Unknown parameters/operators return typed errors. Retain truthful item receipts, completeness and hsearch extensions instead of inventing OpenSearch internals.",
+      "alternative": "A versioned thin adapter/SDK maps tested requests and documents required application changes; no universal drop-in claim.",
+      "scalability": "Admission, deadline and unsupported outcomes are first-class; compatibility cannot hide unbounded work or silent degradation.",
+      "sources": [],
+      "owners": [
+        "M06.05",
+        "M07.06",
+        "M16.01"
+      ],
+      "acceptance": "Only runtime-tested features are advertised; unsupported and postcommit-timeout cases are in the client corpus."
+    }
+  ],
+  "ordering_constraints": [
+    [
+      "M01.08",
+      "M19.01"
+    ],
+    [
+      "M02.01",
+      "M19.01"
+    ],
+    [
+      "M02.02",
+      "M19.01"
+    ],
+    [
+      "M02.08",
+      "M19.01"
+    ],
+    [
+      "M02.05",
+      "M02.08"
+    ],
+    [
+      "M03.03",
+      "M02.08"
+    ],
+    [
+      "M08.01",
+      "M19.01"
+    ],
+    [
+      "M13.01",
+      "M02.08"
+    ],
+    [
+      "M06.05",
+      "M13.01"
+    ],
+    [
+      "M07.01",
+      "M13.01"
+    ],
+    [
+      "M07.04",
+      "M07.08"
+    ],
+    [
+      "M07.06",
+      "M19.01"
+    ],
+    [
+      "M16.01",
+      "M19.01"
+    ],
+    [
+      "M17.01",
+      "M19.01"
+    ],
+    [
+      "M03.03",
+      "M02.05"
+    ]
+  ]
+}

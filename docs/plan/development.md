@@ -1,6 +1,6 @@
 # Bootstrap development
 
-This checkout contains the integrated M01.01 workspace bootstrap and M01.02 [local sandbox](sandbox.md), with M01.06 [impact CI](impact-ci.md) under review. It is not a running search store. The [task ledger](tasks.json) retains all later product and qualification obligations. The bootstrap defines checkpoint relationships, an observation trait, a pinned engine boundary and a development entrypoint. It has no hsearch storage API, node binary, network service or persisted format.
+This checkout contains the integrated M01.01 workspace bootstrap and M01.02 [local sandbox](sandbox.md), and integrated M01.06 [impact CI](impact-ci.md). It is not a running search store. The [task ledger](tasks.json) retains all later product and qualification obligations. The bootstrap defines checkpoint relationships, an observation trait, a pinned engine boundary and a development entrypoint. It has no hsearch storage API, node binary, network service or persisted format.
 
 ## Run the implemented checks
 
@@ -45,3 +45,5 @@ No hsearch redistribution license has been selected. Public GitHub visibility pe
 ## Continue delivery
 
 Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02 is integrated and M01.06 impact CI is under review. The remaining M01 tasks still require the safe resource/worktree task runner, LSP/context budgets, durable independent review protocol, impact planner, complete coverage gate and concurrent recovery qualification. The broader engine/storage/security/search/replication/provider work remains M02-M17. Keep the original acceptance criteria; bootstrap/sandbox success cannot close those milestones.
+
+API-dependent work follows [core-v1](api-compatibility.md) and [engineering standards](engineering-standards.md). M19 is the current priority; preserve/rebase unfinished M01.03 work before resuming it. Run `python tools/api_contract.py check` alongside workspace/plan checks.

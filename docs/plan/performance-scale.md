@@ -4,6 +4,14 @@ Status: proposed targets, not benchmark results. “Massive scale” must identi
 
 Cost qualification is mandatory under R23, with [initial decisions and experiments completed now](research/cost-decisions.md). Implementation gates sit directly in M02/M03/M06/M07/M09 and provider qualification in M15. [Cost research](research/cost-economics.md) gives provider/path evidence and [operating profiles](operating-profiles.md) separates latency, compute availability and durable failure domains. Reference SLOs below are not automatically inherited by cheaper profiles with weaker capacity or archive guarantees. Minimize measured TCO subject to the selected profile's frozen constraints; record a Pareto comparison, not only the fastest result.
 
+## API work and scope budgets
+
+The [scalability-first API profile](api-compatibility.md) narrows compatibility promises and requires finite per-profile request, response, decoded, CPU, queue, retry, remote-attempt/byte and snapshot-retention limits. Its example local ceilings are unmeasured inputs, not production SLOs. M02.08 establishes the cardinality/work model and M02.05/M02.07 freeze numerical envelopes before format/API implementation.
+
+Measure total selected partitions S separately from concurrent RPCs F. Waves can reduce concurrency without reducing total work or cost. Fixed-scope hot requests must not scan or allocate per-index runtime state as the idle catalog grows. Test 10x cardinality, limit+one, hot-tenant skew, cancellation and pinned-generation retention; publish RSS/metadata-attempt and offered/completed/rejected curves with noise and failure/freshness profiles. Release acceptance requires the frozen scale-efficiency/latency/cost bounds, not just a plotted curve.
+
+Exact counts, deep paging, bucket reduction and large jobs declare completeness and resource costs. Unsupported OpenSearch semantics use documented native alternatives; compare matching cases against pinned reference configuration and differences against independent native oracles. No count-descending ranking claim is inferred from key-ordered pages, and no denormalized view is claimed equivalent to arbitrary joins.
+
 ## Qualification ladder
 
 | Tier | Proposed workload and topology | What passing establishes |

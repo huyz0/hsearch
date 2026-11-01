@@ -248,28 +248,33 @@ def selftest(data: dict) -> int:
             return
         raise InvalidPlan(f"Negative control unexpectedly passed: {name}")
 
-    case("unknown dependency", "Unknown dependency", lambda d: d["milestones"][0]["tasks"][0]["depends_on"].append("M99.99"))
-    case("self cycle", "Dependency cycle", lambda d: d["milestones"][0]["tasks"][0]["depends_on"].append("M00.01"))
-    case("duplicate task", "Duplicate task", lambda d: d["milestones"][0]["tasks"].append(copy.deepcopy(d["milestones"][0]["tasks"][0])))
-    case("missing done evidence", "Done task lacks evidence", lambda d: d["milestones"][0]["tasks"][0].update(status="done", evidence=[]))
-    case("false milestone completion", "Milestone/task completion mismatch", lambda d: d["milestones"][1].update(status="done"))
-    case("invalid status", "Invalid task status", lambda d: d["milestones"][1]["tasks"][0].update(status="passed"))
-    case("missing task acceptance", "Missing task definition_of_done", lambda d: d["milestones"][0]["tasks"][0].update(definition_of_done=[]))
-    case("unexplained blocker", "Blocked task needs reason", lambda d: d["milestones"][1]["tasks"][0].update(status="blocked", blocker="", next_action=""))
-    case("path traversal", "Path escapes", lambda d: d["milestones"][0].update(document="../escape.md"))
-    case("wrong field type", "Invalid task validation", lambda d: d["milestones"][0]["tasks"][0].update(validation="not a list"))
+    def task(d, tid):
+        return indexes(d)[1][tid]
+
+    def milestone(d, mid):
+        return indexes(d)[0][mid]
+
+    case("unknown dependency", "Unknown dependency", lambda d: task(d, "M00.01")["depends_on"].append("M99.99"))
+    case("self cycle", "Dependency cycle", lambda d: task(d, "M00.01")["depends_on"].append("M00.01"))
+    case("duplicate task", "Duplicate task", lambda d: milestone(d, "M00")["tasks"].append(copy.deepcopy(task(d, "M00.01"))))
+    case("missing done evidence", "Done task lacks evidence", lambda d: task(d, "M00.01").update(status="done", evidence=[]))
+    case("false milestone completion", "Milestone/task completion mismatch", lambda d: milestone(d, "M01").update(status="done"))
+    case("invalid status", "Invalid task status", lambda d: task(d, "M01.01").update(status="passed"))
+    case("missing task acceptance", "Missing task definition_of_done", lambda d: task(d, "M00.01").update(definition_of_done=[]))
+    case("unexplained blocker", "Blocked task needs reason", lambda d: task(d, "M01.01").update(status="blocked", blocker="", next_action=""))
+    case("path traversal", "Path escapes", lambda d: milestone(d, "M00").update(document="../escape.md"))
+    case("wrong field type", "Invalid task validation", lambda d: task(d, "M00.01").update(validation="not a list"))
     case("unknown schema", "Unsupported ledger schema", lambda d: d.update(schema_version=99))
-    case("cross-task cycle", "Dependency cycle", lambda d: d["milestones"][0]["tasks"][0]["depends_on"].append("M00.02"))
+    case("cross-task cycle", "Dependency cycle", lambda d: task(d, "M00.01")["depends_on"].append("M00.02"))
     def unfinished(d):
-        d["milestones"][1]["tasks"][0]["depends_on"] = []
-        # The negative fixture must remain unfinished after the real task ships.
-        d["milestones"][1]["tasks"][0]["status"] = "planned"
-        d["milestones"][0]["tasks"][0]["depends_on"].append("M01.01")
+        # Bind by stable ID: roadmap priority may change independently of IDs.
+        task(d, "M01.01").update(depends_on=[], status="planned")
+        task(d, "M00.01")["depends_on"].append("M01.01")
     case("unfinished dependency", "Active/done task has unfinished dependency", unfinished)
-    case("milestone completion cycle", "Milestone prerequisite cycle", lambda d: d["milestones"][1].update(depends_on=["M02"]))
-    case("evidence traversal", "Path escapes", lambda d: d["milestones"][0]["tasks"][0]["evidence"][0].update(path="../outside.txt"))
+    case("milestone completion cycle", "Milestone prerequisite cycle", lambda d: milestone(d, "M01").update(depends_on=["M02"]))
+    case("evidence traversal", "Path escapes", lambda d: task(d, "M00.01")["evidence"][0].update(path="../outside.txt"))
     candidate = copy.deepcopy(data)
-    candidate["milestones"][0]["title"] += " stale control"
+    milestone(candidate, "M00")["title"] += " stale control"
     need(bool(stale_outputs(candidate)), "Stale-render control unexpectedly passed")
     cases.append("stale generated artifact")
     print(f"PASS: {len(cases)} negative controls: {', '.join(cases)}")

@@ -1,6 +1,14 @@
 # System architecture and correctness contract
 
-Status: proposed implementation architecture, with [cost research decisions executed now](research/cost-decisions.md). Decisions D01-D16 are tracked in [risks.md](risks.md). Implementation tasks and their evidence live in [roadmap.md](roadmap.md). [Operating profiles](operating-profiles.md) make cost, latency and failure-domain choices explicit.
+Status: proposed implementation architecture, with [cost research decisions executed now](research/cost-decisions.md). Decisions D01-D17 are tracked in [risks.md](risks.md). Implementation tasks and their evidence live in [roadmap.md](roadmap.md). [Operating profiles](operating-profiles.md) make cost, latency and failure-domain choices explicit.
+
+## API authority and scalability priority
+
+The [core-v1 API contract](api-compatibility.md) is authoritative for the public surface. The native versioned API exposes truthful receipts, freshness/completeness, limits and capability revisions; an optional thin OpenSearch-inspired adapter accepts only tested routes/options. Full OpenSearch wire/behavior/client equivalence is not required. Explicit schemas, logical routing and opaque document versions avoid copying physical shard/replica internals into a durable client contract.
+
+GET targets authoritative latest state within its admitted deadline; ordinary search may use published state, with explicit at_least/latest requests preserving their existing barriers. Bounded bulk structural validation precedes commits, while item failures/receipts remain independent. Per-request forced refresh, general update/scripts, joins and unsupported query/administrative features have explicit alternatives rather than silent fallback. Partial compatibility cannot weaken fencing, security, durable acknowledgements or snapshot/GC guarantees.
+
+Before formats freeze, M02.08/M02.05 quantify catalog, total selected work, concurrent fanout, bucket/response and retained-pin budgets. Paged catalog mechanisms land before API integration; distributed admission precedes query fanout. Snapshot vectors preserve per-partition consistency and a fixed catalog/routing generation, not global serializability. See [engineering standards](engineering-standards.md) for mandatory invariants and [the matrix](api-compatibility.md) for intentional differences.
 
 ## Service roles and durable state
 
