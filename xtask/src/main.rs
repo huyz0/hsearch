@@ -7,7 +7,9 @@ use std::process::{Command, ExitCode};
 fn main() -> ExitCode {
     let args: Vec<_> = env::args().skip(1).collect();
     let Some((command, remaining)) = args.split_first() else {
-        eprintln!("usage: cargo xtask <check|policy|sandbox|task|context|worktree|evidence|review|help>");
+        eprintln!(
+            "usage: cargo xtask <check|policy|sandbox|task|context|worktree|evidence|review|help>"
+        );
         return ExitCode::FAILURE;
     };
     let forwarded = matches!(
