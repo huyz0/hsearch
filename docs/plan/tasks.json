@@ -674,15 +674,15 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
-              "path": "source-proof.md",
-              "result": "Isolated immutable source proof implemented; R1 ancestry defect fixed with exact native Git controls, full final qualification and R2 pending. No coverage acceptance."
+              "path": "evidence/m01-11-integrated.md",
+              "result": "Both actual R2 sessions clear, immutable failed R1 retained, full191native/no skips plus both7job PR/main source/corpora proof, durable gate and normal protected PR12 merge with matching reviewed tree. Source-only; no coverage integration acceptance."
             },
             {
               "path": "evidence/source-proof-review-history.json",
-              "result": "Both actual R1 blocking late-parent findings/reproduction hashes retained; original M01.07 remains hard3 blocked."
+              "result": "Both failed R1 ancestry reports/reproduction hashes retained; exact native ignored-parent control now refuses. Original M01.07 registry remains blocked at hard3."
             }
           ]
         },
@@ -782,8 +782,21 @@
             "M01.02"
           ],
           "owner": "architecture/scale",
-          "status": "planned",
-          "evidence": []
+          "status": "review",
+          "evidence": [
+            {
+              "path": "research/catalog-admission-model.md",
+              "result": "Executable catalog/admission/snapshot model and larger native scale observations prepared; independent review and full hosted final qualification pending. No runtime/fleet acceptance."
+            },
+            {
+              "path": "evidence/catalog-model-scale-v2.json",
+              "result": "18 fresh native model probes at1000/10000idle, fixed16selected; bounded gate passes; fullscan/indexed per-index record variants refuse. Raw samples and module hash."
+            },
+            {
+              "path": "evidence/catalog-model-review-history.json",
+              "result": "Both actual R1/R2 reports remain blocked/retained. Final canonical-module pin authority and catalog-owned CAS history repairs prepared; R3 awaits accepted-main integration and complete final checks. No runtime acceptance."
+            }
+          ]
         },
         {
           "id": "M02.02",
