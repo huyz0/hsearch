@@ -1,5 +1,6 @@
 """Independent task-packet, real Git ownership and durable evidence controls."""
 import copy
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -10,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 MODULE = runpy.run_path(str(Path(__file__).resolve().parents[1] / "task.py"))
 TaskStore, Refused = MODULE["TaskStore"], MODULE["Refused"]
@@ -157,6 +160,128 @@ class WorktreeControls(unittest.TestCase):
         path.write_bytes(content.replace(b"h", b"z", 1))
         with self.assertRaisesRegex(Refused, "content changed"):
             self.store.evidence(claim, "fixture-owner")
+
+    def test_hidden_index_flags_cannot_hide_or_delete_dirty_work(self):
+        for flag, undo in (("--skip-worktree", "--no-skip-worktree"), ("--assume-unchanged", "--no-assume-unchanged")):
+            claim = self.claim()
+            record = self.store.get(claim)
+            root = Path(record["worktree"])
+            subprocess.check_call(["git", "update-index", flag, "b.txt"], cwd=root)
+            (root / "b.txt").write_text("unowned work must survive\n")
+            with self.subTest(flag=flag), self.assertRaisesRegex(Refused, "Hidden index flags"):
+                self.store.fingerprint(record)
+            with self.assertRaisesRegex(Refused, "Hidden index flags"):
+                self.store.cleanup(claim, "fixture-owner", self.area / "resources")
+            self.assertEqual((root / "b.txt").read_text(), "unowned work must survive\n")
+            subprocess.check_call(["git", "update-index", undo, "b.txt"], cwd=root)
+            (root / "b.txt").write_text("second\n")
+            self.store.cleanup(claim, "fixture-owner", self.area / "resources")
+
+    def test_actual_bytes_bind_source_even_when_a_clean_filter_hides_edits(self):
+        (self.source / ".gitattributes").write_text("a.txt filter=collapse\n")
+        self.git("config", "filter.collapse.clean", "printf 'first\\n'")
+        self.git("add", ".gitattributes")
+        self.git("commit", "-qm", "clean filter fixture")
+        self.base = self.git("rev-parse", "HEAD").strip()
+        claim = self.claim()
+        record = self.store.get(claim)
+        root = Path(record["worktree"])
+        before = self.store.fingerprint(record)
+        (root / "a.txt").write_text("actual compiler input differs\n")
+        self.assertEqual(subprocess.check_output(["git", "diff", "HEAD"], cwd=root), b"")
+        after = self.store.fingerprint(record)
+        self.assertNotEqual(before["digest"], after["digest"])
+        self.assertFalse(after["clean"])
+        with self.assertRaisesRegex(Refused, "Dirty worktree"):
+            self.store.cleanup(claim, "fixture-owner", self.area / "resources")
+        self.assertTrue(root.is_dir())
+
+    def test_source_hashing_has_file_and_aggregate_input_bounds(self):
+        claim = self.claim()
+        record = self.store.get(claim)
+        root = Path(record["worktree"])
+        original = self.store.fingerprint(record)
+        (root / "a.txt").write_bytes(b"x" * (2 * 1024**2))
+        changed = self.store.fingerprint(record)
+        self.assertNotEqual(original["digest"], changed["digest"])
+        with patch.dict(self.store.fingerprint.__globals__, SOURCE_FILE_BYTES=1024):
+            with self.assertRaisesRegex(Refused, "bounded regular"):
+                self.store.fingerprint(record)
+        (root / "a.txt").write_text("first\n")
+        with patch.dict(self.store.fingerprint.__globals__, SOURCE_TOTAL_BYTES=1):
+            with self.assertRaisesRegex(Refused, "aggregate byte"):
+                self.store.fingerprint(record)
+
+    def test_git_pipe_overflow_is_refused_without_unbounded_capture(self):
+        (self.source / "a.txt").write_bytes(b"x" * (2 * 1024**2))
+        with patch.object(subprocess, "run", side_effect=AssertionError("Unbounded communicate/capture is forbidden")):
+            with self.assertRaisesRegex(Refused, "output exceeds bound"):
+                MODULE["git"]("diff", "--binary", "HEAD", root=self.source)
+
+    def test_resume_serializes_cleanup_and_preserves_worktree(self):
+        claim = self.claim()
+        record = self.store.get(claim)
+
+        class EmptyRegistry:
+            @contextmanager
+            def edit(self):
+                yield {"leases": {}}
+
+        def interleave(*_args):
+            with self.assertRaisesRegex(Refused, "busy"):
+                self.store.cleanup(claim, "fixture-owner", self.area / "resources")
+            return SimpleNamespace(registry=EmptyRegistry())
+
+        with patch.object(self.store, "resources", side_effect=interleave):
+            result = self.store.resume(claim, "fixture-owner", self.area / "resources")
+        self.assertEqual(result["phase"], "allocated")
+        self.assertTrue(Path(record["worktree"]).is_dir())
+        self.store.cleanup(claim, "fixture-owner", self.area / "resources")
+
+    def test_resume_cannot_overwrite_a_changed_lifecycle_token(self):
+        claim = self.claim()
+
+        class EmptyRegistry:
+            @contextmanager
+            def edit(self):
+                yield {"leases": {}}
+
+        def replaced(*_args):
+            with self.store.edit() as data:
+                data["tasks"][claim]["lifecycle_token"] = "changed"
+            return SimpleNamespace(registry=EmptyRegistry())
+
+        with patch.object(self.store, "resources", side_effect=replaced):
+            with self.assertRaisesRegex(Refused, "ownership changed"):
+                self.store.resume(claim, "fixture-owner", self.area / "resources")
+        self.assertEqual(self.store.get(claim)["phase"], "resuming")
+
+    def test_closed_or_full_claim_refuses_before_creating_evidence_blobs(self):
+        claim = self.claim()
+        folder = self.store.root / "evidence" / claim
+        before = set(folder.iterdir())
+        self.store.cleanup(claim, "fixture-owner", self.area / "resources")
+        with self.assertRaisesRegex(Refused, "Closed"):
+            self.store.append(claim, "fixture-owner", "note", {"text": "must not write"})
+        self.assertEqual(set(folder.iterdir()), before)
+        claim = self.claim()
+        folder = self.store.root / "evidence" / claim
+        before = set(folder.iterdir())
+        with self.store.edit() as data:
+            data["tasks"][claim]["evidence"] *= 1000
+        with self.assertRaisesRegex(Refused, "record bound"):
+            self.store.append(claim, "fixture-owner", "note", {"text": "must not write"})
+        self.assertEqual(set(folder.iterdir()), before)
+
+    def test_orphaned_blob_storage_is_charged_before_new_writes(self):
+        claim = self.claim()
+        folder = self.store.root / "evidence" / claim
+        with (folder / ("0" * 64 + ".json")).open("wb") as target:
+            target.truncate(64 * 1024**2)
+        before = set(folder.iterdir())
+        with self.assertRaisesRegex(Refused, "storage bound"):
+            self.store.append(claim, "fixture-owner", "note", {"text": "must not write"})
+        self.assertEqual(set(folder.iterdir()), before)
 
     def test_actual_kernel_lock_rejects_concurrent_overlapping_claims(self):
         script = "import json,runpy,sys; t=runpy.run_path(sys.argv[1]); s=t['TaskStore'](sys.argv[2],sys.argv[3]); s.claim(json.loads(sys.argv[4]))"

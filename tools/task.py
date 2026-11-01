@@ -11,9 +11,11 @@ from pathlib import Path, PurePosixPath
 import re
 import runpy
 import secrets
+import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +24,10 @@ Refused, need = SANDBOX["Refused"], SANDBOX["need"]
 SCHEMA = json.loads((ROOT / "harness/task-packet.schema.json").read_text(encoding="utf-8"))
 CLAIM = re.compile(r"m[0-9]{2}-[0-9]{2}-[a-f0-9]{12}\Z")
 SHA = re.compile(r"[a-f0-9]{40}\Z")
+GIT_OUTPUT_BYTES = 1024**2
+SOURCE_FILE_BYTES = 64 * 1024**2
+SOURCE_TOTAL_BYTES = 128 * 1024**2
+REGISTRY_BYTES = 64 * 1024**2
 
 
 def encoded(value):
@@ -88,10 +94,41 @@ def packet(value):
 
 
 def git(*args, root=ROOT):
-    result = subprocess.run(["git", *args], cwd=root, capture_output=True, timeout=60, check=False)
-    need(result.returncode == 0, f"Git {args[0]} failed; inspect owned task state")
-    need(len(result.stdout) <= 1024 * 1024, "Git metadata output exceeds bound")
-    return result.stdout.decode("utf-8", errors="strict")
+    child = subprocess.Popen(["git", "--no-pager", *args], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    captured, errors, overflow = {}, [], threading.Event()
+
+    def read(stream, key):
+        try:
+            captured[key] = stream.read(GIT_OUTPUT_BYTES + 1)
+            if len(captured[key]) > GIT_OUTPUT_BYTES:
+                overflow.set()
+                if child.poll() is None:
+                    child.kill()
+        except OSError:
+            errors.append(key)
+            if child.poll() is None:
+                child.kill()
+        finally:
+            stream.close()
+
+    readers = [threading.Thread(target=read, args=(stream, key), daemon=True)
+               for stream, key in ((child.stdout, "out"), (child.stderr, "err"))]
+    for reader in readers:
+        reader.start()
+    try:
+        child.wait(timeout=60)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.wait(timeout=3)
+        raise Refused("Git command deadline exceeded; inspect owned task state") from None
+    finally:
+        for reader in readers:
+            reader.join(timeout=3)
+    need(not any(reader.is_alive() for reader in readers), "Git pipe completion uncertain; inspect owned task state")
+    need(not errors, "Git pipe read failed; inspect owned task state")
+    need(not overflow.is_set(), "Git metadata output exceeds bound")
+    need(child.returncode == 0, f"Git {args[0]} failed; inspect owned task state")
+    return captured["out"].decode("utf-8", errors="strict")
 
 
 def worktrees(root=ROOT):
@@ -144,10 +181,12 @@ class TaskStore:
     def edit(self):
         with SANDBOX["file_lock"](self.root / "tasks.lock"):
             need(not self.path.is_symlink(), "Task registry cannot be a symlink")
-            data = json.loads(self.path.read_text()) if self.path.exists() else {
+            need(not self.path.exists() or self.path.stat().st_size <= REGISTRY_BYTES, "Task registry metadata exceeds bound; retain and archive explicitly")
+            data = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {
                 "schema_version": 1, "repository": self.repository, "resource_root": None, "tasks": {}}
             need(data["schema_version"] == 1 and data["repository"] == self.repository, "Foreign task registry")
             yield data
+            need(len(json.dumps(data, indent=2).encode()) + 1 <= REGISTRY_BYTES, "Task registry metadata exceeds bound; retain and archive explicitly")
             SANDBOX["atomic_json"](self.path, data)
 
     def get(self, claim, owner=None):
@@ -185,6 +224,7 @@ class TaskStore:
                   "branch": "codex/task/" + claim, "phase": "allocating", "namespace": None, "worker": None,
                   "lifecycle_owner": {"pid": os.getpid(), "identity": SANDBOX["owner_identity"]()}, "evidence": []}
         with self.edit() as data:
+            need(len(data["tasks"]) < 512, "Task registry claim bound reached; retain and archive explicitly")
             for existing in data["tasks"].values():
                 if existing["phase"] == "closed":
                     continue
@@ -205,23 +245,33 @@ class TaskStore:
         need(len(content) <= record["packet"]["output_budget_bytes"], "Evidence exceeds task byte budget")
         need(re.fullmatch(r"[a-z][a-z0-9-]{0,31}", kind), "Invalid evidence kind")
         identity = hashlib.sha256(content).hexdigest()
-        folder = guarded(self.root, "evidence", claim)
-        folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-        path = folder / (identity + ".json")
-        need(not path.is_symlink(), "Evidence artifact cannot be a symlink")
-        if path.exists():
-            need(path.read_bytes() == content, "Evidence digest collision/corruption")
-        else:
-            with path.open("xb") as target:
-                target.write(content)
-                target.flush()
-                os.fsync(target.fileno())
         with self.edit() as data:
             current = data["tasks"][claim]
             need(current["phase"] != "closed", "Closed task evidence is immutable")
             need(len(current["evidence"]) < 1000, "Task evidence record bound exceeded")
             need(sum(item["bytes"] for item in current["evidence"]) + len(content) <= 64 * 1024**2, "Task evidence total byte budget exceeded")
             current["evidence"].append({"kind": kind, "sha256": identity, "bytes": len(content), "time_ns": time.time_ns()})
+            need(len(json.dumps(data, indent=2).encode()) + 1 <= REGISTRY_BYTES, "Task registry metadata exceeds bound; retain and archive explicitly")
+            folder = guarded(self.root, "evidence", claim)
+            folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path = folder / (identity + ".json")
+            stored_count, stored_bytes = 0, 0
+            for artifact in folder.iterdir():
+                need(not artifact.is_symlink() and artifact.is_file() and re.fullmatch(r"[a-f0-9]{64}\.json", artifact.name),
+                     "Unknown evidence artifact; preserve and inspect")
+                stored_count += 1
+                stored_bytes += artifact.stat().st_size
+                need(stored_count <= 1000 and stored_bytes <= 64 * 1024**2, "Evidence artifact storage bound exceeded")
+            # Count orphan files from interrupted writes too. Admission and blob
+            # publication share the registry lock with cleanup and other appends.
+            if path.exists():
+                need(path.stat().st_size == len(content) and path.read_bytes() == content, "Evidence digest collision/corruption")
+            else:
+                need(stored_count < 1000 and stored_bytes + len(content) <= 64 * 1024**2, "Evidence artifact storage bound exceeded")
+                with path.open("xb") as target:
+                    target.write(content)
+                    target.flush()
+                    os.fsync(target.fileno())
         return identity
 
     def evidence(self, claim, owner):
@@ -246,25 +296,67 @@ class TaskStore:
     def fingerprint(self, record):
         path = self.inspect_worktree(record)
         value = record["packet"]
+        flags = git("ls-files", "-v", "-z", root=path).split("\0")
+        need(all(not entry or entry.startswith("H ") for entry in flags), "Hidden index flags/unmerged inputs refused")
         ignored = git("ls-files", "--others", "--ignored", "--exclude-standard", "-z", root=path)
         need(not ignored, "Ignored worktree inputs/data present; preserve and inspect before running/cleanup")
-        changed = git("diff", "--no-renames", "--name-only", "-z", value["base_revision"], "--", root=path).split("\0")
-        untracked = git("ls-files", "--others", "--exclude-standard", "-z", root=path).split("\0")
-        names = sorted(set(filter(None, changed + untracked)))
-        need(len(names) <= 10000, "Changed-file count exceeds task bound")
-        extra = []
+        head = git("rev-parse", "HEAD", root=path).strip()
+
+        def tree(revision):
+            result = {}
+            for entry in filter(None, git("ls-tree", "-r", "-z", revision, root=path).split("\0")):
+                meta, name = entry.split("\t", 1)
+                mode, kind, oid = meta.split()
+                need(kind == "blob" and mode in {"100644", "100755"}, "Unsupported tracked source type")
+                result[relative_path(name)] = (mode, oid)
+            return result
+
+        base, committed = tree(value["base_revision"]), tree(head)
+        index = {}
+        for entry in filter(None, git("ls-files", "--stage", "-z", root=path).split("\0")):
+            meta, name = entry.split("\t", 1)
+            mode, oid, stage = meta.split()
+            need(stage == "0" and mode in {"100644", "100755"}, "Unmerged/unsupported task source")
+            index[relative_path(name)] = (mode, oid)
+        untracked = list(filter(None, git("ls-files", "--others", "--exclude-standard", "-z", root=path).split("\0")))
+        names = sorted(set(base) | set(committed) | set(index) | set(untracked))
+        need(len(names) <= 10000, "Task source file count exceeds bound")
+        manifest, actual, total = [], {}, 0
         for name in names:
             name = relative_path(name)
-            need(any(name.casefold() == owner.casefold() or name.casefold().startswith(owner.casefold() + "/")
-                     for owner in value["owned_paths"]), "Worktree changed a path outside its task claim")
             candidate = path / name
-            need(candidate.resolve() == candidate.absolute(), "Task source path is redirected")
-            if name in untracked:
-                need(candidate.is_file() and candidate.stat().st_size <= 64 * 1024**2, "Untracked task input is not a bounded regular file")
-                extra.append((name, hashlib.sha256(candidate.read_bytes()).hexdigest()))
-        state = {"head": git("rev-parse", "HEAD", root=path).strip(),
-                 "dirty_diff_sha256": hashlib.sha256(git("diff", "--binary", "HEAD", "--", root=path).encode()).hexdigest(),
-                 "untracked": extra}
+            component = candidate
+            while component != path:
+                need(not component.is_symlink(), "Task source path is redirected")
+                component = component.parent
+            if candidate.exists():
+                before = candidate.stat()
+                need(stat.S_ISREG(before.st_mode) and before.st_size <= SOURCE_FILE_BYTES, "Task input is not a bounded regular file")
+                total += before.st_size
+                need(total <= SOURCE_TOTAL_BYTES, "Task source aggregate byte bound exceeded")
+                blob = hashlib.sha1(f"blob {before.st_size}\0".encode(), usedforsecurity=False)
+                content = hashlib.sha256()
+                read_bytes = 0
+                with candidate.open("rb") as source:
+                    opened = os.fstat(source.fileno())
+                    need((opened.st_dev, opened.st_ino) == (before.st_dev, before.st_ino), "Task input identity changed")
+                    while chunk := source.read(65536):
+                        read_bytes += len(chunk)
+                        need(read_bytes <= before.st_size, "Task input changed while hashing")
+                        blob.update(chunk)
+                        content.update(chunk)
+                after = candidate.stat()
+                need(read_bytes == before.st_size and (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) ==
+                     (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns), "Task input changed while hashing")
+                mode = index.get(name, ("100644",))[0] if os.name == "nt" else ("100755" if before.st_mode & 0o111 else "100644")
+                actual[name] = (mode, blob.hexdigest())
+                manifest.append((name, mode, before.st_size, content.hexdigest()))
+            if actual.get(name) != base.get(name) or index.get(name) != base.get(name):
+                need(any(name.casefold() == owner.casefold() or name.casefold().startswith(owner.casefold() + "/")
+                         for owner in value["owned_paths"]), "Worktree changed a path outside its task claim")
+        state = {"head": head, "source_tree_sha256": hashlib.sha256(encoded(manifest)).hexdigest(),
+                 "index_sha256": hashlib.sha256(encoded(index)).hexdigest(), "input_bytes": total, "file_count": len(actual),
+                 "clean": actual == committed and index == committed and not untracked}
         state["digest"] = hashlib.sha256(encoded(state)).hexdigest()
         return state
 
@@ -290,30 +382,45 @@ class TaskStore:
 
     def resume(self, claim, owner, resource_root):
         record = self.get(claim, owner)
-        need(record["phase"] not in {"allocating", "closing", "closed"}, "Worktree lifecycle outcome needs inspection; allocation retained")
-        need(not handle_live(record["worker"]), "Task worker is live or uncertain; no duplicate")
-        self.evidence(claim, owner)
-        self.fingerprint(record)
-        sandbox = self.resources(resource_root, record)
-        with sandbox.registry.edit() as data:
-            candidates = [dict(item) for item in data["leases"].values()
-                          if item.get("kind") == "topology" and item.get("task_claim") == claim]
-        need(len(candidates) <= 1, "Multiple resource namespaces claim this task")
-        namespace = record["namespace"]
-        if candidates:
-            candidate = candidates[0]
-            need(candidate["source"] == record["worktree"] and candidate["engine"] == sandbox.docker.engine and
-                 candidate["phase"] == "ready", "Resource setup outcome uncertain; preserve namespace")
-            need(namespace in {None, candidate["namespace"]}, "Task resource namespace changed")
-            namespace = candidate["namespace"]
-        else:
-            need(namespace is None, "Registered resource lease missing; inspect before resume")
-        recovered = sandbox.reconcile(namespace) if namespace else []
+        token = secrets.token_hex(12)
         with self.edit() as data:
             current = data["tasks"][claim]
-            need(not handle_live(current["worker"]), "Task worker became live during resume")
-            current.update(phase="allocated", namespace=namespace, worker=None)
-        self.append(claim, owner, "resume", {"recovered": recovered, "checks_required": True})
+            need(current["phase"] in {"allocated", "running", "interrupted", "resuming"},
+                 "Worktree lifecycle outcome needs inspection; allocation retained")
+            need(not handle_live(current["worker"]), "Task worker is live or uncertain; no duplicate")
+            current.update(phase="resuming", lifecycle_token=token,
+                           worker={"pid": os.getpid(), "identity": SANDBOX["owner_identity"]()})
+            record = dict(current)
+        try:
+            self.evidence(claim, owner)
+            self.fingerprint(record)
+            sandbox = self.resources(resource_root, record)
+            with sandbox.registry.edit() as data:
+                candidates = [dict(item) for item in data["leases"].values()
+                              if item.get("kind") == "topology" and item.get("task_claim") == claim]
+            need(len(candidates) <= 1, "Multiple resource namespaces claim this task")
+            namespace = record["namespace"]
+            if candidates:
+                candidate = candidates[0]
+                need(candidate["source"] == record["worktree"] and candidate["engine"] == sandbox.docker.engine and
+                     candidate["phase"] == "ready", "Resource setup outcome uncertain; preserve namespace")
+                need(namespace in {None, candidate["namespace"]}, "Task resource namespace changed")
+                namespace = candidate["namespace"]
+            else:
+                need(namespace is None, "Registered resource lease missing; inspect before resume")
+            recovered = sandbox.reconcile(namespace) if namespace else []
+            self.append(claim, owner, "resume", {"recovered": recovered, "checks_required": True})
+            with self.edit() as data:
+                current = data["tasks"][claim]
+                need(current["phase"] == "resuming" and current.get("lifecycle_token") == token,
+                     "Resume lifecycle ownership changed; preserve state")
+                current.update(phase="allocated", namespace=namespace, worker=None)
+        except BaseException:
+            with self.edit() as data:
+                current = data["tasks"][claim]
+                if current["phase"] == "resuming" and current.get("lifecycle_token") == token:
+                    current.update(phase="interrupted", worker=None)
+            raise
         return self.context(claim, owner)
 
     def run(self, claim, owner, mode, resource_root):
@@ -349,7 +456,7 @@ class TaskStore:
         record = self.get(claim, owner)
         need(record["phase"] == "allocated" and not handle_live(record["worker"]), "Task lifecycle/worker is busy; resume first")
         path = self.inspect_worktree(record)
-        self.fingerprint(record)
+        need(self.fingerprint(record)["clean"], "Dirty worktree preserved; commit or retain its work")
         need(not git("status", "--porcelain", "-z", "--untracked-files=all", root=path), "Dirty worktree preserved; commit or retain its work")
         self.evidence(claim, owner)
         with self.edit() as data:
