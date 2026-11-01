@@ -35,7 +35,11 @@ def integer(value, lower, upper, name):
 def key(value):
     need(type(value) is str and 0 < len(value) <= 128 and
          all(ord(char) >= 32 for char in value), "Invalid bounded catalog key")
-    need(len(value.encode("utf-8")) <= 128, "Catalog key exceeds byte budget")
+    try:
+        encoded = value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise Refused("Catalog key is not valid UTF-8") from None
+    need(len(encoded) <= 128, "Catalog key exceeds byte budget")
     return value
 
 
@@ -104,11 +108,15 @@ class Catalog:
         need(path.resolve() == path and path.is_file() and 0 < path.stat().st_size <= MAX_CATALOG_BYTES,
              "Missing, redirected or oversized model catalog")
         self.connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
-        self.connection.execute("PRAGMA query_only=ON")
-        self.connection.execute("PRAGMA mmap_size=0")
-        self.connection.execute("PRAGMA cache_size=-256")
-        self.connection.execute("PRAGMA temp_store=FILE")
-        need(self.connection.execute("PRAGMA user_version").fetchone() == (1,), "Unknown model schema")
+        try:
+            self.connection.execute("PRAGMA query_only=ON")
+            self.connection.execute("PRAGMA mmap_size=0")
+            self.connection.execute("PRAGMA cache_size=-256")
+            self.connection.execute("PRAGMA temp_store=FILE")
+            need(self.connection.execute("PRAGMA user_version").fetchone() == (1,), "Unknown model schema")
+        except BaseException:
+            self.connection.close()
+            raise
         self.metadata_statements = 0  # SQL statements, not object-store/page-read attempts.
         self.returned_rows = 0
         self.connection.set_trace_callback(self._trace)
@@ -135,6 +143,7 @@ class Catalog:
 
     def page(self, tenant, *, after="", limit=128):
         key(tenant)
+        need(type(after) is str, "Invalid catalog cursor type")
         if after:
             key(after)
         integer(limit, 1, 1000, "page size")

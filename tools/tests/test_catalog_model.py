@@ -53,5 +53,7 @@ class CatalogModelControls(unittest.TestCase):
             with MODEL["Catalog"](path) as catalog:
                 for kwargs in [{"limit": True}, {"limit": 1001}, {"limit": 0}]:
                     with self.assertRaises(MODEL["Refused"]): catalog.page("synthetic", **kwargs)
+                for cursor in [False, 0, '\ud800']:
+                    with self.assertRaises(MODEL["Refused"]): catalog.page("synthetic", after=cursor)
                 with self.assertRaises(MODEL["Refused"]): catalog.select("synthetic", "missing")
                 with self.assertRaises(MODEL["Refused"]): catalog.select("synthetic", "hot", upper=True)
