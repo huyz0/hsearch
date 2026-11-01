@@ -8,10 +8,13 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import runpy
 import subprocess
 import sys
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+COVERAGE_SOURCES = runpy.run_path(str(ROOT / "tools/coverage_sources.py"))
 JOBS = ("docs", "linux-x64", "linux-arm64", "sandbox-x64", "sandbox-arm64")
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine"}
 SHA = re.compile(r"[0-9a-f]{40}")
@@ -225,39 +228,49 @@ def docs():
         run(command)
 
 
+def qualified_coverage_base(base, head):
+    need(type(base) is str, "Coverage requires an explicit qualified ancestor or proven root")
+    candidate = None if base in {"", "0" * 40, "parentless-root"} else base
+    need(candidate is None or SHA.fullmatch(candidate), "Invalid coverage base")
+    COVERAGE_SOURCES["prove"](ROOT, head=head, base=candidate, sources={})
+    return "parentless-root" if candidate is None else candidate
+
+
 def native(value):
     value = validate_plan(value)
     need(output(["git", "rev-parse", "HEAD"]).decode().strip() == value["head"], "Stale CI plan")
     need("linux-x64" in value["selected_jobs"], "Native work is not selected")
+    workspace = graph(json.loads(output(["cargo", "metadata", "--locked", "--offline", "--no-deps",
+                                        "--all-features", "--format-version", "1"])), ROOT)
     if not value["full"]:
-        workspace = graph(json.loads(output(["cargo", "metadata", "--locked", "--offline", "--no-deps",
-                                            "--all-features", "--format-version", "1"])), ROOT)
         need(digest(workspace) == value["graph_digest"], "Stale dependency graph")
         need(set(value["packages"]).issubset(workspace), "Unknown selected package")
         need(value["coverage_packages"] == sorted(closure(value["packages"], workspace) & PRODUCTION),
              "Incomplete selected coverage scope")
+    need(set(workspace) - {"xtask", "hsearch-testkit"} == PRODUCTION,
+         "Actual production coverage ownership requires a reviewed CI policy update")
+    base = qualified_coverage_base(value["base"], value["head"]) if value["coverage_packages"] else None
+    runpy.run_path(str(ROOT / "tools/coverage.py"))["nextest_policy"]()
+    run([sys.executable, "tools/coverage_corpus.py"])
     run([sys.executable, "tools/workspace.py", "check"])
     run([sys.executable, "tools/workspace.py", "selftest"])
     run(["cargo", "fmt", "--all", "--", "--check"])
     package_flags = ["--workspace"] if value["full"] else [part for name in value["packages"] for part in ("--package", name)]
     common = ["--locked", "--offline", "--all-features", *package_flags]
     run(["cargo", "clippy", *common, "--all-targets", "--", "-D", "warnings"])
+    # Current observe/xtask-only selections have no test cases. Keep the strict
+    # no-tests failure by conservatively exercising the known workspace corpus.
+    ordinary = common if value["full"] or set(value["packages"]) & {"hsearch-types", "hsearch-engine"} else ["--locked", "--offline", "--all-features", "--workspace"]
     for profile in ([], ["--release"]):
-        run(["cargo", "test", *common, *profile])
+        run(["cargo", "nextest", "run", *ordinary, *profile, "--profile", "hsearch", "--no-tests=fail"])
+        run(["cargo", "test", *common, *profile, "--doc"])
     production = sorted(PRODUCTION if value["full"] else set(value["packages"]) & PRODUCTION)
     if production:
         run(["cargo", "build", "--locked", "--offline", "--release", "--lib",
              *[part for name in production for part in ("--package", name)]])
     if value["coverage_packages"]:
-        # LLVM reports zero-coverable-line scopes as 0%, not N/A. Types is the
-        # current executable owner. Always run our N/A-aware file/crate gate;
-        # retain LLVM's additional global floor for populated current scopes.
-        threshold = ["--fail-under-lines", "90"] if "hsearch-types" in value["coverage_packages"] else []
-        run(["cargo", "llvm-cov", "--locked", "--offline", "--all-features",
-             *[part for name in value["coverage_packages"] for part in ("--package", name)],
-             "--ignore-filename-regex", "/tests/", *threshold, "--json",
-             "--output-path", "target/bootstrap-coverage.json"])
-        run([sys.executable, "tools/coverage_check.py", "target/bootstrap-coverage.json",
+        destination = Path(os.environ["CARGO_TARGET_DIR"]).absolute().parent / ("hsearch-coverage-" + uuid.uuid4().hex)
+        run([sys.executable, "tools/coverage.py", "run", "--base", base, "--output", str(destination),
              *[part for name in value["coverage_packages"] for part in ("--package", name)]])
 
 

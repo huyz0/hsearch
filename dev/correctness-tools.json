@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "nextest": {
+    "version": "0.9.150",
+    "source": "https://github.com/nextest-rs/nextest",
+    "revision": "d225b1daf362c1ca8e5e048132618c1a81c57a28",
+    "license": "MIT OR Apache-2.0",
+    "architectures": {
+      "x86_64": {
+        "url": "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-x86_64-unknown-linux-musl.tar.gz",
+        "archive_bytes": 9787815,
+        "archive_sha256": "84f0f9ba75d0b6fa117bc418d49747ba78e20e4583057f6fa628f1b17c17234d",
+        "triple": "x86_64-unknown-linux-musl"
+      },
+      "aarch64": {
+        "url": "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-aarch64-unknown-linux-musl.tar.gz",
+        "archive_bytes": 9081517,
+        "archive_sha256": "5a7fe62b64a9006e1e47422021df7b1d308cc76c528c9eaf4649a488615ed6fb",
+        "triple": "aarch64-unknown-linux-musl"
+      }
+    }
+  }
+}

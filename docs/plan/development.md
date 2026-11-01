@@ -51,3 +51,5 @@ API-dependent work follows integrated [core-v1](api-compatibility.md) and [engin
 M01.04 development interface and qualification are documented in [source-bound context and navigation](context-navigation.md). Its corpus is a development harness check, separate from product and M01.08 agent qualification.
 
 M01.05's [independent review gate](review-gates.md) is integrated with [complete protocol qualification](evidence/m01-05-integrated.md); it does not submit formal GitHub reviews or grant merge permission. M01.09's original ARM cold-navigation cause remains open despite the integrated diagnostic increment and subsequent green native runs; M01.08 remains blocked.
+
+M01.12 is prototyping [source-proof coverage integration](coverage.md), replacing the original blocked patch parser. Its base/event and test-migration contract is explicit; full collector qualification and independent review remain pending. M01.11 is accepted independently, and the original M01.07 failed gate remains blocked.
