@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import secrets
 import subprocess
+from execute import verify_limits
 
 BASE = Path("/hsearch-state")
 FILES = ("ca/ca.key", "ca/ca.crt", "server/rustfs_key.pem", "server/rustfs_cert.pem",
@@ -17,6 +18,7 @@ def openssl(*args):
 
 
 def main():
+    verify_limits(500, 256 * 1024**2, 64)
     os.umask(0o077)
     marker = BASE / "ca/initialized.json"
     if marker.exists():

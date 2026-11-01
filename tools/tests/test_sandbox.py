@@ -38,6 +38,12 @@ class AdmissionControls(unittest.TestCase):
             with self.assertRaisesRegex(Refused, "Invalid"):
                 MODULE["admit"](request, [], CAPACITY, 100 * GIB)
 
+    def test_disk_headroom_includes_outstanding_unconsumed_reservations(self):
+        MODULE["admit"](STORAGE, [], CAPACITY, 20 * GIB)
+        with self.assertRaisesRegex(Refused, "Low host disk"):
+            MODULE["admit"](STORAGE, [{"budget": STORAGE}], CAPACITY, 20 * GIB)
+        MODULE["admit"](STORAGE, [{"budget": STORAGE}], CAPACITY, 30 * GIB)
+
     def test_both_topologies_and_probe_fit_small_native_ci_capacity(self):
         small = dict(CAPACITY, cpu_millis=3000, memory_bytes=8 * GIB)
         MODULE["admit"](MODULE["PROBE"], [{"budget": STORAGE}, {"budget": STORAGE}], small, 100 * GIB)
@@ -108,22 +114,27 @@ class OwnershipControls(unittest.TestCase):
         class FakeDocker:
             engine = "engine"
             capacity = CAPACITY
+            free = 0
             def command(self, *args, **kwargs):
                 if args[0] != "run":
                     raise AssertionError("No topology mutations allowed after low disk")
                 self.probe = args
-                return "0\n"
-        with tempfile.TemporaryDirectory() as directory:
-            docker = FakeDocker()
-            sandbox = Sandbox(directory, docker=docker)
-            digest = MODULE["hashlib"].sha256((Path(MODULE["ROOT"]) / "dev/Dockerfile").read_bytes()).hexdigest()
-            (Path(directory) / "images").mkdir()
-            MODULE["atomic_json"](Path(directory) / "images" / (digest + ".json"), {"id": "image", "engine": "engine", "dockerfile_sha256": digest})
-            with self.assertRaisesRegex(Refused, "backend disk reserve"):
-                sandbox.up("test")
-            self.assertIn("--read-only", docker.probe)
-            with sandbox.registry.edit() as data:
-                self.assertEqual(data["leases"], {})
+                return str(self.free) + "\n"
+        for free, prior in ((0, False), (20 * GIB, True)):
+            with tempfile.TemporaryDirectory() as directory:
+                docker = FakeDocker()
+                docker.free = free
+                sandbox = Sandbox(directory, docker=docker)
+                digest = MODULE["hashlib"].sha256((Path(MODULE["ROOT"]) / "dev/Dockerfile").read_bytes()).hexdigest()
+                (Path(directory) / "images").mkdir()
+                MODULE["atomic_json"](Path(directory) / "images" / (digest + ".json"), {"id": "image", "engine": "engine", "dockerfile_sha256": digest})
+                if prior:
+                    sandbox.registry.acquire("prior", STORAGE, CAPACITY, "engine")
+                with self.assertRaisesRegex(Refused, "backend disk reserve"):
+                    sandbox.up("test")
+                self.assertIn("--read-only", docker.probe)
+                with sandbox.registry.edit() as data:
+                    self.assertEqual(set(data["leases"]), {"prior"} if prior else set())
 
     def test_down_refuses_foreign_container_before_mutation(self):
         class FakeDocker:
@@ -174,6 +185,25 @@ class OwnershipControls(unittest.TestCase):
             with self.assertRaisesRegex(Refused, "uncertain run lease"):
                 sandbox.down(namespace)
 
+    def test_unknown_create_keeps_lease_even_when_no_container_is_visible(self):
+        class FakeDocker:
+            engine = "engine"
+            capacity = CAPACITY
+            def command(self, *args, **kwargs):
+                if args[0] == "run":
+                    raise Refused("unknown create result")
+                return ""
+        with tempfile.TemporaryDirectory() as directory:
+            sandbox = Sandbox(directory, docker=FakeDocker())
+            namespace = "hsearch-test-0123456789ab"
+            sandbox.registry.acquire(namespace, STORAGE, CAPACITY, "engine", {"namespace": namespace, "owner": "mine", "source": str(MODULE["ROOT"]), "image": "image", "phase": "ready"})
+            with self.assertRaisesRegex(Refused, "unknown create"):
+                sandbox.run(namespace, "probe")
+            with sandbox.registry.edit() as data:
+                self.assertEqual(sum(x.get("parent") == namespace for x in data["leases"].values()), 1)
+            with self.assertRaisesRegex(Refused, "uncertain run lease"):
+                sandbox.down(namespace)
+
     def test_compose_snapshot_has_no_host_socket_or_static_secret(self):
         template = (Path(MODULE["ROOT"]) / "dev/compose.json").read_text()
         for forbidden in ("docker.sock", "privileged", "rustfsadmin", "latest"):
@@ -195,6 +225,7 @@ class ExecutionControls(unittest.TestCase):
         execute = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))
         globals_ = execute["run"].__globals__
         globals_["COMMANDS"] = {"control": [sys.executable, "-c", "import time; time.sleep(60)"]}
+        globals_["verify_limits"] = lambda *args: {}  # Separate process-group behavior from host sensor fixtures.
         real_popen = subprocess.Popen
         bystander = real_popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
         try:
@@ -230,6 +261,59 @@ class ExecutionControls(unittest.TestCase):
             path = Path(directory)
             (path / "loop").symlink_to(path, target_is_directory=True)
             self.assertLess(execute["usage"]([path], max_entries=2), 8192)
+
+
+class ResourceCapabilityControls(unittest.TestCase):
+    def test_engine_rejects_missing_resource_delegation(self):
+        info = {"OSType": "linux", "CgroupVersion": "2", "CgroupDriver": "systemd", "ID": "engine", "NCPU": 4,
+                "MemTotal": 16 * GIB, "MemoryLimit": True, "SwapLimit": True, "CpuCfsPeriod": True, "CpuCfsQuota": True, "PidsLimit": True}
+        def invoke(args, **kwargs):
+            if args[-2:] == ["context", "show"]:
+                output = "default\n"
+            elif "inspect" in args:
+                output = json.dumps([{"Endpoints": {"docker": {"Host": "unix:///var/run/docker.sock"}}}])
+            else:
+                output = json.dumps(info)
+            return subprocess.CompletedProcess(args, 0, output, "")
+        with patch.object(subprocess, "run", side_effect=invoke):
+            self.assertEqual(MODULE["Docker"]().engine, "engine")
+        for key, value in (("CgroupDriver", "none"), ("MemoryLimit", False), ("SwapLimit", False), ("CpuCfsPeriod", False), ("CpuCfsQuota", False), ("PidsLimit", False)):
+            broken = dict(info, **{key: value})
+            with patch.object(subprocess, "run", side_effect=lambda args, **kwargs: subprocess.CompletedProcess(args, 0,
+                    "default\n" if args[-2:] == ["context", "show"] else json.dumps([{"Endpoints": {"docker": {"Host": "unix:///var/run/docker.sock"}}}]) if "inspect" in args else json.dumps(broken), "")):
+                with self.assertRaisesRegex(Refused, "controllers unavailable"):
+                    MODULE["Docker"]()
+
+    def test_effective_caps_must_be_finite_and_within_each_declared_bound(self):
+        verify = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))["verify_limits"]
+        baseline = {"memory.max": str(4 * GIB), "memory.swap.max": "0", "cpu.max": "200000 100000", "pids.max": "512"}
+        self.assertEqual(verify(2000, 4 * GIB, 512, limits=baseline, uid=10001), baseline)
+        for key, value in (("memory.max", "max"), ("memory.max", str(8 * GIB)), ("memory.swap.max", "max"), ("memory.swap.max", "1"), ("cpu.max", "max 100000"),
+                           ("cpu.max", "400000 100000"), ("pids.max", "max"), ("pids.max", "1024")):
+            with self.assertRaisesRegex(RuntimeError, "Effective cgroup caps"):
+                verify(2000, 4 * GIB, 512, limits=dict(baseline, **{key: value}), uid=10001)
+        with self.assertRaisesRegex(RuntimeError, "non-root"):
+            verify(2000, 4 * GIB, 512, limits=baseline, uid=0)
+
+    def test_diagnostics_rejects_the_all_unlimited_counterexample(self):
+        execute = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))
+        def sensor(path, *args, **kwargs):
+            return "max 100000" if path.name == "cpu.max" else "max"
+        with patch.object(os, "getuid", return_value=10001, create=True), \
+             patch.object(subprocess, "check_output", side_effect=lambda command, **kwargs: "rustc 1.97.1 fixture" if command[0] == "rustc" else "fixture"), \
+             patch.object(Path, "read_text", sensor):
+            with self.assertRaisesRegex(RuntimeError, "Effective cgroup caps"):
+                execute["diagnostics"]()
+
+    def test_repository_command_cannot_start_before_effective_cap_verification(self):
+        execute = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))
+        def refuse(*args):
+            raise RuntimeError("counterexample: unbounded")
+        execute["run"].__globals__["verify_limits"] = refuse
+        with patch.object(subprocess, "Popen") as spawn:
+            with self.assertRaisesRegex(RuntimeError, "unbounded"):
+                execute["run"]("check", 1, 1)
+            spawn.assert_not_called()
 
 
 if __name__ == "__main__":

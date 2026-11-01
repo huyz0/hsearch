@@ -329,6 +329,10 @@
             {
               "path": "evidence/m01-02-local-check.txt",
               "result": "Observed fresh-image and two-store Linux smoke, actual cgroup limits, complete bootstrap suite with 23 Python tests, TLS/auth negatives, S3 round trips and targeted cleanup preserving the second topology."
+            },
+            {
+              "path": "evidence/m01-02-review-fix-check.txt",
+              "result": "Fresh full offline smoke and 29 targeted Linux regressions passed after correcting the three independent review findings; follow-up review and hosted native checks pending."
             }
           ],
           "owner_session": "sandbox-integrator",

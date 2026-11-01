@@ -10,6 +10,7 @@ import ssl
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from execute import verify_limits
 
 ENDPOINT = "https://rustfs:9000"
 
@@ -46,6 +47,7 @@ def request(method, path, body=b"", *, wrong_ca=False, wrong_secret=False):
 
 
 def main(bucket):
+    verify_limits(500, 256 * 1024**2, 64)
     if not re.fullmatch(r"hsearch-[a-z0-9-]{1,54}", bucket):
         raise ValueError("Invalid isolated bucket name")
     try:

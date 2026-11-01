@@ -11,6 +11,23 @@ import time
 COMMANDS = {"prefetch": ["cargo", "fetch", "--locked"], "check": ["cargo", "xtask", "check"]}
 
 
+def verify_limits(cpu_millis, memory_bytes, pids, *, limits=None, uid=None):
+    uid = os.getuid() if uid is None else uid
+    if uid == 0:
+        raise RuntimeError("Development commands require a non-root identity")
+    try:
+        limits = limits if limits is not None else {name: Path("/sys/fs/cgroup", name).read_text().strip()
+                  for name in ("memory.max", "memory.swap.max", "cpu.max", "pids.max")}
+        memory, processes = int(limits["memory.max"]), int(limits["pids.max"])
+        quota, period = (int(value) for value in limits["cpu.max"].split())
+        if not (0 < memory <= memory_bytes and int(limits["memory.swap.max"]) == 0 and 0 < processes <= pids and
+                quota > 0 and period > 0 and quota * 1000 <= period * cpu_millis):
+            raise ValueError("effective limits exceed the declared budget")
+    except (OSError, ValueError, KeyError) as error:
+        raise RuntimeError("Effective cgroup caps are missing, unlimited or above budget") from error
+    return limits
+
+
 def usage(paths, max_entries=2_000_000):
     total, entries, seen = 0, 0, set()
     pending = list(paths)
@@ -42,12 +59,12 @@ def diagnostics():
                                       "python": ["python3", "--version"], "openssl": ["openssl", "version"]}.items()}
     if os.getuid() == 0 or not versions["rustc"].startswith("rustc 1.97.1 "):
         raise RuntimeError("Expected non-root exact bootstrap toolchain")
-    caps = {name: Path("/sys/fs/cgroup", name).read_text().strip()
-            for name in ("memory.max", "cpu.max", "pids.max")}
+    caps = verify_limits(2000, 4 * 1024**3, 512)
     print(json.dumps({"uid": os.getuid(), "architecture": platform.machine(), "versions": versions, "cgroup_limits": caps}))
 
 
 def run(mode, disk_bytes, timeout):
+    verify_limits(2000, 4 * 1024**3, 512)
     if mode == "diagnostics":
         diagnostics()
         return 0

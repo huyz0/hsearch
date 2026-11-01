@@ -116,12 +116,14 @@ def atomic_json(path, data):
 
 
 def admit(request, leases, capacity, free_disk):
+    leases = list(leases)
     need(set(request) == set(BUILD), "Unknown resource budget shape")
     for key, value in request.items():
         need(type(value) is int and value > 0, f"Invalid {key} budget")
         total = value + sum(lease["budget"][key] for lease in leases)
         need(total <= capacity[key], f"Host {key} budget exhausted")
-    need(free_disk >= request["disk_bytes"] + 10 * GIB, "Low host disk reserve; no resources changed")
+    reserved_disk = request["disk_bytes"] + sum(lease["budget"]["disk_bytes"] for lease in leases)
+    need(free_disk >= reserved_disk + 10 * GIB, "Low host disk reserve; no resources changed")
 
 
 class Registry:
@@ -174,6 +176,9 @@ class Docker:
         need(context["Endpoints"]["docker"]["Host"].startswith(("unix://", "npipe://")), "Only a local Docker engine is allowed")
         self.info = json.loads(self.command("info", "--format", "{{json .}}"))
         need(self.info["OSType"] == "linux" and self.info["CgroupVersion"] == "2", "Linux cgroup-v2 Docker engine required")
+        need(self.info.get("CgroupDriver") in {"systemd", "cgroupfs"} and
+             all(self.info.get(flag) is True for flag in ("MemoryLimit", "SwapLimit", "CpuCfsPeriod", "CpuCfsQuota", "PidsLimit")),
+             "Docker resource controllers unavailable; hard caps cannot be enforced")
         self.engine = self.info["ID"]
         self.capacity = {"cpu_millis": min(8000, max(1000, (self.info["NCPU"] - 1) * 1000)),
                          "memory_bytes": min(16 * GIB, self.info["MemTotal"] // 2), "pids": 2048, "disk_bytes": 40 * GIB}
@@ -254,11 +259,14 @@ class Sandbox:
             backend_output = self.docker.command("run", "--rm", "--name", namespace + "-preflight", "--label", f"{LABEL}={owner}",
                                "--label", f"io.hsearch.namespace={namespace}", "--read-only", "--network", "none", "--user", "10001:10001",
                                "--cpus", "0.25", "--memory", "67108864", "--pids-limit", "32", "--cap-drop", "ALL",
+                               "--memory-swap", "67108864",
                                "--security-opt", "no-new-privileges", image["id"], "python3", "-c",
                                "import shutil; print(shutil.disk_usage('/').free)")
             backend_read_complete = True
             backend_free = int(backend_output)
-            need(backend_free >= STORAGE["disk_bytes"] + 10 * GIB, "Low Docker backend disk reserve; topology not started")
+            with self.registry.edit() as data:
+                reserved_disk = sum(lease["budget"]["disk_bytes"] for lease in data["leases"].values())
+                need(backend_free >= reserved_disk + 10 * GIB, "Low Docker backend disk reserve; topology not started")
             folder.mkdir(parents=True, exist_ok=False)
             template = Template((ROOT / "dev/compose.json").read_text())
             # JSON-escape substituted path values before parsing the concrete snapshot.
@@ -310,6 +318,7 @@ class Sandbox:
         container = namespace + "-" + lease_id[-12:]
         args = ["run", "--rm", "--name", container, "--label", f"{LABEL}={record['owner']}", "--label", f"io.hsearch.namespace={namespace}",
                 "--user", "10001:10001", "--cpus", str(budget["cpu_millis"] / 1000), "--memory", str(budget["memory_bytes"]), "--pids-limit", str(budget["pids"]), "--read-only",
+                "--memory-swap", str(budget["memory_bytes"]),
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,nosuid,nodev,size=67108864",
                 "--network", "bridge" if mode == "prefetch" else (namespace + "-net" if mode == "probe" else "none"),
                 "--mount", f"type=bind,source={ROOT},target=/workspace,readonly", "--mount", f"type=volume,source={namespace}-cargo,target=/cargo",
@@ -319,13 +328,17 @@ class Sandbox:
                      "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly", record["image"], "python3", "dev/probe.py", namespace]
         else:
             args += [record["image"], "python3", "dev/execute.py", mode, "--disk-bytes", str(BUILD["disk_bytes"]), "--timeout", "1200"]
+        completed = False
         try:
             self.docker.command(*args, stream=True, timeout=1250)
+            completed = True
         finally:
-            # A timeout/interrupt can leave the container alive. Keep its lease then.
-            live = self.docker.command("container", "ls", "--all", "--filter", f"name=^/{container}$", "--format", "{{.ID}}").split()
-            if not live:
-                self.registry.release(lease_id)
+            # An empty listing is not proof that an uncertain create cannot arrive later.
+            # Only successful synchronous run completion can permit release here.
+            if completed:
+                live = self.docker.command("container", "ls", "--all", "--filter", f"name=^/{container}$", "--format", "{{.ID}}").split()
+                if not live:
+                    self.registry.release(lease_id)
 
     def down(self, namespace):
         record = self.registry.get(namespace)
