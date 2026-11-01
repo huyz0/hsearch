@@ -631,7 +631,9 @@ impl Observation {
                     self.outcome != Outcome::Cancelled
                         || self.failure != Some(FailureClass::DeadlineExceeded)
                 }
-                Some(Visibility::Pending | Visibility::Visible) => self.outcome != Outcome::Success,
+                Some(Visibility::Pending | Visibility::Visible) => {
+                    !matches!(self.outcome, Outcome::Success | Outcome::Failed)
+                }
             }
             || self.progress.is_some_and(|progress| {
                 receipt
