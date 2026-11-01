@@ -2,7 +2,7 @@
   "schema_version": 1,
   "updated": "2026-11-01",
   "timezone": "Australia/Sydney",
-  "scope": "Research and comprehensive implementation plan, with M01.01 workspace bootstrap under review. Cost architecture research and experiments are delivered in M00; implementation/cost integration and qualification retain their owning M01-M17 milestones. M18 is retired with an ID mapping.",
+  "scope": "Research and comprehensive implementation plan, with M01.01 integrated and M01.02 sandbox under review. M00 cost research is complete; all remaining implementation and qualification obligations retain their owning milestones.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
   "milestones": [
     {
@@ -268,7 +268,7 @@
             "M00"
           ],
           "owner": "harness/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m01-01-bootstrap.md",
@@ -281,6 +281,10 @@
             {
               "path": "evidence/m01-01-review-fix-check.txt",
               "result": "Complete offline Linux suite passed after independent-review identity fix, including 18 dependency-policy negative controls; unchanged production source retains 43/43 covered lines."
+            },
+            {
+              "path": "evidence/m01-01-integrated.md",
+              "result": "Independent final-tree review and native x86_64/ARM64 CI succeeded at c4549eb; PR #1 normally merged as 81bde7398bec3ebb50a82f9661f50faae1a02852 under explicit user auto-merge authorization."
             }
           ],
           "owner_session": "bootstrap-integrator",
@@ -316,8 +320,37 @@
             "M01.01"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "review",
+          "evidence": [
+            {
+              "path": "evidence/m01-02-sandbox.md",
+              "result": "Pinned non-root sandbox, private RustFS/test-CA topology, resource leases and refusal/cleanup controls implemented; local full smoke passed; independent review and hosted native matrix pending."
+            },
+            {
+              "path": "evidence/m01-02-local-check.txt",
+              "result": "Observed fresh-image and two-store Linux smoke, actual cgroup limits, complete bootstrap suite with 23 Python tests, TLS/auth negatives, S3 round trips and targeted cleanup preserving the second topology."
+            },
+            {
+              "path": "evidence/m01-02-review-fix-check.txt",
+              "result": "Fresh full offline smoke and 29 targeted Linux regressions passed after correcting the three independent review findings; follow-up review and hosted native checks pending."
+            },
+            {
+              "path": "evidence/m01-02-command-admission-check.txt",
+              "result": "Complete fresh smoke passed with 30 tests after final command-time backend/actual-volume admission fix; final third-round delta review and hosted native CI pending."
+            }
+          ],
+          "owner_session": "sandbox-integrator",
+          "base_commit": "81bde7398bec3ebb50a82f9661f50faae1a02852",
+          "owned_paths": [
+            "dev",
+            "tools/sandbox.py",
+            "tools/tests/test_sandbox.py",
+            "xtask/src/main.rs",
+            ".github/workflows/bootstrap.yml",
+            "docs/plan/development.md",
+            "docs/plan/tasks.json",
+            "docs/plan/PROGRESS.md"
+          ]
         },
         {
           "id": "M01.03",

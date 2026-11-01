@@ -41,6 +41,10 @@ jobs:
           --fail-under-lines 90 --json --output-path target/bootstrap-coverage.json
       - name: Check production file and crate coverage
         run: python3 tools/coverage_check.py target/bootstrap-coverage.json
+      - name: Build pinned non-root development image
+        run: python3 tools/sandbox.py --state-root "${{ runner.temp }}/hsearch-leases" image
+      - name: Qualify private RustFS sandbox and cleanup isolation
+        run: python3 tools/sandbox.py --state-root "${{ runner.temp }}/hsearch-leases" smoke
 
   ci-ok:
     if: ${{ always() }}

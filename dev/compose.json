@@ -1,0 +1,61 @@
+{
+  "services": {
+    "test-ca": {
+      "image": "${DEV_IMAGE}",
+      "pull_policy": "never",
+      "user": "10001:10001",
+      "command": ["python3", "/workspace/dev/init.py"],
+      "restart": "no",
+      "network_mode": "none",
+      "read_only": true,
+      "cpus": 0.5,
+      "mem_limit": "256m",
+      "memswap_limit": "256m",
+      "pids_limit": 64,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tmpfs": ["/tmp:size=67108864,mode=1777"],
+      "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"},
+      "volumes": [
+        {"type": "bind", "source": "${SOURCE_ROOT}", "target": "/workspace", "read_only": true},
+        "ca:/hsearch-state/ca", "server:/hsearch-state/server", "client:/hsearch-state/client", "credentials:/hsearch-state/credentials"
+      ]
+    },
+    "rustfs": {
+      "image": "${RUSTFS_IMAGE}",
+      "user": "10001:10001",
+      "restart": "no",
+      "depends_on": {"test-ca": {"condition": "service_completed_successfully"}},
+      "read_only": true,
+      "cpus": 1,
+      "mem_limit": "2g",
+      "memswap_limit": "2g",
+      "pids_limit": 256,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "tmpfs": ["/tmp:size=67108864,mode=1777", "/logs:size=16777216,uid=10001,gid=10001,mode=0700"],
+      "environment": {
+        "RUSTFS_ADDRESS": ":9000", "RUSTFS_REGION": "us-east-1",
+        "RUSTFS_CONSOLE_ENABLE": "false", "RUSTFS_CHECK_UPDATE": "false",
+        "RUSTFS_ACCESS_KEY_FILE": "/run/secrets/access", "RUSTFS_SECRET_KEY_FILE": "/run/secrets/secret",
+        "RUSTFS_TLS_PATH": "/certs", "RUSTFS_OBS_LOGGER_LEVEL": "warn", "RUSTFS_OBS_LOG_DIRECTORY": "/logs"
+      },
+      "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"},
+      "volumes": ["data:/data", "server:/certs:ro", "credentials:/run/secrets:ro"],
+      "healthcheck": {
+        "test": ["CMD", "curl", "--fail", "--silent", "--show-error", "--cacert", "/certs/ca.crt", "https://localhost:9000/health/ready"],
+        "interval": "2s", "timeout": "2s", "start_period": "10s", "retries": 40
+      }
+    }
+  },
+  "networks": {"default": {"name": "${NAMESPACE}-net", "internal": true, "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"}}},
+  "volumes": {
+    "ca": {"name": "${NAMESPACE}-ca", "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"}},
+    "server": {"name": "${NAMESPACE}-server", "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"}},
+    "client": {"name": "${NAMESPACE}-client", "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"}},
+    "credentials": {"name": "${NAMESPACE}-credentials", "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"}},
+    "data": {"name": "${NAMESPACE}-data", "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"}},
+    "cargo": {"name": "${NAMESPACE}-cargo", "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"}},
+    "target": {"name": "${NAMESPACE}-target", "labels": {"io.hsearch.owner": "${OWNER}", "io.hsearch.namespace": "${NAMESPACE}"}}
+  }
+}
