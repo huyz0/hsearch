@@ -37,6 +37,7 @@
     {"path": ".dockerignore", "impact": "full"},
     {"path": "ci/", "impact": "full"},
     {"path": "tools/", "impact": "full"},
+    {"path": "harness/", "impact": "full"},
     {"path": "dev/", "impact": "full"},
     {"path": "xtask/", "impact": "full"}
   ]

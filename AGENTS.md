@@ -6,7 +6,7 @@ Read `docs/plan/PROGRESS.md` and the relevant task in `docs/plan/tasks.json` bef
 
 Use one branch/worktree per task. Record owner, base SHA, owned paths/resources, observed checks and remaining failures. Serialize lockfile, shared contract and ledger changes through the integrator. Never overwrite another task's work, force push, prune unrelated resources, or treat an observation timeout as a failed process.
 
-Start with `docs/plan/development.md` for current executable commands. `cargo xtask check` runs the implemented bootstrap checks only. M01.02 sandbox and M01.06 impact CI are integrated. Remaining task/review/context/coverage gates retain separate acceptance; M01.03 is preserved unfinished while M19 takes priority. No runtime service exists yet.
+Start with `docs/plan/development.md` for current executable commands. `cargo xtask check` runs the implemented bootstrap checks only. M01.02 sandbox, M01.06 impact CI and M19 API direction are integrated. Remaining task/review/context/coverage gates retain separate acceptance; M01.03 is resumed on the revised plan and remains unfinished until its independent reviews and native qualification pass. No runtime service exists yet.
 
 - Keep `hsearch-types` independent of adapters; `hsearch-observe` depends only on types. Only `hsearch-engine` imports Lucene crates. Testkit is a dev dependency of production crates, never a normal/build dependency.
 - Keep dependency, toolchain and image revisions exact. Do not enable upstream test features in production. Inventory source/licenses before introducing dependencies. No hsearch redistribution license has been selected; do not infer a reuse grant from public visibility.

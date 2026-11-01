@@ -21,6 +21,7 @@ GIB = 1024**3
 LABEL = "io.hsearch.owner"
 NAMESPACE = re.compile(r"hsearch-[a-z0-9-]{1,25}-[0-9a-f]{12}\Z")
 VOLUMES = ("ca", "server", "client", "credentials", "data", "cargo", "target")
+HARNESS_FILES = ("execute.py", "init.py", "probe.py")
 BUILD = {"cpu_millis": 2000, "memory_bytes": 4 * GIB, "pids": 512, "disk_bytes": 8 * GIB}
 STORAGE = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 10 * GIB}
 PROBE = {"cpu_millis": 500, "memory_bytes": 256 * 1024**2, "pids": 64, "disk_bytes": 1024**2}
@@ -28,6 +29,14 @@ PROBE = {"cpu_millis": 500, "memory_bytes": 256 * 1024**2, "pids": 64, "disk_byt
 
 class Refused(RuntimeError):
     """An unsafe, unavailable or over-budget operation was refused."""
+
+
+class WorkloadFailed(Refused):
+    """A known completed workload failed; its bounded result remains reviewable."""
+
+    def __init__(self, result):
+        self.result = result
+        super().__init__(f"Workload failed: exit={result['exit_code']}, truncated={result['truncated']}")
 
 
 def need(condition, message):
@@ -183,10 +192,11 @@ class Docker:
         self.capacity = {"cpu_millis": min(8000, max(1000, (self.info["NCPU"] - 1) * 1000)),
                          "memory_bytes": min(16 * GIB, self.info["MemTotal"] // 2), "pids": 2048, "disk_bytes": 40 * GIB}
 
-    def command(self, *args, stream=False, timeout=180, input_text=None):
+    def command(self, *args, stream=False, timeout=180, input_text=None, merge_output=False):
         prefix = ["docker"] + (["--context", self.context] if hasattr(self, "context") else [])
         try:
-            result = subprocess.run([*prefix, *args], text=True, input=input_text, capture_output=not stream, timeout=timeout)
+            options = {} if stream else ({"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT} if merge_output else {"capture_output": True})
+            result = subprocess.run([*prefix, *args], text=True, errors="replace", input=input_text, timeout=timeout, **options)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise Refused(f"Docker unavailable or operation outcome requires inspection: {type(error).__name__}") from error
         need(result.returncode == 0, f"Docker operation failed ({args[0]}); inspect owned resources before retry")
@@ -210,11 +220,57 @@ def assert_owned(objects, owner):
         need(labels and labels.get(LABEL) == owner, "Cleanup refused: resource owner does not match")
 
 
+def freeze_harness(destination):
+    """Publish public controller code for a different, non-root guest UID."""
+    destination.mkdir(mode=0o755)
+    # The host registry's ancestors stay private. The bind-mounted directory
+    # itself must be traversable by UID 10001 even under a host umask of 077.
+    destination.chmod(0o755)
+    hashes = {}
+    for name in HARNESS_FILES:
+        content = (ROOT / "dev" / name).read_bytes()
+        need(len(content) < 65536, "Trusted harness script exceeds bound")
+        script = destination / name
+        with script.open("xb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        script.chmod(0o444)
+        hashes[name] = hashlib.sha256(content).hexdigest()
+    return hashes
+
+
 class Sandbox:
-    def __init__(self, state_root, docker=None, free_disk=None):
+    def __init__(self, state_root, docker=None, free_disk=None, *, source_root=None):
         self.registry = Registry(state_root, free_disk=free_disk)
         self.docker = Docker() if docker is None else docker
+        self.source_root = ROOT if source_root is None else Path(source_root).resolve()
+        need(self.source_root.is_dir(), "Sandbox source root is unavailable")
         self.images = json.loads((ROOT / "dev/images.json").read_text())
+
+    def snapshot(self, record):
+        if record.get("snapshot_schema") != 2:
+            need(self.source_root == ROOT, "Legacy snapshot cannot adopt a worker worktree")
+            return owned_snapshot(record)
+        need(NAMESPACE.fullmatch(record["namespace"]), "Invalid resource namespace")
+        path = self.registry.root / "snapshots" / record["namespace"]
+        need(path.resolve() == path.absolute(), "Sandbox snapshot path is redirected")
+        return path
+
+    def harness(self, record):
+        if record.get("snapshot_schema") != 2:
+            need(self.source_root == ROOT, "Legacy harness cannot adopt a worker worktree")
+            return ROOT / "dev"
+        path = self.snapshot(record) / "harness"
+        need(path.resolve() == path.absolute() and set(item.name for item in path.iterdir()) == set(HARNESS_FILES),
+             "Frozen harness path/content changed")
+        hashes = {}
+        for name in HARNESS_FILES:
+            script = path / name
+            need(not script.is_symlink() and script.stat().st_size < 65536, "Frozen harness script changed")
+            hashes[name] = hashlib.sha256(script.read_bytes()).hexdigest()
+        need(hashes == self.registry.get(record["namespace"])["harness_hashes"], "Frozen harness script changed")
+        return path
 
     def namespace(self, task):
         need(re.fullmatch(r"[A-Za-z0-9.-]{1,25}", task), "Invalid task identifier")
@@ -263,26 +319,32 @@ class Sandbox:
             else:
                 self.registry.update(lease_id, phase="uncertain-image-operation")
 
-    def up(self, task):
+    def up(self, task, *, task_claim=None):
+        need(task_claim is None or re.fullmatch(r"m[0-9]{2}-[0-9]{2}-[0-9a-f]{12}", task_claim), "Invalid task claim")
         digest = hashlib.sha256((ROOT / "dev/Dockerfile").read_bytes()).hexdigest()
         image = json.loads((self.registry.root / "images" / (digest + ".json")).read_text())
         need(image["engine"] == self.docker.engine, "Development image belongs to another engine")
         need(image["dockerfile_sha256"] == hashlib.sha256((ROOT / "dev/Dockerfile").read_bytes()).hexdigest(), "Development image is stale")
         namespace = self.namespace(task)
         owner = secrets.token_hex(16)
-        record = {"kind": "topology", "namespace": namespace, "owner": owner, "source": str(ROOT), "image": image["id"], "phase": "starting"}
+        record = {"kind": "topology", "namespace": namespace, "owner": owner, "source": str(self.source_root),
+                  "image": image["id"], "phase": "starting", "snapshot_schema": 2, "resource_protocol": 2, "task_claim": task_claim}
         self.registry.acquire(namespace, STORAGE, self.docker.capacity, self.docker.engine, record)
-        folder = owned_snapshot(record)
+        folder = self.snapshot(record)
         prepared, backend_read_complete = False, False
         try:
             backend_free = self.backend_free(record, namespace + "-preflight")
             backend_read_complete = True
             self.require_backend_reserve(backend_free)
             folder.mkdir(parents=True, exist_ok=False)
+            frozen = folder / "harness"
+            hashes = freeze_harness(frozen)
+            self.registry.update(namespace, harness_hashes=hashes)
             template = Template((ROOT / "dev/compose.json").read_text())
             # JSON-escape substituted path values before parsing the concrete snapshot.
             values = {"DEV_IMAGE": image["id"], "RUSTFS_IMAGE": self.images["rustfs"], "NAMESPACE": namespace,
-                      "OWNER": owner, "SOURCE_ROOT": str(ROOT).replace("\\", "/")}
+                      "OWNER": owner, "SOURCE_ROOT": str(self.source_root).replace("\\", "/"),
+                      "HARNESS_ROOT": str(frozen).replace("\\", "/")}
             config = json.loads(template.substitute({key: json.dumps(value)[1:-1] for key, value in values.items()}))
             path = folder / "compose.json"
             atomic_json(path, config)
@@ -311,14 +373,23 @@ class Sandbox:
             raise
 
     def compose(self, record, *args):
-        path = owned_snapshot(record) / "compose.json"
+        path = self.snapshot(record) / "compose.json"
         current = self.registry.get(record["namespace"])
         need(hashlib.sha256(path.read_bytes()).hexdigest() == current["config_sha256"], "Owned Compose snapshot changed")
         return self.docker.command("compose", "--project-name", record["namespace"], "--file", str(path), *args, timeout=150)
 
-    def run(self, namespace, mode):
+    def run(self, namespace, mode, *, output_budget=8 * 1024**2, stream=True):
+        need(mode in {"prefetch", "diagnostics", "check", "probe"}, "Unknown sandbox command")
+        need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)
-        need(record.get("source") == str(ROOT) and record["engine"] == self.docker.engine and record["phase"] == "ready", "Namespace unavailable in this worktree/engine")
+        need(record.get("source") == str(self.source_root) and record["engine"] == self.docker.engine and record["phase"] == "ready", "Namespace unavailable in this worktree/engine")
+        harness = self.harness(record)
+        if record.get("resource_protocol") == 2:
+            expected = {f"{namespace}-{suffix}" for suffix in VOLUMES}
+            volumes = self.docker.inspect("volume", sorted(expected))
+            need(len(volumes) == len(expected) and {item["Name"] for item in volumes} == expected, "Task volume identity changed")
+            assert_owned(volumes, record["owner"])
+            need(all(item["Labels"].get("io.hsearch.namespace") == namespace for item in volumes), "Task volume namespace changed")
         lease_id = self.namespace("run")
         budget = PROBE if mode == "probe" else BUILD
         with self.registry.edit() as data:
@@ -328,39 +399,110 @@ class Sandbox:
             data["leases"][lease_id] = {"kind": "run", "parent": namespace, "engine": self.docker.engine, "budget": budget,
                                          "pid": os.getpid(), "process_identity": owner_identity()}
         container = namespace + "-" + lease_id[-12:]
-        args = ["run", "--rm", "--name", container, "--label", f"{LABEL}={record['owner']}", "--label", f"io.hsearch.namespace={namespace}",
+        args = ["create", "--name", container, "--label", f"{LABEL}={record['owner']}", "--label", f"io.hsearch.namespace={namespace}",
+                "--log-driver", "local", "--log-opt", "max-size=16m", "--log-opt", "max-file=1", "--log-opt", "compress=false",
                 "--user", "10001:10001", "--cpus", str(budget["cpu_millis"] / 1000), "--memory", str(budget["memory_bytes"]), "--pids-limit", str(budget["pids"]), "--read-only",
                 "--memory-swap", str(budget["memory_bytes"]),
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,nosuid,nodev,size=67108864",
                 "--network", "bridge" if mode == "prefetch" else (namespace + "-net" if mode == "probe" else "none"),
-                "--mount", f"type=bind,source={ROOT},target=/workspace,readonly", "--mount", f"type=volume,source={namespace}-cargo,target=/cargo",
+                "--mount", f"type=bind,source={self.source_root},target=/workspace,readonly",
+                "--mount", f"type=bind,source={harness},target=/harness,readonly", "--mount", f"type=volume,source={namespace}-cargo,target=/cargo",
                 "--mount", f"type=volume,source={namespace}-target,target=/target"]
         if mode == "probe":
             args += ["--mount", f"type=volume,source={namespace}-client,target=/certs,readonly",
-                     "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly", record["image"], "python3", "dev/probe.py", namespace]
+                     "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly", record["image"], "python3", "/harness/probe.py", namespace]
         else:
-            args += [record["image"], "python3", "dev/execute.py", mode, "--disk-bytes", str(BUILD["disk_bytes"]), "--timeout", "1200"]
-        completed, backend_known, workload_attempted = False, False, False
+            args += [record["image"], "python3", "/harness/execute.py", mode, "--disk-bytes", str(BUILD["disk_bytes"]),
+                     "--timeout", "1200", "--output-bytes", str(output_budget)]
+        backend_known, workload_attempted = False, False
+        self.registry.update(lease_id, protocol=2, phase="reserved", container_name=container, mode=mode, owner_active=True)
         try:
             free = self.backend_free(record, container + "-admission", data_volumes=True)
             backend_known = True
             self.require_backend_reserve(free)
             workload_attempted = True
-            self.docker.command(*args, stream=True, timeout=1250)
-            completed = True
+            self.registry.update(lease_id, protocol=2, phase="creating", container_name=container, mode=mode)
+            container_id = self.docker.command(*args).strip()
+            need(re.fullmatch(r"[0-9a-f]{64}", container_id), "Uncertain container-create identity; lease retained")
+            self.registry.update(lease_id, phase="created", container_id=container_id)
+            self.run_container(record, container_id)
+            self.registry.update(lease_id, phase="starting")
+            self.docker.command("start", container_id)
+            self.registry.update(lease_id, phase="running")
+            status = self.docker.command("wait", container_id, timeout=1250).strip()
+            need(re.fullmatch(r"[0-9]{1,3}", status), "Unknown workload outcome; lease retained")
+            info = self.run_container(record, container_id)
+            need(info["State"]["Status"] in {"exited", "dead"} and not info["State"]["Running"] and
+                 info["State"]["ExitCode"] == int(status), "Workload completion changed; lease retained")
+            logs = self.docker.command("logs", container_id, merge_output=True)
+            self.docker.command("container", "rm", container_id)
+            need(not self.docker.command("container", "ls", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}").strip(),
+                 "Completed container removal uncertain; lease retained")
+            self.registry.release(lease_id)
+            raw = logs.encode()
+            result = {"mode": mode, "container_id": container_id, "exit_code": int(status), "encoding": "utf-8-replacement",
+                      "output": raw[:output_budget].decode(errors="ignore"), "truncated": len(raw) > output_budget}
+            if stream:
+                print(result["output"], end="", flush=True)
+            if result["exit_code"] or result["truncated"]:
+                raise WorkloadFailed(result)
+            return result
         finally:
             # An empty listing is not proof that an uncertain create cannot arrive later.
-            # Only successful synchronous run completion can permit release here.
+            # Known-ID removal above, or a never-attempted workload, permits release.
             if backend_known and not workload_attempted:
                 self.registry.release(lease_id)
-            elif completed:
-                live = self.docker.command("container", "ls", "--all", "--filter", f"name=^/{container}$", "--format", "{{.ID}}").split()
-                if not live:
-                    self.registry.release(lease_id)
+            with self.registry.edit() as data:
+                if lease_id in data["leases"]:
+                    data["leases"][lease_id]["owner_active"] = False
+
+    def run_container(self, record, container_id):
+        info = self.docker.inspect("container", [container_id])
+        need(len(info) == 1 and info[0]["Id"] == container_id, "Run container identity changed")
+        assert_owned(info, record["owner"])
+        need(info[0]["Config"]["Labels"].get("io.hsearch.namespace") == record["namespace"], "Run container namespace changed")
+        return info[0]
+
+    def reconcile(self, namespace):
+        """Reconcile only acknowledged container IDs after their worker exited."""
+        record = self.registry.get(namespace)
+        need(record["source"] == str(self.source_root) and record["engine"] == self.docker.engine, "Foreign recovery namespace")
+        recovered = []
+        with self.registry.edit() as data:
+            candidates = [(key, dict(item)) for key, item in data["leases"].items() if item.get("parent") == namespace]
+        for lease_id, candidate in candidates:
+            container_id = candidate.get("container_id", "")
+            need(candidate.get("protocol") == 2 and isinstance(container_id, str) and re.fullmatch(r"[0-9a-f]{64}", container_id),
+                 "Uncertain unacknowledged create cannot be reclaimed")
+            token = secrets.token_hex(12)
+            with self.registry.edit() as data:
+                current = data["leases"][lease_id]
+                identity = owner_identity(current["pid"])
+                need(current.get("owner_active") is False or identity is None or identity != "unknown" and identity != current["process_identity"],
+                     "Run worker/reconciler is live or uncertain")
+                need(current.get("container_id") == container_id, "Run identity changed during reconciliation")
+                current.update(phase="reconciling", pid=os.getpid(), process_identity=owner_identity(), reconcile_token=token, owner_active=True)
+            visible = self.docker.command("container", "ls", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}").split()
+            if visible:
+                need(visible == [container_id], "Unexpected recovery container")
+                info = self.run_container(record, container_id)
+                if info["State"]["Running"] or info["State"]["Status"] in {"paused", "restarting"}:
+                    with self.registry.edit() as data:
+                        need(data["leases"][lease_id]["reconcile_token"] == token, "Recovery owner changed")
+                        data["leases"][lease_id] = candidate
+                    raise Refused("Known workload is still running; no duplicate or forced cleanup")
+                # rm without force refuses a concurrent start. Once removal is
+                # acknowledged, a queued start cannot resurrect this known ID.
+                self.docker.command("container", "rm", container_id)
+            need(not self.docker.command("container", "ls", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}").strip(),
+                 "Recovery container removal uncertain")
+            self.registry.release(lease_id)
+            recovered.append({"lease": lease_id, "container_id": container_id, "outcome": "interrupted; rerun checks required"})
+        return recovered
 
     def down(self, namespace):
         record = self.registry.get(namespace)
-        need(record.get("source") == str(ROOT) and record["engine"] == self.docker.engine, "Cleanup belongs to another worktree/engine")
+        need(record.get("source") == str(self.source_root) and record["engine"] == self.docker.engine, "Cleanup belongs to another worktree/engine")
         with self.registry.edit() as data:
             need(not any(x.get("parent") == namespace for x in data["leases"].values()), "Cleanup refused: active or uncertain run lease")
             current = data["leases"][namespace]

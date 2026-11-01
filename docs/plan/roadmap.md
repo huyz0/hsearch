@@ -11,7 +11,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | Milestone | Status | Tasks done | Completion prerequisites |
 | --- | --- | --- | --- |
 | [M00: Research and delivery contract](milestones/M00.md) | done | 7/7 | None |
-| [M19: Scalability-first API and engineering contract](milestones/M19.md) | review | 0/1 | M00 |
+| [M19: Scalability-first API and engineering contract](milestones/M19.md) | done | 1/1 | M00 |
 | [M01: Linux workspace and AI harness foundation](milestones/M01.md) | in_progress | 3/8 | M00 |
 | [M02: API-scoped engine, catalog and cost feasibility](milestones/M02.md) | planned | 0/8 | M01 |
 | [M03: Storage semantics, cost-aware formats and metadata](milestones/M03.md) | planned | 0/8 | M01 |
