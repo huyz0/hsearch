@@ -1,0 +1,15 @@
+{
+  "source": "Actual GitHub job124977465646, explicitbase manual run41349817121, main7a238d91175c8691c857476482b62ab56a02472e",
+  "url": "https://github.com/huyz0/hsearch/actions/runs/41349817121/job/124977465646",
+  "raw_job_log_sha256": "5e8e7eb549992aec71116bc9544be867c872ab9def0e753b124484f3b9dc15bf",
+  "observed": {
+    "positive_body": "test fast ... ok; body reported0.00s",
+    "whole_test_process_seconds": 0.156,
+    "fixture_deadline_ms": 100,
+    "exit": 100,
+    "suite": "10actualcompiler controls;1failure before complete workspace qualification"
+  },
+  "causal_scope": "Short synthetic negative seed timeout incorrectly applied to unrelated successful positive/retry controls. This is distinct from unconfirmed original ARM cold-navigation cause.",
+  "repair": "Keep original wide100ms configuration as an expected-failure regression with a deliberate300ms positive body; scope100ms override only to the unchanged10second timeout_seed. Positive/retry use production-shaped slow policy and retain3s fixtureglobal/10s command bounds. Preserve all inventory/timeout/retry assertions and production policy/floors.",
+  "status": "Draft needs exact-source native/full qualification and genuine M13 finalR3 independent review. No manual rerun/acceptance."
+}
