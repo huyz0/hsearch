@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import os
 import platform
+import json
 
 MODEL = runpy.run_path(str(Path(__file__).resolve().parents[1] / "catalog_model.py"))
 
@@ -20,6 +21,7 @@ class CatalogModelControls(unittest.TestCase):
             self.assertTrue(report['outcomes']['bounded']['model_gate_passed'])
             self.assertFalse(report['outcomes']['full_scan']['model_gate_passed'])
             self.assertFalse(report['outcomes']['timer_records']['model_gate_passed'])
+            print(json.dumps({'catalog_model_experiment': report}), flush=True)
 
     def test_fixed_selection_and_metadata_statements_do_not_enumerate_idle_catalog(self):
         with tempfile.TemporaryDirectory() as temporary:

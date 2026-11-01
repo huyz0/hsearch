@@ -271,6 +271,7 @@ def scale_experiment(directory, *, small=1000, large=10000, repetitions=3, itera
                              'median_hot_rss_bytes': medians, 'rss_ratio': ratio, 'indexed_plans': no_scan,
                              'fixed_selected_work': bounded_work}
     report = {'schema_version': 1, 'scope': 'model evidence only; API G01 remains unobserved for hsearch runtime',
+              'model_source_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               'datasets': datasets, 'samples': samples, 'outcomes': outcomes,
               'counts_note': 'SQL statement attempts and returned rows; not object-store or physical page-read attempts',
               'rss_note': 'Fresh-process absolute hot RSS includes Python/SQLite; raw baseline and repeat noise remain visible',
