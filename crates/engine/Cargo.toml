@@ -1,0 +1,17 @@
+[package]
+name = "hsearch-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Pinned Lucene Rust boundary for hsearch"
+
+[dependencies]
+lucene-store.workspace = true
+
+[dev-dependencies]
+hsearch-testkit.workspace = true
+
+[lints]
+workspace = true

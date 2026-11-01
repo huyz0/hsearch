@@ -4,4 +4,4 @@ A planned horizontally scalable Rust search store built around [huyz0/lucene-rus
 
 Start with the [research and delivery plan](docs/plan/README.md). It covers architecture, module contracts, cross-cluster replication/copy, BYOK encryption, AI development/operations, conditional CI and Linux x86_64/aarch64 qualification.
 
-The current deliverable is research and planning. Runtime implementation begins with M01 in the [roadmap](docs/plan/roadmap.md).
+The research and planning package is complete. The M01.01 [Rust workspace bootstrap](docs/plan/development.md) is under review, with pinned dependencies and checkpoint/input contract checks. No search service exists yet. The [roadmap](docs/plan/roadmap.md) tracks the remaining runtime and qualification work.

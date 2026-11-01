@@ -11,7 +11,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | Milestone | Status | Tasks done | Completion prerequisites |
 | --- | --- | --- | --- |
 | [M00: Research and delivery contract](milestones/M00.md) | done | 7/7 | None |
-| [M01: Linux workspace and AI harness foundation](milestones/M01.md) | planned | 0/8 | M00 |
+| [M01: Linux workspace and AI harness foundation](milestones/M01.md) | in_progress | 0/8 | M00 |
 | [M02: Engine, workload and cost feasibility](milestones/M02.md) | planned | 0/7 | M01 |
 | [M03: Storage semantics, cost-aware formats and metadata](milestones/M03.md) | planned | 0/8 | M01 |
 | [M04: Lucene Rust bridge and committed readers](milestones/M04.md) | planned | 0/6 | M02, M03 |

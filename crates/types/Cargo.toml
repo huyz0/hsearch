@@ -1,0 +1,11 @@
+[package]
+name = "hsearch-types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Foundational hsearch contract types"
+
+[lints]
+workspace = true

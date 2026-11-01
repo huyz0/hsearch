@@ -2,7 +2,7 @@
   "schema_version": 1,
   "updated": "2026-11-01",
   "timezone": "Australia/Sydney",
-  "scope": "Research and comprehensive implementation plan. Cost architecture research and experiments are delivered in M00 now; implementation/cost integration and qualification live in their owning M01-M17 milestones. M18 has been retired with an ID mapping.",
+  "scope": "Research and comprehensive implementation plan, with M01.01 workspace bootstrap under review. Cost architecture research and experiments are delivered in M00; implementation/cost integration and qualification retain their owning M01-M17 milestones. M18 is retired with an ID mapping.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
   "milestones": [
     {
@@ -240,7 +240,7 @@
       "title": "Linux workspace and AI harness foundation",
       "goal": "Create a reproducible Rust workspace and a measured, safe parallel-agent development loop before storage code grows.",
       "owner": "harness/integrator",
-      "status": "planned",
+      "status": "in_progress",
       "depends_on": [
         "M00"
       ],
@@ -268,8 +268,36 @@
             "M00"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "review",
+          "evidence": [
+            {
+              "path": "evidence/m01-01-bootstrap.md",
+              "result": "Workspace artifact and complete local Linux bootstrap checks/production coverage available; independent final-tree review and native hosted matrix pending."
+            },
+            {
+              "path": "evidence/m01-01-linux-check.txt",
+              "result": "Observed offline Linux debug/release, Clippy, dependency-policy, planning and model checks; 43/43 executable production lines covered."
+            },
+            {
+              "path": "evidence/m01-01-review-fix-check.txt",
+              "result": "Complete offline Linux suite passed after independent-review identity fix, including 18 dependency-policy negative controls; unchanged production source retains 43/43 covered lines."
+            }
+          ],
+          "owner_session": "bootstrap-integrator",
+          "base_commit": "1ac6cbb449d7193f019c34b13ad42d44c05a36f9",
+          "owned_paths": [
+            "Cargo.toml",
+            "Cargo.lock",
+            "rust-toolchain.toml",
+            ".cargo",
+            "AGENTS.md",
+            "crates",
+            "xtask",
+            "tools",
+            "docs/plan/development.md",
+            "docs/plan/dependencies.json",
+            "docs/plan/evidence/m01-01-bootstrap.md"
+          ]
         },
         {
           "id": "M01.02",

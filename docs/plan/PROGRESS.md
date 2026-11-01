@@ -4,11 +4,21 @@ Last updated: 1 November 2026 (Australia/Sydney).
 
 ## Current state
 
-The repository began as an empty directory without `.git`, source code, tests, or workflows. This work delivers the research and planning package. The active ledger contains **18 milestones (M00-M17) and 118 tasks**. Product implementation, the operational AI harness, cloud integrations and benchmark targets remain planned. No runtime or inherited-project test result is claimed.
+The repository began as an empty directory without `.git`, source code, tests, or workflows. This work delivers the research and planning package. The active ledger contains **18 milestones (M00-M17) and 118 tasks**. M00 is complete and M01.01 workspace bootstrap is under review; the other 110 product tasks remain planned. The operational AI harness, storage/search runtime, cloud integrations and benchmark targets are not delivered. No inherited-project test result is claimed.
 
 The user paused the initial research turn and then resumed it with the added requirements for module extension points, cross-cluster replication/copy and portable BYOK. The paused turn made no filesystem progress. Resumed work inspected the authoritative empty directory, retrieved source evidence and then created these planning artifacts. Source inspection changed the critical path by exposing the whole-file engine input limitation and the fork's incomplete quorum activation.
 
-## Immediate cost research checkpoint
+## Public hosting and workspace bootstrap
+
+The original planning package is published at [huyz0/hsearch](https://github.com/huyz0/hsearch), with baseline commit `1ac6cbb449d7193f019c34b13ad42d44c05a36f9`. The authenticated owner and public visibility were verified before publishing. An independent review found no blocking secrets/private-data/publication issues and reproduced all existing Python checks and both cost-research artifacts. No project redistribution license has been selected; public visibility does not grant one.
+
+M01.01 is under review on `codex/m01-workspace`, using an isolated worktree based on that commit. It owns the Cargo/toolchain/configuration, initial types/observe/engine/testkit/xtask crates, dependency policy, bootstrap CI and development evidence. Shared ledger edits are serialized by the integrator. [Current executable commands and limits](development.md) distinguish this bootstrap from an operational search store or completed AI harness. The initial Linux check rejected missing documentation in an integration-test crate; documentation was added before rerunning. No tests or warning gates were weakened.
+
+[Local Linux evidence](evidence/m01-01-bootstrap.md) records the complete passing bootstrap suite and 43/43 production lines covered. The first independent review found a name-only dependency-ownership gap; package IDs/manifest paths now bind owned dependencies, and the complete offline suite passed with 18 negative controls. Follow-up final-tree review and native hosted CI are pending.
+
+All broader M01.02-M17 obligations remain open. Full product delivery still requires actual storage/security/query/replication implementation, independently reviewed correctness evidence, provider credentials/billing, native hardware and release-scale/soak qualification. No release or deployment has occurred.
+
+## Immediate cost research checkpoint (planning history)
 
 The user requested lower S3/API and cross-AZ costs, then corrected the first extension: research belongs now, not in a late M18. M00.07 delivers [source-backed decisions](research/cost-decisions.md), [72 seeded batching experiments and a bounded fence model](evidence/cost-research-results.md). The [cost economics](research/cost-economics.md), [operating profiles](operating-profiles.md) and executable count model remain supporting material for R23.
 
@@ -20,7 +30,7 @@ M18 is retired. Its eight tasks moved to M02.07, M03.07/M03.08, M07.07, M09.08, 
 
 `object-resilient` remains the baseline, with 250 ms as the initial benchmark batching cap; economy starts at 1 s. These are tuning seeds, not end-to-end latency promises. Regional object durability and zone-local serving avoid routine cross-zone full-payload replication. The low-latency HA/zonal quorum alternatives declare their own failure/latency/capacity contracts. Budget pressure cannot weaken an accepted contract.
 
-Current phase: M00.07 research and final evidence/ledger audit completed. M00 is done; the other 17 milestones are planned. Seven planning tasks are done and all 111 product tasks remain planned. The [immediate research audit](evidence/cost-research-now-audit.md) and [observed validation](evidence/cost-research-now-validation.txt) own this revision. The first cost-extension evidence is retained as a historical snapshot.
+Current phase: M00.07 research and final evidence/ledger audit completed. M00 is done; the other 17 milestones are planned. At that planning checkpoint, seven planning tasks were done and all 111 product tasks remained planned; the newer bootstrap checkpoint above supersedes that status. The [immediate research audit](evidence/cost-research-now-audit.md) and [observed validation](evidence/cost-research-now-validation.txt) own this revision. The first cost-extension evidence is retained as a historical snapshot.
 
 ## Decisions and findings
 
