@@ -1,0 +1,145 @@
+"""Independent graph counterexamples for coordinator-only research readiness."""
+import copy
+import json
+from pathlib import Path
+import runpy
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+PLAN = runpy.run_path(str(ROOT / "docs/plan/tools/plan.py"))
+
+
+class ResearchPlanTests(unittest.TestCase):
+    def setUp(self):
+        self.data = json.loads((ROOT / "docs/plan/tasks.json").read_text(encoding="utf-8"))
+        # Construct an unqualified-baseline model, independent of future live
+        # acceptance states. This fixture is never written back to the ledger.
+        milestones, tasks = PLAN["indexes"](self.data)
+        closure = set()
+        def include(task_id):
+            if task_id in closure:
+                return
+            closure.add(task_id)
+            for dependency in tasks[task_id]["depends_on"]:
+                children = ([t["id"] for t in milestones[dependency]["tasks"]]
+                            if dependency in milestones else [dependency])
+                for child in children:
+                    include(child)
+        include("M02.09")
+        include("M02.10")
+        closure -= {"M01.14", "M02.09", "M02.10"}
+        self.assertTrue({"M01.08", "M01.09"}.isdisjoint(closure))
+        for task_id, task in tasks.items():
+            task["status"] = "done" if task_id in closure else "planned"
+            if task["status"] == "done" and not task["evidence"]:
+                task["evidence"] = [{"path": "coordinator-research.md",
+                                    "result": "In-memory prerequisite model only."}]
+        tasks["M01.09"]["status"] = "in_progress"
+        tasks["M01.14"]["status"] = "in_progress"
+        for milestone in milestones.values():
+            milestone["status"] = ("done" if all(t["status"] == "done"
+                                    for t in milestone["tasks"]) else "planned")
+
+    def graph(self, data):
+        return PLAN["indexes"](data)
+
+    def ready(self, data, task_id):
+        milestones, tasks = self.graph(data)
+        return all(tasks[dep]["status"] == "done" for dep in
+                   PLAN["task_dependencies"](tasks[task_id], milestones, tasks))
+
+    def completed_research(self):
+        data = copy.deepcopy(self.data)
+        _, tasks = self.graph(data)
+        for task_id in ("M01.14", "M02.09", "M02.10"):
+            tasks[task_id].update(status="done", evidence=[{
+                "path": "coordinator-research.md",
+                "result": "In-memory graph counterexample only; never actual acceptance."}])
+        PLAN["validate"](data, files=False)
+        return data
+
+    def test_current_plan_retains_unresolved_baseline(self):
+        PLAN["validate"](self.data, files=False)
+        _, tasks = self.graph(self.data)
+        self.assertEqual(tasks["M01.09"]["status"], "in_progress")
+        self.assertEqual(tasks["M01.08"]["status"], "planned")
+        self.assertFalse(self.ready(self.data, "M02.09"))
+        self.assertFalse(self.ready(self.data, "M02.10"))
+
+    def test_accepted_plan_opens_only_declared_research_frontier(self):
+        data = copy.deepcopy(self.data)
+        _, tasks = self.graph(data)
+        tasks["M01.14"].update(status="done", evidence=[{
+            "path": "coordinator-research.md", "result": "In-memory readiness model."}])
+        PLAN["validate"](data, files=False)
+        frontier = {"M02.09", "M02.10", "M02.02", "M02.04", "M03.01", "M01.08"}
+        ready = {tid for tid in frontier
+                 if tasks[tid]["status"] == "planned" and self.ready(data, tid)}
+        self.assertEqual(ready, {"M02.09", "M02.10"})
+
+    def test_completed_research_never_accepts_original_products(self):
+        data = self.completed_research()
+        for task_id in ("M02.02", "M02.04", "M03.01"):
+            self.assertFalse(self.ready(data, task_id), task_id)
+
+    def test_removed_whole_baseline_is_a_real_false_readiness_counterexample(self):
+        for task_id in ("M02.02", "M02.04", "M03.01"):
+            with self.subTest(task=task_id):
+                data = self.completed_research()
+                _, tasks = self.graph(data)
+                tasks[task_id]["depends_on"].remove("M01")
+                self.assertTrue(self.ready(data, task_id))
+                with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research acceptance gate missing"):
+                    PLAN["validate"](data, files=False)
+
+    def test_other_original_product_and_incident_edges_are_required(self):
+        for task_id, dep in (("M07.02", "M01"), ("M16.04", "M01"),
+                             ("M01.08", "M01.09"), ("M02.03", "M02.02"),
+                             ("M02.05", "M02.04"), ("M02.06", "M02.05"),
+                             ("M02.07", "M02.04")):
+            with self.subTest(task=task_id, dependency=dep):
+                data = self.completed_research()
+                _, tasks = self.graph(data)
+                tasks[task_id]["depends_on"].remove(dep)
+                with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research acceptance gate missing"):
+                    PLAN["validate"](data, files=False)
+
+    def test_all_original_prerequisites_remain_required(self):
+        omitted = [
+            ("M01.08", "M01.04"), ("M01.08", "M01.05"),
+            ("M01.08", "M01.06"), ("M01.08", "M01.07"),
+            ("M01.08", "M19"), ("M07.02", "M05"),
+            ("M16.04", "M08"), ("M16.04", "M16.02"),
+            ("M02.05", "M02.01")]
+        for task_id, dependency in omitted:
+            with self.subTest(task=task_id, dependency=dependency):
+                data = self.completed_research()
+                _, tasks = self.graph(data)
+                tasks[task_id]["depends_on"].remove(dependency)
+                with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research acceptance gate missing"):
+                    PLAN["validate"](data, files=False)
+
+    def test_research_scope_cannot_be_silently_widened(self):
+        for task_id in ("M02.09", "M02.10"):
+            data = copy.deepcopy(self.data)
+            _, tasks = self.graph(data)
+            tasks[task_id]["execution_scope"] = "delegated-product"
+            with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research execution scope changed"):
+                PLAN["validate"](data, files=False)
+
+    def test_research_prerequisites_and_milestone_completion_are_retained(self):
+        for task_id, dependency in (("M02.09", "M01.14"), ("M02.10", "M08.01")):
+            data = copy.deepcopy(self.data)
+            _, tasks = self.graph(data)
+            tasks[task_id]["depends_on"].remove(dependency)
+            with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research acceptance gate missing"):
+                PLAN["validate"](data, files=False)
+        data = self.completed_research()
+        milestones, _ = self.graph(data)
+        milestones["M02"]["depends_on"].remove("M01")
+        with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research acceptance gate missing"):
+            PLAN["validate"](data, files=False)
+
+
+if __name__ == "__main__":
+    unittest.main()
