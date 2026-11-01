@@ -16,7 +16,7 @@ M01.09's reviewed diagnostic increment merged normally as `3dfb235` in [PR9](htt
 
 M02.01 is accepted after independently reviewed source, full PR/main qualification and normal PR10 merge `02abc722`; [acceptance](evidence/m02-01-integrated.md) preserves exact source, runs, fixtures and limitations. SDK/native hsearch parity, private workloads and fleet/provider qualification remain unrun.
 
-The original M01.07 attempt remains [blocked at its hard third review](evidence/m01-07-blocked.md). The [accepted decomposition](coverage-redesign.md) preserves that failed history and separates immutable source proof from complete collector integration. M01.10 is [accepted](evidence/m01-10-integrated.md). M01.11 source proof merged normally in [PR12](https://github.com/huyz0/hsearch/pull/12) after both independent R2 reviews and complete PR CI; [post-merge qualification](evidence/m01-11-integrated.md) passed all seven jobs and source/native corpora, accepting this source-only component. M01.12 collector integration is still planned. No source-proof test or green run clears the original M01.07 gate. M01.09's original ARM cause remains unconfirmed, M01.08 remains blocked, and no release/deployment occurred.
+The original M01.07 attempt remains [blocked at its hard third review](evidence/m01-07-blocked.md). The [accepted decomposition](coverage-redesign.md) preserves that failed history and separates source proof from complete integration. M01.10 and [M01.11 source proof](evidence/m01-11-integrated.md) are accepted after actual independent reviews and full PR/main qualification. M01.12 collector integration is in progress under its [prototype contract](coverage.md); no old gate is cleared by these component results. M01.09's original ARM cause remains unconfirmed, M01.08 stays blocked, and no release/deployment occurred.
 
 ## Public hosting and integration
 
@@ -52,7 +52,7 @@ Initial results are recorded in [planning validation evidence](evidence/planning
 
 ## Next implementation action
 
-Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. M01.11 source proof is accepted. Complete M02.08 final combined qualification/review and M01.12 collector integration. M01.05 review gates are integrated; M01.09 causal diagnosis and the dependent M01.08 frozen agent corpus remain open. M02/M03 spikes follow their actual revised prerequisites. Public hosting and strict protected CI are integrated.
+Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. M01.11 source proof is accepted. M02.08's synthetic model is accepted; complete M01.12 collector integration. M01.05 review gates are integrated; M01.09 causal diagnosis and the dependent M01.08 frozen agent corpus remain open. M02/M03 spikes follow their actual revised prerequisites. Public hosting and strict protected CI are integrated.
 
 The main open risks are K01 remote engine inputs, K03 provider conditional semantics, K04 pin/GC coordination, K07 durable consensus integration, K08-K10 crypto/cache lifecycle, and K18 selected API-profile coverage and truthful adaptation. Real cloud credentials/fleet/hardware/spend are not available as evidence in this planning task; M15/M17 cannot be marked done without them.
 
@@ -66,4 +66,6 @@ The main open risks are K01 remote engine inputs, K03 provider conditional seman
 
 Use role owners as allocation hints; they are not claims that a person or agent has already accepted work. Planned future PR/publish/deploy actions still follow the user's authorization and actual environment rules.
 
-M02.08 has an unpublished [bounded catalog/admission/snapshot model](research/catalog-admission-model.md), with [raw synthetic scale observations](evidence/catalog-model-scale-v2.json). Larger native qualification passed; independent review and hosted final-tree qualification remain pending. API gates remain unobserved for the runtime.
+M02.08's earlier [bounded catalog/admission/snapshot model](research/catalog-admission-model.md) and [raw synthetic scale observations](evidence/catalog-model-scale-v2.json) remain provenance. The final acceptance record below supersedes their earlier unpublished/pending status. API gates remain unobserved for the runtime.
+
+M02.08 is [accepted for the synthetic catalog/admission/snapshot model](evidence/m02-08-integrated.md) after final independent R3 and all native PR/main checks. Its [final source-bound native samples](evidence/catalog-model-final-native.json) remain model evidence; no API runtime/fleet/physical-I/O/security qualification is inferred. M01.12 remains in progress.

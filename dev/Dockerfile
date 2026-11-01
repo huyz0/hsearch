@@ -1,6 +1,7 @@
 FROM rust:1.97.1-bookworm@sha256:0e2bcaef56d041a486784e54104a81aebe0da44bd03019bd70bc0401e42e4a97
 
 COPY navigation-tools.json /opt/hsearch/navigation-tools.json
+COPY correctness-tools.json /opt/hsearch/correctness-tools.json
 
 # The immutable base already supplies Python 3.11 and OpenSSL. No floating apt layer.
 RUN rustup component add rustfmt clippy llvm-tools-preview rust-analyzer rust-src \

@@ -13,18 +13,13 @@ cargo xtask check
 
 Prefetch needs public GitHub/crates.io access. Subsequent bootstrap Cargo checks use `--locked --offline`. `cargo xtask check` runs dependency ownership and negative controls, formatting, workspace Clippy, all debug/release tests and doctests, the production release-library build, and the existing planning/model checks. It stops at the first failing command. `PYTHON` may select another Python executable. The resource default is two Cargo build jobs; this alone is not a sandbox or host lease.
 
-Coverage is an additional check:
+The redesigned source-bound coverage integration is an additional check, currently under M01.12 qualification:
 
 ```sh
-cargo install cargo-llvm-cov --version 0.9.1 --locked
-cargo llvm-cov --locked --offline --workspace --all-features \
-  --exclude xtask --exclude hsearch-testkit \
-  --ignore-filename-regex '/tests/' \
-  --fail-under-lines 90 --json --output-path target/bootstrap-coverage.json
-python3 tools/coverage_check.py target/bootstrap-coverage.json
+python3 tools/coverage_local.py --state-root /private/owned-leases --base <exact-ancestor-sha>
 ```
 
-The coverage denominator is current first-party production `src` code. Integration tests are in separate `tests` directories and excluded from the report. Development-only xtask and testkit are not shipped. `hsearch-types` owns the executable production lines at this stage; engine constants/reexports and the observe trait have no executable lines and are reported as N/A. Every production file present in the report and every production crate with executable lines must reach 90%. All current production lines are new in this bootstrap, so that measurement also covers this change's production lines. M01.07 still owns generic changed-line accounting, missing-instrumentation/stale-merge controls and the future service/feature coverage matrix.
+This freezes a clean source bundle and runs both profiles with pinned Rust/LLVM/nextest in the owned Linux sandbox. Direct native CI uses `python3 tools/coverage.py run --base <exact-ancestor-sha> --output /private/new-context`. Read the [coverage contract](coverage.md) for production-object denominators, immutable source proof, artifact checks, event bases and retained controls. Aggregate/per-crate/per-file/changed floors remain90%; a zero-coverable unit is N/A. M01.11's source primitive is accepted independently; generic collector acceptance remains pending M01.12's full qualification/review/integration. Original M01.07 stays blocked with its failed history preserved.
 
 `.github/workflows/bootstrap.yml` uses the [impact planner](impact-ci.md) to select package consumers or the full native Linux x86_64/ARM64 matrix when impact is shared or uncertain. The always-run `ci-ok` rejects missing, skipped, cancelled or failed selected jobs. [M01.06 integration evidence](evidence/m01-06-integrated.md) records observed hosted selection and the enforced main-branch check requirement. Runner labels are listed in [GitHub's public-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
@@ -51,3 +46,5 @@ API-dependent work follows integrated [core-v1](api-compatibility.md) and [engin
 M01.04 development interface and qualification are documented in [source-bound context and navigation](context-navigation.md). Its corpus is a development harness check, separate from product and M01.08 agent qualification.
 
 M01.05's [independent review gate](review-gates.md) is integrated with [complete protocol qualification](evidence/m01-05-integrated.md); it does not submit formal GitHub reviews or grant merge permission. M01.09's original ARM cold-navigation cause remains open despite the integrated diagnostic increment and subsequent green native runs; M01.08 remains blocked.
+
+M01.12 is prototyping [source-proof coverage integration](coverage.md), replacing the original blocked patch parser. Its base/event and test-migration contract is explicit; full collector qualification and independent review remain pending. M01.11 is accepted independently, and the original M01.07 failed gate remains blocked.

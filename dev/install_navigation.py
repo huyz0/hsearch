@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import runpy
 import shutil
 import stat
 import subprocess
@@ -48,7 +49,9 @@ def main():
               "profile_sha256": hashlib.sha256(canonical(profile)).hexdigest(),
               "rustc": subprocess.check_output(["rustc", "--version"]).decode().strip()}
     (output / "attestation.json").write_text(json.dumps(result, sort_keys=True) + "\n")
-    print(json.dumps({"navigation_artifact": result}), flush=True)
+    correctness = runpy.run_path(str(Path(__file__).with_name("install_correctness.py")))["install"](
+        output, json.loads(Path("/opt/hsearch/correctness-tools.json").read_text()))
+    print(json.dumps({"navigation_artifact": result, "correctness_artifact": correctness}), flush=True)
 
 
 if __name__ == "__main__":

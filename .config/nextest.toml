@@ -1,0 +1,5 @@
+[profile.hsearch]
+retries = 0
+test-threads = 2
+slow-timeout = { period = "30s", terminate-after = 4, grace-period = "5s", on-timeout = "fail" }
+global-timeout = "15m"

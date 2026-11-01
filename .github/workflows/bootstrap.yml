@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      coverage_base:
+        description: Exact ancestor commit SHA for source-proof coverage (parentless-root only for an actual root)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -28,7 +33,7 @@ jobs:
       - name: Plan owned impact with conservative fallback
         id: impact
         env:
-          IMPACT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          IMPACT_BASE: ${{ github.event.pull_request.base.sha || github.event.before || inputs.coverage_base }}
           IMPACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 tools/ci.py plan --base "$IMPACT_BASE" --head "$IMPACT_HEAD" --output "${{ runner.temp }}/impact.json"
 

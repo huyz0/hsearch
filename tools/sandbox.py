@@ -22,7 +22,7 @@ GIB = 1024**3
 LABEL = "io.hsearch.owner"
 NAMESPACE = re.compile(r"hsearch-[a-z0-9-]{1,25}-[0-9a-f]{12}\Z")
 VOLUMES = ("ca", "server", "client", "credentials", "data", "cargo", "target")
-HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py")
+HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py", "install_correctness.py", "coverage_entry.py")
 BUILD = {"cpu_millis": 2000, "memory_bytes": 4 * GIB, "pids": 512, "disk_bytes": 8 * GIB}
 NAVIGATION = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 4 * GIB}
 STORAGE = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 10 * GIB}
@@ -266,7 +266,7 @@ def assert_owned(objects, owner):
 
 def image_digest():
     inputs = {name: hashlib.sha256((ROOT / "dev" / name).read_bytes()).hexdigest()
-              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json", "install_navigation.py", "execute.py")}
+              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json", "correctness-tools.json", "install_navigation.py", "install_correctness.py", "coverage_entry.py", "execute.py")}
     inputs["assembly_controller"] = hashlib.sha256((ROOT / "tools/sandbox.py").read_bytes()).hexdigest()
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
 
@@ -379,9 +379,9 @@ class Sandbox:
             need(base["Config"]["User"] == "10001:10001", "Development base must be non-root")
             self.registry.update(lease_id, bootstrap_image_id=base_id, build_inputs_sha256=digest)
             output = self.build_navigation(lease_id, base_id)
-            need(output.resolve() == output.absolute() and {item.name for item in output.iterdir()} == {"lsp", "attestation.json"},
+            need(output.resolve() == output.absolute() and {item.name for item in output.iterdir()} == {"lsp", "attestation.json", "cargo-nextest", "correctness-attestation.json"},
                  "Unexpected navigation build artifact")
-            for name in ("lsp", "attestation.json"):
+            for name in ("lsp", "attestation.json", "cargo-nextest", "correctness-attestation.json"):
                 artifact = output / name
                 need(not artifact.is_symlink() and artifact.is_file(), "Navigation build artifact redirected")
             need((output / "lsp").stat().st_size <= 64 * 1024**2 and (output / "attestation.json").stat().st_size < 4096,
@@ -397,11 +397,28 @@ class Sandbox:
                  artifact["cargo_lock_sha256"] == profile["lsp_cli"]["cargo_lock_sha256"] and artifact["profile_sha256"] == profile_hash and
                  artifact["binary_sha256"] == binary_hash.hexdigest() and artifact["rustc"].startswith("rustc " + profile["rust_analyzer"]["toolchain"] + " "),
                  "Navigation build identity mismatch")
+            correctness_profile = json.loads((ROOT / "dev/correctness-tools.json").read_text(encoding="utf-8"))
+            receipt_path = output / "correctness-attestation.json"
+            nextest_path = output / "cargo-nextest"
+            need(receipt_path.stat().st_size < 4096 and nextest_path.stat().st_size <= 64 * 1024**2, "Correctness tool output exceeds bound")
+            correctness = json.loads(receipt_path.read_text(encoding="utf-8"))
+            nextest_hash = hashlib.sha256(nextest_path.read_bytes()).hexdigest()
+            arch = {"x86_64": "x86_64", "aarch64": "aarch64"}.get(self.docker.info["Architecture"])
+            need(arch in correctness_profile["nextest"]["architectures"] and correctness["architecture"] == arch and
+                 correctness["revision"] == correctness_profile["nextest"]["revision"] and
+                 correctness["archive_sha256"] == correctness_profile["nextest"]["architectures"][arch]["archive_sha256"] and
+                 correctness["binary_sha256"] == nextest_hash and
+                 correctness["version"].split()[:2] == ["cargo-nextest", correctness_profile["nextest"]["version"]] and
+                 correctness["profile_sha256"] == hashlib.sha256(json.dumps(correctness_profile, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+                 "Correctness tool identity mismatch")
             (output / "navigation-tools.json").write_bytes((ROOT / "dev/navigation-tools.json").read_bytes())
-            (output / ".dockerignore").write_text("*\n!lsp\n!navigation-tools.json\n", encoding="utf-8")
+            (output / ".dockerignore").write_text("*\n!lsp\n!cargo-nextest\n!correctness-attestation.json\n!navigation-tools.json\n", encoding="utf-8")
             final_source = (f"FROM {base_tag}\nCOPY --chmod=0755 lsp /usr/local/bin/lsp\n"
                             "COPY navigation-tools.json /opt/hsearch/navigation-tools.json\n"
-                            f"RUN echo '{binary_hash.hexdigest()}  /usr/local/bin/lsp' | sha256sum --check - && lsp --version\n"
+                            "COPY --chmod=0755 cargo-nextest /usr/local/bin/cargo-nextest\n"
+                            "COPY correctness-attestation.json /opt/hsearch/correctness-attestation.json\n"
+                            f"RUN echo '{binary_hash.hexdigest()}  /usr/local/bin/lsp' | sha256sum --check - && lsp --version && "
+                            f"echo '{nextest_hash}  /usr/local/bin/cargo-nextest' | sha256sum --check - && cargo-nextest --version\n"
                             "USER 10001:10001\n")
             tag = "hsearch-dev:" + digest[:20]
             final_iid = image_folder / (lease_id + ".final.iid")
@@ -413,7 +430,7 @@ class Sandbox:
             need(info["Config"]["User"] == "10001:10001", "Development image must be non-root")
             atomic_json(image_folder / (digest + ".json"), {"id": info["Id"], "build_inputs_sha256": digest,
                         "dockerfile_sha256": hashlib.sha256(source).hexdigest(), "engine": self.docker.engine,
-                        "navigation_artifact": artifact})
+                        "navigation_artifact": artifact, "correctness_artifact": correctness})
             complete = True
             return info["Id"]
         finally:
@@ -547,13 +564,37 @@ class Sandbox:
         return self.docker.command("compose", "--project-name", record["namespace"], "--file", str(path), *args, timeout=150)
 
     def run(self, namespace, mode, *, output_budget=8 * 1024**2, stream=True, artifact_directory=None):
-        need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build"}, "Unknown sandbox command")
+        need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build", "coverage"}, "Unknown sandbox command")
         need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)
         need(record.get("source") == str(self.source_root) and record["engine"] == self.docker.engine and record["phase"] == "ready", "Namespace unavailable in this worktree/engine")
         if mode == "navigation-build":
             need(artifact_directory == self.snapshot(record) / "artifacts" and artifact_directory.resolve() == artifact_directory.absolute()
                  and not artifact_directory.exists(), "Navigation artifact output escaped or reused the owned snapshot")
+        elif mode == "coverage":
+            need(record.get("snapshot_schema") == 2 and self.source_root == ROOT and
+                 artifact_directory == self.snapshot(record) / "coverage-evidence" and
+                 artifact_directory.resolve() == artifact_directory.absolute() and not artifact_directory.exists(),
+                 "Coverage output escaped or reused its owned snapshot")
+            pins = record.get("coverage_inputs")
+            need(type(pins) is dict and set(pins) == {"coverage-source.bundle", "coverage-source.json"}, "Coverage inputs were not prepared by the owner")
+            for name, pin in pins.items():
+                path = self.snapshot(record) / name
+                need(path.resolve() == path.absolute() and path.is_file() and path.stat().st_nlink == 1 and
+                     type(pin) is dict and set(pin) == {"bytes", "sha256"} and type(pin["bytes"]) is int and
+                     0 < pin["bytes"] <= (128 * 1024**2 if name.endswith(".bundle") else 4096) and path.stat().st_size == pin["bytes"],
+                     "Invalid owned coverage input snapshot")
+                before = path.stat()
+                digest, count = hashlib.sha256(), 0
+                with path.open("rb") as source:
+                    while chunk := source.read(65536):
+                        count += len(chunk)
+                        need(count <= pin["bytes"], "Coverage input changed beyond its bound")
+                        digest.update(chunk)
+                after = path.stat()
+                need(count == pin["bytes"] and digest.hexdigest() == pin["sha256"] and
+                     (before.st_ino, before.st_size, before.st_mtime_ns) == (after.st_ino, after.st_size, after.st_mtime_ns),
+                     "Coverage input snapshot changed")
         else:
             need(artifact_directory is None, "Unexpected artifact output mount")
         harness = self.harness(record)
@@ -583,6 +624,10 @@ class Sandbox:
                 "--mount", f"type=volume,source={namespace}-target,target=/target"]
         if mode == "navigation-build":
             args += ["--mount", f"type=bind,source={artifact_directory},target=/navigation-output"]
+        if mode == "coverage":
+            args += ["--mount", f"type=bind,source={artifact_directory},target=/coverage-evidence"]
+            for name in ("coverage-source.bundle", "coverage-source.json"):
+                args += ["--mount", f"type=bind,source={self.snapshot(record) / name},target=/{name},readonly"]
         if mode == "probe":
             args += ["--mount", f"type=volume,source={namespace}-client,target=/certs,readonly",
                      "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly", record["image"], "python3", "/harness/probe.py", namespace]

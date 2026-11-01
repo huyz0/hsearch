@@ -45,4 +45,4 @@ M01.12 preserves actual normal-production-object baselines, runtime-only versus 
 
 M01.09's historical ARM cause remains unconfirmed and M01.08 remains dependent on its real resolution. M02.01's accepted reference inventory is separate. No search service, provider/fleet qualification, release or deployment is implied by this plan or any targeted/model result.
 
-M01.11 candidate interface, limits and explicit retired-semantics migrations are documented in [source proof](source-proof.md). Implementation remains unaccepted until its independent reviews and native qualification complete.
+M01.11's interface, limits and explicit retired-semantics migrations are documented in [source proof](source-proof.md). The source-only component is [accepted](evidence/m01-11-integrated.md); complete collector/CI acceptance remains M01.12's independent obligation.

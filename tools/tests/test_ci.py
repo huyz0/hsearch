@@ -21,6 +21,15 @@ WORKSPACE = {
     "hsearch-testkit": {"path": "crates/testkit/", "dependencies": []}}
 
 
+def fixture_coverage():
+    """Planning tests replace only native attestation, preserving real command policy."""
+    value = dict(CI["COVERAGE"])
+    value["qualified_tools"] = lambda: {"nextest_executable": "/verified/cargo-nextest",
+                                       "cargo_clippy_executable": "/verified/cargo-clippy", "cargo_fmt_executable": "/verified/cargo-fmt"}
+    value["ordinary_environment"] = lambda _tools: {"QUALIFIED_ENVIRONMENT": "fixture"}
+    return value
+
+
 def choose(raw, fallback=None):
     return CI["select"](CI["changed_paths"](raw), WORKSPACE, OWNERSHIP,
                         base=BASE, head=HEAD, fallback=fallback)
@@ -143,7 +152,41 @@ class SelectionControls(unittest.TestCase):
 
 
 class ResultControls(unittest.TestCase):
+    def test_current_zero_case_scope_runs_strict_workspace_corpus_in_both_profiles(self):
+        workspace = copy.deepcopy(WORKSPACE)
+        workspace['hsearch-engine']['dependencies'] = ['hsearch-types', 'hsearch-testkit']
+        value = CI['select']([{'status': 'M', 'paths': ['crates/observe/src/lib.rs']}], workspace, OWNERSHIP, base=BASE, head=HEAD)
+        self.assertEqual(value['packages'], ['hsearch-observe'])
+        commands = []
+        with patch.dict(CI['native'].__globals__, output=lambda command: HEAD.encode() if command[0] == 'git' else b'{}',
+                        graph=lambda _metadata, _root: workspace, run=lambda command, **kwargs: commands.append(command),
+                        COVERAGE=fixture_coverage(),
+                        qualified_coverage_base=lambda base, head: base):
+            CI['native'](value)
+        ordinary = [command for command in commands if command[:3] == ['/verified/cargo-nextest', 'nextest', 'run']]
+        self.assertEqual(len(ordinary), 2)
+        self.assertTrue(all('--workspace' in command and '--no-tests=fail' in command for command in ordinary))
+        self.assertTrue(all('--config' in command and any(str(arg).endswith('cargo-correctness.toml') for arg in command) for command in ordinary))
+        self.assertEqual(sum('--release' in command for command in ordinary), 1)
+
+    def test_full_native_refuses_unqualified_new_production_member_before_commands(self):
+        workspace = copy.deepcopy(WORKSPACE)
+        workspace['hsearch-new-production'] = {'path': 'crates/new-production/', 'dependencies': []}
+        value = CI['select']([{'status': 'M', 'paths': ['shared.rs']}], workspace, OWNERSHIP, base=BASE, head=HEAD)
+        commands = []
+        with patch.dict(CI['native'].__globals__, output=lambda command: HEAD.encode() if command[0] == 'git' else b'{}',
+                        graph=lambda _metadata, _root: workspace, run=lambda command: commands.append(command),
+                        qualified_coverage_base=lambda base, head: base):
+            with self.assertRaisesRegex(ValueError, 'production.*ownership|coverage.*ownership'):
+                CI['native'](value)
+        self.assertEqual(commands, [])
+
     def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        environment = patch.dict(os.environ, CARGO_TARGET_DIR=str(Path(directory.name) / "native-outputs"))
+        environment.start()
+        self.addCleanup(environment.stop)
         self.value = choose(b"M\0crates/types/src/lib.rs\0")
         self.results = {job: {"result": "success" if job in self.value["selected_jobs"] else "skipped"}
                         for job in CI["JOBS"]}
@@ -201,19 +244,26 @@ class ResultControls(unittest.TestCase):
     def test_native_full_preserves_release_doctests_and_coverage(self):
         value = choose(b"M\0unknown\0")
         commands = []
-        with patch.dict(CI["native"].__globals__, output=lambda _command: HEAD.encode(),
-                        run=lambda command: commands.append(command)):
+        with patch.dict(CI["native"].__globals__, output=lambda command: HEAD.encode() if command[0] == "git" else b"{}",
+                        graph=lambda _metadata, _root: WORKSPACE,
+                        run=lambda command, **kwargs: commands.append(command), COVERAGE=fixture_coverage(),
+                        qualified_coverage_base=lambda base, head: base):
             CI["native"](value)
         tests = [command for command in commands if command[:2] == ["cargo", "test"]]
         self.assertEqual(len(tests), 2)
         self.assertTrue(all("--workspace" in command and "--all-features" in command for command in tests))
         self.assertEqual(sum("--release" in command for command in tests), 1)
-        # cargo test without --lib/--tests retains doctests in both profiles.
-        self.assertTrue(all("--lib" not in command and "--tests" not in command for command in tests))
-        coverage = next(command for command in commands if command[:2] == ["cargo", "llvm-cov"])
+        self.assertTrue(all("--doc" in command for command in tests))
+        ordinary = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"]]
+        self.assertEqual(len(ordinary), 2)
+        self.assertTrue(all('--config' in command and any(str(arg).endswith('cargo-correctness.toml') for arg in command) for command in ordinary))
+        self.assertTrue(all("--workspace" in command and "--all-features" in command and
+                            command[-3:] == ["--profile", "hsearch", "--no-tests=fail"] for command in ordinary))
+        self.assertEqual(sum("--release" in command for command in ordinary), 1)
+        coverage = next(command for command in commands if "tools/coverage.py" in command)
         self.assertTrue(CI["PRODUCTION"].issubset(coverage))
-        self.assertIn("--fail-under-lines", coverage)
-        self.assertIn("90", coverage)
+        self.assertIn("run", coverage)  # Collector run requires both dev and release production gates.
+        self.assertEqual(coverage[coverage.index("--base") + 1], BASE)
 
     def test_stale_plan_cannot_launch_native_commands(self):
         commands = []
@@ -232,12 +282,24 @@ class ResultControls(unittest.TestCase):
         commands = []
         with patch.dict(CI["native"].__globals__,
                         output=lambda command: HEAD.encode() if command[0] == "git" else b"{}",
-                        graph=lambda _metadata, _root: workspace, run=lambda command: commands.append(command)):
+                        graph=lambda _metadata, _root: workspace, run=lambda command, **kwargs: commands.append(command),
+                        COVERAGE=fixture_coverage(),
+                        qualified_coverage_base=lambda base, head: base):
             CI["native"](value)
-        coverage = next(command for command in commands if command[:2] == ["cargo", "llvm-cov"])
-        self.assertNotIn("--fail-under-lines", coverage)
+        coverage = next(command for command in commands if "tools/coverage.py" in command)
+        self.assertIn("run", coverage)
         self.assertEqual(commands[-1][-2:], ["--package", "hsearch-engine"])
-        self.assertIn("tools/coverage_check.py", commands[-1])
+        self.assertIn("tools/coverage.py", commands[-1])
+
+    def test_missing_base_never_becomes_all_source_percentage_fallback(self):
+        value = choose(b"M\0unknown\0")
+        value["base"] = None
+        commands = []
+        with patch.dict(CI["native"].__globals__, output=lambda command: HEAD.encode() if command[0] == "git" else b"{}",
+                        graph=lambda _metadata, _root: WORKSPACE, run=lambda command: commands.append(command)):
+            with self.assertRaisesRegex(ValueError, "qualified ancestor"):
+                CI["native"](value)
+        self.assertEqual(commands, [])
 
     def test_stale_dependency_graph_cannot_launch_native_commands(self):
         commands = []
@@ -305,3 +367,27 @@ class RealHistoryControls(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ActualCoverageBaseControls(unittest.TestCase):
+    def test_exact_ancestor_and_root_policy_refuses_unknown_nonroot_bases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.PIPE, timeout=20).decode().strip()
+            git("init", "-q"); git("config", "user.name", "CI base fixture")
+            git("config", "user.email", "fixture@example.invalid")
+            (root / "original").write_bytes(b"original")
+            git("add", "."); git("commit", "-qm", "root")
+            initial = git("rev-parse", "HEAD")
+            with patch.dict(CI["qualified_coverage_base"].__globals__, ROOT=root):
+                for marker in ["", "0" * 40, "parentless-root"]:
+                    self.assertEqual(CI["qualified_coverage_base"](marker, initial), "parentless-root")
+                git("commit", "--allow-empty", "-qm", "next"); head = git("rev-parse", "HEAD")
+                self.assertEqual(CI["qualified_coverage_base"](initial, head), initial)
+                for marker in ["", "0" * 40, "parentless-root", "all-production"]:
+                    with self.subTest(base=marker), self.assertRaises(ValueError):
+                        CI["qualified_coverage_base"](marker, head)
+                tree = git("rev-parse", "HEAD^{tree}")
+                unrelated = git("commit-tree", tree, "-m", "unrelated root")
+                with self.assertRaises(ValueError): CI["qualified_coverage_base"](unrelated, head)
