@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hsearch bounded context request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "operation": {"enum": ["packet", "search", "slice", "full", "outline", "definition", "reference", "rename-preview", "diagnostics", "compile", "doctor", "start", "stop", "stats"]},
+    "file": {"type": "string", "minLength": 1, "maxLength": 512},
+    "path": {"type": "string", "minLength": 1, "maxLength": 512},
+    "pattern": {"type": "string", "minLength": 1, "maxLength": 128},
+    "find": {"type": "string", "minLength": 3, "maxLength": 256},
+    "new_name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"},
+    "line": {"type": "integer", "minimum": 1, "maximum": 1000000},
+    "start_line": {"type": "integer", "minimum": 1, "maximum": 1000000},
+    "end_line": {"type": "integer", "minimum": 1, "maximum": 1000000},
+    "cursor": {"type": "integer", "minimum": 0, "maximum": 100000},
+    "max_items": {"type": "integer", "minimum": 1, "maximum": 50},
+    "max_bytes": {"type": "integer", "minimum": 1024, "maximum": 131072},
+    "expected_source": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "reason": {"type": "string", "minLength": 8, "maxLength": 1024}
+  }
+}

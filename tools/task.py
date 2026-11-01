@@ -386,7 +386,7 @@ class TaskStore:
         token = secrets.token_hex(12)
         with self.edit() as data:
             current = data["tasks"][claim]
-            need(current["phase"] in {"allocated", "running", "interrupted", "resuming"},
+            need(current["phase"] in {"allocated", "running", "interrupted", "resuming", "navigating"},
                  "Worktree lifecycle outcome needs inspection; allocation retained")
             need(not handle_live(current["worker"]), "Task worker is live or uncertain; no duplicate")
             current.update(phase="resuming", lifecycle_token=token,
@@ -426,7 +426,7 @@ class TaskStore:
 
     def run(self, claim, owner, mode, resource_root):
         record = self.get(claim, owner)
-        need(mode in record["packet"]["commands"], "Command is outside task packet")
+        need(mode in record["packet"]["commands"] or mode == "compile" and "check" in record["packet"]["commands"], "Command is outside task packet")
         before = self.fingerprint(record)
         with self.edit() as data:
             current = data["tasks"][claim]
@@ -463,6 +463,11 @@ class TaskStore:
         with self.edit() as data:
             current = data["tasks"][claim]
             need(current["phase"] == "allocated" and not handle_live(current["worker"]), "Task lifecycle became busy")
+            if data.get("resource_root") is not None:
+                need(str(Path(resource_root).resolve()) == data["resource_root"], "Cleanup must use its recorded shared resource registry")
+                with SANDBOX["Registry"](Path(data["resource_root"])).edit() as resources:
+                    need(not any(item.get("kind") == "navigation" and item.get("task_claim") == claim for item in resources["leases"].values()),
+                         "Close the owned semantic session before worktree cleanup")
             current.update(phase="closing", worker={"pid": os.getpid(), "identity": SANDBOX["owner_identity"]()})
         if record["namespace"]:
             sandbox = self.resources(resource_root, record)
@@ -500,7 +505,7 @@ def main():
         command.add_argument("claim")
         command.add_argument("--owner", required=True)
         if action == "run":
-            command.add_argument("mode", choices=("prefetch", "diagnostics", "check", "probe"))
+            command.add_argument("mode", choices=("prefetch", "diagnostics", "check", "compile", "probe"))
     context = groups.add_parser("context", parents=[shared])
     context.add_argument("claim")
     context.add_argument("--owner", required=True)

@@ -22,7 +22,8 @@ fn main() -> ExitCode {
         "check" => "tools/check.py",
         "policy" => "tools/workspace.py",
         "sandbox" => "tools/sandbox.py",
-        "task" | "context" | "worktree" | "evidence" => "tools/task.py",
+        "context" => "tools/context.py",
+        "task" | "worktree" | "evidence" => "tools/task.py",
         "help" => {
             println!(
                 "check: workspace checks; policy: dependencies; sandbox: resource caps; task/context/worktree/evidence: owned task lifecycle; see docs/plan/development.md"

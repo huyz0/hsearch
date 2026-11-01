@@ -1,6 +1,6 @@
 # Owned worktree tasks
 
-Status: M01.03 implementation in qualification. The following interface is implemented locally; live recovery, independent review and hosted checks remain required before integration.
+Status: M01.03 integrated after independent reviews, complete native PR/main CI and real concurrent interruption/recovery qualification. See [acceptance evidence](evidence/m01-03-integrated.md). Semantic navigation and broader review/coverage/corpus gates remain separate.
 
 The coordinator runs its trusted `tools/task.py` or `cargo xtask` entrypoint from the integration checkout. Workers receive a packet with exact base SHA, goal, paths, assumptions, positive/negative acceptance, allowed commands, owner session, byte budget and expected evidence. `harness/task-packet.schema.json` defines the versioned format. Packets stay below 24,000 UTF-8 bytes and context responses label their bytes/4 token estimate; semantic routing and measured token budgets remain M01.04.
 

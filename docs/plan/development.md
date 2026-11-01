@@ -46,4 +46,6 @@ No hsearch redistribution license has been selected. Public GitHub visibility pe
 
 Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02 and M01.06 impact CI are integrated. The remaining M01 tasks still require the safe resource/worktree task runner, LSP/context budgets, durable independent review protocol, complete coverage gate and concurrent recovery qualification. The broader engine/storage/security/search/replication/provider work remains M02-M17. Keep the original acceptance criteria; bootstrap/sandbox success cannot close those milestones.
 
-API-dependent work follows integrated [core-v1](api-compatibility.md) and [engineering standards](engineering-standards.md). M01.03 has resumed on the revised plan; its [runner interface](task-runner.md) and [qualification record](evidence/m01-03-task-runner.md) remain distinct from completed M19. Run `python tools/api_contract.py check` alongside workspace/plan checks.
+API-dependent work follows integrated [core-v1](api-compatibility.md) and [engineering standards](engineering-standards.md). M01.03 is integrated; its [runner interface](task-runner.md) and [qualification record](evidence/m01-03-integrated.md) remain distinct from M01.04 semantic navigation and later harness gates. Run `python tools/api_contract.py check` alongside workspace/plan checks.
+
+M01.04 development interface and qualification are documented in [source-bound context and navigation](context-navigation.md). Its corpus is a development harness check, separate from product and M01.08 agent qualification.

@@ -58,6 +58,16 @@ class DockerFixture:
 
 @unittest.skipIf(os.name == "nt", "Temporary resource fixtures are qualified in the Linux image")
 class RecoveryControls(unittest.TestCase):
+    def test_invalid_artifact_mount_refuses_before_reserving_or_running(self):
+        with tempfile.TemporaryDirectory() as directory:
+            docker = DockerFixture()
+            sandbox = self.ready(directory, docker)
+            with self.assertRaisesRegex(Refused, "artifact output escaped"):
+                sandbox.run(NAMESPACE, "navigation-build", artifact_directory=Path(directory) / "foreign")
+            with sandbox.registry.edit() as data:
+                self.assertEqual(set(data["leases"]), {NAMESPACE})
+            self.assertEqual(docker.calls, [])
+
     def test_public_frozen_code_is_readable_by_a_different_guest_uid_under_private_umask(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory) / "harness"

@@ -21,6 +21,18 @@ CAPACITY = {"cpu_millis": 8000, "memory_bytes": 16 * GIB, "pids": 2048, "disk_by
 
 
 class AdmissionControls(unittest.TestCase):
+    def test_source_compile_and_two_daemons_fit_the_admitted_native_runner_pool(self):
+        native = {"cpu_millis": 3000, "memory_bytes": 8 * GIB - 1024**2, "pids": 2048, "disk_bytes": 40 * GIB}
+        MODULE["admit"](BUILD, [], native, 100 * GIB)
+        MODULE["admit"](MODULE["NAVIGATION"], [{"budget": MODULE["NAVIGATION"]}], native, 100 * GIB)
+
+    def test_image_identity_changes_with_each_artifact_controller(self):
+        original = Path.read_bytes
+        initial = MODULE["image_digest"]()
+        for name in ("install_navigation.py", "execute.py", "sandbox.py"):
+            with self.subTest(name=name), patch.object(Path, "read_bytes", lambda path: original(path) + (b"\n# changed\n" if path.name == name else b"")):
+                self.assertNotEqual(MODULE["image_digest"](), initial)
+
     def test_two_bounded_builds_fit_but_overcommit_fails(self):
         leases = [{"budget": BUILD}]
         MODULE["admit"](BUILD, leases, CAPACITY, 100 * GIB)
@@ -89,6 +101,55 @@ class RegistryControls(unittest.TestCase):
 
 
 class OwnershipControls(unittest.TestCase):
+    def test_source_build_reuses_one_reservation_without_storage_or_nested_build_claim(self):
+        class BuildDocker:
+            engine = "engine"
+            capacity = {"cpu_millis": 3000, "memory_bytes": 8 * GIB - 1024**2, "pids": 2048, "disk_bytes": 40 * GIB}
+            def __init__(self):
+                self.calls, self.volumes, self.container = [], {}, None
+            def command(self, *args, **kwargs):
+                self.calls.append(args)
+                if args[:2] == ("volume", "create"):
+                    labels = dict(value.split("=", 1) for value in args if value.startswith((MODULE["LABEL"] + "=", "io.hsearch.namespace=")))
+                    self.volumes[args[-1]] = {"Name": args[-1], "Labels": labels}
+                if args[0] == "create":
+                    labels = dict(value.split("=", 1) for value in args if value.startswith((MODULE["LABEL"] + "=", "io.hsearch.namespace=")))
+                    self.container = {"Id": "a" * 64, "Config": {"Labels": labels}, "State": {"Running": False, "ExitCode": 0}}
+                    return "a" * 64
+                if args[0] == "wait":
+                    return "0"
+                if args[:2] == ("volume", "rm"):
+                    for name in args[2:]:
+                        del self.volumes[name]
+                if args[:2] == ("volume", "ls"):
+                    return "\n".join(self.volumes)
+                return ""
+            def inspect(self, kind, names):
+                return [self.container] if kind == "container" else [self.volumes[name] for name in names]
+        with tempfile.TemporaryDirectory() as folder:
+            docker = BuildDocker()
+            sandbox = Sandbox(folder, docker=docker)
+            (Path(folder) / "images").mkdir()
+            lease = "hsearch-image-0123456789ab"
+            sandbox.registry.acquire(lease, BUILD, docker.capacity, docker.engine, {"kind": "image"})
+            sandbox.backend_free = lambda *_args: 100 * GIB
+            output = sandbox.build_navigation(lease, "sha256:" + "b" * 64)
+            self.assertTrue(output.is_dir())
+            with sandbox.registry.edit() as data:
+                self.assertEqual(set(data["leases"]), {lease})
+                self.assertEqual(data["leases"][lease]["budget"], BUILD)
+                self.assertEqual(data["leases"][lease]["phase"], "tool-complete")
+            self.assertFalse(any("compose" in call for call in docker.calls))
+            self.assertFalse(docker.volumes)
+
+    def test_host_capture_bounds_untrusted_stdout_stderr_and_deadlines_before_decode(self):
+        for code, limit, message in (("import sys; sys.stdout.write('x'*1000000)", 1024, "output exceeds"),
+                                     ("import sys; sys.stderr.write('x'*1000000)", 1024, "output exceeds"),
+                                     ("import time; time.sleep(10)", 1024, "deadline")):
+            with self.subTest(code=code), self.assertRaisesRegex(Refused, message):
+                MODULE["bounded_capture"]([sys.executable, "-c", code], timeout=0.2, limit=limit)
+        self.assertEqual(MODULE["bounded_capture"]([sys.executable, "-c", "print('bounded')"], timeout=3, limit=100).splitlines(), ["bounded"])
+
     def test_foreign_resources_cannot_pass_cleanup_guard(self):
         MODULE["assert_owned"]([{"Labels": {MODULE["LABEL"]: "mine"}}], "mine")
         for item in ({"Labels": None}, {"Labels": {MODULE["LABEL"]: "other"}}, {"Config": {"Labels": {}}}):
@@ -125,9 +186,10 @@ class OwnershipControls(unittest.TestCase):
                 docker = FakeDocker()
                 docker.free = free
                 sandbox = Sandbox(directory, docker=docker)
-                digest = MODULE["hashlib"].sha256((Path(MODULE["ROOT"]) / "dev/Dockerfile").read_bytes()).hexdigest()
+                digest = MODULE["image_digest"]()
                 (Path(directory) / "images").mkdir()
-                MODULE["atomic_json"](Path(directory) / "images" / (digest + ".json"), {"id": "image", "engine": "engine", "dockerfile_sha256": digest})
+                MODULE["atomic_json"](Path(directory) / "images" / (digest + ".json"), {"id": "image", "engine": "engine", "build_inputs_sha256": digest,
+                    "dockerfile_sha256": MODULE["hashlib"].sha256((Path(MODULE["ROOT"]) / "dev/Dockerfile").read_bytes()).hexdigest()})
                 if prior:
                     sandbox.registry.acquire("prior", STORAGE, CAPACITY, "engine")
                 with self.assertRaisesRegex(Refused, "backend disk reserve"):
