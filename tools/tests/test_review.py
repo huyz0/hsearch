@@ -127,6 +127,7 @@ class ProtocolControls(unittest.TestCase):
     def test_status_recovers_issued_packet_and_utf8_output_without_charging_another_round(self):
         packet = self.store.begin("M01.05", self.base, "implementer", self.reviewers, self.checks, "Inspect quoted source: 雪 λ")
         self.store.record(self.verdict(packet, "correctness_tests_claims"))
+        (self.root / "src/lib.rs").write_text("// changed after packet issuance\n", encoding="utf-8", newline="\n")
         buffer = io.BytesIO()
         console = io.TextIOWrapper(buffer, encoding="ascii")
         with patch.dict(API["main"].__globals__, ReviewStore=lambda _state: self.store), \
