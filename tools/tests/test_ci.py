@@ -21,6 +21,14 @@ WORKSPACE = {
     "hsearch-testkit": {"path": "crates/testkit/", "dependencies": []}}
 
 
+def fixture_coverage():
+    """Planning tests replace only native attestation, preserving real command policy."""
+    value = dict(CI["COVERAGE"])
+    value["qualified_tools"] = lambda: {"nextest_executable": "/verified/cargo-nextest"}
+    value["ordinary_environment"] = lambda _tools: {"QUALIFIED_ENVIRONMENT": "fixture"}
+    return value
+
+
 def choose(raw, fallback=None):
     return CI["select"](CI["changed_paths"](raw), WORKSPACE, OWNERSHIP,
                         base=BASE, head=HEAD, fallback=fallback)
@@ -150,12 +158,14 @@ class ResultControls(unittest.TestCase):
         self.assertEqual(value['packages'], ['hsearch-observe'])
         commands = []
         with patch.dict(CI['native'].__globals__, output=lambda command: HEAD.encode() if command[0] == 'git' else b'{}',
-                        graph=lambda _metadata, _root: workspace, run=lambda command: commands.append(command),
+                        graph=lambda _metadata, _root: workspace, run=lambda command, **kwargs: commands.append(command),
+                        COVERAGE=fixture_coverage(),
                         qualified_coverage_base=lambda base, head: base):
             CI['native'](value)
-        ordinary = [command for command in commands if command[:3] == ['cargo', 'nextest', 'run']]
+        ordinary = [command for command in commands if command[:3] == ['/verified/cargo-nextest', 'nextest', 'run']]
         self.assertEqual(len(ordinary), 2)
         self.assertTrue(all('--workspace' in command and '--no-tests=fail' in command for command in ordinary))
+        self.assertTrue(all('--config' in command and any(str(arg).endswith('cargo-correctness.toml') for arg in command) for command in ordinary))
         self.assertEqual(sum('--release' in command for command in ordinary), 1)
 
     def test_full_native_refuses_unqualified_new_production_member_before_commands(self):
@@ -235,15 +245,17 @@ class ResultControls(unittest.TestCase):
         commands = []
         with patch.dict(CI["native"].__globals__, output=lambda command: HEAD.encode() if command[0] == "git" else b"{}",
                         graph=lambda _metadata, _root: WORKSPACE,
-                        run=lambda command: commands.append(command), qualified_coverage_base=lambda base, head: base):
+                        run=lambda command, **kwargs: commands.append(command), COVERAGE=fixture_coverage(),
+                        qualified_coverage_base=lambda base, head: base):
             CI["native"](value)
         tests = [command for command in commands if command[:2] == ["cargo", "test"]]
         self.assertEqual(len(tests), 2)
         self.assertTrue(all("--workspace" in command and "--all-features" in command for command in tests))
         self.assertEqual(sum("--release" in command for command in tests), 1)
         self.assertTrue(all("--doc" in command for command in tests))
-        ordinary = [command for command in commands if command[:3] == ["cargo", "nextest", "run"]]
+        ordinary = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"]]
         self.assertEqual(len(ordinary), 2)
+        self.assertTrue(all('--config' in command and any(str(arg).endswith('cargo-correctness.toml') for arg in command) for command in ordinary))
         self.assertTrue(all("--workspace" in command and "--all-features" in command and
                             command[-3:] == ["--profile", "hsearch", "--no-tests=fail"] for command in ordinary))
         self.assertEqual(sum("--release" in command for command in ordinary), 1)
@@ -269,7 +281,8 @@ class ResultControls(unittest.TestCase):
         commands = []
         with patch.dict(CI["native"].__globals__,
                         output=lambda command: HEAD.encode() if command[0] == "git" else b"{}",
-                        graph=lambda _metadata, _root: workspace, run=lambda command: commands.append(command),
+                        graph=lambda _metadata, _root: workspace, run=lambda command, **kwargs: commands.append(command),
+                        COVERAGE=fixture_coverage(),
                         qualified_coverage_base=lambda base, head: base):
             CI["native"](value)
         coverage = next(command for command in commands if "tools/coverage.py" in command)

@@ -196,6 +196,13 @@ class CollectionInventoryControls(unittest.TestCase):
         with patch.dict(os.environ, CARGO_ENCODED_RUSTFLAGS=""), self.assertRaisesRegex(ValueError, "CARGO_ENCODED_RUSTFLAGS"):
             COV["tool_identity"](object())  # Refuse before executing any tool.
 
+    def test_modified_or_redirected_compiler_child_policy_refuses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory).resolve() / "policy.toml"
+            path.write_bytes(COV["COMPILER_POLICY_BYTES"].replace(b'"-1"', b'"1" '))
+            with patch.dict(COV["cargo_policy"].__globals__, COMPILER_POLICY=path), self.assertRaisesRegex(ValueError, "compiler-child"):
+                COV["cargo_policy"]()
+
     def test_nextest_environment_cannot_override_fixed_policy(self):
         for name, value in [("NEXTEST_RETRIES", "1"), ("NEXTEST_TEST_THREADS", "99")]:
             with patch.dict(os.environ, {name: value}), self.assertRaisesRegex(ValueError, "[Ee]nvironment|[Oo]verride"):

@@ -1,11 +1,42 @@
 """Extra coverage mounts require exact owned, immutable snapshots before reservation."""
 from pathlib import Path
 import hashlib
+import os
 import runpy
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 MODULE = runpy.run_path(str(Path(__file__).resolve().parents[1] / "sandbox.py"))
+LOCAL = runpy.run_path(str(Path(__file__).resolve().parents[1] / "coverage_local.py"))
+
+
+class FrozenBundleControls(unittest.TestCase):
+    def test_actual_history_output_is_bounded_before_bundle_file_creation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory).resolve()
+            self.assertTrue(parent.is_relative_to(Path(tempfile.gettempdir()).resolve()))
+            root = parent / "repo"; root.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.PIPE, timeout=30)
+            git("init", "-q"); git("config", "user.name", "bundle control")
+            git("config", "user.email", "fixture@example.invalid"); git("config", "core.autocrlf", "false")
+            for index in range(3):
+                (root / "current.bin").write_bytes(os.urandom(32 * 1024))
+                git("add", "current.bin"); git("commit", "-qm", str(index))
+            output = parent / "bounded.bundle"
+            with patch.dict(LOCAL["freeze_bundle"].__globals__, ROOT=root):
+                with self.assertRaisesRegex(ValueError, "git_output_limit"):
+                    LOCAL["freeze_bundle"](output, limit=64 * 1024)
+                self.assertFalse(output.exists())
+                LOCAL["freeze_bundle"](output, limit=256 * 1024)
+                self.assertLessEqual(output.stat().st_size, 256 * 1024)
+                git("bundle", "verify", str(output))
+                before = output.read_bytes()
+                with self.assertRaisesRegex(ValueError, "existing"):
+                    LOCAL["freeze_bundle"](output)
+                self.assertEqual(output.read_bytes(), before)
 
 
 class CoverageMountControls(unittest.TestCase):

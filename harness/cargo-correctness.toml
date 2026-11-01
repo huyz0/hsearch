@@ -1,0 +1,3 @@
+# Explicit CLI config, shared by Cargo and nextest's Cargo invocations.
+[env]
+RUSTC_BOOTSTRAP = { value = "-1", force = true }

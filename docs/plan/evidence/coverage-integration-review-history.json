@@ -1,0 +1,77 @@
+{
+  "task": "M01.12",
+  "scope": "Derived public R1 finding ledger; original raw reports/counters remain immutable in the coordinator registry. This is not a clearance or original M01.07 gate pass.",
+  "original_base": "545c71b38a693219379419cac9ba0da3317f57d1",
+  "original_m01_07_frozen": "b637769fe34c324d9a92e7ed519ace9917560aee",
+  "rounds": [
+    {
+      "round": 1,
+      "head": "a79a5ad37c7331ee4631ff76ede6e90ed0510051",
+      "tree": "2dab9895bc5cd0754d05ec0a0a8dbc29533e51ef",
+      "packet_sha256": "42093be2778cd14adbe8742cd37692aa548456dda4a60792882e86e58f60c500",
+      "reports": [
+        {
+          "role": "correctness_tests_claims",
+          "session": "/root/publication_review",
+          "conclusion": "blocked",
+          "raw_report_sha256": "1fc6bc90a5b899eefc5c61d19ad40abcb888d96615a14ee3ebbe471165599d47",
+          "findings": [
+            {
+              "id": "CARGO_CONFIG_BOOTSTRAP_REMOVES_PRODUCTION_LINES",
+              "priority": "P2",
+              "file": "tools/coverage.py",
+              "line": 194,
+              "reproduction": "Use M01.12_REVIEW_NATIVE_ALIAS_PROBE.py lines46-74 in the isolated pinned native fixture, with clean parent env and the current Runner/tool_identity. Four physical Rust lines: #![feature(coverage_attribute)]; pub fn live(x:u32)->u32{x+1}; #[coverage(off)]; pub fn dead()->u32{41}. Without config cargo build --lib --offline --verbose returns101/E0554. Add .cargo/config.toml [env] RUSTC_BOOTSTRAP={value=\"1\",force=true}: it returns0, still with instrument-coverage/link-dead-code. llvm-cov export --empty-profile on actual rlib objects contains only DA:2,0. Plain same-coordinate live/dead source contains DA:2,0 and DA:4,0. Exact log M01.12_ROUND1_NATIVE_ALIAS.log SHA b46c6217aee5f6eb1bc9cac5d64332087f4f54af92c93859129fa358eff76d05; independently run M01.12_ROUND1_CORRECTNESS_REPLAY.py uses those measured maps with explicit synthetic live-only hit.",
+              "expected": "Effective stable compiler policy must refuse configuration-supplied bootstrap/coverage exclusions, or otherwise preserve the uncovered production function in the denominator. A clean parent env must not suffice as proof of rustc child policy.",
+              "observed": "tool_identity checks only os.environ and passes; Cargo sets bootstrap for rustc from configuration. An uncovered executable physical line disappears while the file retains another valid production map, so missing-map checks do not help. With measured map and one synthetic hit at live line2, evaluate returns aggregate1/1 pass and changed N/A for dead line4; the plain map returns1/2 fail and changed0/1 fail. Full collector false-pass was not executed; actual compilation/map loss and scorer implication are separately evidenced."
+            },
+            {
+              "id": "CARGO_ALIAS_BYPASSES_ATTESTED_NEXTEST_POLICY",
+              "priority": "P2",
+              "file": "tools/coverage.py",
+              "line": 503,
+              "reproduction": "M01.12_REVIEW_NATIVE_ALIAS_PROBE.py lines15-45 creates the exact retries0 hsearch profile and a Rust failed-first test. Current tool_identity and nextest_policy pass and attest /usr/local/bin/cargo-nextest hash f60be355cded290b1080a0b7c92ca11ec34a1900e3ad1afbd6336ddbfdbbded0. Normal cargo nextest run --offline --profile hsearch --no-tests=fail returns100. Configure [alias] nextest=[\"run\",\"--quiet\",\"--offline\",\"--manifest-path\",<helper Cargo.toml>,\"--\"], where helper delegates to cargo-nextest nextest and appends --retries 1 only to run. The same command returns0 with TRY 1 FAIL, TRY 2 PASS and FLAKY2/2. Inert nextest=[\"version\"] independently shows alias shadows the external binary. Exact native log/sha as previous finding; native lines28-30 and probe line20 contain complete routing evidence.",
+              "expected": "Commands that qualify required test success must execute the attested nextest binary under the fixed no-retry policy, or refuse conflicting Cargo command routing. The identity bound to evidence must be the tool actually invoked.",
+              "observed": "The collector hashes a direct cargo-nextest executable but launches list/run through cargo nextest, which Cargo1.97.1 permits aliases to shadow. The config/profile/env guards accept this route. A genuine required first test failure becomes command success by retry. tools/check.py and tools/ci.py ordinary dev/release tests use the same alias-sensitive route. Native route/policy false-success is confirmed; a complete collector/shard threshold false-pass was not run."
+            }
+          ]
+        },
+        {
+          "role": "architecture_security",
+          "session": "/root/sandbox_security_review",
+          "conclusion": "blocked",
+          "raw_report_sha256": "6d7ebb64d920bc97e83fee77ab8d09ad15f8e855bbefba09417d6ab04b4b6702",
+          "findings": [
+            {
+              "id": "SEC-01-alias-shadows-attested-nextest",
+              "priority": "P2",
+              "file": "tools/coverage.py",
+              "line": 503,
+              "reproduction": "Inspect/verify M01.12_ROUND1_NATIVE_ALIAS.log (SHA256 b46c6217aee5f6eb1bc9cac5d64332087f4f54af92c93859129fa358eff76d05) and M01.12_REVIEW_NATIVE_ALIAS_PROBE.py. The coordinated owned pinned-Linux fixture runs actual tool_identity/nextest_policy successfully and hashes nextest0.9.150. Cargo1.97.1 with alias.nextest=[version] executes cargo version with only a warning. A tiny Rust argv alias delegates to the same pinned cargo-nextest but appends --retries1. The identical fail-first test is exit100 normally, then TRY1FAIL/TRY2PASS/FLAKY2/2 and exit0 through the alias. No shell/MSYS helper or frozen-source edit is used. The independent SECURITY_REPRO.py validates the recorded native observations. Collector list/run and ordinary check.py/ci.py paths all dispatch cargo nextest.",
+              "expected": "Actual correctness/coverage execution must use the exact attested runner and fixed no-retry policy, with no unqualified Cargo alias/dispatch override. Bind the executed nextest program/arguments to the attestation or refuse shadowing before commands across all required paths. Preserve existing ignored/filter/no-tests/deadline controls.",
+              "observed": "tool_identity hashes cargo-nextest directly, but subsequent test inventory and execution use cargo nextest. nextest_policy checks parent NEXTEST_* and nextest.toml only. Cargo aliases can replace that external-subcommand route, so the recorded pinned tool/policy is not the effective dispatch. The native retry delegate converts an initial required failure into success while the Python policy guard has passed."
+            },
+            {
+              "id": "SEC-02-cargo-env-bootstrap-erases-denominator",
+              "priority": "P2",
+              "file": "tools/coverage.py",
+              "line": 194,
+              "reproduction": "The same native log/probe uses a clean parent environment whose actual tool_identity/nextest_policy guards pass. Source has #![feature(coverage_attribute)] and live() on physical2 plus #[coverage(off)] dead() on physical4. Without config, cargo build exits101/E0554. With [env] RUSTC_BOOTSTRAP={value=1,force=true}, actual pinned stable build exits0 while retaining instrumentation/dead-code flags. Empty-profile LLVM output is DA2 only; plain same-position functions produce DA2 andDA4. SECURITY_REPRO.py parses those real maps, then with a specified live-only hit fixture shows actual evaluate accepts suppressed1/1 aggregate+changed versus refusing plain1/2. That evaluator step is not claimed as a full native collection.",
+              "expected": "The forbidden bootstrap/unstable instrumentation mode must remain forbidden in the effective rustc child environment, including applicable Cargo config injection. Refuse or otherwise enforce the qualified policy before compiling; handwritten production functions must not be silently removed via unsupported coverage attributes. Tool hash/version alone cannot qualify a different effective mode.",
+              "observed": "The guard tests only os.environ for RUSTC_BOOTSTRAP. Cargo can set that variable for rustc through its [env] configuration after the guard. The compiler becomes bootstrap-enabled despite the recorded stable/pinned policy; coverage(off) removes a handwritten function from the actual production-object denominator while a live map keeps the file from requiring a zero-coverable audit."
+            },
+            {
+              "id": "SEC-03-bundle-limit-after-disk-allocation",
+              "priority": "P2",
+              "file": "tools/coverage_local.py",
+              "line": 42,
+              "reproduction": "Run M01.12_ROUND1_SECURITY_BUNDLE.py under the explicit task/test-temp environment. It copies all205 current public project files into an owned clean Git fixture and commits3 independent45MiB historical blobs; current total tracked bytes49060438, maximum payload47185920, clean source_fingerprint. It executes actual coverage_local.main/TASK.git with only Sandbox mocked to avoid Docker. Real Git allocates143458832 bundle bytes before the134217728 cap check raises Frozen source bundle exceeds bound. It never reaches the coverage workload. The10.25s run's resolved owned fixture and cleanup are recorded in SECURITY_BUNDLE.json.",
+              "expected": "Enforce the bundle byte budget as generation proceeds or prove bounded input/output before allocating its host file. Stop/reap only owned work on overflow and preserve the primary failure; exact-limit and small-history positives should still work. Existing pack memory/thread/deadline controls do not substitute for the byte cap.",
+              "observed": "bundle create writes the full reachable Git history directly to disk, then the code checks file size. Current source limits do not bound historical blobs; even a valid bounded current checkout exceeds the promised bundle cap before refusal. The measured overrun is9,241,104bytes; larger reachable history has no output-file byte guard during the host operation. The reproduction does not claim full host exhaustion or any Docker cleanup failure."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

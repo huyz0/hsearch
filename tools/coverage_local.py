@@ -19,6 +19,16 @@ def need(condition, message):
         raise ValueError(message)
 
 
+def freeze_bundle(path, *, limit=128 * 1024**2):
+    """Bound binary Git output before creating any bundle file."""
+    need(type(limit) is int and 0 < limit <= 128 * 1024**2 and not path.exists(), "Invalid/existing bundle output")
+    objects = SOURCES["GitObjects"](ROOT, SOURCES["Budget"](SOURCES["Limits"]()))
+    raw = objects.command("-c", "pack.threads=1", "-c", "pack.windowMemory=64m", "-c", "pack.deltaCacheSize=32m",
+                          "bundle", "create", "-", "HEAD", limit=limit)
+    need(0 < len(raw) <= limit, "Frozen source bundle exceeds bound")
+    with path.open("xb") as output: output.write(raw)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-root", type=Path, required=True)
@@ -39,7 +49,7 @@ def main():
         snapshot = sandbox.snapshot(record)
         bundle = snapshot / "coverage-source.bundle"
         need(not bundle.exists(), "Preserve existing source bundle")
-        TASK["git"]("-c", "pack.threads=1", "-c", "pack.windowMemory=64m", "-c", "pack.deltaCacheSize=32m", "bundle", "create", str(bundle), "HEAD", root=ROOT)
+        freeze_bundle(bundle)
         need(bundle.is_file() and 0 < bundle.stat().st_size <= 128 * 1024**2, "Frozen source bundle exceeds bound")
         need(TASK["source_fingerprint"](ROOT, head, []) == before, "Source changed while freezing bundle")
         config = {"schema_version": 2, "head": head, "base": args.base, "source_fingerprint": before["digest"],

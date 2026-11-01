@@ -9,6 +9,7 @@ import runpy
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+COVERAGE = runpy.run_path(str(ROOT / "tools/coverage.py"))
 CHECKS = [
     [sys.executable, "tools/api_contract.py", "check"],
     [sys.executable, "tools/workspace.py", "check"],
@@ -30,14 +31,18 @@ CHECKS = [
 
 def main():
     try:
-        runpy.run_path(str(ROOT / "tools/coverage.py"))["nextest_policy"]()
+        COVERAGE["nextest_policy"]()
+        tools = COVERAGE["qualified_tools"]()
+        environment = COVERAGE["ordinary_environment"](tools)
     except (ValueError, OSError) as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1
     for command in CHECKS:
+        command = (COVERAGE["nextest_command"](tools, command[2], *command[3:])
+                   if command[:2] == ["cargo", "nextest"] else COVERAGE["cargo_command"](command))
         print("CHECK: " + " ".join(command), flush=True)
         try:
-            result = subprocess.run(command, cwd=ROOT, check=False)
+            result = subprocess.run(command, cwd=ROOT, env=environment, check=False)
         except OSError as error:
             print(f"FAIL: {error}", file=sys.stderr)
             return 1

@@ -15,6 +15,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 import uuid
@@ -27,11 +28,42 @@ EXECUTE = runpy.run_path(str(ROOT / "dev/execute.py"))
 SOURCES = runpy.run_path(str(ROOT / "tools/coverage_sources.py"))
 RUSTFLAGS = "-C instrument-coverage -C link-dead-code"
 SHA = re.compile(r"[0-9a-f]{40}")
+COMPILER_POLICY = ROOT / "harness/cargo-correctness.toml"
+COMPILER_POLICY_BYTES = (b'# Explicit CLI config, shared by Cargo and nextest\'s Cargo invocations.\n'
+                         b'[env]\nRUSTC_BOOTSTRAP = { value = "-1", force = true }\n')
 
 
 def need(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def cargo_policy():
+    need(COMPILER_POLICY.resolve() == COMPILER_POLICY and COMPILER_POLICY.is_file() and
+         COMPILER_POLICY.stat().st_size == len(COMPILER_POLICY_BYTES) and
+         COMPILER_POLICY.read_bytes() == COMPILER_POLICY_BYTES, "Unqualified compiler-child policy")
+    return ["--config", str(COMPILER_POLICY)]
+
+
+def cargo_command(args):
+    return [args[0], *cargo_policy(), *args[1:]] if args and Path(str(args[0])).name == "cargo" else args
+
+
+def nextest_command(tools, action, *args):
+    need(action in {"list", "run"}, "Unknown qualified nextest action")
+    return [tools["nextest_executable"], "nextest", action, *cargo_policy(), *args]
+
+
+def ordinary_environment(tools):
+    return dict(os.environ, RUSTC=tools["cargo_compiler"], RUSTDOC=tools["cargo_rustdoc"],
+                RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="", RUSTC_BOOTSTRAP="-1", RUSTFLAGS="", RUSTDOCFLAGS="",
+                **{tools["test_executor"]["environment_key"]: tools["test_executor"]["command"]})
+
+
+def qualified_tools():
+    # Keep bounded probe receipts outside source, including on qualification failure.
+    target = Path(os.environ.get("CARGO_TARGET_DIR", tempfile.gettempdir())).absolute()
+    return tool_identity(Runner(target / ("hsearch-tool-policy-" + uuid.uuid4().hex)))[0]
 
 
 def lf_records(text):
@@ -78,13 +110,15 @@ class Runner:
         self.logs.mkdir(mode=0o700)
         self.started, self.number = time.monotonic(), 0
         self.env = dict(os.environ, CARGO_TARGET_DIR=str(self.root / "target"), CARGO_BUILD_JOBS="2", CARGO_INCREMENTAL="0",
-                        RUSTFLAGS=RUSTFLAGS, RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="",
+                        RUSTFLAGS=RUSTFLAGS, RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="", RUSTC_BOOTSTRAP="-1",
                         CARGO_TERM_COLOR="never", DEBUGINFOD_URLS="", PYTHONDONTWRITEBYTECODE="1")
         listing = self.root / ("listing-profiles-" + uuid.uuid4().hex[:12])
         listing.mkdir()
         self.env["LLVM_PROFILE_FILE"] = str(listing / "%m-%p.profraw")
 
     def command(self, args, *, env=None, timeout=900, limit=64 * 1024**2, binary=False):
+        need(platform.system() == "Linux", "Native coverage commands require qualified Linux")
+        args = cargo_command(args)
         need(sum(len(str(arg).encode()) + 1 for arg in args) <= 1024**2, "Coverage command argument bound exceeded")
         remaining = 900 - (time.monotonic() - self.started)
         need(remaining > 0, "Whole coverage context deadline exceeded")
@@ -191,8 +225,9 @@ def bind_compiler(runner, compiler):
 
 def tool_identity(runner):
     need("CARGO_ENCODED_RUSTFLAGS" not in os.environ, "Unqualified compiler override: CARGO_ENCODED_RUSTFLAGS")
-    for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTC_BOOTSTRAP"):
+    for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CARGO_ENCODED_RUSTDOCFLAGS"):
         need(not os.environ.get(name), "Unqualified compiler override: " + name)
+    need(os.environ.get("RUSTC_BOOTSTRAP") in {None, "", "-1"}, "Unqualified compiler override: RUSTC_BOOTSTRAP")
     need(not any(key.startswith("CARGO_PROFILE_") for key in os.environ), "Unqualified Cargo profile override")
     rustc = runner.command(["rustc", "-vV"], limit=8192)
     need(rustc.startswith("rustc 1.97.1 "), "Wrong coverage Rust toolchain")
@@ -200,10 +235,18 @@ def tool_identity(runner):
     need(host in {"x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"}, "Unqualified native coverage target")
     sysroot = Path(runner.command(["rustc", "--print", "sysroot"], limit=8192).strip())
     bind_compiler(runner, sysroot / "bin/rustc")
+    runner.env["RUSTDOC"] = str(sysroot / "bin/rustdoc")
+    executor = Path("/usr/bin/env")
+    executor_record = {"path": str(executor), "sha256": tool_hash(executor),
+                       "environment_key": "CARGO_TARGET_" + host.upper().replace("-", "_") + "_RUNNER",
+                       "command": str(executor) + " --"}
+    runner.env[executor_record["environment_key"]] = executor_record["command"]
     llvm = sysroot / "lib/rustlib" / host / "bin"
     cargo = runner.command(["cargo", "--version"], limit=8192).strip()
     need(cargo.startswith("cargo 1.97.1 "), "Wrong coverage Cargo toolchain")
-    nextest = Path(shutil.which("cargo-nextest") or "")
+    located_nextest = shutil.which("cargo-nextest")
+    need(located_nextest is not None, "Pinned nextest is unavailable")
+    nextest = Path(located_nextest).resolve()
     need(nextest.is_file(), "Pinned nextest is unavailable")
     version = runner.command([str(nextest), "--version"], limit=8192).strip()
     profile = json.loads((ROOT / "dev/correctness-tools.json").read_text(encoding="utf-8"))
@@ -213,10 +256,13 @@ def tool_identity(runner):
         receipt_path = Path("/opt/hsearch/correctness-attestation.json")
     receipt = load(receipt_path, 4096)
     hashes = {name: tool_hash(path) for name, path in
-              [("rustc", sysroot / "bin/rustc"), ("cargo", sysroot / "bin/cargo"),
+               [("rustc", sysroot / "bin/rustc"), ("rustdoc", sysroot / "bin/rustdoc"), ("cargo", sysroot / "bin/cargo"),
                ("llvm_cov", llvm / "llvm-cov"), ("llvm_profdata", llvm / "llvm-profdata"), ("llvm_objdump", llvm / "llvm-objdump"), ("nextest", nextest)]}
     need(receipt["binary_sha256"] == hashes["nextest"] and receipt["profile_sha256"] == hashlib.sha256(INPUT["canonical"](profile)).hexdigest(), "Nextest receipt/source identity mismatch")
-    return {"rustc": rustc, "cargo_compiler": runner.env["RUSTC"], "cargo": cargo, "nextest": version, "hashes": hashes,
+    return {"rustc": rustc, "cargo_compiler": runner.env["RUSTC"], "cargo_rustdoc": runner.env["RUSTDOC"],
+            "cargo": cargo, "nextest": version, "nextest_executable": str(nextest), "hashes": hashes,
+            "compiler_policy_sha256": hashlib.sha256(COMPILER_POLICY_BYTES).hexdigest(),
+            "compiler_environment": {"RUSTC_BOOTSTRAP": runner.env["RUSTC_BOOTSTRAP"]}, "test_executor": executor_record,
             "compiler_wrappers": {name: runner.env[name] for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER")}}, host, llvm
 
 
@@ -476,7 +522,7 @@ def collect(directory, base, profile, requested):
     changed = proof_changes(proof)
     # Apply denominator/missing-map checks before running tests; zero counts are intentionally not a pass here.
     GATE["evaluate"](sources, baseline, {}, changed, non_executable, selected)
-    raw_inventory = runner.command(["cargo", "nextest", "list", *flags, "--message-format=json"])
+    raw_inventory = runner.command(nextest_command(tools, "list", *flags, "--message-format=json"))
     inventory = json.loads(raw_inventory)
     suites = verify_test_inventory(inventory, packages, selected)
     inventory_path = runner.root / "test-inventory.json"
@@ -500,7 +546,7 @@ def collect(directory, base, profile, requested):
         profile_directory.mkdir()
         if binary["test_count"]:
             env = dict(runner.env, LLVM_PROFILE_FILE=str(profile_directory / "%m-%p.profraw"))
-            runner.command(["cargo", "nextest", "run", *flags, "--profile", "hsearch", "--no-tests=fail", "-E", "binary_id(=" + binary_id + ")"], env=env)
+            runner.command(nextest_command(tools, "run", *flags, "--profile", "hsearch", "--no-tests=fail", "-E", "binary_id(=" + binary_id + ")"), env=env)
         profiles = sorted(profile_directory.iterdir())
         records = [INPUT["file_record"](runner.root, path.relative_to(runner.root).as_posix(), max_bytes=16 * 1024**2, single_link=True) for path in profiles]
         save(shard_directory / (str(index) + ".json"), {"context_sha256": INPUT["context_digest"](context), "context": context,
@@ -587,6 +633,9 @@ def merge(directory):
     need(context["source"] == source_identity(), "Source changed during coverage merge")
     binding = {"context_schema_version": context["schema_version"], "base": context["base"],
                "source_proof_sha256": INPUT["context_digest"](context["source_proof"]),
+               "compiler_policy_sha256": tools["compiler_policy_sha256"],
+               "compiler_environment": tools["compiler_environment"], "nextest_executable": tools["nextest_executable"],
+               "test_executor": tools["test_executor"],
                "compiler_wrappers": tools["compiler_wrappers"]}
     result = {"schema_version": 1, "source": context["source"], "source_binding": binding,
               "profile": context["profile"], "target": host,

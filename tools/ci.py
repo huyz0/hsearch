@@ -15,6 +15,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 COVERAGE_SOURCES = runpy.run_path(str(ROOT / "tools/coverage_sources.py"))
+COVERAGE = runpy.run_path(str(ROOT / "tools/coverage.py"))
 JOBS = ("docs", "linux-x64", "linux-arm64", "sandbox-x64", "sandbox-arm64")
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine"}
 SHA = re.compile(r"[0-9a-f]{40}")
@@ -214,9 +215,10 @@ def gate(value, results):
             need(result in {"success", "skipped"}, f"Unexpected result for unselected job {job}: {result}")
 
 
-def run(command, root=ROOT):
+def run(command, root=ROOT, env=None):
+    command = COVERAGE["cargo_command"](command)
     print("CHECK: " + " ".join(command), flush=True)
-    subprocess.run(command, cwd=root, check=True)
+    subprocess.run(command, cwd=root, env=env, check=True)
 
 
 def docs():
@@ -250,27 +252,31 @@ def native(value):
     need(set(workspace) - {"xtask", "hsearch-testkit"} == PRODUCTION,
          "Actual production coverage ownership requires a reviewed CI policy update")
     base = qualified_coverage_base(value["base"], value["head"]) if value["coverage_packages"] else None
-    runpy.run_path(str(ROOT / "tools/coverage.py"))["nextest_policy"]()
-    run([sys.executable, "tools/coverage_corpus.py"])
-    run([sys.executable, "tools/workspace.py", "check"])
-    run([sys.executable, "tools/workspace.py", "selftest"])
-    run(["cargo", "fmt", "--all", "--", "--check"])
+    coverage = COVERAGE
+    coverage["nextest_policy"]()
+    tools = coverage["qualified_tools"]()
+    environment = coverage["ordinary_environment"](tools)
+    def native_run(command): run(command, env=environment)
+    native_run([sys.executable, "tools/coverage_corpus.py"])
+    native_run([sys.executable, "tools/workspace.py", "check"])
+    native_run([sys.executable, "tools/workspace.py", "selftest"])
+    native_run(["cargo", "fmt", "--all", "--", "--check"])
     package_flags = ["--workspace"] if value["full"] else [part for name in value["packages"] for part in ("--package", name)]
     common = ["--locked", "--offline", "--all-features", *package_flags]
-    run(["cargo", "clippy", *common, "--all-targets", "--", "-D", "warnings"])
+    native_run(["cargo", "clippy", *common, "--all-targets", "--", "-D", "warnings"])
     # Current observe/xtask-only selections have no test cases. Keep the strict
     # no-tests failure by conservatively exercising the known workspace corpus.
     ordinary = common if value["full"] or set(value["packages"]) & {"hsearch-types", "hsearch-engine"} else ["--locked", "--offline", "--all-features", "--workspace"]
     for profile in ([], ["--release"]):
-        run(["cargo", "nextest", "run", *ordinary, *profile, "--profile", "hsearch", "--no-tests=fail"])
-        run(["cargo", "test", *common, *profile, "--doc"])
+        native_run(coverage["nextest_command"](tools, "run", *ordinary, *profile, "--profile", "hsearch", "--no-tests=fail"))
+        native_run(["cargo", "test", *common, *profile, "--doc"])
     production = sorted(PRODUCTION if value["full"] else set(value["packages"]) & PRODUCTION)
     if production:
-        run(["cargo", "build", "--locked", "--offline", "--release", "--lib",
+        native_run(["cargo", "build", "--locked", "--offline", "--release", "--lib",
              *[part for name in production for part in ("--package", name)]])
     if value["coverage_packages"]:
         destination = Path(os.environ["CARGO_TARGET_DIR"]).absolute().parent / ("hsearch-coverage-" + uuid.uuid4().hex)
-        run([sys.executable, "tools/coverage.py", "run", "--base", base, "--output", str(destination),
+        native_run([sys.executable, "tools/coverage.py", "run", "--base", base, "--output", str(destination),
              *[part for name in value["coverage_packages"] for part in ("--package", name)]])
 
 
