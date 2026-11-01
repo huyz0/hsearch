@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "currency": "USD",
+  "notice": "Illustrative operation/network component sensitivities, NOT a current regional quote, full TCO, measured performance, or prediction of latency/availability. 30 days; no discounts/free tier. Request counts are explicit scenario assumptions; omitted components are not zero in a real deployment.",
+  "rate_card": {
+    "period_seconds": 2592000,
+    "as_of": "2026-11-01",
+    "status": "illustrative_inputs_not_a_deployable_price_card",
+    "request_usd_per_1000": {"put": "0.005", "get": "0.0004", "head": "0.0004", "list": "0.005", "kms": "0.003"},
+    "source_notes": [
+      "https://aws.amazon.com/s3/pricing/ supplies request/transfer rules and examples, not a machine-verified complete regional rate table here.",
+      "https://aws.amazon.com/vpc/pricing/ supplies the Ohio USD 0.045/GB NAT example.",
+      "https://aws.amazon.com/blogs/networking-and-content-delivery/optimizing-data-transfer-costs-when-using-aws-network-load-balancer/ documents combined USD 0.02/GB for the example cross-AZ edge.",
+      "https://aws.amazon.com/kms/pricing/ supplies symmetric-request examples. Application KMS and storage SSE requests must be counted separately.",
+      "Each traffic edge declares its own billing byte unit. These examples use 2^30; production SKUs must supply their actual unit, endpoints, payers, region and storage class."
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "10000-dirty-shards-payload-and-root-each-second",
+      "attempts_per_second": {"put": 20000},
+      "assumptions": "10000 dirty shard streams/s, one payload and one root PUT-like request each. Excludes keys, pages, catalog, reads, retries, storage, compute and network."
+    },
+    {
+      "id": "payload-packing-only-root-floor-retained",
+      "attempts_per_second": {"put": 10100},
+      "assumptions": "100 payload packs/s, but still 10000 shard-root updates/s. Shows why packing alone does not remove metadata cost."
+    },
+    {
+      "id": "100-compatible-domains-with-explicit-extra-pages",
+      "attempts_per_second": {"put": 400, "kms": 100},
+      "assumptions": "100 qualified compatible commit domains/s; each pays payload, commit root and two additional metadata/envelope PUTs, plus one application wrap. Conditional design scenario, not a proved grouping result; incompatible keys or more pages add cost."
+    },
+    {
+      "id": "million-idle-shards-no-polling",
+      "attempts_per_second": {"put": 0, "head": 0},
+      "assumptions": "Idle data-plane request component is zero. Shared membership/control jobs, durable storage and compute still have their own costs."
+    },
+    {
+      "id": "million-idle-shards-head-every-minute",
+      "attempts_per_second": {"head": 16666.666666666668},
+      "assumptions": "One metadata check per idle shard per minute. Counts API invocations even when no data changes. Illustrates a floor to avoid."
+    },
+    {
+      "id": "10MiB-s-two-cross-zone-follower-copies",
+      "traffic": [
+        {"id": "leader-to-two-followers", "bytes_per_second": 20971520, "billing_gb_bytes": 1073741824, "sender_usd_per_billing_gb": "0.01", "receiver_usd_per_billing_gb": "0.01"}
+      ],
+      "assumptions": "Two directed remote follower payload copies of 10 MiB/s input. Rates are already summed at the two endpoints, not doubled again as a round trip. Excludes acknowledgements, clients, search replicas, catch-up and voter disks/compute."
+    },
+    {
+      "id": "1GiB-s-through-NAT-processing-only",
+      "traffic": [
+        {"id": "NAT-processed-payload", "bytes_per_second": 1073741824, "billing_gb_bytes": 1073741824, "sender_usd_per_billing_gb": "0.045", "receiver_usd_per_billing_gb": "0"}
+      ],
+      "assumptions": "Ohio-example per-byte processing rate. Does not include NAT hours, cross-AZ hops, storage, requests or compute. A gateway endpoint removes this modeled processing component only when the actual route supports it."
+    }
+  ]
+}

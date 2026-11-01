@@ -1,0 +1,1505 @@
+{
+  "status": "planning simulation and bounded model only; NOT a storage/latency/crypto proof",
+  "assumptions": {
+    "duration_s": 30,
+    "record_encoded_bytes": 1024,
+    "cap_bytes": 4194304,
+    "seeds": [
+      7,
+      19,
+      43
+    ],
+    "domains": "50 indexes per tenant, two key policies; one ordered lane per domain",
+    "checkpoint_every_batches": 64,
+    "checkpoint_puts": 2,
+    "cost_omissions": "GET/LIST/takeover/fence retention/retries/segments/rewrap/compute/billing; activation counts separate",
+    "timing": "batch waiting only; excludes KMS, S3, queue/prepare/apply/refresh/network; fixed arrival trace drained through final timer"
+  },
+  "rows": [
+    {
+      "records": 3040,
+      "batches": 3039,
+      "activated_domains": 2613,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 6078,
+        "fenced_append_inline_key": 3039,
+        "fenced_append_separate_key_object": 6078
+      },
+      "application_wrap_calls": 3039,
+      "structural_activation_puts_separate": 5226
+    },
+    {
+      "records": 3040,
+      "batches": 3039,
+      "activated_domains": 2613,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 6078,
+        "fenced_append_inline_key": 3039,
+        "fenced_append_separate_key_object": 6078
+      },
+      "application_wrap_calls": 3039,
+      "structural_activation_puts_separate": 5226
+    },
+    {
+      "records": 3040,
+      "batches": 3018,
+      "activated_domains": 2613,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 6036,
+        "fenced_append_inline_key": 3018,
+        "fenced_append_separate_key_object": 6036
+      },
+      "application_wrap_calls": 3018,
+      "structural_activation_puts_separate": 5226
+    },
+    {
+      "records": 3040,
+      "batches": 2888,
+      "activated_domains": 2613,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 5000.000000000002,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5776,
+        "fenced_append_inline_key": 2888,
+        "fenced_append_separate_key_object": 5776
+      },
+      "application_wrap_calls": 2888,
+      "structural_activation_puts_separate": 5226
+    },
+    {
+      "records": 3040,
+      "batches": 3000,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 6000,
+        "fenced_append_inline_key": 3000,
+        "fenced_append_separate_key_object": 6000
+      },
+      "application_wrap_calls": 3000,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 3040,
+      "batches": 2863,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5726,
+        "fenced_append_inline_key": 2863,
+        "fenced_append_separate_key_object": 5726
+      },
+      "application_wrap_calls": 2863,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 3040,
+      "batches": 2441,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 4882,
+        "fenced_append_inline_key": 2441,
+        "fenced_append_separate_key_object": 4882
+      },
+      "application_wrap_calls": 2441,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 3040,
+      "batches": 1414,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 5000.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 2828,
+        "fenced_append_inline_key": 1414,
+        "fenced_append_separate_key_object": 2828
+      },
+      "application_wrap_calls": 1414,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 3099,
+      "batches": 3097,
+      "activated_domains": 2680,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 6194,
+        "fenced_append_inline_key": 3097,
+        "fenced_append_separate_key_object": 6194
+      },
+      "application_wrap_calls": 3097,
+      "structural_activation_puts_separate": 5360
+    },
+    {
+      "records": 3099,
+      "batches": 3090,
+      "activated_domains": 2680,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 6180,
+        "fenced_append_inline_key": 3090,
+        "fenced_append_separate_key_object": 6180
+      },
+      "application_wrap_calls": 3090,
+      "structural_activation_puts_separate": 5360
+    },
+    {
+      "records": 3099,
+      "batches": 3068,
+      "activated_domains": 2680,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 6136,
+        "fenced_append_inline_key": 3068,
+        "fenced_append_separate_key_object": 6136
+      },
+      "application_wrap_calls": 3068,
+      "structural_activation_puts_separate": 5360
+    },
+    {
+      "records": 3099,
+      "batches": 2951,
+      "activated_domains": 2680,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 5000.000000000002,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5902,
+        "fenced_append_inline_key": 2951,
+        "fenced_append_separate_key_object": 5902
+      },
+      "application_wrap_calls": 2951,
+      "structural_activation_puts_separate": 5360
+    },
+    {
+      "records": 3099,
+      "batches": 3060,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 6120,
+        "fenced_append_inline_key": 3060,
+        "fenced_append_separate_key_object": 6120
+      },
+      "application_wrap_calls": 3060,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 3099,
+      "batches": 2903,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5806,
+        "fenced_append_inline_key": 2903,
+        "fenced_append_separate_key_object": 5806
+      },
+      "application_wrap_calls": 2903,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 3099,
+      "batches": 2464,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 4928,
+        "fenced_append_inline_key": 2464,
+        "fenced_append_separate_key_object": 4928
+      },
+      "application_wrap_calls": 2464,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 3099,
+      "batches": 1400,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 5000.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 2800,
+        "fenced_append_inline_key": 1400,
+        "fenced_append_separate_key_object": 2800
+      },
+      "application_wrap_calls": 1400,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 2926,
+      "batches": 2922,
+      "activated_domains": 2533,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5844,
+        "fenced_append_inline_key": 2922,
+        "fenced_append_separate_key_object": 5844
+      },
+      "application_wrap_calls": 2922,
+      "structural_activation_puts_separate": 5066
+    },
+    {
+      "records": 2926,
+      "batches": 2917,
+      "activated_domains": 2533,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5834,
+        "fenced_append_inline_key": 2917,
+        "fenced_append_separate_key_object": 5834
+      },
+      "application_wrap_calls": 2917,
+      "structural_activation_puts_separate": 5066
+    },
+    {
+      "records": 2926,
+      "batches": 2888,
+      "activated_domains": 2533,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5776,
+        "fenced_append_inline_key": 2888,
+        "fenced_append_separate_key_object": 5776
+      },
+      "application_wrap_calls": 2888,
+      "structural_activation_puts_separate": 5066
+    },
+    {
+      "records": 2926,
+      "batches": 2796,
+      "activated_domains": 2533,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 5000.000000000002,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5592,
+        "fenced_append_inline_key": 2796,
+        "fenced_append_separate_key_object": 5592
+      },
+      "application_wrap_calls": 2796,
+      "structural_activation_puts_separate": 5066
+    },
+    {
+      "records": 2926,
+      "batches": 2875,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5750,
+        "fenced_append_inline_key": 2875,
+        "fenced_append_separate_key_object": 5750
+      },
+      "application_wrap_calls": 2875,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 2926,
+      "batches": 2746,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 5492,
+        "fenced_append_inline_key": 2746,
+        "fenced_append_separate_key_object": 5492
+      },
+      "application_wrap_calls": 2746,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 2926,
+      "batches": 2356,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 4712,
+        "fenced_append_inline_key": 2356,
+        "fenced_append_separate_key_object": 4712
+      },
+      "application_wrap_calls": 2356,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 2926,
+      "batches": 1354,
+      "activated_domains": 400,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 5000.0,
+      "checkpoint_puts": 0,
+      "workload": "sparse",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 2708,
+        "fenced_append_inline_key": 1354,
+        "fenced_append_separate_key_object": 2708
+      },
+      "application_wrap_calls": 1354,
+      "structural_activation_puts_separate": 800
+    },
+    {
+      "records": 149746,
+      "batches": 119771,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 2372,
+      "workload": "busy",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 241914,
+        "fenced_append_inline_key": 122143,
+        "fenced_append_separate_key_object": 241914
+      },
+      "application_wrap_calls": 119771,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 149746,
+      "batches": 66662,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 1616,
+      "workload": "busy",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 134940,
+        "fenced_append_inline_key": 68278,
+        "fenced_append_separate_key_object": 134940
+      },
+      "application_wrap_calls": 66662,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 149746,
+      "batches": 25318,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 50636,
+        "fenced_append_inline_key": 25318,
+        "fenced_append_separate_key_object": 50636
+      },
+      "application_wrap_calls": 25318,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 149746,
+      "batches": 6000,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 4948.852911373706,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 12000,
+        "fenced_append_inline_key": 6000,
+        "fenced_append_separate_key_object": 12000
+      },
+      "application_wrap_calls": 6000,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 149746,
+      "batches": 20715,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 640,
+      "workload": "busy",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 42070,
+        "fenced_append_inline_key": 21355,
+        "fenced_append_separate_key_object": 42070
+      },
+      "application_wrap_calls": 20715,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 149746,
+      "batches": 4673,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 245.1779569886483,
+      "checkpoint_puts": 80,
+      "workload": "busy",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 9426,
+        "fenced_append_inline_key": 4753,
+        "fenced_append_separate_key_object": 9426
+      },
+      "application_wrap_calls": 4673,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 149746,
+      "batches": 1200,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 957.2614931795762,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 2400,
+        "fenced_append_inline_key": 1200,
+        "fenced_append_separate_key_object": 2400
+      },
+      "application_wrap_calls": 1200,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 149746,
+      "batches": 240,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 4757.2057709276405,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 480,
+        "fenced_append_inline_key": 240,
+        "fenced_append_separate_key_object": 480
+      },
+      "application_wrap_calls": 240,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150355,
+      "batches": 120214,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 2418,
+      "workload": "busy",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 242846,
+        "fenced_append_inline_key": 122632,
+        "fenced_append_separate_key_object": 242846
+      },
+      "application_wrap_calls": 120214,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150355,
+      "batches": 66862,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 1632,
+      "workload": "busy",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 135356,
+        "fenced_append_inline_key": 68494,
+        "fenced_append_separate_key_object": 135356
+      },
+      "application_wrap_calls": 66862,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150355,
+      "batches": 25331,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 50662,
+        "fenced_append_inline_key": 25331,
+        "fenced_append_separate_key_object": 50662
+      },
+      "application_wrap_calls": 25331,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150355,
+      "batches": 6000,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 4948.53848264945,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 12000,
+        "fenced_append_inline_key": 6000,
+        "fenced_append_separate_key_object": 12000
+      },
+      "application_wrap_calls": 6000,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150355,
+      "batches": 20734,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 638,
+      "workload": "busy",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 42106,
+        "fenced_append_inline_key": 21372,
+        "fenced_append_separate_key_object": 42106
+      },
+      "application_wrap_calls": 20734,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150355,
+      "batches": 4677,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 245.2378544504299,
+      "checkpoint_puts": 80,
+      "workload": "busy",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 9434,
+        "fenced_append_inline_key": 4757,
+        "fenced_append_separate_key_object": 9434
+      },
+      "application_wrap_calls": 4677,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150355,
+      "batches": 1200,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 958.617644065014,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 2400,
+        "fenced_append_inline_key": 1200,
+        "fenced_append_separate_key_object": 2400
+      },
+      "application_wrap_calls": 1200,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150355,
+      "batches": 240,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 4759.185613688114,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 480,
+        "fenced_append_inline_key": 240,
+        "fenced_append_separate_key_object": 480
+      },
+      "application_wrap_calls": 240,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150246,
+      "batches": 120177,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 2420,
+      "workload": "busy",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 242774,
+        "fenced_append_inline_key": 122597,
+        "fenced_append_separate_key_object": 242774
+      },
+      "application_wrap_calls": 120177,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150246,
+      "batches": 66838,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 1638,
+      "workload": "busy",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 135314,
+        "fenced_append_inline_key": 68476,
+        "fenced_append_separate_key_object": 135314
+      },
+      "application_wrap_calls": 66838,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150246,
+      "batches": 25380,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 50760,
+        "fenced_append_inline_key": 25380,
+        "fenced_append_separate_key_object": 50760
+      },
+      "application_wrap_calls": 25380,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150246,
+      "batches": 6000,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 4946.572577153422,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 12000,
+        "fenced_append_inline_key": 6000,
+        "fenced_append_separate_key_object": 12000
+      },
+      "application_wrap_calls": 6000,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150246,
+      "batches": 20689,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 638,
+      "workload": "busy",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 42016,
+        "fenced_append_inline_key": 21327,
+        "fenced_append_separate_key_object": 42016
+      },
+      "application_wrap_calls": 20689,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150246,
+      "batches": 4674,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 245.2194846202982,
+      "checkpoint_puts": 80,
+      "workload": "busy",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 9428,
+        "fenced_append_inline_key": 4754,
+        "fenced_append_separate_key_object": 9428
+      },
+      "application_wrap_calls": 4674,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150246,
+      "batches": 1200,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 957.4465363106697,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 2400,
+        "fenced_append_inline_key": 1200,
+        "fenced_append_separate_key_object": 2400
+      },
+      "application_wrap_calls": 1200,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150246,
+      "batches": 240,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 4760.767243309346,
+      "checkpoint_puts": 0,
+      "workload": "busy",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 480,
+        "fenced_append_inline_key": 240,
+        "fenced_append_separate_key_object": 480
+      },
+      "application_wrap_calls": 240,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150514,
+      "batches": 51382,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 700,
+      "workload": "skewed",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 103464,
+        "fenced_append_inline_key": 52082,
+        "fenced_append_separate_key_object": 103464
+      },
+      "application_wrap_calls": 51382,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150514,
+      "batches": 28609,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 100,
+      "workload": "skewed",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 57318,
+        "fenced_append_inline_key": 28709,
+        "fenced_append_separate_key_object": 57318
+      },
+      "application_wrap_calls": 28609,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150514,
+      "batches": 15868,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 31736,
+        "fenced_append_inline_key": 15868,
+        "fenced_append_separate_key_object": 31736
+      },
+      "application_wrap_calls": 15868,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150514,
+      "batches": 5374,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 4926.522908003142,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 7,
+      "policy": "per-shard",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 10748,
+        "fenced_append_inline_key": 5374,
+        "fenced_append_separate_key_object": 10748
+      },
+      "application_wrap_calls": 5374,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150514,
+      "batches": 13841,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 412,
+      "workload": "skewed",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 28094,
+        "fenced_append_inline_key": 14253,
+        "fenced_append_separate_key_object": 28094
+      },
+      "application_wrap_calls": 13841,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150514,
+      "batches": 4171,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 244.24597188681219,
+      "checkpoint_puts": 80,
+      "workload": "skewed",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 8422,
+        "fenced_append_inline_key": 4251,
+        "fenced_append_separate_key_object": 8422
+      },
+      "application_wrap_calls": 4171,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150514,
+      "batches": 1167,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 957.1975229152407,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 2334,
+        "fenced_append_inline_key": 1167,
+        "fenced_append_separate_key_object": 2334
+      },
+      "application_wrap_calls": 1167,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150514,
+      "batches": 258,
+      "activated_domains": 40,
+      "size_triggered_flushes": 28,
+      "batch_wait_p95_ms": 4244.491069824434,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 7,
+      "policy": "tenant-key",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 516,
+        "fenced_append_inline_key": 258,
+        "fenced_append_separate_key_object": 516
+      },
+      "application_wrap_calls": 258,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 149987,
+      "batches": 51365,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 700,
+      "workload": "skewed",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 103430,
+        "fenced_append_inline_key": 52065,
+        "fenced_append_separate_key_object": 103430
+      },
+      "application_wrap_calls": 51365,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 149987,
+      "batches": 28675,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 100,
+      "workload": "skewed",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 57450,
+        "fenced_append_inline_key": 28775,
+        "fenced_append_separate_key_object": 57450
+      },
+      "application_wrap_calls": 28675,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 149987,
+      "batches": 15918,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 31836,
+        "fenced_append_inline_key": 15918,
+        "fenced_append_separate_key_object": 31836
+      },
+      "application_wrap_calls": 15918,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 149987,
+      "batches": 5391,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 4928.636617803466,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 19,
+      "policy": "per-shard",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 10782,
+        "fenced_append_inline_key": 5391,
+        "fenced_append_separate_key_object": 10782
+      },
+      "application_wrap_calls": 5391,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 149987,
+      "batches": 13917,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 414,
+      "workload": "skewed",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 28248,
+        "fenced_append_inline_key": 14331,
+        "fenced_append_separate_key_object": 28248
+      },
+      "application_wrap_calls": 13917,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 149987,
+      "batches": 4195,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 244.32668867111218,
+      "checkpoint_puts": 80,
+      "workload": "skewed",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 8470,
+        "fenced_append_inline_key": 4275,
+        "fenced_append_separate_key_object": 8470
+      },
+      "application_wrap_calls": 4195,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 149987,
+      "batches": 1168,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 956.8760266397289,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 2336,
+        "fenced_append_inline_key": 1168,
+        "fenced_append_separate_key_object": 2336
+      },
+      "application_wrap_calls": 1168,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 149987,
+      "batches": 258,
+      "activated_domains": 40,
+      "size_triggered_flushes": 28,
+      "batch_wait_p95_ms": 4255.858870868043,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 19,
+      "policy": "tenant-key",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 516,
+        "fenced_append_inline_key": 258,
+        "fenced_append_separate_key_object": 516
+      },
+      "application_wrap_calls": 258,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150132,
+      "batches": 51386,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 700,
+      "workload": "skewed",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 103472,
+        "fenced_append_inline_key": 52086,
+        "fenced_append_separate_key_object": 103472
+      },
+      "application_wrap_calls": 51386,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150132,
+      "batches": 28630,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 250.0,
+      "checkpoint_puts": 100,
+      "workload": "skewed",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 57360,
+        "fenced_append_inline_key": 28730,
+        "fenced_append_separate_key_object": 57360
+      },
+      "application_wrap_calls": 28630,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150132,
+      "batches": 15868,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 1000.0,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 31736,
+        "fenced_append_inline_key": 15868,
+        "fenced_append_separate_key_object": 31736
+      },
+      "application_wrap_calls": 15868,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150132,
+      "batches": 5393,
+      "activated_domains": 1000,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 4930.422347194957,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 43,
+      "policy": "per-shard",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 10786,
+        "fenced_append_inline_key": 5393,
+        "fenced_append_separate_key_object": 10786
+      },
+      "application_wrap_calls": 5393,
+      "structural_activation_puts_separate": 2000
+    },
+    {
+      "records": 150132,
+      "batches": 13938,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 50.00000000000071,
+      "checkpoint_puts": 416,
+      "workload": "skewed",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 0.05,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 28292,
+        "fenced_append_inline_key": 14354,
+        "fenced_append_separate_key_object": 28292
+      },
+      "application_wrap_calls": 13938,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150132,
+      "batches": 4176,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 244.26027351933533,
+      "checkpoint_puts": 80,
+      "workload": "skewed",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 0.25,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 8432,
+        "fenced_append_inline_key": 4256,
+        "fenced_append_separate_key_object": 8432
+      },
+      "application_wrap_calls": 4176,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150132,
+      "batches": 1165,
+      "activated_domains": 40,
+      "size_triggered_flushes": 0,
+      "batch_wait_p95_ms": 958.5048400520684,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 1.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 2330,
+        "fenced_append_inline_key": 1165,
+        "fenced_append_separate_key_object": 2330
+      },
+      "application_wrap_calls": 1165,
+      "structural_activation_puts_separate": 80
+    },
+    {
+      "records": 150132,
+      "batches": 258,
+      "activated_domains": 40,
+      "size_triggered_flushes": 28,
+      "batch_wait_p95_ms": 4266.104957327464,
+      "checkpoint_puts": 0,
+      "workload": "skewed",
+      "seed": 43,
+      "policy": "tenant-key",
+      "max_wait_s": 5.0,
+      "arrival_window_s": 30,
+      "put_counts": {
+        "payload_plus_per_batch_CAS_inline_key": 516,
+        "fenced_append_inline_key": 258,
+        "fenced_append_separate_key_object": 516
+      },
+      "application_wrap_calls": 258,
+      "structural_activation_puts_separate": 80
+    }
+  ],
+  "fencing_model": {
+    "serialized_poisoned_retained": {
+      "safe": true,
+      "states": 23,
+      "terminal_states": 7,
+      "bounds": {
+        "records": 3,
+        "one_old_writer": true,
+        "one_successor": true,
+        "atomic_create": true,
+        "no_epoch_or_full_gc_model": true
+      }
+    },
+    "BUG_two_inflight": {
+      "safe": false,
+      "states": 44,
+      "counterexample": [
+        "issue record 0",
+        "issue record 1",
+        "PUT/ack record 1",
+        "successor fences slot 0"
+      ]
+    },
+    "BUG_continue_after_failure": {
+      "safe": false,
+      "states": 44,
+      "counterexample": [
+        "issue record 0",
+        "successor fences slot 0",
+        "record 0 collides with occupied slot",
+        "issue record 1",
+        "PUT/ack record 1"
+      ]
+    },
+    "BUG_deleted_fence": {
+      "safe": false,
+      "states": 25,
+      "counterexample": [
+        "issue record 0",
+        "successor fences slot 0",
+        "BUG: GC deletes fence",
+        "PUT/ack record 0"
+      ]
+    }
+  }
+}

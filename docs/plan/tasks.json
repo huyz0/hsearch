@@ -1,0 +1,2943 @@
+{
+  "schema_version": 1,
+  "updated": "2026-11-01",
+  "timezone": "Australia/Sydney",
+  "scope": "Research and comprehensive implementation plan. Cost architecture research and experiments are delivered in M00 now; implementation/cost integration and qualification live in their owning M01-M17 milestones. M18 has been retired with an ID mapping.",
+  "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
+  "milestones": [
+    {
+      "id": "M00",
+      "title": "Research and delivery contract",
+      "goal": "Deliver source-backed architecture judgment and an executable, comprehensive planning ledger preserving every requested requirement.",
+      "owner": "research/integrator",
+      "status": "done",
+      "depends_on": [],
+      "definition_of_done": [
+        "Primary research and user's repository audit distinguish current code, historical reports, proposals and missing evidence.",
+        "Architecture, modules, security, replication/copy, AI workflow, CI, performance and migration work have explicit acceptance criteria.",
+        "Plan checks, dependency graph, local links, generated freshness and deliberately bad ledger controls pass; runtime work remains planned.",
+        "Added cost requirement R23 is source-backed, with explicit operating profiles, full request/traffic economics, an arithmetic model and cost gates inside the owning early milestones and provider qualification."
+      ],
+      "document": "milestones/M00.md",
+      "tasks": [
+        {
+          "id": "M00.01",
+          "title": "Audit existing projects",
+          "goal": "Identify what to reuse and what must change.",
+          "deliverables": [
+            "research/repository-audit.md",
+            "Pinned source commit inventory"
+          ],
+          "validation": [
+            "Inspect actual engine directory/writer APIs, source CI/review guidance and fork implementation status."
+          ],
+          "definition_of_done": [
+            "Unreleased engine and remote-input risk are explicit; no inherited benchmark is presented as hsearch evidence."
+          ],
+          "depends_on": [],
+          "owner": "research/integrator",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "research/repository-audit.md",
+              "result": "Source audit completed with pinned repository heads and explicit evidence limits."
+            }
+          ]
+        },
+        {
+          "id": "M00.02",
+          "title": "Evaluate primary architecture sources",
+          "goal": "Compare object-native, remote-backed and log-based search designs.",
+          "deliverables": [
+            "research/findings.md",
+            "research/sources.md"
+          ],
+          "validation": [
+            "Read primary source contracts for storage, search, replication, encryption and AI tooling."
+          ],
+          "definition_of_done": [
+            "Alternatives have a reasoned selection/rejection and material source conflicts are disclosed."
+          ],
+          "depends_on": [
+            "M00.01"
+          ],
+          "owner": "research/integrator",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "research/findings.md",
+              "result": "Comparative primary research completed; source register includes inspected URLs."
+            }
+          ]
+        },
+        {
+          "id": "M00.03",
+          "title": "Specify system and module contracts",
+          "goal": "Make the intended final system reviewable before implementation.",
+          "deliverables": [
+            "architecture.md",
+            "modules.md",
+            "security.md",
+            "replication-copy.md",
+            "requirements.md"
+          ],
+          "validation": [
+            "Walk mutation, reader, GC, key rotation, copy and CCR failure boundaries against requirements."
+          ],
+          "definition_of_done": [
+            "Every requested product capability has a concrete contract and planned delivery evidence."
+          ],
+          "depends_on": [
+            "M00.02"
+          ],
+          "owner": "research/integrator",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "requirements.md",
+              "result": "R01-R22 map to architecture contracts and implementation evidence requirements."
+            }
+          ]
+        },
+        {
+          "id": "M00.04",
+          "title": "Define delivery and AI workflow",
+          "goal": "Create dependency-aware work units with clear completion rules.",
+          "deliverables": [
+            "tasks.json",
+            "ai-harness.md",
+            "ci-testing.md",
+            "performance-scale.md",
+            "risks.md"
+          ],
+          "validation": [
+            "Audit each task for goal, deliverables, validation, DoD, dependencies, owner role and evidence field."
+          ],
+          "definition_of_done": [
+            "End-to-end implementation, qualification and migration are covered without claiming them implemented."
+          ],
+          "depends_on": [
+            "M00.03"
+          ],
+          "owner": "research/integrator",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "tasks.json",
+              "result": "Detailed milestone/task goals, deliverables, dependencies, validation and DoD authored."
+            }
+          ]
+        },
+        {
+          "id": "M00.05",
+          "title": "Validate and record planning package",
+          "goal": "Verify navigable documents and truthful progress state.",
+          "deliverables": [
+            "evidence/planning-validation.txt",
+            "PROGRESS.md"
+          ],
+          "validation": [
+            "Run plan render/check/status/next/selftest; inspect requirement coverage and critical-path consistency."
+          ],
+          "definition_of_done": [
+            "All planning checks and seeded negative controls pass; final state names the first ready implementation work."
+          ],
+          "depends_on": [
+            "M00.04"
+          ],
+          "owner": "research/integrator",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/planning-validation.txt",
+              "result": "Observed plan validation, generated output, state/graph/link checks and 16 targeted negative controls pass."
+            },
+            {
+              "path": "evidence/planning-audit.md",
+              "result": "Author audited requested research/planning content and explicitly separated unimplemented runtime requirements."
+            }
+          ]
+        },
+        {
+          "id": "M00.06",
+          "title": "Research cost economics and revise delivery gates",
+          "goal": "Address the added API/cross-AZ cost requirement with explicit latency/reliability profiles and accountable delivery work.",
+          "deliverables": [
+            "research/cost-economics.md",
+            "operating-profiles.md",
+            "cost-scenarios.json and tools/cost_model.py",
+            "Historical first R23/M18 extension and delivery gates; M00.07 supersedes the M18 packaging and initial protocol choice"
+          ],
+          "validation": [
+            "Read primary cloud pricing/path and comparable-system sources; audit metadata/key traffic floors and failure-contract changes.",
+            "Run plan graph/link/freshness/state checks, cost arithmetic/invalid-input controls and requirement/dependency regression audit."
+          ],
+          "definition_of_done": [
+            "Research, concrete count-based examples and selected-profile guarantees are reviewable and sources/units/unknowns are explicit.",
+            "Early protocol/placement/metering work and real provider reconciliation gate runtime milestones and release; only planning work is marked done."
+          ],
+          "depends_on": [
+            "M00.05"
+          ],
+          "owner": "research/cost-architecture",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/cost-planning-audit.md",
+              "result": "Author audited R23, cost source evidence, explicit profile semantics, early protocol gates and release dependencies; no runtime savings claimed."
+            },
+            {
+              "path": "evidence/cost-planning-validation.txt",
+              "result": "Observed plan checks and 16 negative controls pass; cost model passes 8 arithmetic checks and 7 invalid-input controls; original IDs and required cost gates audited."
+            }
+          ]
+        },
+        {
+          "id": "M00.07",
+          "title": "Complete cost protocol research and executed experiments now",
+          "goal": "Resolve cost architecture choices before implementation and remove the late research umbrella.",
+          "deliverables": [
+            "research/cost-decisions.md",
+            "tools/cost_research.py and evidence/cost-research-results.json/.md",
+            "Source-backed fenced-append/inline-key/compatible-batch/read-barrier decisions and in-place cost task migration"
+          ],
+          "validation": [
+            "Inspect actual pinned fork WAL/fencing/group-commit code, SlateDB manifest/WAL/GC designs and external sequencing alternatives",
+            "Execute 72 seeded batching experiments, correct bounded fence model and three unsafe counterexample controls; audit migrated task dependencies and document consistency"
+          ],
+          "definition_of_done": [
+            "Decisions, quantitative observations and model limitations are recorded now; research does not wait for runtime milestones",
+            "Former cost tasks are integrated beside metadata, WAL, placement and provider work, with all implementation obligations preserved and no active M18"
+          ],
+          "depends_on": [
+            "M00.06"
+          ],
+          "owner": "research/cost-architecture",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "research/cost-decisions.md",
+              "result": "Pinned fork WAL/fencing/group-commit code and primary system RFCs inspected; fenced slots, compatible batching, inline key wrapping, amortized checkpoints and authoritative latest barriers selected now."
+            },
+            {
+              "path": "evidence/cost-research-results.json",
+              "result": "72 seeded batching experiments and bounded fence model executed; safe configuration explores 23 states and three unsafe controls yield counterexamples. Repeated run produces byte-identical JSON/Markdown; no cloud performance claim."
+            },
+            {
+              "path": "evidence/cost-research-now-audit.md",
+              "result": "Author audited all eight migrated cost obligations, early/release gates, current protocol contracts and explicit model/provider limitations; product implementation remains planned."
+            },
+            {
+              "path": "evidence/cost-research-now-validation.txt",
+              "result": "Observed plan graph/link/render checks and 16 negative controls pass; cost arithmetic passes 8 boundary checks and 7 invalid-input controls. Inventory preserves 108 original IDs, 111 planned product tasks, R01-R23 and S01-S82."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M01",
+      "title": "Linux workspace and AI harness foundation",
+      "goal": "Create a reproducible Rust workspace and a measured, safe parallel-agent development loop before storage code grows.",
+      "owner": "harness/integrator",
+      "status": "planned",
+      "depends_on": [
+        "M00"
+      ],
+      "definition_of_done": [
+        "A fresh Linux x86_64/ARM checkout runs the same bounded validation interface locally and in CI, with pinned dependencies and >=90% production line coverage policy enforced.",
+        "Two independent tasks build/review in isolated worktrees without resource/path/service interference; coordinator resumes after agent failure.",
+        "CI selector and final-result controls are observed rejecting defects, cancellations, unknown changes and stale review evidence."
+      ],
+      "document": "milestones/M01.md",
+      "tasks": [
+        {
+          "id": "M01.01",
+          "title": "Bootstrap workspace and contract ownership",
+          "goal": "Establish real crate boundaries and reproducible engine/dependency pins.",
+          "deliverables": [
+            "Cargo workspace, committed Cargo.lock, toolchain pin, types/observe/testkit/xtask crates and dependency policy"
+          ],
+          "validation": [
+            "Clean build on Linux; dependency cycle/dev-feature leak controls; published source/license inventory."
+          ],
+          "definition_of_done": [
+            "Only needed crates exist, release build excludes testkit, and exact engine revision is locked."
+          ],
+          "depends_on": [
+            "M00"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.02",
+          "title": "Build capped development sandbox",
+          "goal": "Make local WSL/container work repeatable without exhausting the host.",
+          "deliverables": [
+            "Pinned non-root dev image, Compose RustFS/test-CA topology, preflight and host resource leases"
+          ],
+          "validation": [
+            "Fresh-machine smoke; low-disk/engine-down/over-budget refusal; verify isolated ports/buckets and safe cleanup."
+          ],
+          "definition_of_done": [
+            "Build/test/diagnostic commands run within declared budgets; unrelated processes/data are not pruned."
+          ],
+          "depends_on": [
+            "M01.01"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.03",
+          "title": "Implement worktree and task runner",
+          "goal": "Allow bounded parallel implementation and recovery.",
+          "deliverables": [
+            "xtask task/context/worktree/evidence commands; ownership/resource registry; task-packet schema"
+          ],
+          "validation": [
+            "Run two worktrees concurrently, kill one worker, resume from evidence; reject overlapping path claims and unsafe cleanup."
+          ],
+          "definition_of_done": [
+            "Each task has base SHA, owned paths, isolated resources and live-handle checks before reclamation."
+          ],
+          "depends_on": [
+            "M01.02"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.04",
+          "title": "Wire semantic navigation and context budgets",
+          "goal": "Reduce context cost while preserving exact source evidence.",
+          "deliverables": [
+            "Pinned lsp-cli/rust-analyzer adapter, progressive context router, token/byte accounting"
+          ],
+          "validation": [
+            "Outline/reference/rename/diagnostic corpus; stale-server and missing-LSP fallback; compare full workflow token totals."
+          ],
+          "definition_of_done": [
+            "Worktree daemons are isolated/capped, exact CLI schemas are used, and cargo check remains authoritative."
+          ],
+          "depends_on": [
+            "M01.03"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.05",
+          "title": "Deliver deterministic and AI review gates",
+          "goal": "Review code, tests, architecture and PR claims with bounded independent evidence.",
+          "deliverables": [
+            "Review packet/verdict schemas, risk routing, durable round counter, final-tree binding, reviewer adapters"
+          ],
+          "validation": [
+            "Seed correctness/security/weak-oracle defects; change reviewed code and reject verdict; enforce round ceiling."
+          ],
+          "definition_of_done": [
+            "Blocking findings prevent merge; empty review is valid; budget exhaustion requires split/redesign."
+          ],
+          "depends_on": [
+            "M01.03"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.06",
+          "title": "Implement impact-based CI",
+          "goal": "Build only affected dependencies while failing safely.",
+          "deliverables": [
+            "Change planner, non-Cargo ownership graph, conditional Linux jobs and always-run ci-ok"
+          ],
+          "validation": [
+            "Docs-only, transitive/rename/deletion, unknown path, incomplete base, missing/cancelled/skipped job controls."
+          ],
+          "definition_of_done": [
+            "Every selected job is required by ci-ok; ambiguous impact runs full matrix; release credentials stay out of untrusted jobs."
+          ],
+          "depends_on": [
+            "M01.01"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.07",
+          "title": "Enforce coverage and correctness tooling",
+          "goal": "Make the user coverage floor and parser/unsafe policies executable.",
+          "deliverables": [
+            "llvm-cov merge wrapper, >=90% aggregate/per-crate/changed-line gates, nextest timeouts, lint/format/unsafe checks"
+          ],
+          "validation": [
+            "Seed uncovered production path, stale profile merge, missing binary coverage and lint violation controls."
+          ],
+          "definition_of_done": [
+            "Denominator/exclusions are visible; failing control returns nonzero; release profiles and doctests have explicit jobs."
+          ],
+          "depends_on": [
+            "M01.01",
+            "M01.06"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.08",
+          "title": "Qualify the harness baseline",
+          "goal": "Prove productivity mechanisms work before delegating product tasks.",
+          "deliverables": [
+            "Frozen agent task corpus, parallel integration trial, baseline timing/token/escaped-defect report"
+          ],
+          "validation": [
+            "Exercise task claim through review/integration; simulate coordinator/worker loss and conflicting lockfile edits."
+          ],
+          "definition_of_done": [
+            "Required defects fail, independent work remains isolated, evidence survives restart, and actual timing/token results are recorded."
+          ],
+          "depends_on": [
+            "M01.04",
+            "M01.05",
+            "M01.06",
+            "M01.07"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M02",
+      "title": "Engine, workload and cost feasibility",
+      "goal": "Resolve the major unknowns with executable spikes and freeze the initial compatibility/performance contract.",
+      "owner": "engine/architecture",
+      "status": "planned",
+      "depends_on": [
+        "M01"
+      ],
+      "definition_of_done": [
+        "Pinned Lucene Rust opens/indexes/updates/deletes/commits/refreshes through native Rust with independent correctness evidence.",
+        "Remote-read strategy is proved on affected codecs or engine patches are concretely scoped; materialization alone cannot close the range-native requirement.",
+        "API/workload inventory, failure-model SLOs and candidate decisions have measured baselines and explicit rejection criteria.",
+        "Workload/SLO freeze includes profile-specific API/network/KMS cost envelopes and no unpriced or unproven failure-domain assumptions."
+      ],
+      "document": "milestones/M02.md",
+      "tasks": [
+        {
+          "id": "M02.01",
+          "title": "Inventory replacement API and workloads",
+          "goal": "Define which OpenSearch clients, queries and data models the initial release must replace.",
+          "deliverables": [
+            "Supported/partial/required API and DSL matrix; analyzer/aggregation/script/vector inventory; dataset hashes"
+          ],
+          "validation": [
+            "Inspect user's relevant client/proxy/fork sources and representative fixtures; compare stock OpenSearch results."
+          ],
+          "definition_of_done": [
+            "Required missing engine/API features remain blocking tasks, not silently removed promises."
+          ],
+          "depends_on": [
+            "M01"
+          ],
+          "owner": "engine/architecture",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M02.02",
+          "title": "Exercise native engine lifecycle",
+          "goal": "Find the actual embedding boundary rather than rely on stale docs.",
+          "deliverables": [
+            "Adapter spike for writer/readers/updates/deletes/merge/commit; failure semantics report"
+          ],
+          "validation": [
+            "Java differential fixtures; reopen and identity-preserving replay; concurrent refresh with failed mutation preparation."
+          ],
+          "definition_of_done": [
+            "Native lifecycle and supported writer combinations are demonstrated with pinned source symbols."
+          ],
+          "depends_on": [
+            "M01"
+          ],
+          "owner": "engine/architecture",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M02.03",
+          "title": "Prototype remote inputs",
+          "goal": "Establish bounded cold reads across actual Lucene codecs.",
+          "deliverables": [
+            "Materialized baseline plus read-at/range-input patch prototype; file-access trace and upstream patch plan"
+          ],
+          "validation": [
+            "Run term/filter/doc-values/stored-fields/vector queries with working set larger than cache and injected range errors."
+          ],
+          "definition_of_done": [
+            "No uninitialized bytes, hidden network dereference or full-file heap allocation; all touched reader paths are enumerated."
+          ],
+          "depends_on": [
+            "M02.02"
+          ],
+          "owner": "engine/architecture",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M02.04",
+          "title": "Measure durability and metadata candidates",
+          "goal": "Set attainable first-stage latency/cost and CAS limits.",
+          "deliverables": [
+            "RustFS request/contended-CAS baseline, object-WAL prototype and Rust quorum candidate comparison"
+          ],
+          "validation": [
+            "Open-loop batching sweep; compare OpenRaft/raft-rs persistence/network/membership contracts and per-group resources.",
+            "Include actual attempts for payload, CAS/root/page, KMS and network path; estimate quorum follower bytes separately from object API batching."
+          ],
+          "definition_of_done": [
+            "Selection rationale includes costs, ambiguous outcomes and failure limits; no custom consensus protocol."
+          ],
+          "depends_on": [
+            "M01"
+          ],
+          "owner": "engine/architecture",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M02.07",
+          "title": "Calibrate already-selected cost profiles against workload targets",
+          "goal": "Validate the M00 cost decisions on the implementation workload and freeze numerical envelopes before metadata integration; do not defer the initial research.",
+          "deliverables": [
+            "Versioned provider/region/path/unit rate-card schema, workload distributions and matched object-economy/object-resilient/latency-ha/optional latency-zonal envelopes",
+            "Trace-driven request/traffic model extending the planning arithmetic with sparse, busy, skewed and recovery workloads"
+          ],
+          "validation": [
+            "Compare candidate batches, dirty cohort counts, query/freshness choices and zone layouts; report p99/RPO/RTO/capacity plus request/page/key/byte components",
+            "Check zero-idle and Poisson/window assumptions against trace-driven simulations; reject unpriced paths and false regional quotes"
+          ],
+          "definition_of_done": [
+            "Each supported profile has explicit measurable cost and service constraints using operator-supplied workloads/prices; no arbitrary universal USD budget or inherited SLA",
+            "Price changes are data updates with source/date/unit provenance; cost estimates and actual bills are distinct"
+          ],
+          "depends_on": [
+            "M02.01",
+            "M02.04"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M02.05",
+          "title": "Freeze benchmark and failure contracts",
+          "goal": "Make performance claims reproducible and falsifiable.",
+          "deliverables": [
+            "Workload/hardware/arrival profiles, SLO worksheet, independent receipt ledger design and capacity model"
+          ],
+          "validation": [
+            "Reproduce single-node baseline twice with raw histograms/configs; calculate batch/egress/retention costs."
+          ],
+          "definition_of_done": [
+            "Targets in performance-scale.md are accepted or explicitly revised with evidence and no hidden exclusions."
+          ],
+          "depends_on": [
+            "M02.01",
+            "M02.02",
+            "M02.04",
+            "M02.07"
+          ],
+          "owner": "engine/architecture",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M02.06",
+          "title": "Review feasibility and architecture decisions",
+          "goal": "Close spike findings before runtime architecture hardens.",
+          "deliverables": [
+            "Reviewed ADRs for engine input, authority, metadata, journal candidate and API scope"
+          ],
+          "validation": [
+            "Independent architecture review of spike code, source evidence and negative cases."
+          ],
+          "definition_of_done": [
+            "Every failed spike has an implementation task or design correction; M04 can implement a concrete adapter.",
+            "Cost/profile/commit-domain decisions and all changed SLO/failure assumptions are reviewed explicitly."
+          ],
+          "depends_on": [
+            "M02.03",
+            "M02.05",
+            "M02.07"
+          ],
+          "owner": "engine/architecture",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M03",
+      "title": "Storage semantics, cost-aware formats and metadata",
+      "goal": "Create a provider-conformant object substrate and formally reviewable commit/publication model.",
+      "owner": "storage/consistency",
+      "status": "planned",
+      "depends_on": [
+        "M01"
+      ],
+      "definition_of_done": [
+        "Required conditional/range semantics pass against exact RustFS image/topology and startup fails when they do not.",
+        "Metadata/operation formats are bounded, versioned and crash-recoverable; stale writers and unknown outcomes cannot create false commits.",
+        "Publication, pin and GC transition model has exhaustive bounded histories and negative controls.",
+        "Selected metadata granularity passes the M03.08 total-request/fencing gate, including pages/keys/retries and promotion; idle data-plane polling is absent."
+      ],
+      "document": "milestones/M03.md",
+      "tasks": [
+        {
+          "id": "M03.01",
+          "title": "Define storage and metadata traits",
+          "goal": "Separate provider semantics from core state machines.",
+          "deliverables": [
+            "ObjectBackend/MetadataStore interfaces, opaque version tokens, errors, deadlines and conformance kit"
+          ],
+          "validation": [
+            "Memory/faulting backend tests for create/update/range/cancel/unknown outcome and byte budgets."
+          ],
+          "definition_of_done": [
+            "CAS cannot be implemented as unconditional overwrite; all retry decisions preserve request identity."
+          ],
+          "depends_on": [
+            "M01"
+          ],
+          "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M03.02",
+          "title": "Probe real RustFS semantics",
+          "goal": "Verify the actual initial storage dependency.",
+          "deliverables": [
+            "Capability probe executable, concurrent history recorder/checker and digest-pinned deployment"
+          ],
+          "validation": [
+            "Many-client conditional create/update races, response loss, ranges, restart and multipart failure tests."
+          ],
+          "definition_of_done": [
+            "Probe evidence binds image/config/topology; required capability failure blocks production readiness."
+          ],
+          "depends_on": [
+            "M03.01"
+          ],
+          "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M03.03",
+          "title": "Specify bounded on-disk formats",
+          "goal": "Version objects/manifests/WAL/schema/checkpoint envelopes.",
+          "deliverables": [
+            "Format specifications, parsers/encoders, size limits and golden corpus"
+          ],
+          "validation": [
+            "Every-byte truncation/corruption and oversized/overflow fuzz inputs; roundtrip plus independent fixture checks."
+          ],
+          "definition_of_done": [
+            "Unknown mandatory versions fail, lengths are checked before allocation, ETags are not hashes."
+          ],
+          "depends_on": [
+            "M03.01"
+          ],
+          "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M03.04",
+          "title": "Model authority, pins and GC",
+          "goal": "Prove stale actors cannot violate ordered committed slots, published roots or live pins.",
+          "deliverables": [
+            "Executable/TLA-style model for full lane activation/epochs, ordered conditional creates, structural CAS, pin registration, publication and GC boundaries"
+          ],
+          "validation": [
+            "Enumerate suspended writer, pin-vs-GC, conflict, response-loss and old-incarnation histories; seed broken fence control.",
+            "Model grouped membership/hot-stream promotion, independently stale descriptors, bounded checkpoint-page publication and unknown cross-head outcomes.",
+            "Extend the small M00 model to own-term establishment, multiple owners/epochs, same-term reopen, retained fences/tail locators, checkpoint reclamation and authoritative read barriers; preserve failing unsafe controls."
+          ],
+          "definition_of_done": [
+            "Safety invariants hold within published bounds; model limitations and production mapping are explicit."
+          ],
+          "depends_on": [
+            "M03.03"
+          ],
+          "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M03.07",
+          "title": "Implement attempt, path and cost attribution",
+          "goal": "Expose the actual request and network components rather than count only high-level logical operations.",
+          "deliverables": [
+            "HTTP/provider retry-attempt counters for PUT/CAS/GET/HEAD/LIST/multipart and key operations",
+            "Directed traffic ledger by role/endpoint/payer/region/zone with encoded bytes; bounded telemetry, infrastructure route/endpoint inspection and cost diagnostics"
+          ],
+          "validation": [
+            "Inject SDK retries/conflicts/empty conditional reads, NAT/hairpin paths, wrong units and double-counted endpoint charges",
+            "Compare adapter counts to transport logs and synthetic provider usage; DNS-only path verification must fail acceptance"
+          ],
+          "definition_of_done": [
+            "Logical calls, actual attempts, payload/metadata/key requests and physical traffic are independently attributed",
+            "Missing path/rate information is unknown, not free; tenant drill-down is scoped and cardinality is bounded"
+          ],
+          "depends_on": [
+            "M02.07",
+            "M03.01"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M03.08",
+          "title": "Implement and qualify the selected fenced domains and packing",
+          "goal": "Implement the researched ordered conditional-create WAL, compatible batching and amortized checkpoint protocol, proving the full activation/GC/reader boundary.",
+          "deliverables": [
+            "Fenced ordered-slot log prototype with one in-flight append, failure poisoning, own-term establishment, retained fences/tail locator and explicit unknown outcomes",
+            "Same-tenant/key-compatible domains, bounded batching, inline initial wrapped-key format, amortized dirty-only checkpoints and fenced hot-stream promotion",
+            "Payload-plus-head-CAS comparison implementation and complete attempt/page/key/recovery accounting"
+          ],
+          "validation": [
+            "Model suspend/resume, concurrent membership change, ambiguous CAS, page growth, pin/GC races and promotion crashes",
+            "Sweep sparse/busy/skewed small streams, incompatible crypto policies, metadata-page/envelope overhead, retry and rebuild amplification"
+          ],
+          "definition_of_done": [
+            "Selected fenced protocol preserves unique authority, ordered committed identities and bounded replay/discovery across full fault histories; the small planning model is not its runtime proof",
+            "No obligatory per-batch head CAS/key-sidecar PUT, idle polling or cross-tenant shared keys; extra checkpoint/rewrap/activation/retry requests are explicitly counted",
+            "Failure of provider conditional-write or modeled authority/security conformance requires a recorded design revision, not an unreported fallback; production engine/crypto integration is qualified in M04/M05/M06"
+          ],
+          "depends_on": [
+            "M02.07",
+            "M03.04",
+            "M03.02",
+            "M03.07"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M03.05",
+          "title": "Implement catalog and conditional roots",
+          "goal": "Make discovery scalable without a global write bottleneck.",
+          "deliverables": [
+            "Paged tenant/index catalog, structural commit-domain authority/epoch inventory, checkpoint/tail locators, schema generations and identity resolution; do not update the head for every data append"
+          ],
+          "validation": [
+            "Concurrent create/delete/recreate, stale CAS, ambiguous commit resolution, paged enumeration and repair."
+          ],
+          "definition_of_done": [
+            "Names cannot resurrect old UUIDs; hot paths need no LIST; head epochs never regress."
+          ],
+          "depends_on": [
+            "M03.02",
+            "M03.04",
+            "M03.08"
+          ],
+          "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M03.06",
+          "title": "Qualify provider boundary and format compatibility",
+          "goal": "Make substrate safe for engine/crypto consumers.",
+          "deliverables": [
+            "Conformance artifacts, external provider example and format compatibility matrix"
+          ],
+          "validation": [
+            "Run shared suites on fake and RustFS; disabled/missing/unknown provider tests; module drain failures."
+          ],
+          "definition_of_done": [
+            "Actual RustFS evidence and coverage floors pass; public contracts suffice for the example provider."
+          ],
+          "depends_on": [
+            "M03.05",
+            "M03.07"
+          ],
+          "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M04",
+      "title": "Lucene Rust bridge and committed readers",
+      "goal": "Deliver a production-shaped engine adapter with remote I/O and exact commit/visibility boundaries.",
+      "owner": "engine",
+      "status": "planned",
+      "depends_on": [
+        "M02",
+        "M03"
+      ],
+      "definition_of_done": [
+        "Native adapter supports the frozen mutation/query contract and old-index reopen with Java/reference oracles.",
+        "Range-native reads operate with bounded memory and instrumented remote requests; materialized fallback is separately measured.",
+        "Only committed operations enter serving readers, with preserved identity, pinned query/fetch generations and deterministic replay."
+      ],
+      "document": "milestones/M04.md",
+      "tasks": [
+        {
+          "id": "M04.01",
+          "title": "Implement engine adapter and revision isolation",
+          "goal": "Keep upstream churn behind one tested public boundary.",
+          "deliverables": [
+            "EngineFactory/ShardEngine APIs, native lifecycle implementation and feature inventory"
+          ],
+          "validation": [
+            "M02 corpus against pinned engine; missing feature, unsupported writer mode, panic/corruption handling."
+          ],
+          "definition_of_done": [
+            "No runtime crate bypasses the adapter to engine internals; revision upgrade has a dedicated test command."
+          ],
+          "depends_on": [
+            "M02",
+            "M03"
+          ],
+          "owner": "engine",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M04.02",
+          "title": "Deliver remote-input engine changes",
+          "goal": "Make lazy object reads real through all affected readers.",
+          "deliverables": [
+            "Reviewed engine patch series, read-at input implementation, bounded I/O/cache bridge"
+          ],
+          "validation": [
+            "Remote/cold corpus across affected codecs with cache smaller than corpus and injected errors/timeouts."
+          ],
+          "definition_of_done": [
+            "Remote reads do not require full-file heap residency; published cold path includes measured range counts."
+          ],
+          "depends_on": [
+            "M04.01"
+          ],
+          "owner": "engine",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M04.03",
+          "title": "Build resolved-operation preparation",
+          "goal": "Evaluate conditional mutations once against committed state.",
+          "deliverables": [
+            "Canonical operation identity/version map, script/patch resolver and idempotency outcome storage"
+          ],
+          "validation": [
+            "Dependent updates/create races; failed commit after preparation; replay with time/random input changes."
+          ],
+          "definition_of_done": [
+            "Speculative state cannot influence a committed dependent mutation; replay never reruns nondeterministic scripts."
+          ],
+          "depends_on": [
+            "M04.01"
+          ],
+          "owner": "engine",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M04.04",
+          "title": "Implement apply and reader barriers",
+          "goal": "Separate commit, apply and search visibility.",
+          "deliverables": [
+            "Ordered replay/apply, committed reader manager, refresh batching and query/fetch pinning"
+          ],
+          "validation": [
+            "Refresh before/after failed persistence, duplicate/gap replay, crash between apply/refresh and concurrent fetch."
+          ],
+          "definition_of_done": [
+            "Every reader reports an exact contiguous prefix and cannot expose uncommitted writes."
+          ],
+          "depends_on": [
+            "M04.03"
+          ],
+          "owner": "engine",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M04.05",
+          "title": "Integrate cache, materialization and merges",
+          "goal": "Bound indexing/read resources and immutable file lifetime.",
+          "deliverables": [
+            "Version/domain-keyed cache adapter, disk reservations, pinned mmap/materialization and merge scheduling"
+          ],
+          "validation": [
+            "Evict/open/merge races, disk full, cache corruption/failure fallback and engine shutdown."
+          ],
+          "definition_of_done": [
+            "Cache eviction cannot invalidate live readers; source integrity errors are never hidden as cache misses."
+          ],
+          "depends_on": [
+            "M04.02",
+            "M04.04"
+          ],
+          "owner": "engine",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M04.06",
+          "title": "Qualify engine bridge",
+          "goal": "Prove read/write semantic and recovery fidelity.",
+          "deliverables": [
+            "Java/Lucene differential report, release-profile engine tests, remote/local benchmark and adapter review"
+          ],
+          "validation": [
+            "Open/update/delete/merge/restart, analyzer/scoring/float parity and corruption corpus."
+          ],
+          "definition_of_done": [
+            "Frozen supported contract and coverage pass; unsupported capabilities remain explicit; remote path isn't silently materialized."
+          ],
+          "depends_on": [
+            "M04.05"
+          ],
+          "owner": "engine",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M05",
+      "title": "mTLS, tenant policy and BYOK",
+      "goal": "Deliver identity/authorization and portable envelope encryption before production data formats are activated.",
+      "owner": "security/crypto",
+      "status": "planned",
+      "depends_on": [
+        "M03"
+      ],
+      "definition_of_done": [
+        "All peer roles require validated mTLS identity and scoped authorization, with rotation and negative handshake evidence.",
+        "Object/WAL/key formats use authenticated bounded blocks and vetted crypto; no plaintext production spill path is left unaccounted for.",
+        "Wrap/unwrap providers, rotation, revocation and hardware dispatch have executable conformance evidence; real cloud providers close in M15."
+      ],
+      "document": "milestones/M05.md",
+      "tasks": [
+        {
+          "id": "M05.01",
+          "title": "Implement identity and role authorization",
+          "goal": "Keep client, peer, admin and replication authority separate.",
+          "deliverables": [
+            "IdentityProvider, verified principal types, policy generations, dev CA and SPIFFE/file adapters"
+          ],
+          "validation": [
+            "Wrong CA/SAN/cluster/role, expired cert, public-token peer access and tenant spoof tests."
+          ],
+          "definition_of_done": [
+            "Every peer RPC has explicit role/tenant checks and cert verification cannot be disabled by ordinary config."
+          ],
+          "depends_on": [
+            "M03"
+          ],
+          "owner": "security/crypto",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M05.02",
+          "title": "Implement key-provider contract",
+          "goal": "Make key wrapping replaceable without exposing key material.",
+          "deliverables": [
+            "KeyProvider API, isolated test KMS, provider errors, bounded DEK cache and audit schema"
+          ],
+          "validation": [
+            "Wrap/unwrap context/version mismatch, throttle/denial/timeout, cancellation and zeroization checks."
+          ],
+          "definition_of_done": [
+            "Plaintext keys never enter logs/evidence; test provider is refused in production profile."
+          ],
+          "depends_on": [
+            "M03"
+          ],
+          "owner": "security/crypto",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M05.03",
+          "title": "Ratify encrypted block format",
+          "goal": "Make portable authenticated random access safe.",
+          "deliverables": [
+            "Reviewed envelope/header/AAD/nonce specification, AEAD codec and vectors",
+            "Bounded inline initial wrapped-DEK envelope and authenticated object/domain binding; optional external rewrap overlay selected by published metadata/policy"
+          ],
+          "validation": [
+            "Known-answer and independent decrypt; header/block substitution, every-byte damage, retry/crash nonce controls.",
+            "Verify inline and rewrapped keys, wrapper/context substitution, crash before overlay publication, revoked old policy and unchanged ciphertext AAD; never accept an unauthenticated provider wrapper"
+          ],
+          "definition_of_done": [
+            "One fresh DEK per immutable object; only authenticated plaintext reaches parsers; format has explicit size/invocation bounds."
+          ],
+          "depends_on": [
+            "M05.02",
+            "M03.03"
+          ],
+          "owner": "security/crypto",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M05.04",
+          "title": "Encrypt every persistent data path",
+          "goal": "Cover object data, logs, cache and engine scratch.",
+          "deliverables": [
+            "Encryption decorators, encrypted-volume/directory readiness policy, spill inventory"
+          ],
+          "validation": [
+            "Inspect on-disk object/journal/cache/spool bytes; verify engine scratch volume policy and fail unprotected production startup."
+          ],
+          "definition_of_done": [
+            "Object encryption cannot be claimed as full at-rest protection while engine scratch remains plaintext."
+          ],
+          "depends_on": [
+            "M05.03"
+          ],
+          "owner": "security/crypto",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M05.05",
+          "title": "Implement rotation and revocation state machines",
+          "goal": "Retire key versions without breaking pinned readers or promising instant revocation.",
+          "deliverables": [
+            "Immutable envelope rewrap publication, dependency inventory, policy invalidation and bounded key/reader TTL"
+          ],
+          "validation": [
+            "Concurrent rewrap/PIT/GC/restart, KMS outage, revoked cached key and policy partition histories."
+          ],
+          "definition_of_done": [
+            "Old roots keep needed envelopes; expired policy fails closed; measured revocation envelope is documented."
+          ],
+          "depends_on": [
+            "M05.01",
+            "M05.04"
+          ],
+          "owner": "security/crypto",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M05.06",
+          "title": "Verify hardware crypto and runtime TLS rotation",
+          "goal": "Use target hardware safely and preserve active operation boundaries.",
+          "deliverables": [
+            "x86/ARM crypto dispatch reporting, fallback tests and cert/bundle rotation implementation"
+          ],
+          "validation": [
+            "Force software/accelerated paths and compare bytes; rotate certificates during streams; stalled unwrap budget test."
+          ],
+          "definition_of_done": [
+            "No unsupported instruction, plaintext fallback or authentication downgrade; actual backend is observable."
+          ],
+          "depends_on": [
+            "M05.01",
+            "M05.03"
+          ],
+          "owner": "security/crypto",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M05.07",
+          "title": "Complete security format review",
+          "goal": "Close crypto/identity flaws before the durable-store release.",
+          "deliverables": [
+            "Threat-model review, provider conformance report and encrypted-path acceptance artifacts"
+          ],
+          "validation": [
+            "Independent review plus adversarial corpus and >=90% security-crate coverage."
+          ],
+          "definition_of_done": [
+            "Blocking security findings are fixed; cloud provider claims remain explicitly pending M15."
+          ],
+          "depends_on": [
+            "M05.05",
+            "M05.06"
+          ],
+          "owner": "security/crypto",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M06",
+      "title": "Object-durable search store on RustFS",
+      "goal": "Deliver the first complete durable write/search/recovery path using object storage as the sole durable tier.",
+      "owner": "storage/runtime",
+      "status": "planned",
+      "depends_on": [
+        "M04",
+        "M05"
+      ],
+      "definition_of_done": [
+        "Successful mutations survive loss of every compute cache/scratch directory when RustFS and keys remain intact.",
+        "Ordered committed WAL slots and separately published segment/schema roots recover a valid committed prefix; GC cannot delete pinned or unpublished-but-required dependencies.",
+        "An external client can ingest, query, restart, restore and verify a declared dataset on a real RustFS topology.",
+        "Object commits count payload/root/page/key attempts and use dirty-only compatible batching; successful cost reduction preserves restore/freshness semantics."
+      ],
+      "document": "milestones/M06.md",
+      "tasks": [
+        {
+          "id": "M06.01",
+          "title": "Implement object-WAL commit protocol",
+          "goal": "Acknowledge only authoritative object-durable operations.",
+          "deliverables": [
+            "Dirty-only group committer, conditional-create ordered WAL slots, inline wrapped-DEK envelope, explicit committed receipts and unknown-outcome resolution",
+            "Structural authority/checkpoint publication separate from append; resolved operation/crypto/schema dependencies validated before the commit PUT"
+          ],
+          "validation": [
+            "Kill/response-loss at upload/CAS/ack boundaries and concurrent old/new owners with independent receipts.",
+            "Measure dirty-only batching and payload/root/page/envelope attempts under sparse and hot tenants; preserve one authoritative domain per stream.",
+            "Compare the selected one-data-PUT path with payload-plus-head-CAS using the exact same conditional-write/recovery/freshness oracle; include activation, checkpoints, rewrap and strong-read barriers"
+          ],
+          "definition_of_done": [
+            "Only the authorized next slot of an established fenced lane commits; an arbitrary uploaded object is never acknowledged",
+            "No later slot follows a failed/ambiguous append; one in-flight append per lane and permanent fence/tail invariants survive reopen/recovery"
+          ],
+          "depends_on": [
+            "M04",
+            "M05",
+            "M03.08"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.02",
+          "title": "Publish segments and archive coordinates",
+          "goal": "Make every published base recoverable.",
+          "deliverables": [
+            "Pinned engine commit uploads, manifest/root publisher, schema/key dependencies"
+          ],
+          "validation": [
+            "Crash at every upload/reference/CAS boundary; verify all root dependencies before open."
+          ],
+          "definition_of_done": [
+            "Base/archive coordinates represent contiguous committed history and never speculative engine state."
+          ],
+          "depends_on": [
+            "M06.01"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.03",
+          "title": "Implement bounded recovery and replay",
+          "goal": "Recover without relying on local state.",
+          "deliverables": [
+            "Streaming replay/spill, base selection, idempotency/version reconstruction and readiness barrier"
+          ],
+          "validation": [
+            "Delete compute caches/scratch; restart with duplicate/gap/corrupt/oversized histories."
+          ],
+          "definition_of_done": [
+            "Recovered documents/versions match independent receipt ledger; missing committed history blocks readiness."
+          ],
+          "depends_on": [
+            "M06.02"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.04",
+          "title": "Implement compaction, pins and GC",
+          "goal": "Reclaim objects without losing live or recoverable views.",
+          "deliverables": [
+            "Compaction source validation, coordinated durable pins/boundary, dry-run and sweep workers"
+          ],
+          "validation": [
+            "Suspend publisher across GC; race pin creation/expiration and updates/deletes during merge; restart sweep."
+          ],
+          "definition_of_done": [
+            "Every live root remains readable; stale publishers cannot resurrect swept generations."
+          ],
+          "depends_on": [
+            "M06.02",
+            "M03.04"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.05",
+          "title": "Deliver lifecycle and standalone API",
+          "goal": "Make local end-to-end use operationally complete.",
+          "deliverables": [
+            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls"
+          ],
+          "validation": [
+            "External process client against RustFS with encrypted data and identity checks; delete/recreate name races."
+          ],
+          "definition_of_done": [
+            "Client-visible semantics match M02 matrix and lifecycle never reuses old authority/history."
+          ],
+          "depends_on": [
+            "M06.03",
+            "M06.04"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.06",
+          "title": "Qualify RustFS durability and restore",
+          "goal": "Close the first real-store milestone with evidence.",
+          "deliverables": [
+            "Receipt-ledger audit, process/fault campaign, complete-compute-loss restore report"
+          ],
+          "validation": [
+            "Fixed and randomized crash seeds, storage errors, key unavailable and fresh-host restore."
+          ],
+          "definition_of_done": [
+            "All acknowledged object-mode writes recover; runtime coverage and independent code/test review pass."
+          ],
+          "depends_on": [
+            "M06.05"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M07",
+      "title": "Distributed routing and query serving",
+      "goal": "Scale query/index roles independently with mTLS and explicit freshness/completeness.",
+      "owner": "query/cluster",
+      "status": "planned",
+      "depends_on": [
+        "M06"
+      ],
+      "definition_of_done": [
+        "Multiple nodes accept routed writes and fan out queries with correct document routing, reduce semantics and tenant isolation.",
+        "Latest/at-least/PIT reads validate receiver checkpoints; stale placement cannot downgrade freshness.",
+        "Node loss, hot tenant overload and shard movement preserve declared results or return explicit incomplete/unavailable status.",
+        "Zone-local serving and eligible fallback pass normal and zone-loss cost/capacity tests; direct object access is compared with paid cross-zone peers."
+      ],
+      "document": "milestones/M07.md",
+      "tasks": [
+        {
+          "id": "M07.01",
+          "title": "Implement membership and capacity placement",
+          "goal": "Discover nodes and recommend placements without granting authority.",
+          "deliverables": [
+            "Role/capacity/zone registry, rendezvous placement, drain and shard activation limits",
+            "Zone/cell endpoint identity and local-eligible placement policy with explicit profile fallback and capacity accounting."
+          ],
+          "validation": [
+            "Join/leave/stale gossip, skew, duplicate identity and role-change histories."
+          ],
+          "definition_of_done": [
+            "Routing hints cannot create writer authority or bypass receiver authorization/freshness."
+          ],
+          "depends_on": [
+            "M06"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.02",
+          "title": "Implement bounded authenticated peer RPC",
+          "goal": "Connect roles using typed H2/mTLS messages.",
+          "deliverables": [
+            "Peer transport, byte/count admission, stream deadlines and cancellation propagation"
+          ],
+          "validation": [
+            "Oversized prefix before allocation, slowloris, wrong role, stalled TLS/stream and certificate rotation."
+          ],
+          "definition_of_done": [
+            "Queue/frame/connection/RSS budgets are reported; cert errors never fall back to weaker transport."
+          ],
+          "depends_on": [
+            "M05",
+            "M01"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.03",
+          "title": "Implement mutation routing and failover",
+          "goal": "Route to the current authoritative shard safely.",
+          "deliverables": [
+            "Routing generation, forwarded identity context, old-owner rejection and retry identity handling"
+          ],
+          "validation": [
+            "Move ownership during in-flight index/create/CAS/delete; stale routes and lost replies."
+          ],
+          "definition_of_done": [
+            "Independent histories show no duplicate committed identity or stale writer publication."
+          ],
+          "depends_on": [
+            "M07.01",
+            "M07.02"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.04",
+          "title": "Implement distributed query and reduction",
+          "goal": "Preserve pinned shard semantics with bounded fanout.",
+          "deliverables": [
+            "Typed query IR/DSL subset, top-k/ties, sort/search_after, aggregations, pruning and optional DFS"
+          ],
+          "validation": [
+            "Compare OpenSearch reference; query/fetch concurrent deletes; wrong pruning metadata and huge fanout controls.",
+            "Compare eager versus leaf-reduced/delayed-fetch fanout and count encoded response bytes on each zone edge."
+          ],
+          "definition_of_done": [
+            "Required query contract passes; memory/fanout bounded; partial results require explicit opt-in."
+          ],
+          "depends_on": [
+            "M07.01",
+            "M07.02",
+            "M04"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.05",
+          "title": "Implement replica freshness and PIT",
+          "goal": "Serve required prefixes from eligible immutable readers.",
+          "deliverables": [
+            "Published/latest/at_least modes, replica catch-up, PIT vectors/pins and token limits",
+            "Authoritative latest barriers and bounded WAL-tail discovery from structural checkpoints; cached manifests alone cannot certify latest"
+          ],
+          "validation": [
+            "Stale node and unavailable authority, refresh races, deadline expiry, topology change and PIT GC."
+          ],
+          "definition_of_done": [
+            "No stale fallback for strong requests; query and fetch share the pinned generation."
+          ],
+          "depends_on": [
+            "M07.03",
+            "M07.04"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.07",
+          "title": "Deliver zone-local serving and cost-aware read placement",
+          "goal": "Avoid routine cross-zone fanout/cache bytes while keeping required reader eligibility and surviving capacity.",
+          "deliverables": [
+            "Zone-local ingress/coordinator/worker cells, eligible fallback, object-versus-peer cache selection and bounded prewarm",
+            "Selective fresh subscriptions, delayed final document fetch and N-1 warm/capacity policy per profile"
+          ],
+          "validation": [
+            "Replay identical queries with local, cross-zone and direct-object paths; meter each edge and API attempt",
+            "Lose a cell, force a cold working set and test stale local replicas; compare fallback cost/latency and result completeness"
+          ],
+          "definition_of_done": [
+            "Cost ranking runs only after authorization/freshness checks; strong reads never silently downgrade",
+            "Normal/recovery fanout, duplicated caches and rejected traffic are accounted for; resilient profiles demonstrate surviving capacity"
+          ],
+          "depends_on": [
+            "M03.07",
+            "M07.05"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.06",
+          "title": "Qualify multi-node service",
+          "goal": "Prove real distributed wiring and load isolation.",
+          "deliverables": [
+            "3+ node RustFS test topology, tenant fairness/failover report and reference corpus"
+          ],
+          "validation": [
+            "External clients across node kill/rejoin, overload, disk pressure and mTLS/key faults."
+          ],
+          "definition_of_done": [
+            "Correctness and L1 baseline evidence pass; query/index resources scale separately."
+          ],
+          "depends_on": [
+            "M07.05",
+            "M07.07"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M08",
+      "title": "Telemetry and AI-readable diagnostics",
+      "goal": "Make the actual state of the system inspectable without secrets or uncontrolled diagnostic cost.",
+      "owner": "operations",
+      "status": "planned",
+      "depends_on": [
+        "M07"
+      ],
+      "definition_of_done": [
+        "Traces/logs/metrics correlate requests to shard/checkpoint/resource state with bounded cardinality and producer redaction.",
+        "Versioned diagnostic API/CLI and optional MCP expose scoped, paginated read-only summaries and artifact handles.",
+        "AI-only diagnostic exercises identify injected failures using operator-visible evidence; stalled telemetry does not stall search.",
+        "Cost diagnostics separate logical operations, provider attempts, directed bytes, rate provenance and budget/maintenance debt with bounded cardinality."
+      ],
+      "document": "milestones/M08.md",
+      "tasks": [
+        {
+          "id": "M08.01",
+          "title": "Define observability and error schemas",
+          "goal": "Land instrumentation contracts before subsystems diverge.",
+          "deliverables": [
+            "Stable tracing/error/checkpoint/resource fields, OTel facade and redaction policy"
+          ],
+          "validation": [
+            "Schema compatibility/cardinality tests; secret/document fixtures never emitted."
+          ],
+          "definition_of_done": [
+            "Modules use one versioned event model and producer-side redaction."
+          ],
+          "depends_on": [
+            "M01"
+          ],
+          "owner": "operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M08.02",
+          "title": "Instrument all critical stages",
+          "goal": "Make latency, resource and durability gaps attributable.",
+          "deliverables": [
+            "Mutation/query/storage/cache/crypto/replication spans and metrics, trace links and profiles"
+          ],
+          "validation": [
+            "Inspect end-to-end request timing, exporter stall, counter accuracy and sampling behavior."
+          ],
+          "definition_of_done": [
+            "Commit/apply/searchable/archive are separately visible; telemetry buffers are bounded."
+          ],
+          "depends_on": [
+            "M08.01",
+            "M07",
+            "M03.07"
+          ],
+          "owner": "operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M08.03",
+          "title": "Implement diagnostic API and CLI",
+          "goal": "Expose bounded scoped machine-readable state.",
+          "deliverables": [
+            "Health/capabilities/shard/resource/retention/query/job diagnostics with pagination and snapshot generation",
+            "Profile/rate provenance, retry-attempt/traffic cost attribution and budget/maintenance-debt explain endpoints."
+          ],
+          "validation": [
+            "Cross-tenant denial, output/time limits, truncation/cursor behavior and stale snapshot tests."
+          ],
+          "definition_of_done": [
+            "Responses have provenance/build/schema IDs and cannot execute shell/code or expose keys."
+          ],
+          "depends_on": [
+            "M08.02"
+          ],
+          "owner": "operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M08.04",
+          "title": "Provide MCP facade and incident bundles",
+          "goal": "Let AI retrieve only the evidence a diagnosis requires.",
+          "deliverables": [
+            "Optional read-only MCP over existing API; redacted incident bundle manifest and replay handles"
+          ],
+          "validation": [
+            "Same authorization/conformance across CLI/API/MCP; prompt-injection log fixtures and expired handle tests."
+          ],
+          "definition_of_done": [
+            "Facade adds no bypass and bundles carry hashes/redaction/limits without raw secrets."
+          ],
+          "depends_on": [
+            "M08.03"
+          ],
+          "owner": "operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M08.05",
+          "title": "Build AI incident evaluation corpus",
+          "goal": "Evaluate diagnosis quality with real failures.",
+          "deliverables": [
+            "Injected archive stall, stale reader, KMS revoke, expired cert, GC pin leak and corruption scenarios"
+          ],
+          "validation": [
+            "Give reviewer only public operator tools; measure root-cause accuracy, reads/tokens and unsafe suggestions."
+          ],
+          "definition_of_done": [
+            "All critical scenarios identify actual cause and safe next action without cross-tenant disclosure."
+          ],
+          "depends_on": [
+            "M08.04"
+          ],
+          "owner": "operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M08.06",
+          "title": "Qualify telemetry overhead and resilience",
+          "goal": "Keep diagnostics useful under production stress.",
+          "deliverables": [
+            "Overhead/RSS/cardinality benchmark and monitoring runbooks"
+          ],
+          "validation": [
+            "Compare exporters enabled/disabled/stalled during overload; diagnostic flood and incident bundle cap."
+          ],
+          "definition_of_done": [
+            "Service remains within budgets; observability degradation is visible and bounded."
+          ],
+          "depends_on": [
+            "M08.05"
+          ],
+          "owner": "operations",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M09",
+      "title": "Low-latency quorum journal module",
+      "goal": "Deliver majority-fsync writes with independent fresh serving replicas and a bounded object archive backlog.",
+      "owner": "journal/consistency",
+      "status": "planned",
+      "depends_on": [
+        "M07",
+        "M08"
+      ],
+      "definition_of_done": [
+        "Three-zone persistent quorum mode survives one voter/zone loss without acknowledged mutation loss and never serves speculative state.",
+        "Logical shards share bounded physical groups, with durable membership/snapshot/activation and no authority conflict with object mode.",
+        "Archive/recovery/retention have independent checkpoints and admission stops before unarchived history exhausts disk.",
+        "HA versus optional zonal quorum failure profiles and cross-zone replication bytes are explicit; budget pressure cannot weaken quorum or archive hard limits."
+      ],
+      "document": "milestones/M09.md",
+      "tasks": [
+        {
+          "id": "M09.01",
+          "title": "Implement durable consensus adapter",
+          "goal": "Meet the selected Rust library's exact storage/network contract.",
+          "deliverables": [
+            "CommitLog provider, vote/log persistence, checksummed frames, volume identity and mTLS roles"
+          ],
+          "validation": [
+            "Library conformance plus fsync/rename/parent-directory failures, corrupted/torn records and lost volume identity."
+          ],
+          "definition_of_done": [
+            "No memory or page-cache receipt is called durable; persistent evidence covers restart and leader kill."
+          ],
+          "depends_on": [
+            "M02",
+            "M05",
+            "M07"
+          ],
+          "owner": "journal/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M09.02",
+          "title": "Implement shared physical groups and admission",
+          "goal": "Avoid per-shard consensus resource explosion.",
+          "deliverables": [
+            "Logical-stream multiplexing, tenant quotas, bounded group/queue/disk reserves and group metrics"
+          ],
+          "validation": [
+            "1k/10k logical stream resource sweep; one hot tenant and stalled group under load.",
+            "Meter required remote follower payloads, read subscriptions, retransmission/catch-up and archive requests under each supported failure profile."
+          ],
+          "definition_of_done": [
+            "Resource curves are bounded by active capacity; no unbounded thread/timer per idle shard."
+          ],
+          "depends_on": [
+            "M09.01"
+          ],
+          "owner": "journal/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M09.03",
+          "title": "Implement bootstrap, reconfiguration and snapshots",
+          "goal": "Change voter topology without independent competing groups.",
+          "deliverables": [
+            "Activation binding, learner catch-up, library-safe membership, group snapshot and shutdown lifecycle"
+          ],
+          "validation": [
+            "Initial empty voter, leader loss during reconfigure, snapshot installation/corruption and stalled close."
+          ],
+          "definition_of_done": [
+            "Exactly one activated authority; volume locks persist until workers stop; all multiplexed stream metadata survives snapshot."
+          ],
+          "depends_on": [
+            "M09.02"
+          ],
+          "owner": "journal/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M09.04",
+          "title": "Integrate committed-only application and fresh replicas",
+          "goal": "Make quorum receipt and serving visibility distinct.",
+          "deliverables": [
+            "Quorum mutation path, committed replay subscriptions, replica eligibility and refresh tokens"
+          ],
+          "validation": [
+            "Refresh during failed append, dependent preparation, leader changes and subscription gap/cancellation."
+          ],
+          "definition_of_done": [
+            "Only committed prefix reaches readers; original operation identities and outcomes survive replay."
+          ],
+          "depends_on": [
+            "M09.03",
+            "M04",
+            "M07"
+          ],
+          "owner": "journal/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M09.05",
+          "title": "Implement archive and safe journal truncation",
+          "goal": "Make object recovery coverage authoritative for reclaim.",
+          "deliverables": [
+            "Encrypted WAL chunks, contiguous archive catalog, group/shard checkpoint mapping and pin-aware truncation"
+          ],
+          "validation": [
+            "Drop upload/CAS response, partial archive, stalled follower, old PIT and disk watermark faults."
+          ],
+          "definition_of_done": [
+            "Truncation never removes needed unarchived/pinned history; archive lag blocks admission at hard budget."
+          ],
+          "depends_on": [
+            "M09.04",
+            "M06.04"
+          ],
+          "owner": "journal/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M09.08",
+          "title": "Implement validated profiles and safe budget controls",
+          "goal": "Make latency/reliability choices explicit and constrain cost-driven adaptation.",
+          "deliverables": [
+            "Persisted profile/policy descriptor, topology/capability validator and policy generation in receipts/diagnostics",
+            "Bounded optional-work budgets, forecast alerts, maintenance debt limits and authorized migration/impact workflow"
+          ],
+          "validation": [
+            "Reject HA profile with same-zone voters, unsupported/zonal-only authority claiming regional durability and incompatible key/residency settings",
+            "Inject cost pressure, archive outage, stalled compaction/CCR and revoked key; attempt quorum/freshness/pin/key-lifetime downgrades"
+          ],
+          "definition_of_done": [
+            "Controller may defer permitted work or reject new admission, never alter acknowledged durability/security/freshness or discard live retention",
+            "Reliability/authority changes require explicit selected policy, fencing/migration and valid authorization; maintenance debt cannot grow without a bound"
+          ],
+          "depends_on": [
+            "M03.07",
+            "M08.03",
+            "M09.05"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M09.06",
+          "title": "Implement durability-mode migration",
+          "goal": "Switch between object and quorum authority with explicit barriers.",
+          "deliverables": [
+            "Quiesce/seal/recovery/publish/activate protocol, mode-aware API and rollback boundaries"
+          ],
+          "validation": [
+            "Crash at every transition; mixed old nodes; tokens from old activation and missing target prefix."
+          ],
+          "definition_of_done": [
+            "No dual-writer window; rollback after new writes requires reverse migration, not toggling config."
+          ],
+          "depends_on": [
+            "M09.05"
+          ],
+          "owner": "journal/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M09.07",
+          "title": "Qualify quorum failure envelope",
+          "goal": "Prove actual safety and measure lower-latency benefit.",
+          "deliverables": [
+            "Independent receipt campaign, partition/corruption/reconfiguration/zone-loss report and paired benchmark"
+          ],
+          "validation": [
+            "Native real processes/volumes with fsync faults, majority loss, total voter loss and archive recovery."
+          ],
+          "definition_of_done": [
+            "One-zone RPO=0 within declared envelope; total-disk-loss RPO matches archive checkpoint; SLOs measured without semantic downgrade."
+          ],
+          "depends_on": [
+            "M09.06",
+            "M09.08"
+          ],
+          "owner": "journal/consistency",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M10",
+      "title": "Snapshot, export and change-stream contracts",
+      "goal": "Create shared primitives for backup, independent copy and continuous replication.",
+      "owner": "storage/export",
+      "status": "planned",
+      "depends_on": [
+        "M07",
+        "M09"
+      ],
+      "definition_of_done": [
+        "A snapshot cut pins all segment, schema, key and committed-tail dependencies before it is exported.",
+        "Change stream provides ordered resolved operations and explicit gaps/retention over both durability modes.",
+        "Destination import staging is durable and hidden until verified activation; contracts are public and module independent."
+      ],
+      "document": "milestones/M10.md",
+      "tasks": [
+        {
+          "id": "M10.01",
+          "title": "Implement snapshot barrier and durable pins",
+          "goal": "Capture a complete recoverable cut, including unarchived tail.",
+          "deliverables": [
+            "Snapshot descriptor, vector checkpoint, coordinated pin creation/renewal and base+tail inventory"
+          ],
+          "validation": [
+            "Concurrent writes/GC, quorum archive lag, pin expiry/renewal response loss and multi-shard capture."
+          ],
+          "definition_of_done": [
+            "No acknowledged operation before the declared cut is omitted; snapshot consistency scope is explicit."
+          ],
+          "depends_on": [
+            "M07",
+            "M09"
+          ],
+          "owner": "storage/export",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M10.02",
+          "title": "Implement export and logical reindex paths",
+          "goal": "Support physical-compatible and format/topology-changing transfers.",
+          "deliverables": [
+            "Versioned file/schema export API, scoped grants, logical document iterator and format negotiation"
+          ],
+          "validation": [
+            "Unsupported engine/cipher, source recreation, bounded batches and traversal/SSRF controls."
+          ],
+          "definition_of_done": [
+            "Export binds source UUID/incarnation/cut and never exposes long-lived provider secrets."
+          ],
+          "depends_on": [
+            "M10.01"
+          ],
+          "owner": "storage/export",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M10.03",
+          "title": "Implement committed change stream and retention leases",
+          "goal": "Supply durable ordered CDC without unbounded history.",
+          "deliverables": [
+            "Resolved-op stream, schema/topology events, replay ranges, lease budgets and gap responses"
+          ],
+          "validation": [
+            "Duplicates, gaps, lease expiry, slow consumer and source split/format upgrade histories."
+          ],
+          "definition_of_done": [
+            "Consumers cannot acknowledge beyond durable source prefix; expired history requires explicit rebootstrap."
+          ],
+          "depends_on": [
+            "M10.01"
+          ],
+          "owner": "storage/export",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M10.04",
+          "title": "Implement destination import transactions",
+          "goal": "Checkpoint verified data before making it public.",
+          "deliverables": [
+            "Private staging index, verified chunk ledger, source/local sequence map and activation CAS"
+          ],
+          "validation": [
+            "Crash after transfer/before progress/after activation, name collisions and tampered chunk hashes."
+          ],
+          "definition_of_done": [
+            "Resume is idempotent; incomplete destination never appears searchable through active aliases."
+          ],
+          "depends_on": [
+            "M10.02"
+          ],
+          "owner": "storage/export",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M10.05",
+          "title": "Qualify external consumers and disabled modules",
+          "goal": "Prove reusable contracts without controller coupling.",
+          "deliverables": [
+            "Example snapshot/change-stream client and import conformance suite"
+          ],
+          "validation": [
+            "Build without copy/CCR and exercise export/snapshot; scope denial and unsupported version controls."
+          ],
+          "definition_of_done": [
+            "Core contracts work independently and match both object and quorum sources."
+          ],
+          "depends_on": [
+            "M10.03",
+            "M10.04"
+          ],
+          "owner": "storage/export",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M11",
+      "title": "Independent cross-cluster copy module",
+      "goal": "Deliver resumable one-time copies with independent destination storage and encryption.",
+      "owner": "copy-module",
+      "status": "planned",
+      "depends_on": [
+        "M10"
+      ],
+      "definition_of_done": [
+        "Two separate RustFS deployments complete a snapshot-cut copy with destination policy and bounded resources.",
+        "Pause/resume/cancel and process loss cannot mix source cuts, duplicate activation or delete unrelated data.",
+        "Completed destination recovers/searches after source network, storage and KMS access are blocked."
+      ],
+      "document": "milestones/M11.md",
+      "tasks": [
+        {
+          "id": "M11.01",
+          "title": "Build copy controller lifecycle",
+          "goal": "Separate copy jobs from source/destination core services.",
+          "deliverables": [
+            "Optional copy crate/capabilities/endpoints, persistent state machine and source/destination grants"
+          ],
+          "validation": [
+            "Disabled-module calls, duplicate request identity, crash at state transitions and name collisions."
+          ],
+          "definition_of_done": [
+            "Only valid scoped jobs start; same request resolves to one durable job/outcome."
+          ],
+          "depends_on": [
+            "M10"
+          ],
+          "owner": "copy-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M11.02",
+          "title": "Implement bounded transfer and re-encryption",
+          "goal": "Materialize independent destination bytes under destination keys.",
+          "deliverables": [
+            "Streaming chunk workers, bandwidth/memory quotas, fresh DEKs/domains and durable progress"
+          ],
+          "validation": [
+            "Throttle/partition/retry/corrupt range, revoked source/destination keys and cross-tenant context controls."
+          ],
+          "definition_of_done": [
+            "Verified chunks checkpoint only after destination durability; cross-domain copies re-encrypt."
+          ],
+          "depends_on": [
+            "M11.01",
+            "M05"
+          ],
+          "owner": "copy-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M11.03",
+          "title": "Implement pause, cancel and cleanup",
+          "goal": "Make partial work recoverable and safely reclaimable.",
+          "deliverables": [
+            "Pin renewal, resumable progress, staged cleanup queue and cancellation statuses"
+          ],
+          "validation": [
+            "Expire pin during transfer, restart workers, cancel during activation, race GC and unrelated index creation."
+          ],
+          "definition_of_done": [
+            "No mixed snapshot cut or deletion outside job scope; completed activation survives cancellation race."
+          ],
+          "depends_on": [
+            "M11.02"
+          ],
+          "owner": "copy-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M11.04",
+          "title": "Verify and atomically activate destination",
+          "goal": "Prove actual data/key independence before completion.",
+          "deliverables": [
+            "Hash/count/logical digest/query verification, destination-only restore and alias activation"
+          ],
+          "validation": [
+            "Block source network/credentials/KMS, delete source after pin release, reopen destination on fresh workers."
+          ],
+          "definition_of_done": [
+            "Destination recovers full declared cut with its own keys and no source dependency; status includes proof artifacts."
+          ],
+          "depends_on": [
+            "M11.03"
+          ],
+          "owner": "copy-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M11.05",
+          "title": "Qualify copy module end to end",
+          "goal": "Close copy behavior and observability acceptance.",
+          "deliverables": [
+            "Two-cluster fault campaign, cost/throughput report and operator/AI runbook"
+          ],
+          "validation": [
+            "Concurrent source updates, topology/engine mismatch logical reindex, certificate rotation and independent recovery.",
+            "Attribute source/destination operation, re-encryption/KMS, inter-region/provider egress, retries and failed/cancelled transfer cost."
+          ],
+          "definition_of_done": [
+            "Module can drain/disable after jobs finish; coverage/review pass; no prefix-only test substitutes for separate clusters."
+          ],
+          "depends_on": [
+            "M11.04",
+            "M08"
+          ],
+          "owner": "copy-module",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M12",
+      "title": "Cross-cluster replication module",
+      "goal": "Deliver asynchronous follower-pull replication with bounded history, explicit lag and safe promotion.",
+      "owner": "replication-module",
+      "status": "planned",
+      "depends_on": [
+        "M10"
+      ],
+      "definition_of_done": [
+        "Follower bootstrap and continuous resolved-operation replication preserve source identity/schema under restart and at-least-once delivery.",
+        "History/lease budgets, read-only enforcement, pause/resume/expiry/rebootstrap and topology changes have negative evidence.",
+        "Planned promotion fences source and waits for declared cut; unplanned promotion never silently claims zero RPO or proves remote death by timeout."
+      ],
+      "document": "milestones/M12.md",
+      "tasks": [
+        {
+          "id": "M12.01",
+          "title": "Create follower binding and scoped trust",
+          "goal": "Bind one follower to one immutable source identity.",
+          "deliverables": [
+            "Optional CCR crate, replication epochs, source export/destination import grants and read-only enforcement"
+          ],
+          "validation": [
+            "Cross-tenant/role/mTLS denial, source name recreation and bulk/alias write bypass controls."
+          ],
+          "definition_of_done": [
+            "Follower public writes are rejected; source and destination membership are not merged."
+          ],
+          "depends_on": [
+            "M10"
+          ],
+          "owner": "replication-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M12.02",
+          "title": "Bootstrap snapshot with tail retention",
+          "goal": "Avoid losing operations while initial snapshot transfers.",
+          "deliverables": [
+            "Coordinated snapshot+stream lease, shared transfer/import reuse and atomic bootstrap checkpoint"
+          ],
+          "validation": [
+            "GC between pin/lease registration, writes during copy, bootstrap restart and key rotation."
+          ],
+          "definition_of_done": [
+            "Follower starts streaming exactly after the captured source cut without gaps."
+          ],
+          "depends_on": [
+            "M12.01"
+          ],
+          "owner": "replication-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M12.03",
+          "title": "Implement durable stream apply and checkpoints",
+          "goal": "Advance follower only after destination durability.",
+          "deliverables": [
+            "Bounded pull batches, idempotent source/local map, schema-before-op and durable/applied/searchable status"
+          ],
+          "validation": [
+            "Duplicate/out-of-order/gap/tampered operations; crash after durable import before reply; forced schema changes."
+          ],
+          "definition_of_done": [
+            "Different payload under one source identity stops replication; reported progress is contiguous and durable."
+          ],
+          "depends_on": [
+            "M12.02"
+          ],
+          "owner": "replication-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M12.04",
+          "title": "Implement retention, pause/resume and rebootstrap",
+          "goal": "Bound lag cost and make expired history explicit.",
+          "deliverables": [
+            "Lease byte/time caps, pause/stop/detach, expiry states and new-snapshot workflow"
+          ],
+          "validation": [
+            "Long partition, slow follower, source disk pressure, expired lease and concurrent detach."
+          ],
+          "definition_of_done": [
+            "Default follower cannot retain unbounded source WAL or silently block all source tenants."
+          ],
+          "depends_on": [
+            "M12.03"
+          ],
+          "owner": "replication-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M12.05",
+          "title": "Replicate topology and compatibility transitions",
+          "goal": "Follow source resharding and format evolution safely.",
+          "deliverables": [
+            "Split/merge barriers, event negotiation and source-schema/format compatibility matrix"
+          ],
+          "validation": [
+            "Split during backlog, unsupported writer format, mixed-version follower and expired old topology pins."
+          ],
+          "definition_of_done": [
+            "Checkpoint/pin handoff covers old and new streams before source history release."
+          ],
+          "depends_on": [
+            "M12.03",
+            "M13.03"
+          ],
+          "owner": "replication-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M12.06",
+          "title": "Implement promotion and failback workflow",
+          "goal": "Prevent accidental split brain and hidden RPO loss.",
+          "deliverables": [
+            "Planned fence/catch-up/activate protocol, explicit unplanned DR path and reverse migration runbook"
+          ],
+          "validation": [
+            "Partition source while follower healthy; delayed old writer; destination writes before attempted rollback."
+          ],
+          "definition_of_done": [
+            "Planned promotion proves final cut; unplanned flow declares possible suffix loss and requires valid fencing/authorization."
+          ],
+          "depends_on": [
+            "M12.04",
+            "M12.05"
+          ],
+          "owner": "replication-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M12.07",
+          "title": "Qualify CCR module and AI operations",
+          "goal": "Prove end-to-end remote durability and diagnosis.",
+          "deliverables": [
+            "Two-cluster long-run histories, lag/cost report and typed status diagnostics"
+          ],
+          "validation": [
+            "Source/destination kills, cert/key rotations, storage outage, promotion/failback and module drain.",
+            "Count steady-state and catch-up/lease/rebootstrap cost separately, including source retention and destination crypto operations."
+          ],
+          "definition_of_done": [
+            "Independent receipts/data queries pass across declared cases; async RPO and retention limits are visible."
+          ],
+          "depends_on": [
+            "M12.06",
+            "M08"
+          ],
+          "owner": "replication-module",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M13",
+      "title": "Catalog, hot-shard and fleet scaling",
+      "goal": "Remove per-index resource floors and deliver safe hot-partition growth.",
+      "owner": "cluster/scale",
+      "status": "planned",
+      "depends_on": [
+        "M07",
+        "M09",
+        "M10"
+      ],
+      "definition_of_done": [
+        "Idle million-tenant catalog model has no per-idle-index worker/timer/group requirement and measured bounded enumeration/activation.",
+        "Hot shards split/rebalance under writes with fenced routing transitions and preserved PIT/replication retention.",
+        "Physical journal/query resources scale with active capacity, with skew/fairness/admission evidence.",
+        "Idle/sparse/active/skewed tenancy, per-zone duplicate warmth and recovery traffic meet the selected profile cost envelope, not just a throughput target."
+      ],
+      "document": "milestones/M13.md",
+      "tasks": [
+        {
+          "id": "M13.01",
+          "title": "Implement paged catalog and cold activation budgets",
+          "goal": "Make idle tenancy cheap and activation bounded.",
+          "deliverables": [
+            "Catalog partition strategy, lazy engine lifecycle, active caps and footprint simulator"
+          ],
+          "validation": [
+            "1M tenants/50M-index model with >=99% idle, burst activation and catalog repair."
+          ],
+          "definition_of_done": [
+            "No O(total indexes) per-node polling/resource cost; model assumptions and real tested sizes are separate."
+          ],
+          "depends_on": [
+            "M07",
+            "M09"
+          ],
+          "owner": "cluster/scale",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M13.02",
+          "title": "Implement tenant fairness and hot placement",
+          "goal": "Isolate cache/CPU/I/O and avoid hotspot collapse.",
+          "deliverables": [
+            "Per-tenant admission, weighted placement, cache quotas, load feedback and bounded subscriptions"
+          ],
+          "validation": [
+            "One hot tenant with many small tenants; cold cache storm, skew and AZ imbalance."
+          ],
+          "definition_of_done": [
+            "Tenant SLO interference and rejected work are measured; moving compute doesn't change authority."
+          ],
+          "depends_on": [
+            "M13.01"
+          ],
+          "owner": "cluster/scale",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M13.03",
+          "title": "Deliver online logical shard split and cutover",
+          "goal": "Scale hot write partitions without ambiguous routing.",
+          "deliverables": [
+            "Snapshot/catch-up/split barriers, routing generation, fenced cutover and old topology pins"
+          ],
+          "validation": [
+            "Write/delete/CAS during split, crash at cutover, stale routing, PIT and change-stream consumers."
+          ],
+          "definition_of_done": [
+            "Each document has one authoritative partition per routing generation; no loss/duplication and old views stay valid."
+          ],
+          "depends_on": [
+            "M13.02",
+            "M10"
+          ],
+          "owner": "cluster/scale",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M13.04",
+          "title": "Qualify bounded physical group scaling",
+          "goal": "Separate logical partition count from quorum resource count.",
+          "deliverables": [
+            "Group allocation/migration policy, active stream caps and resource slope report"
+          ],
+          "validation": [
+            "1k/10k streams plus simulated 100k; move hot streams and fail/reconfigure groups."
+          ],
+          "definition_of_done": [
+            "No one-group-per-idle-shard default; actual memory/thread/fd/disk costs are recorded."
+          ],
+          "depends_on": [
+            "M13.02",
+            "M09"
+          ],
+          "owner": "cluster/scale",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M13.05",
+          "title": "Run scale and cost ladder",
+          "goal": "Prove measured expansion and document remaining fleet limits.",
+          "deliverables": [
+            "L1/L2 campaign, L3 model, object/egress/KMS cost model and bottleneck report"
+          ],
+          "validation": [
+            "Fixed data/hardware/arrival profiles; cache below working set, GC/compaction/CCR concurrent load.",
+            "Include idle metadata/polling floor, duplicate zone cache, failed-zone cold rebuild and all explicit profile constraints."
+          ],
+          "definition_of_done": [
+            "Tested topology sizes and unknown L4 claims are explicit; misses produce tracked work before release promise."
+          ],
+          "depends_on": [
+            "M13.03",
+            "M13.04",
+            "M12.03"
+          ],
+          "owner": "cluster/scale",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M14",
+      "title": "Performance kernels and native hardware",
+      "goal": "Optimize measured bottlenecks while preserving reference behavior on ARM and x86.",
+      "owner": "performance",
+      "status": "planned",
+      "depends_on": [
+        "M04",
+        "M05",
+        "M07",
+        "M09"
+      ],
+      "definition_of_done": [
+        "Release x86_64/aarch64 paths run natively and all accelerated kernels match scalar/reference boundary cases.",
+        "Unsafe additions have safety proofs, applicable tooling and measured whole-system benefit; fallback remains supported.",
+        "Cold/warm/open-loop measurements meet frozen targets or remain explicit release blockers.",
+        "Performance changes improve a measured cost/latency Pareto point or justified constraint; request/byte/compaction/KMS amplification is included."
+      ],
+      "document": "milestones/M14.md",
+      "tasks": [
+        {
+          "id": "M14.01",
+          "title": "Establish profiles and noise-aware regression gates",
+          "goal": "Choose optimizations from actual end-to-end costs.",
+          "deliverables": [
+            "CPU/IO/alloc/network/lock profiles, paired baselines and benchmark threshold policy"
+          ],
+          "validation": [
+            "Repeat/interleave runs with configuration hashes; quantify CI/dedicated-worker variance."
+          ],
+          "definition_of_done": [
+            "No hardware optimization is justified solely by microbench marketing or uncontrolled CI timing."
+          ],
+          "depends_on": [
+            "M04",
+            "M05",
+            "M07",
+            "M09"
+          ],
+          "owner": "performance",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M14.02",
+          "title": "Optimize remote I/O, cache and batching",
+          "goal": "Reduce dependent reads/requests and refresh/merge overhead.",
+          "deliverables": [
+            "Measured block/prefetch/pack/cache/commit policies with bounded speculative work"
+          ],
+          "validation": [
+            "Cold/warm/mixed load, read/write amplification, compaction interference and archive-stall tests.",
+            "Measure useful bytes versus prefetched/packed/rewritten/retained bytes plus cache/metadata/KMS request amplification."
+          ],
+          "definition_of_done": [
+            "Latency/cost improve without changing durability/freshness; working set exceeds cache during cold qualification."
+          ],
+          "depends_on": [
+            "M14.01"
+          ],
+          "owner": "performance",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M14.03",
+          "title": "Implement target-dispatched SIMD kernels",
+          "goal": "Accelerate hottest decode/search/vector paths where engine hooks permit.",
+          "deliverables": [
+            "Scalar and SSE/AVX2/NEON paths; optional AVX-512/SVE capability adapters"
+          ],
+          "validation": [
+            "Property/differential tests for tails/alignment/NaN/overflow, force-disabled features and native x86/ARM runs."
+          ],
+          "definition_of_done": [
+            "Unsupported CPUs never execute new instructions; no precision/relevance change is hidden."
+          ],
+          "depends_on": [
+            "M14.01"
+          ],
+          "owner": "performance",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M14.04",
+          "title": "Audit unsafe and optional system acceleration",
+          "goal": "Use low-level changes only with proofs and fallback.",
+          "deliverables": [
+            "Narrow unsafe kernels, safety docs, Miri/ASan corpus; optional io_uring/NUMA/allocator experiments"
+          ],
+          "validation": [
+            "Bad-length/lifetime/alias controls; resource saturation; normal-IO fallback on unsupported kernel."
+          ],
+          "definition_of_done": [
+            "Each accepted unsafe/system change has an observed bottleneck and end-to-end win; rejected experiments stay documented."
+          ],
+          "depends_on": [
+            "M14.02",
+            "M14.03"
+          ],
+          "owner": "performance",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M14.05",
+          "title": "Qualify hardware encryption performance",
+          "goal": "Verify cipher backend dispatch and quantify security cost.",
+          "deliverables": [
+            "AES-NI/PMULL and software-path results, optional VAES trial, key-cache/throughput profiles"
+          ],
+          "validation": [
+            "Paired encrypted/plaintext query/ingest/copy, KMS cold/cache-hit and no-acceleration runs."
+          ],
+          "definition_of_done": [
+            "Selected backend and all safety checks are observable; encryption is not bypassed to meet a benchmark."
+          ],
+          "depends_on": [
+            "M14.01",
+            "M05"
+          ],
+          "owner": "performance",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M14.06",
+          "title": "Close performance acceptance",
+          "goal": "Meet or explicitly fail frozen service budgets.",
+          "deliverables": [
+            "Release-profile L1 benchmark/cost report and regression artifacts"
+          ],
+          "validation": [
+            "Open-loop supported query/write mix with overload/recovery, native ARM/x86 and background maintenance."
+          ],
+          "definition_of_done": [
+            "All required targets and correctness gates pass; unresolved target misses block matching release claims."
+          ],
+          "depends_on": [
+            "M14.04",
+            "M14.05"
+          ],
+          "owner": "performance",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M15",
+      "title": "Cloud storage and KMS provider qualification",
+      "goal": "Extend real RustFS behavior to S3, GCS and Azure with their own measured semantics and keys.",
+      "owner": "cloud/security",
+      "status": "planned",
+      "depends_on": [
+        "M11",
+        "M12",
+        "M14"
+      ],
+      "definition_of_done": [
+        "Actual S3, GCS and Azure backends pass the required conformance/race/recovery suites; no emulator-only result certifies them.",
+        "Actual AWS/GCP/Azure key providers pass wrap/unwrap/version/permission/rotation/revocation tests with workload identity.",
+        "Cross-provider copy/CCR restores independently and records residency/egress/key policy and provider-specific limits.",
+        "Provider cost profiles use actual regional/path/SKU/byte-unit rates and usage/billing reconciliation; provider-specific transfer exemptions are validated."
+      ],
+      "document": "milestones/M15.md",
+      "tasks": [
+        {
+          "id": "M15.01",
+          "title": "Deliver S3 and AWS KMS adapters",
+          "goal": "Qualify exact AWS object/identity/key semantics.",
+          "deliverables": [
+            "Production S3/KMS providers, least-privilege policy and endpoint/version handling"
+          ],
+          "validation": [
+            "Actual conditional-write/unknown-response/multipart/range histories; KMS grant/version/revoke/rotate tests."
+          ],
+          "definition_of_done": [
+            "Real account/region artifacts pass; unsupported capability blocks readiness and missing credentials report NOT-RUN."
+          ],
+          "depends_on": [
+            "M11",
+            "M12",
+            "M14"
+          ],
+          "owner": "cloud/security",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M15.02",
+          "title": "Deliver GCS and Cloud KMS adapters",
+          "goal": "Use generations and provider key context correctly.",
+          "deliverables": [
+            "GCS/KMS providers with workload identity and generation-pinned reads"
+          ],
+          "validation": [
+            "Actual generation preconditions, overwrite/range races, key versions/permissions/outage and recovery."
+          ],
+          "definition_of_done": [
+            "No S3 ETag assumption leaks into GCS; real-provider evidence and scope limits are recorded."
+          ],
+          "depends_on": [
+            "M11",
+            "M12",
+            "M14"
+          ],
+          "owner": "cloud/security",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M15.03",
+          "title": "Deliver Azure Blob and Key Vault adapters",
+          "goal": "Qualify Azure object and wrapping contracts.",
+          "deliverables": [
+            "Azure providers, ETag conditions, key-version handling and workload credentials"
+          ],
+          "validation": [
+            "Actual conditional operations, paging/range, key wrap/unwrap/deny/rotate and retry/cancel histories."
+          ],
+          "definition_of_done": [
+            "Provider errors preserve unknown/conflict/denial distinctions and real restored data is verified."
+          ],
+          "depends_on": [
+            "M11",
+            "M12",
+            "M14"
+          ],
+          "owner": "cloud/security",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M15.04",
+          "title": "Qualify cross-provider transfer and DR",
+          "goal": "Prove portable data and destination key independence.",
+          "deliverables": [
+            "S3/GCS/Azure/RustFS copy+CCR matrix, residency/network policy and cost evidence"
+          ],
+          "validation": [
+            "At least one transfer to/from each provider; source access removed; rekey/format mismatch/long-RTT faults.",
+            "Compare actual routed/billed traffic with declared provider exemptions; record current regional rates and GB/GiB units."
+          ],
+          "definition_of_done": [
+            "Destination needs only its own storage/keys; untested pairs are explicit and cannot be called supported."
+          ],
+          "depends_on": [
+            "M15.01",
+            "M15.02",
+            "M15.03"
+          ],
+          "owner": "cloud/security",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M15.06",
+          "title": "Qualify cost, latency and reliability Pareto curves",
+          "goal": "Compare complete supported profiles at matched workload scope rather than advertise one cheapest bill.",
+          "deliverables": [
+            "Sparse/busy/skewed idle/cold/warm/overload/recovery profile matrix, raw operation/byte counts and total-cost inventory",
+            "Batch/pack/cohort/cache/refresh/zone/compaction/replication sweeps with dominated choices identified"
+          ],
+          "validation": [
+            "Run matched logical correctness/security histories and each selected failure envelope, including zone loss, rebuild, catch-up, copy/CCR and key rotation",
+            "Use rate snapshots plus actual compute/disk/cache inventory; include KMS, retries, page writes, network services and recovery debt"
+          ],
+          "definition_of_done": [
+            "Every advertised profile meets its own frozen constraints or stays blocked; weakened semantics are explicit in comparisons",
+            "Savings cannot come from omitted metadata, unknown rates, free cache assumptions, test skips or reduced replica guarantees under the same label"
+          ],
+          "depends_on": [
+            "M07.07",
+            "M09.08",
+            "M13",
+            "M14",
+            "M15.04"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M15.07",
+          "title": "Reconcile real-provider usage and bills",
+          "goal": "Validate that the modeled savings survive actual cloud paths, SKU rules and provider charging.",
+          "deliverables": [
+            "S3/GCS/Azure rate/path profiles and scoped usage/billing export reconciliation with explained residuals",
+            "Infrastructure endpoint/route and LB/NAT/PrivateLink/TGW checks, explicit GB/GiB and sender/receiver payer mappings"
+          ],
+          "validation": [
+            "Compare meter projections to real provider usage and available billing exports for normal, retry, idle, failover and cross-cluster workloads",
+            "Verify same-region object exemptions separately from peer transfer; exercise Azure zero inter-zone tariff and provider-specific network exceptions"
+          ],
+          "definition_of_done": [
+            "Each cost-qualified provider/profile has a documented workload/rate-date/unit/path and reconciliation tolerance fixed before the run",
+            "Missing credentials/billing access or unexplained mismatch is NOT-RUN/blocked, not a zero-cost/pass result"
+          ],
+          "depends_on": [
+            "M15.06",
+            "M15.04"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M15.05",
+          "title": "Publish provider support contracts",
+          "goal": "Make tested support reproducible and operational.",
+          "deliverables": [
+            "Provider version/topology matrix, capability reports, IAM/KMS/restore runbooks and spend limits"
+          ],
+          "validation": [
+            "Fresh environment setup/restore by a separate runner using scoped temporary credentials."
+          ],
+          "definition_of_done": [
+            "Each supported provider has real safety/DR evidence; access/budget gaps stay blocked tasks rather than fake passes."
+          ],
+          "depends_on": [
+            "M15.04",
+            "M15.07"
+          ],
+          "owner": "cloud/security",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M16",
+      "title": "Migration, compatibility and harness hardening",
+      "goal": "Make the product and development workflow usable end to end with upgrade/rollback boundaries.",
+      "owner": "integration/developer-experience",
+      "status": "planned",
+      "depends_on": [
+        "M08",
+        "M12",
+        "M13",
+        "M15"
+      ],
+      "definition_of_done": [
+        "Supported OpenSearch clients migrate via measured shadow/replay/copy workflows with discrepancy reports and explicit unsupported APIs.",
+        "Rolling engine/protocol/format changes respect old readers and downgrade limits; a published engine release can replace its Git pin safely.",
+        "AI harness achieves bounded context/review/worktree behavior on realistic tasks; Linux remains primary and optional native ports are honestly qualified.",
+        "Profile selection, budget diagnostics and authorized cost/reliability transitions are usable without silently changing prior receipt guarantees."
+      ],
+      "document": "milestones/M16.md",
+      "tasks": [
+        {
+          "id": "M16.01",
+          "title": "Deliver OpenSearch migration and compatibility suite",
+          "goal": "Turn API support into a real replacement workflow.",
+          "deliverables": [
+            "Bulk/query/error compatibility fixtures, shadow read/dual-write reconciliation and import tooling"
+          ],
+          "validation": [
+            "Supported client versions and M02 corpus; routing/version/deletes/aliases/aggregations under shadow traffic."
+          ],
+          "definition_of_done": [
+            "Every required difference is fixed or a visible migration blocker; internal OpenSearch APIs are not falsely advertised."
+          ],
+          "depends_on": [
+            "M07",
+            "M12",
+            "M15"
+          ],
+          "owner": "integration/developer-experience",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M16.02",
+          "title": "Implement upgrade, format and engine adoption policy",
+          "goal": "Upgrade without stranding old data or tokens.",
+          "deliverables": [
+            "Read/write format epochs, rolling-version matrix, engine release pin update procedure and old-data fixtures"
+          ],
+          "validation": [
+            "Old/new node coexistence, unsupported format refusal, engine revision change, key/module compatibility and rollback."
+          ],
+          "definition_of_done": [
+            "Downgrade boundary is explicit after new format publication; all advertised old indexes recover."
+          ],
+          "depends_on": [
+            "M16.01",
+            "M13"
+          ],
+          "owner": "integration/developer-experience",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M16.03",
+          "title": "Exercise cutover, rollback and failback",
+          "goal": "Control irreversible routing/data changes.",
+          "deliverables": [
+            "Dry-run migration plan, final fence/barrier, alias cutover and reverse migration runbooks"
+          ],
+          "validation": [
+            "Partial cutover, destination new writes, source partition and lost coordinator with independent receipts."
+          ],
+          "definition_of_done": [
+            "Rollback never discards acknowledged destination writes; post-cutover return requires valid reverse transfer."
+          ],
+          "depends_on": [
+            "M16.02",
+            "M12"
+          ],
+          "owner": "integration/developer-experience",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M16.04",
+          "title": "Harden AI review and context efficiency",
+          "goal": "Validate the full AI development loop on production code.",
+          "deliverables": [
+            "Refreshed task corpus, token/timing/escaped-defect comparison, progress/router maintenance and stale-evidence controls"
+          ],
+          "validation": [
+            "Parallel real module tasks with LSP unavailable, reviewer crash, conflicting API and quota exhaustion."
+          ],
+          "definition_of_done": [
+            "No seeded critical escape, bounded review termination, measured token budgets and restartable task history."
+          ],
+          "depends_on": [
+            "M01",
+            "M08",
+            "M16.02"
+          ],
+          "owner": "integration/developer-experience",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M16.05",
+          "title": "Qualify portability and developer onboarding",
+          "goal": "Support practical Windows/macOS development without compromising Linux.",
+          "deliverables": [
+            "Fresh WSL2/Linux-container guide, Linux x86/ARM CI, optional native macOS/Windows smoke matrix"
+          ],
+          "validation": [
+            "Fresh-machine bootstrap, paths/locks/sockets/TLS and filesystem behavior; distinguish smoke from runtime support."
+          ],
+          "definition_of_done": [
+            "WSL/container path works; native support claims match tests and do not block Linux solely for optional conveniences."
+          ],
+          "depends_on": [
+            "M16.04"
+          ],
+          "owner": "integration/developer-experience",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M16.07",
+          "title": "Publish cost operations and AI decision evidence",
+          "goal": "Make profiles, budget drift and safe tradeoffs reviewable by operators and AI.",
+          "deliverables": [
+            "Profile selection/migration runbooks, bounded cost/traffic explain API and price refresh procedure",
+            "AI incident corpus for NAT hairpin, polling/CAS floor, key-operation storm, stale cheap reader and budget-induced maintenance debt"
+          ],
+          "validation": [
+            "Diagnose injected cost drivers from scoped operator tools and generate matched impact plans without automatic reliability downgrade",
+            "Exercise planned profile change and reject an unsafe change while retaining original receipt semantics"
+          ],
+          "definition_of_done": [
+            "Operators can see changed latency/RPO/RTO/capacity and modeled/reconciled spend before an authorized transition",
+            "AI cost evidence distinguishes observations, simulations and invoices; active product guarantees remain enforced"
+          ],
+          "depends_on": [
+            "M15.07",
+            "M16.03",
+            "M08"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M16.06",
+          "title": "Validate external extension example and final docs",
+          "goal": "Make modules usable and docs trustworthy for another agent.",
+          "deliverables": [
+            "Out-of-tree provider/query example, API/schema docs, incident/release/migration guides and updated ledger"
+          ],
+          "validation": [
+            "New agent implements bounded extension from public docs only; link/command/example and capability tests."
+          ],
+          "definition_of_done": [
+            "No private core import is required; documentation accurately identifies actual versus proposed commands."
+          ],
+          "depends_on": [
+            "M16.03",
+            "M16.05",
+            "M16.07"
+          ],
+          "owner": "integration/developer-experience",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M17",
+      "title": "Failure, scale and release qualification",
+      "goal": "Prove the declared product contract and execute a controlled Linux-first release with operational recovery evidence.",
+      "owner": "release/integrator",
+      "status": "planned",
+      "depends_on": [
+        "M06",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M13",
+        "M14",
+        "M15",
+        "M16"
+      ],
+      "definition_of_done": [
+        "Every required feature/provider/module/architecture matrix has current passing evidence tied to the release tree; no NOT-RUN result closes a release requirement.",
+        ">=90% first-party production line coverage floors, independent architecture/code/test reviews, security gates, native x86/ARM and 72-hour soak pass.",
+        "Failure/restore/CCR/copy/key/cert/upgrade/migration drills meet frozen scope and SLOs; supported limits and residual risks are published.",
+        "Reproducible signed artifacts, SBOM/provenance and canary promotion/rollback are verified within authorized release scope.",
+        "R23 cost cost envelopes and supported operating profiles pass current matched semantics/usage/failure evidence before release."
+      ],
+      "document": "milestones/M17.md",
+      "tasks": [
+        {
+          "id": "M17.01",
+          "title": "Run full requirement-by-requirement release audit",
+          "goal": "Match every original requirement to authoritative current evidence.",
+          "deliverables": [
+            "Release matrix linking R01-R23 to test/run/commit artifacts and unresolved blockers"
+          ],
+          "validation": [
+            "Inspect actual commands, runtime behaviors, coverage denominator, module/provider/hardware claims and reviews."
+          ],
+          "definition_of_done": [
+            "No requirement is treated as passed by intent, a file name, skipped job, indirect test or a narrower substitute."
+          ],
+          "depends_on": [
+            "M16",
+            "M13",
+            "M14",
+            "M15",
+            "M02.07",
+            "M03.07",
+            "M03.08",
+            "M07.07",
+            "M09.08",
+            "M15.06",
+            "M15.07",
+            "M16.07"
+          ],
+          "owner": "release/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M17.02",
+          "title": "Run durability, security and disaster drills",
+          "goal": "Prove the stated failure envelope end to end.",
+          "deliverables": [
+            "Receipt-ledger histories for node/zone/disk/storage/key/cert failures and fresh-host restores"
+          ],
+          "validation": [
+            "Inject partitions/SIGKILL/fsync faults/corruption, total compute loss, key revocation/rotation and GC races."
+          ],
+          "definition_of_done": [
+            "No acknowledged loss inside contract; outside-envelope exposure matches declared archive/CCR RPO."
+          ],
+          "depends_on": [
+            "M17.01"
+          ],
+          "owner": "release/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M17.03",
+          "title": "Run long soak and scale/performance gates",
+          "goal": "Check sustained correctness and resource debt.",
+          "deliverables": [
+            "72-hour mixed workload, L1/L2 scale results, leak/cost/latency and capacity report"
+          ],
+          "validation": [
+            "Concurrent compaction/copy/CCR, working set >cache, hot tenants, split/rebalance, overload/recovery on x86/ARM."
+          ],
+          "definition_of_done": [
+            "Frozen SLOs pass with no growing replay/archive/GC/RSS debt; raw histograms/config/hardware evidence retained.",
+            "No supported cost envelope is passed using only warm steady-state or by omitting idle/control/recovery/KMS/network service components."
+          ],
+          "depends_on": [
+            "M17.02"
+          ],
+          "owner": "release/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M17.04",
+          "title": "Complete independent review and operational acceptance",
+          "goal": "Close final architecture/security/test concerns with evidence.",
+          "deliverables": [
+            "Final-tree review verdicts, >=90% coverage reports, AI incident drill and runbook exercise"
+          ],
+          "validation": [
+            "Review exact candidate; seed stale verdict/false-green control; operate restore/promotion from documented tools."
+          ],
+          "definition_of_done": [
+            "Blocking findings resolved; operator-visible tools diagnose failures without secrets; candidate hash matches all required runs."
+          ],
+          "depends_on": [
+            "M17.03"
+          ],
+          "owner": "release/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M17.05",
+          "title": "Build reproducible release artifacts and canary plan",
+          "goal": "Prepare a concrete reviewable Linux release.",
+          "deliverables": [
+            "Pinned builds, native x86/ARM binaries/images, SBOM/licenses/provenance/signature and canary/rollback package"
+          ],
+          "validation": [
+            "Rebuild/verify artifacts, no-secrets scan, staging install/upgrade/rollback and feature capability inspection."
+          ],
+          "definition_of_done": [
+            "Artifact identity and deployment plan are concrete; external publish/promote follows existing user authorization."
+          ],
+          "depends_on": [
+            "M17.04"
+          ],
+          "owner": "release/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M17.06",
+          "title": "Execute controlled release and close progress",
+          "goal": "Deliver the release only after all required work is proven.",
+          "deliverables": [
+            "Authorized staged canary/promotion, post-release validation and final milestone evidence"
+          ],
+          "validation": [
+            "Monitor meaningful health/latency/lag/security signals, exercise rollback trigger, audit requirement ledger after promotion."
+          ],
+          "definition_of_done": [
+            "Release contract is achieved on the supported scope; any missing real infrastructure/evidence keeps task and goal incomplete."
+          ],
+          "depends_on": [
+            "M17.05"
+          ],
+          "owner": "release/integrator",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    }
+  ]
+}

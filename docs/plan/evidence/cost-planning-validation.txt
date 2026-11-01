@@ -1,0 +1,64 @@
+hsearch cost planning extension, 1 November 2026 (Australia/Sydney)
+
+Scope: research, plan/ledger updates and executable arithmetic only.
+No cloud/runtime deployment, bill reconciliation or latency experiment was run.
+
+Observed preliminary cost-model execution:
+- Selftest passed 8 arithmetic/boundary checks and 7 invalid-input controls.
+- Explicit-count scenarios reproduced: per-shard payload/root USD 259200/month;
+  payload packing with root floor USD 130896; compatible-domain scenario including
+  stated extra pages/wraps USD 5961.60; idle-minute polling USD 17280;
+  two follower copies of 10 MiB/s USD 1012.50; example 1 GiB/s NAT processing USD 116640.
+- One-GET/two-endpoint transfer break-even: 20.97152 KiB at the illustrative inputs.
+
+These are modeled components, not full TCO or current regional prices.
+Final observed plan/model commands and results are appended after execution.
+
+Final validation on completed cost-extension planning ledger:
+Inventory audit: 108 original IDs preserved; 19 milestones, 117 tasks, 23 requirements, 73 source references.
+Dependency audit: 10 cost task gates plus M17 completion requiring M18; all product tasks remain planned.
+
+COMMAND: python docs/plan/tools/plan.py render
+EXIT: 0
+Rendered 19 milestones and roadmap
+
+COMMAND: python docs/plan/tools/plan.py check
+EXIT: 0
+PASS: 19 milestones, 117 tasks, dependency DAG, completion/evidence rules, 78 local links, generated output freshness
+
+COMMAND: python docs/plan/tools/plan.py selftest
+EXIT: 0
+PASS: 16 negative controls: unknown dependency, self cycle, duplicate task, missing done evidence, false milestone completion, invalid status, missing task acceptance, unexplained blocker, path traversal, wrong field type, unknown schema, cross-task cycle, unfinished dependency, milestone completion cycle, evidence traversal, stale generated artifact
+
+COMMAND: python docs/plan/tools/cost_model.py --selftest
+EXIT: 0
+PASS: 8 arithmetic/boundary checks and 7 invalid-input controls; component model only
+
+COMMAND: python docs/plan/tools/cost_model.py
+EXIT: 0
+Illustrative operation/network component sensitivities, NOT a current regional quote, full TCO, measured performance, or prediction of latency/availability. 30 days; no discounts/free tier. Request counts are explicit scenario assumptions; omitted components are not zero in a real deployment.
+10000-dirty-shards-payload-and-root-each-second: USD 259,200.00 per modeled 30-day period
+payload-packing-only-root-floor-retained: USD 130,896.00 per modeled 30-day period
+100-compatible-domains-with-explicit-extra-pages: USD 5,961.60 per modeled 30-day period
+million-idle-shards-no-polling: USD 0.00 per modeled 30-day period
+million-idle-shards-head-every-minute: USD 17,280.00 per modeled 30-day period
+10MiB-s-two-cross-zone-follower-copies: USD 1,012.50 per modeled 30-day period
+1GiB-s-through-NAT-processing-only: USD 116,640.00 per modeled 30-day period
+Illustrative one-GET vs two-endpoint transfer break-even: 20.97152 KiB
+
+COMMAND: python docs/plan/tools/plan.py status
+EXIT: 0
+{
+  "milestones": {
+    "done": 1,
+    "planned": 18
+  },
+  "tasks": {
+    "done": 6,
+    "planned": 111
+  }
+}
+
+COMMAND: python docs/plan/tools/plan.py next
+EXIT: 0
+M01.01 Bootstrap workspace and contract ownership [harness/integrator]

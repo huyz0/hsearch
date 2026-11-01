@@ -1,0 +1,45 @@
+hsearch planning validation, 1 November 2026 (Australia/Sydney)
+
+Scope: documentation and planning tooling only. No search runtime, cloud provider,
+AI reviewer, product coverage run, or hardware benchmark was executed.
+
+Bootstrap observations from actual execution:
+- plan.py render: passed, rendered 18 milestones and roadmap.
+- First plan.py check: failed because this validation record did not exist yet.
+- Initial plan.py selftest: passed 10 deliberately invalid ledger/render controls.
+- Initial plan.py status: 4 done planning tasks, 1 planning task in review,
+  103 product implementation tasks planned.
+
+Subsequent final validation results are appended after execution. This record
+does not assert that a pending check has passed.
+
+Final planning validation on the completed M00 ledger:
+
+COMMAND: python docs/plan/tools/plan.py render
+EXIT: 0
+Rendered 18 milestones and roadmap
+
+COMMAND: python docs/plan/tools/plan.py check
+EXIT: 0
+PASS: 18 milestones, 108 tasks, dependency DAG, completion/evidence rules, 53 local links, generated output freshness
+
+COMMAND: python docs/plan/tools/plan.py selftest
+EXIT: 0
+PASS: 16 negative controls: unknown dependency, self cycle, duplicate task, missing done evidence, false milestone completion, invalid status, missing task acceptance, unexplained blocker, path traversal, wrong field type, unknown schema, cross-task cycle, unfinished dependency, milestone completion cycle, evidence traversal, stale generated artifact
+
+COMMAND: python docs/plan/tools/plan.py status
+EXIT: 0
+{
+  "milestones": {
+    "done": 1,
+    "planned": 17
+  },
+  "tasks": {
+    "done": 5,
+    "planned": 103
+  }
+}
+
+COMMAND: python docs/plan/tools/plan.py next
+EXIT: 0
+M01.01 Bootstrap workspace and contract ownership [harness/integrator]
