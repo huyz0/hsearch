@@ -1,0 +1,179 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.51s
+     Running `target-linux/debug/xtask check`
+CHECK: /usr/bin/python3 tools/workspace.py check
+PASS: dependency ownership, all-edge cycle check, exact engine pin, release feature boundary, license inventory
+CHECK: /usr/bin/python3 tools/workspace.py selftest
+PASS: 18 dependency-policy negative controls: unknown crate, foundation imports adapter, foundation imports external adapter, testkit normal edge, dev cycle, Lucene outside boundary, wrong pin, upstream test feature, license declaration missing, testkit is default, publication enabled by default, release transitive feature, unowned path namesake, registry namesake, inactive declared path substitution, resolved alias substitution, workspace member path substitution, unowned path inventory
+CHECK: cargo fmt --all -- --check
+CHECK: cargo clippy --locked --offline --workspace --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.02s
+CHECK: cargo test --locked --offline --workspace --all-features
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.06s
+     Running unittests src/lib.rs (target-linux/debug/deps/hsearch_engine-e1129f491e49e0ba)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/input.rs (target-linux/debug/deps/input-685b324ddc82b3d7)
+
+running 2 tests
+test pinned_input_rejects_out_of_bounds_and_overflow ... ok
+test pinned_input_supports_shared_bounded_slices ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target-linux/debug/deps/hsearch_observe-2ccadbc9d3e2b52c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target-linux/debug/deps/hsearch_testkit-05a934335de3d840)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target-linux/debug/deps/hsearch_types-0387af7cec5fbf16)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/progress.rs (target-linux/debug/deps/progress-956f7dc6ccc5fe75)
+
+running 3 tests
+test exhaustive_small_prefixes_match_independent_ordering_oracle ... ok
+test independent_consumers_and_u64_boundary ... ok
+test invalid_relationships_have_stable_errors ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target-linux/debug/deps/xtask-435b892000f7ce73)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_observe
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_testkit
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_types
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+CHECK: cargo test --locked --offline --workspace --all-features --release
+    Finished `release` profile [optimized] target(s) in 3.01s
+     Running unittests src/lib.rs (target-linux/release/deps/hsearch_engine-1502c0804cb1df11)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/input.rs (target-linux/release/deps/input-039a0985479bae77)
+
+running 2 tests
+test pinned_input_rejects_out_of_bounds_and_overflow ... ok
+test pinned_input_supports_shared_bounded_slices ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target-linux/release/deps/hsearch_observe-25e38f51768e9613)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target-linux/release/deps/hsearch_testkit-3c089068db5c50a5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target-linux/release/deps/hsearch_types-e96795639d71ab67)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/progress.rs (target-linux/release/deps/progress-f11b2fcd715b51dd)
+
+running 3 tests
+test exhaustive_small_prefixes_match_independent_ordering_oracle ... ok
+test independent_consumers_and_u64_boundary ... ok
+test invalid_relationships_have_stable_errors ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target-linux/release/deps/xtask-eebfec1b06e1174a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_observe
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_testkit
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests hsearch_types
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+CHECK: cargo build --locked --offline --release --package hsearch-engine --package hsearch-observe
+    Finished `release` profile [optimized] target(s) in 2.91s
+CHECK: /usr/bin/python3 docs/plan/tools/plan.py check
+PASS: 18 milestones, 118 tasks, dependency DAG, completion/evidence rules, 148 local links, generated output freshness
+CHECK: /usr/bin/python3 docs/plan/tools/plan.py selftest
+PASS: 16 negative controls: unknown dependency, self cycle, duplicate task, missing done evidence, false milestone completion, invalid status, missing task acceptance, unexplained blocker, path traversal, wrong field type, unknown schema, cross-task cycle, unfinished dependency, milestone completion cycle, evidence traversal, stale generated artifact
+CHECK: /usr/bin/python3 docs/plan/tools/cost_model.py --selftest
+PASS: 8 arithmetic/boundary checks and 7 invalid-input controls; component model only
+CHECK: /usr/bin/python3 -m unittest discover --start-directory tools/tests --verbose
+test_each_production_file_is_checked (test_coverage_check.CoverageControls.test_each_production_file_is_checked) ... ok
+test_invalid_counts_fail (test_coverage_check.CoverageControls.test_invalid_counts_fail) ... ok
+test_missing_and_duplicate_reports_fail (test_coverage_check.CoverageControls.test_missing_and_duplicate_reports_fail) ... ok
+test_threshold_is_inclusive (test_coverage_check.CoverageControls.test_threshold_is_inclusive) ... ok
+test_uncovered_production_path_fails (test_coverage_check.CoverageControls.test_uncovered_production_path_fails) ... ok
+test_recorded_experiments_match_the_executable_model (test_planning.ResearchReproduction.test_recorded_experiments_match_the_executable_model) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 3.803s
+
+OK
+PASS: complete bootstrap suite; remaining milestone/runtime gates are recorded in the ledger
+PASS: hsearch-types: 43/43 production lines (100.00%)
+N/A: hsearch-observe: no executable production lines in this bootstrap
+N/A: hsearch-engine: no executable production lines in this bootstrap

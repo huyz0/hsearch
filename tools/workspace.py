@@ -36,8 +36,22 @@ def need(condition, message):
 
 def validate(metadata, production_tree):
     packages = {p["id"]: p for p in metadata["packages"]}
+    member_ids = set(metadata["workspace_members"])
     members = [packages[x] for x in metadata["workspace_members"]]
     need({p["name"] for p in members} == set(LAYERS), "Unknown or missing workspace crate")
+    owned = {p["name"]: p for p in members}
+    for package in packages.values():
+        if package["source"] is None:
+            need(package["id"] in member_ids, f"Unowned path package: {package['name']}")
+        if package["name"] in owned:
+            need(package["id"] in member_ids, f"Unowned namesake package: {package['name']}")
+    workspace_root = Path(metadata["workspace_root"])
+    for name, package in owned.items():
+        relative = "xtask" if name == "xtask" else f"crates/{name.removeprefix('hsearch-')}"
+        expected = (workspace_root / relative / "Cargo.toml").resolve()
+        need(Path(package["manifest_path"]).resolve() == expected,
+             f"Workspace manifest ownership mismatch: {name}")
+    nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
     defaults = {packages[x]["name"] for x in metadata["workspace_default_members"]}
     need(defaults == PRODUCTION, "Default members must be exactly the production crates")
     names = set(LAYERS)
@@ -51,7 +65,15 @@ def validate(metadata, production_tree):
             if target.startswith("lucene-"):
                 need(name == "hsearch-engine", f"Only engine owns Lucene dependencies: {name}")
             if target in names:
+                need(dep["source"] is None and bool(dep.get("path")) and
+                     (Path(dep["path"]) / "Cargo.toml").resolve() == Path(owned[target]["manifest_path"]).resolve(),
+                     f"Workspace dependency identity mismatch: {name} -> {target}")
                 graph[name].add(target)
+                alias = (dep.get("rename") or target).replace("-", "_")
+                for resolved in nodes[package["id"]]["deps"]:
+                    if resolved["name"] == alias:
+                        need(resolved["pkg"] == owned[target]["id"],
+                             f"Resolved workspace identity mismatch: {name} -> {target}")
             if not dev:
                 need(target in LAYERS[name] | EXTERNAL[name], f"Forbidden layer edge: {name} -> {target}")
             if name in PRODUCTION and not dev:
@@ -100,6 +122,8 @@ def inventory(metadata):
     checksums = {(p["name"], p["version"], p.get("source")): p.get("checksum") for p in lock["package"]}
     rows = []
     for package in metadata["packages"]:
+        need(package["source"] is not None or package["id"] in metadata["workspace_members"],
+             f"Cannot inventory an unowned path package: {package['name']}")
         rows.append({
             "name": package["name"], "version": package["version"], "source": package["source"] or "workspace",
             "license": package["license"] or ("upstream license file" if package["license_file"] else "not selected"),
@@ -129,7 +153,27 @@ def selftest(data, tree):
 
     def edge(packages, source, target, kind=None):
         dep = dict(sample_dep, name=target, kind=kind, features=[])
+        if target in members:
+            dep.update(source=None, path=str(Path(members[target]["manifest_path"]).parent))
         packages[source]["dependencies"].append(dep)
+
+    def namesake(d, p, source):
+        replacement = copy.deepcopy(p["hsearch-types"])
+        replacement.update(id="unowned-types-0.2.0", version="0.2.0", source=source,
+                           manifest_path=str(Path(d["workspace_root"]) / "unowned-types/Cargo.toml"), license="MIT")
+        d["packages"].append(replacement)
+        p["hsearch-observe"]["dependencies"][0].update(
+            source=source, path=str(Path(replacement["manifest_path"]).parent), req="^0.2")
+        for node in d["resolve"]["nodes"]:
+            if node["id"] == p["hsearch-observe"]["id"]:
+                for dep in node["deps"]:
+                    if dep["pkg"] == p["hsearch-types"]["id"]:
+                        dep["pkg"] = replacement["id"]
+
+    def resolved_alias(d, p):
+        for node in d["resolve"]["nodes"]:
+            if node["id"] == p["hsearch-observe"]["id"]:
+                node["deps"][0]["pkg"] = p["lucene-util"]["id"]
 
     case("unknown crate", "Unknown or missing", lambda d, p: p["xtask"].update(name="unowned"))
     case("foundation imports adapter", "Forbidden layer edge", lambda d, p: edge(p, "hsearch-types", "hsearch-engine"))
@@ -148,6 +192,23 @@ def selftest(data, tree):
          lambda d, p: p["hsearch-types"].update(publish=None))
     case("release transitive feature", "Release dependency/feature leak", lambda d, p: None,
          altered_tree=tree + "\nlucene-store test-util\n")
+    case("unowned path namesake", "Unowned path package", lambda d, p: namesake(d, p, None))
+    case("registry namesake", "Unowned namesake package",
+         lambda d, p: namesake(d, p, "registry+https://github.com/rust-lang/crates.io-index"))
+    case("inactive declared path substitution", "Workspace dependency identity mismatch",
+         lambda d, p: p["hsearch-observe"]["dependencies"][0].update(path=str(Path(d["workspace_root"]) / "unowned-types")))
+    case("resolved alias substitution", "Resolved workspace identity mismatch", resolved_alias)
+    case("workspace member path substitution", "Workspace manifest ownership mismatch",
+         lambda d, p: p["hsearch-types"].update(manifest_path=str(Path(d["workspace_root"]) / "unowned-types/Cargo.toml")))
+    bad_inventory = copy.deepcopy(data)
+    namesake(bad_inventory, {p["name"]: p for p in bad_inventory["packages"]}, None)
+    try:
+        inventory(bad_inventory)
+    except PolicyError as exc:
+        need("unowned path package" in str(exc), f"Wrong inventory rejection: {exc}")
+    else:
+        raise PolicyError("Unowned path mislabeled as workspace in inventory")
+    controls.append("unowned path inventory")
     print(f"PASS: {len(controls)} dependency-policy negative controls: {', '.join(controls)}")
 
 

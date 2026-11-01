@@ -14,7 +14,7 @@ The original planning package is published at [huyz0/hsearch](https://github.com
 
 M01.01 is under review on `codex/m01-workspace`, using an isolated worktree based on that commit. It owns the Cargo/toolchain/configuration, initial types/observe/engine/testkit/xtask crates, dependency policy, bootstrap CI and development evidence. Shared ledger edits are serialized by the integrator. [Current executable commands and limits](development.md) distinguish this bootstrap from an operational search store or completed AI harness. The initial Linux check rejected missing documentation in an integration-test crate; documentation was added before rerunning. No tests or warning gates were weakened.
 
-[Local Linux evidence](evidence/m01-01-bootstrap.md) records the complete passing bootstrap suite and 43/43 production lines covered. Independent final-tree review and native hosted CI are pending.
+[Local Linux evidence](evidence/m01-01-bootstrap.md) records the complete passing bootstrap suite and 43/43 production lines covered. The first independent review found a name-only dependency-ownership gap; package IDs/manifest paths now bind owned dependencies, and the complete offline suite passed with 18 negative controls. Follow-up final-tree review and native hosted CI are pending.
 
 All broader M01.02-M17 obligations remain open. Full product delivery still requires actual storage/security/query/replication implementation, independently reviewed correctness evidence, provider credentials/billing, native hardware and release-scale/soak qualification. No release or deployment has occurred.
 
