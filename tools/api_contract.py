@@ -13,6 +13,11 @@ BEGIN, END = "<!-- api-matrix:start -->", "<!-- api-matrix:end -->"
 MINIMUM_ORDER = {("M02.01", "M19.01"), ("M02.05", "M02.08"), ("M03.03", "M02.08"),
                  ("M03.03", "M02.05"), ("M13.01", "M02.08"), ("M06.05", "M13.01"),
                  ("M07.04", "M07.08"), ("M17.01", "M19.01")}
+REQUIRED_LIMITS = {"request_bytes", "response_bytes", "selected_partitions", "inflight_rpcs",
+                   "decoded_bytes", "cpu_work", "remote_attempts", "remote_bytes", "queue_bytes",
+                   "concurrent_requests_per_tenant", "active_pits_per_tenant", "global_active_pits",
+                   "pin_bytes_per_tenant", "global_pin_bytes", "idempotency_retention_bytes",
+                   "maintenance_debt"}
 
 
 def need(condition, message):
@@ -34,7 +39,7 @@ def validate(profile, ledger):
     need(limits["max_inflight_partition_rpcs"] <= limits["max_selected_partitions"], "Concurrent/total fanout limits inconsistent")
     need(limits["max_page_hits"] <= limits["max_offset_plus_size"], "Page/offset limits inconsistent")
     required = set(profile["required_profile_limits"])
-    need({"selected_partitions", "inflight_rpcs", "pin_bytes_per_tenant", "global_pin_bytes", "remote_attempts", "response_bytes"}.issubset(required),
+    need(REQUIRED_LIMITS.issubset(required),
          "Missing required work/retention budget")
     milestones = {m["id"]: m for m in ledger["milestones"]}
     tasks = {t["id"]: t for m in ledger["milestones"] for t in m["tasks"]}
@@ -58,6 +63,9 @@ def validate(profile, ledger):
         need(gate["measurement"] and gate["pass"] and gate["observed"] is False,
              "Proposed scalability gate cannot be marked as measured evidence")
     need({f"G{i:02}" for i in range(1, 8)}.issubset(gate_ids), "Missing measurable qualification gates")
+    scale_gate = next(gate for gate in profile["gates"] if gate["id"] == "G06")
+    need(scale_gate["owner"] == "M17.03" and scale_gate.get("calibration_owner") == "M02.05",
+         "Scale gate must separate early calibration from real-service qualification")
 
     def dependencies(task):
         return [child["id"] for ref in task["depends_on"] for child in

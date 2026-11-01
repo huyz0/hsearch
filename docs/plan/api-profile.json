@@ -89,10 +89,11 @@
     },
     {
       "id": "G06",
-      "owner": "M02.05",
-      "measurement": "Calibrate matched workload/profile latency, throughput, CPU/RSS, object attempts and directed network bytes; repeat at increasing worker counts.",
+      "owner": "M17.03",
+      "measurement": "M02.05 freezes matched workload/hardware/failure profiles and numerical thresholds using repeated component/single-node baselines; it does not qualify service scaling. M15.06 supplies real-provider profile curves. M17.03 repeats the implemented service at increasing worker counts, measuring latency, throughput, CPU/RSS, object attempts and directed network bytes.",
       "pass": "Meet frozen per-profile minimum scale efficiency and latency/cost bounds; publish offered/completed/rejected load and curves. An unfrozen threshold, example limit or theoretical model cannot pass.",
-      "observed": false
+      "observed": false,
+      "calibration_owner": "M02.05"
     },
     {
       "id": "G07",
@@ -125,7 +126,7 @@
       "kind": "subset",
       "surface": "Document index/create/get/delete",
       "upstream": "OpenSearch exposes ID-addressed document operations; GET is real-time by default.",
-      "contract": "Target familiar /{collection}/_doc/{id} operations and core _id/_index/_source/found/result fields. GET targets authoritative latest state within its deadline; search visibility remains a separate checkpoint. Exact response/client compatibility awaits fixtures.",
+      "contract": "Target familiar /{collection}/_doc/{id} operations and core _id/_index/_source/found/result fields; initial mutations require an explicit stable document ID. GET targets authoritative latest state within its deadline; search visibility remains a separate checkpoint. Exact response/client compatibility awaits fixtures.",
       "alternative": "Native /v1 document operations expose explicit receipts and read modes.",
       "scalability": "Point requests route by logical identity without exposing a fixed physical shard map; no stale fallback to make a latest GET appear successful.",
       "sources": [
@@ -143,9 +144,9 @@
       "id": "A03",
       "kind": "subset",
       "surface": "POST /_bulk NDJSON",
-      "upstream": "OpenSearch actions are independent and item results are returned in submitted order.",
-      "contract": "Target index/create/delete only; general update is excluded from core-v1. No cross-item transaction. Bounded whole-request structural validation precedes commits; item semantic failures do not erase other receipts. Preserve response item order and per-document mutation order.",
-      "alternative": "Large imports use bounded batches and resumable import jobs; retries use stable IDs/idempotency keys.",
+      "upstream": "OpenSearch actions are independent, item results are returned in submitted order, and index/create can generate an ID when omitted.",
+      "contract": "Target index/create/delete with explicit stable IDs only; generated-ID and general update modes are excluded from core-v1. No cross-item transaction. Bounded whole-request structural validation precedes commits; item semantic failures do not erase other receipts. Preserve response item order and per-document mutation order.",
+      "alternative": "Large imports use bounded batches and resumable import jobs; retries use stable IDs/idempotency keys. Any later native allocated-ID profile must bound idempotency state and specify lost-reply recovery.",
       "scalability": "Explicit item/byte/response admission bounds buffering and fanout while retaining batching benefits.",
       "sources": [
         "bulk"
@@ -155,7 +156,7 @@
         "M06.05",
         "M07.03"
       ],
-      "acceptance": "Mixed success, repeated same-ID actions, invalid tails, partial failures and uncertain acknowledgements are covered."
+      "acceptance": "Mixed success, repeated same-ID actions, omitted IDs, invalid tails, partial failures and uncertain acknowledgements are covered."
     },
     {
       "id": "A04",

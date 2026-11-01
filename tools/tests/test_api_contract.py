@@ -67,6 +67,22 @@ class ContractControls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate"):
             self.validate()
 
+    def test_every_normative_work_and_retention_budget_is_mandatory(self):
+        original = self.profile["required_profile_limits"][:]
+        for limit in original:
+            self.profile["required_profile_limits"] = [name for name in original if name != limit]
+            with self.subTest(limit=limit), self.assertRaisesRegex(ValueError, "retention budget"):
+                self.validate()
+
+    def test_scale_results_cannot_be_owned_only_by_early_contract_freeze(self):
+        gate = next(gate for gate in self.profile["gates"] if gate["id"] == "G06")
+        for field, wrong in (("owner", "M02.05"), ("calibration_owner", "M17.03")):
+            previous = gate[field]
+            gate[field] = wrong
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "real-service qualification"):
+                self.validate()
+            gate[field] = previous
+
     def test_removed_admission_dependency_is_not_hidden(self):
         task = next(task for m in self.ledger["milestones"] for task in m["tasks"] if task["id"] == "M07.04")
         task["depends_on"].remove("M07.08")

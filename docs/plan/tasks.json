@@ -278,7 +278,7 @@
           "evidence": [
             {
               "path": "evidence/api-direction-revision.md",
-              "result": "Concrete16-area official-source matrix, measurable budget gates, standards/router and reordered prerequisites implemented; API/plan red controls pass; independent reviews/full native qualification pending."
+              "result": "Concrete 16-area official-source matrix and reordered plan; first architecture review clear, consistency review findings fixed with mandatory-budget/qualification-owner controls; full local Rust/Python/two-store smoke passed before those fixes; final review and hosted qualification pending."
             }
           ]
         }
@@ -720,13 +720,15 @@
           "title": "Freeze benchmark and failure contracts",
           "goal": "Make performance claims reproducible and falsifiable.",
           "deliverables": [
-            "Workload/hardware/arrival profiles, SLO worksheet, independent receipt ledger design and capacity model"
+            "Workload/hardware/arrival profiles, SLO worksheet, independent receipt ledger design and capacity model",
+            "G06 workload and numerical scale-efficiency/latency/cost thresholds frozen from calibration; no claim of implemented multi-worker service qualification"
           ],
           "validation": [
             "Reproduce single-node baseline twice with raw histograms/configs; calculate batch/egress/retention costs."
           ],
           "definition_of_done": [
-            "Targets in performance-scale.md are accepted or explicitly revised with evidence and no hidden exclusions."
+            "Targets in performance-scale.md are accepted or explicitly revised with evidence and no hidden exclusions.",
+            "Component/single-node calibration is recorded separately from later M15.06 provider curves and M17.03 real-service G06 qualification; no future runtime result is required or implied here"
           ],
           "depends_on": [
             "M02.01",
@@ -2767,7 +2769,8 @@
           ],
           "validation": [
             "Run matched logical correctness/security histories and each selected failure envelope, including zone loss, rebuild, catch-up, copy/CCR and key rotation",
-            "Use rate snapshots plus actual compute/disk/cache inventory; include KMS, retries, page writes, network services and recovery debt"
+            "Use rate snapshots plus actual compute/disk/cache inventory; include KMS, retries, page writes, network services and recovery debt",
+            "Measure implemented multi-worker scale/cost curves against M02.05 thresholds; provider results support but do not replace M17.03 full-service G06 qualification"
           ],
           "definition_of_done": [
             "Every advertised profile meets its own frozen constraints or stays blocked; weakened semantics are explicit in comparisons",
@@ -3094,7 +3097,8 @@
             "72-hour mixed workload, L1/L2 scale results, leak/cost/latency and capacity report"
           ],
           "validation": [
-            "Concurrent compaction/copy/CCR, working set >cache, hot tenants, split/rebalance, overload/recovery on x86/ARM."
+            "Concurrent compaction/copy/CCR, working set >cache, hot tenants, split/rebalance, overload/recovery on x86/ARM.",
+            "Qualify G06 on the actual service at increasing worker counts against the M02.05 frozen numerical scale-efficiency, latency and cost bounds; retain matched workload and offered/completed/rejected load"
           ],
           "definition_of_done": [
             "Frozen SLOs pass with no growing replay/archive/GC/RSS debt; raw histograms/config/hardware evidence retained.",

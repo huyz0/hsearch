@@ -48,9 +48,9 @@ Initial results are recorded in [planning validation evidence](evidence/planning
 
 ## Next implementation action
 
-Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. Continue the dependency-ready M01 harness tasks, then run the engine and storage spikes in M02/M03 as their task dependencies allow. Set up Git hosting/authorization through the actual chosen repository before claiming protected CI or external PRs exist.
+Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. Complete current-priority M19 review and protected integration, then rebase preserved M01.03 and continue dependency-ready harness/API feasibility tasks. M02/M03 spikes follow their revised prerequisites. Public Git hosting and protected impact CI are already integrated with the evidence above.
 
-The main open risks are K01 remote engine inputs, K03 provider conditional semantics, K04 pin/GC coordination, K07 durable consensus integration, K08-K10 crypto/cache lifecycle, and K18 exact required OpenSearch API coverage. Real cloud credentials/fleet/hardware/spend are not available as evidence in this planning task; M15/M17 cannot be marked done without them.
+The main open risks are K01 remote engine inputs, K03 provider conditional semantics, K04 pin/GC coordination, K07 durable consensus integration, K08-K10 crypto/cache lifecycle, and K18 selected API-profile coverage and truthful adaptation. Real cloud credentials/fleet/hardware/spend are not available as evidence in this planning task; M15/M17 cannot be marked done without them.
 
 ## Updating progress during development
 
