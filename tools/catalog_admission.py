@@ -171,8 +171,9 @@ class Admission:
     def finish_rpc(self, tenant, identity, partition, *, success=True, count=0, buckets=None, response_bytes=0, remote_bytes=0, cpu_work=0):
         number(partition, 2**32 - 1, 'partition_identity')
         request = self.request(tenant, identity)
-        need(partition in request.active and type(success) is bool, 'partition_state')
+        need(partition in request.active, 'partition_state')
         try:
+            need(type(success) is bool, 'partition_state')
             number(count, self.limits.count, 'count')
             number(response_bytes, self.limits.response_bytes, 'response_bytes')
             number(remote_bytes, self.limits.remote_bytes, 'remote_bytes')
@@ -201,12 +202,14 @@ class Admission:
             request.completed.add(partition); request.count += count; request.buckets = merged
         self.event('rpc_finished', identity, partition=partition, success=success)
 
-    def _close(self, identity, reason):
+    def _close(self, identity, reason, *, terminal_tick=None):
+        terminal_tick = self.now if terminal_tick is None else terminal_tick
+        expires = number(terminal_tick + self.limits.receipt_ticks, 2**63 - 1, 'receipt_expiry_overflow')
         request = self.requests.pop(identity)
         for _partition in request.active: self.rpc_pool.release(request.tenant)
         self.request_pool.release(request.tenant)
         self.queue[request.tenant] -= request.queue_bytes
-        self.terminal[identity] = {'tenant': request.tenant, 'reason': reason, 'expires': self.now + self.limits.receipt_ticks,
+        self.terminal[identity] = {'tenant': request.tenant, 'reason': reason, 'expires': expires,
                                    'attempts': request.attempts, 'remote_bytes': request.remote_bytes, 'cpu_work': request.cpu_work}
         self.event('closed', identity, reason=reason)
 
@@ -233,7 +236,7 @@ class Admission:
         number(self.now + ticks, 2**63 - 1, 'clock_overflow')
         self.now += ticks
         for identity, request in tuple(self.requests.items()):
-            if request.deadline <= self.now: self._close(identity, 'deadline')
+            if request.deadline <= self.now: self._close(identity, 'deadline', terminal_tick=request.deadline)
         for identity, receipt in tuple(self.terminal.items()):
             if receipt['expires'] <= self.now:
                 self.receipt_pool.release(receipt['tenant'])

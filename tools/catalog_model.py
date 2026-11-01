@@ -19,6 +19,8 @@ import statistics
 import subprocess
 import sys
 import time
+import weakref
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 HASH_SPACE = 65536  # Deliberately small synthetic routing space, not a product limit.
@@ -27,6 +29,7 @@ MAX_ROUTES = 128
 IDENTITY_SQL = "SELECT incarnation,generation FROM collections WHERE tenant=? AND name=?"
 ROUTE_SQL = "SELECT partition,lower,upper,reader FROM routes WHERE tenant=? AND name=? AND incarnation=? AND generation=? AND lower<? AND upper>? ORDER BY partition LIMIT ?"
 PAGE_SQL = "SELECT name,incarnation,generation FROM collections WHERE tenant=? AND name>? ORDER BY name LIMIT ?"
+ACTIVE_CATALOGS = weakref.WeakValueDictionary()
 
 
 class Refused(ValueError):
@@ -118,17 +121,23 @@ class Catalog:
         path = Path(path).absolute()
         need(path.resolve() == path and path.is_file() and 0 < path.stat().st_size <= MAX_CATALOG_BYTES,
              "Missing, redirected or oversized model catalog")
-        self.connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
         self.path = path
         self.file_identity = (path.stat().st_dev, path.stat().st_ino)
+        need(self.file_identity not in ACTIVE_CATALOGS and len(ACTIVE_CATALOGS) < 64, 'model_catalog_authority_conflict_or_limit')
+        self.closed, self.pin_registry = False, None
+        self.authority_nonce = uuid.uuid4().hex  # Model lifecycle identity, not authentication.
+        ACTIVE_CATALOGS[self.file_identity] = self
         try:
+            self.connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
             self.connection.execute("PRAGMA query_only=ON")
             self.connection.execute("PRAGMA mmap_size=0")
             self.connection.execute("PRAGMA cache_size=-256")
             self.connection.execute("PRAGMA temp_store=FILE")
             need(self.connection.execute("PRAGMA user_version").fetchone() == (1,), "Unknown model schema")
         except BaseException:
-            self.connection.close()
+            if hasattr(self, 'connection'): self.connection.close()
+            self.closed = True
+            del ACTIVE_CATALOGS[self.file_identity]
             raise
         self.metadata_statements = 0  # SQL statements, not object-store/page-read attempts.
         self.returned_rows = 0
@@ -139,8 +148,11 @@ class Catalog:
             self.metadata_statements += 1
 
     def close(self):
+        if self.closed: return
         self.connection.set_trace_callback(None)
         self.connection.close()
+        self.closed = True
+        if ACTIVE_CATALOGS.get(self.file_identity) is self: del ACTIVE_CATALOGS[self.file_identity]
 
     def __enter__(self):
         return self
@@ -156,6 +168,7 @@ class Catalog:
         return rows
 
     def guard_identity(self):
+        need(not self.closed and ACTIVE_CATALOGS.get(self.file_identity) is self, 'model_catalog_authority_closed')
         need((self.path.stat().st_dev, self.path.stat().st_ino) == self.file_identity, 'catalog_replaced')
 
     def page(self, tenant, *, after="", limit=128):

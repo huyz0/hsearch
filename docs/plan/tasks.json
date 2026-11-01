@@ -773,7 +773,7 @@
             "M01.02"
           ],
           "owner": "architecture/scale",
-          "status": "in_progress",
+          "status": "review",
           "evidence": [
             {
               "path": "research/catalog-admission-model.md",
@@ -782,6 +782,10 @@
             {
               "path": "evidence/catalog-model-scale-v2.json",
               "result": "18 fresh native model probes at1000/10000idle, fixed16selected; bounded gate passes; fullscan/indexed per-index record variants refuse. Raw samples and module hash."
+            },
+            {
+              "path": "evidence/catalog-model-review-history.json",
+              "result": "Both actual R1 reports blocked; four serial-model P2s retained. Repairs and exact regression controls prepared; full final native/hosted checks and independent R2 remain pending."
             }
           ]
         },

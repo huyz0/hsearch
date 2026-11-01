@@ -17,6 +17,11 @@ class SnapshotModelHistories(unittest.TestCase):
         self.catalog = Catalog(self.path); self.addCleanup(self.catalog.close)
         self.writer = Mutable(self.catalog); self.addCleanup(self.writer.close)
 
+    def independent_catalog(self):
+        path = create(Path(self.directory.name) / 'independent.sqlite', idle_collections=0)
+        catalog = Catalog(path); self.addCleanup(catalog.close)
+        return catalog
+
     def test_pinned_pages_remain_exact_while_split_and_new_keys_publish(self):
         pins = Pins(self.catalog)
         original = [0, 100, 2047, 2048, 4095, 4096, 65535]
@@ -63,7 +68,7 @@ class SnapshotModelHistories(unittest.TestCase):
         with self.assertRaisesRegex(Refused, 'active_snapshot_quota'): pins.open('synthetic', 'hot', [3])
         self.assertEqual(set(pins.active), {first, second})
         cost = pins.active[first].charged_bytes
-        bounded = Pins(self.catalog, tenant_bytes=2 * cost - 1, global_bytes=4 * cost - 2)
+        bounded = Pins(self.independent_catalog(), tenant_bytes=2 * cost - 1, global_bytes=4 * cost - 2)
         safe = bounded.open('synthetic', 'hot', [1])
         with self.assertRaisesRegex(Refused, 'snapshot_pin_bytes'): bounded.open('synthetic', 'hot', [2])
         self.assertEqual(set(bounded.active), {safe})
@@ -126,8 +131,65 @@ class SnapshotModelHistories(unittest.TestCase):
             pins.prepare('synthetic', 'hot', [3])
         pins.commit('synthetic', one); pins.commit('synthetic', two)
         self.assertEqual(len(pins.active), 2)
-        bounded = Pins(self.catalog, tenant_bytes=2 * cost - 1, global_bytes=4 * cost - 2)
+        bounded = Pins(self.independent_catalog(), tenant_bytes=2 * cost - 1, global_bytes=4 * cost - 2)
         bounded.prepare('synthetic', 'hot', [1])
         with self.assertRaisesRegex(Refused, 'snapshot_pin_bytes'):
             bounded.prepare('synthetic', 'hot', [2])
         self.assertEqual(len(bounded.prepared), 1)
+
+    def test_competing_registries_or_catalog_controllers_cannot_collect_live_view(self):
+        pins = Pins(self.catalog); token = pins.open('synthetic', 'hot', [1, 42])
+        self.writer.split('synthetic', 'hot', expected=(1, 1), partition=0, point=2048)
+        with self.assertRaisesRegex(Refused, 'model_pin_authority_conflict'): Pins(self.catalog)
+        with self.assertRaisesRegex(Refused, 'model_catalog_authority_conflict'): Catalog(self.path)
+        class Substitute:
+            catalog = self.catalog
+            def references(self, *_args): return set()
+        with self.assertRaisesRegex(Refused, 'foreign_pin_registry'):
+            self.writer.gc(Substitute(), 'synthetic', 'hot')
+        self.assertTrue(self.catalog.generation_exists('synthetic', 'hot', 1, 1))
+        self.assertEqual(pins.page('synthetic', token)[0], [1, 42])
+        self.assertEqual(self.writer.gc(pins, 'synthetic', 'hot'), [])
+        pins.release('synthetic', token)
+        self.assertEqual(self.writer.gc(pins, 'synthetic', 'hot'), [(1, 1)])
+
+    def test_calibrated_main_file_cap_refuses_create_and_recreate_before_commit(self):
+        maximum = MOD['MODEL']['MAX_CATALOG_BYTES']
+        for variant, idle, attempts in [('create', 0, 400), ('recreate', 80, 80)]:
+            path = create(Path(self.directory.name) / (variant + '.sqlite'), idle_collections=idle)
+            with Catalog(path) as catalog, Mutable(catalog) as writer:
+                cap = path.stat().st_size
+                try:
+                    MOD['MODEL']['MAX_CATALOG_BYTES'] = cap
+                    refused = False
+                    for index in range(attempts):
+                        collection = 'new-' + str(index) if variant == 'create' else 'idle-' + str(index).zfill(8)
+                        try:
+                            if variant == 'create': writer.create('synthetic', collection)
+                            else: writer.recreate('synthetic', collection, expected=(1, 1))
+                        except Refused as error:
+                            self.assertEqual(str(error), 'catalog_disk_budget')
+                            if variant == 'recreate': self.assertEqual(catalog.identity('synthetic', collection), (1, 1))
+                            else:
+                                with self.assertRaises(Refused): catalog.identity('synthetic', collection)
+                            refused = True; break
+                        self.assertLessEqual(path.stat().st_size, cap)
+                    self.assertTrue(refused)
+                    self.assertLessEqual(path.stat().st_size, cap)
+                finally: MOD['MODEL']['MAX_CATALOG_BYTES'] = maximum
+
+    def test_controller_close_fences_old_views_and_prevents_token_reuse(self):
+        pins = Pins(self.catalog); snapshot = pins.open('synthetic', 'hot', [1])
+        version = Versions(self.catalog).replace('synthetic', 'hot', 42)
+        self.catalog.close(); self.catalog.close()
+        with self.assertRaisesRegex(Refused, 'model_catalog_authority_closed'):
+            pins.page('synthetic', snapshot)
+        with Catalog(self.path) as restarted:
+            current = Pins(restarted); fresh = current.open('synthetic', 'hot', [2])
+            self.assertNotEqual(snapshot, fresh)
+            with self.assertRaisesRegex(Refused, 'snapshot_unknown'):
+                current.page('synthetic', snapshot)
+            versions = Versions(restarted); versions.replace('synthetic', 'hot', 42)
+            with self.assertRaisesRegex(Refused, 'version_conflict'):
+                versions.replace('synthetic', 'hot', 42, expected=version)
+            self.assertEqual(current.page('synthetic', fresh)[0], [2])

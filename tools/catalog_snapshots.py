@@ -29,7 +29,7 @@ class MutableCatalog:
         key(tenant); key(collection)
         need(type(expected) is tuple and len(expected) == 2, 'identity_shape')
         for value in expected: integer(value, 1, 2**31 - 1, 'identity')
-        need((self.path.stat().st_dev, self.path.stat().st_ino) == self.catalog.file_identity, 'catalog_replaced')
+        self._prepare_write()
         self.connection.execute('BEGIN IMMEDIATE')
         current = self.connection.execute(MODEL['IDENTITY_SQL'], (tenant, collection)).fetchone()
         need(current == expected, 'stale_routing_or_incarnation')
@@ -37,8 +37,22 @@ class MutableCatalog:
         need(len(retained) < 16, 'retained_generation_limit')
         return current
 
-    def create(self, tenant, collection):
+    def _prepare_write(self):
         self.catalog.guard_identity()
+        maximum = integer(MODEL['MAX_CATALOG_BYTES'], 512, 128 * 1024**2, 'catalog_disk_budget')
+        need(self.path.stat().st_size <= maximum, 'catalog_disk_budget')
+        page_size = self.connection.execute('PRAGMA page_size').fetchone()[0]
+        pages = maximum // page_size
+        need(pages > 0 and self.connection.execute('PRAGMA max_page_count=' + str(pages)).fetchone()[0] <= pages,
+             'catalog_disk_budget')
+
+    def _rollback(self, error):
+        self.connection.rollback()
+        if isinstance(error, sqlite3.Error) and getattr(error, 'sqlite_errorcode', None) == sqlite3.SQLITE_FULL:
+            raise Refused('catalog_disk_budget') from error
+
+    def create(self, tenant, collection):
+        self._prepare_write()
         key(tenant); key(collection)
         try:
             self.connection.execute('BEGIN IMMEDIATE')
@@ -47,8 +61,8 @@ class MutableCatalog:
             self.connection.execute('INSERT INTO routes VALUES (?,?,1,1,0,0,?,1)', (tenant, collection, MODEL['HASH_SPACE']))
             need(self.path.stat().st_size <= MODEL['MAX_CATALOG_BYTES'], 'catalog_disk_budget')
             self.connection.commit()
-        except BaseException:
-            self.connection.rollback(); raise
+        except BaseException as error:
+            self._rollback(error); raise
 
     def split(self, tenant, collection, *, expected, partition, point):
         integer(partition, 0, 2**31 - 1, 'partition'); integer(point, 1, MODEL['HASH_SPACE'] - 1, 'split_point')
@@ -71,8 +85,8 @@ class MutableCatalog:
             need(self.path.stat().st_size <= MODEL['MAX_CATALOG_BYTES'], 'catalog_disk_budget')
             self.connection.commit()
             return incarnation, generation + 1
-        except BaseException:
-            self.connection.rollback()
+        except BaseException as error:
+            self._rollback(error)
             raise
 
     def recreate(self, tenant, collection, *, expected):
@@ -83,12 +97,12 @@ class MutableCatalog:
             self.connection.execute('UPDATE collections SET incarnation=?,generation=1 WHERE tenant=? AND name=?', (incarnation + 1, tenant, collection))
             self.connection.commit()
             return incarnation + 1, 1
-        except BaseException:
-            self.connection.rollback(); raise
+        except BaseException as error:
+            self._rollback(error); raise
 
     def gc(self, pins, tenant, collection):
-        self.catalog.guard_identity()
-        need(pins.catalog.file_identity == self.catalog.file_identity, 'foreign_pin_registry')
+        self._prepare_write()
+        need(pins is self.catalog.pin_registry and pins.catalog is self.catalog, 'foreign_pin_registry')
         key(tenant); key(collection)
         protected = pins.references(tenant, collection)
         try:
@@ -104,8 +118,8 @@ class MutableCatalog:
                     removed.append(generation)
             self.connection.commit()
             return removed
-        except BaseException:
-            self.connection.rollback(); raise
+        except BaseException as error:
+            self._rollback(error); raise
 
 
 @dataclass(frozen=True)
@@ -130,6 +144,8 @@ class View:
 class Pins:
     def __init__(self, catalog, *, tenants=('synthetic', 'other'), tenant_limit=2, global_limit=4,
                  tenant_bytes=8192, global_bytes=16384, max_ttl=900):
+        catalog.guard_identity()
+        need(catalog.pin_registry is None, 'model_pin_authority_conflict')
         need(type(tenants) is tuple and 0 < len(tenants) <= 64 and len(set(tenants)) == len(tenants), 'tenant_policy')
         for tenant in tenants: key(tenant)
         for name, value in [('tenant_limit', tenant_limit), ('global_limit', global_limit), ('tenant_bytes', tenant_bytes), ('global_bytes', global_bytes), ('max_ttl', max_ttl)]:
@@ -141,8 +157,11 @@ class Pins:
         self.prepared, self.active, self.terminal = {}, {}, {}
         self.revoked_through = dict.fromkeys(tenants, 0)
         self.now = self.sequence = 0
+        catalog.pin_registry = self
 
     def _owner(self, tenant):
+        self.catalog.guard_identity()
+        need(self.catalog.pin_registry is self, 'foreign_pin_registry')
         key(tenant); need(tenant in self.tenants, 'unknown_tenant')
 
     def prepare(self, tenant, collection, keys, *, ttl=100, key_generation=1):
@@ -156,15 +175,15 @@ class Pins:
         need(len(reserved) < self.global_limit and sum(view.tenant == tenant for view in reserved) < self.tenant_limit, 'active_snapshot_quota')
         selection = self.catalog.select(tenant, collection)
         frozen = tuple(sorted(keys))
+        integer(self.sequence + 1, 1, 2**63 - 1, 'snapshot_identity_overflow')
+        identity = 'snapshot-' + self.catalog.authority_nonce + '-' + str(self.sequence + 1)
         encoded = json.dumps([tenant, collection, selection.incarnation, selection.generation,
                               [[route.partition, route.lower, route.upper, route.reader] for route in selection.routes], frozen,
-                              key_generation, self.now + ttl], separators=(',', ':')).encode()
+                              key_generation, self.now + ttl, identity], separators=(',', ':')).encode()
         need(sum(view.charged_bytes for view in reserved) + len(encoded) <= self.global_bytes and
              sum(view.charged_bytes for view in reserved if view.tenant == tenant) + len(encoded) <= self.tenant_bytes, 'snapshot_pin_bytes')
         integer(self.now + ttl, 0, 2**63 - 1, 'expiry_overflow')
-        integer(self.sequence + 1, 1, 2**63 - 1, 'snapshot_identity_overflow')
         self.sequence += 1
-        identity = 'snapshot-' + str(self.sequence)
         self.prepared[identity] = View(tenant, collection, selection.incarnation, selection.generation,
                                       selection.routes, frozen, key_generation, self.now + ttl, len(encoded))
         return identity
@@ -255,6 +274,7 @@ class Version:
     incarnation: int
     document: int
     version: int
+    authority: str
 
 
 class Versions:
@@ -271,8 +291,8 @@ class Versions:
             need(type(expected) is Version, 'version_token')
             for value in [expected.incarnation, expected.version]: integer(value, 1, 2**31 - 1, 'version_token')
             integer(expected.document, 0, MODEL['HASH_SPACE'] - 1, 'version_token')
-            need(expected == Version(tenant, collection, incarnation, document, version), 'version_conflict')
+            need(expected == Version(tenant, collection, incarnation, document, version, self.catalog.authority_nonce), 'version_conflict')
         need(identity in self.values or len(self.values) < 1024, 'version_history_bound')
         integer(version + 1, 1, 2**31 - 1, 'version_overflow')
         self.values[identity] = version + 1
-        return Version(tenant, collection, incarnation, document, version + 1)
+        return Version(tenant, collection, incarnation, document, version + 1, self.catalog.authority_nonce)

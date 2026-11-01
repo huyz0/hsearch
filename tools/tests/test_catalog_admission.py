@@ -8,6 +8,38 @@ Admission, Limits, Refused = (MODEL[name] for name in ['Admission', 'Limits', 'R
 
 
 class AdmissionModelControls(unittest.TestCase):
+    def test_late_deadline_observation_never_creates_immortal_receipts(self):
+        maximum = 2**63 - 1
+        model = Admission(Limits(terminal_receipts=2, receipt_ticks=maximum - 100))
+        requests = [model.reserve(tenant, [0], deadline_ticks=1) for tenant in ['a', 'b']]
+        model.advance(5000)
+        self.assertEqual([model.terminal[r]['expires'] for r in requests], [maximum - 99] * 2)
+        boundary = Admission(Limits(terminal_receipts=2, receipt_ticks=maximum - 100, deadline_ticks=maximum))
+        for tenant in ['a', 'b']: boundary.reserve(tenant, [0], deadline_ticks=1)
+        boundary.advance(5000); boundary.advance(maximum - 5000)
+        self.assertEqual(boundary.terminal, {})
+        self.assertEqual(sum(boundary.receipt_pool.used.values()), 0)
+        default = Admission(Limits(deadline_ticks=maximum))
+        request = default.reserve('a', [0], deadline_ticks=1)
+        default.advance(maximum)
+        self.assertEqual(default.terminal, {})  # Retention already elapsed when expiry is observed.
+        self.assertEqual(sum(default.receipt_pool.used.values()), 0)
+
+    def test_owned_malformed_status_releases_all_reservations_but_foreign_call_does_not(self):
+        model = Admission(); request = model.reserve('a', [0, 1], request_bytes=5, decoded_bytes=7)
+        for partition in [0, 1]: model.start_rpc('a', request, partition)
+        with self.assertRaisesRegex(Refused, 'tenant_mismatch'):
+            model.finish_rpc('b', request, 0, success=1)
+        self.assertIn(request, model.requests)
+        with self.assertRaisesRegex(Refused, 'partition_state'):
+            model.finish_rpc('a', request, 0, success=1)
+        self.assertNotIn(request, model.requests)
+        self.assertEqual(model.request_pool.used['a'], 0)
+        self.assertEqual(model.rpc_pool.used['a'], 0)
+        self.assertEqual(model.queue['a'], 0)
+        self.assertEqual(model.terminal[request]['reason'], 'response_refused')
+        with self.assertRaises(Refused): model.complete('a', request)
+
     def test_count_and_merged_bucket_overflow_reclaim_all_inflight_work(self):
         for first_count, first_bucket in [(2**63 - 1, 0), (0, 2**63 - 1)]:
             model = Admission(); request = model.reserve('a', [0, 1, 2])
