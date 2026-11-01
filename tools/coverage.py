@@ -585,12 +585,17 @@ def merge(directory):
     # Recheck all physical inputs and source after LLVM reads them; leave every failed context for inspection.
     INPUT["validate_shards"](runner.root, context, shards)
     need(context["source"] == source_identity(), "Source changed during coverage merge")
-    result = {"schema_version": 1, "source": context["source"], "profile": context["profile"], "target": host,
+    binding = {"context_schema_version": context["schema_version"], "base": context["base"],
+               "source_proof_sha256": INPUT["context_digest"](context["source_proof"]),
+               "compiler_wrappers": tools["compiler_wrappers"]}
+    result = {"schema_version": 1, "source": context["source"], "source_binding": binding,
+              "profile": context["profile"], "target": host,
               "context_sha256": INPUT["context_digest"](context), "report": report,
               "runtime_lines": {name: {str(line): hits for line, hits in lines.items()} for name, lines in runtime.items()}}
     save(runner.root / ("result-" + uuid.uuid4().hex[:12] + ".json"), result)
     print(json.dumps({"coverage": "pass" if report["passed"] else "fail", "profile": context["profile"], "target": host,
-                      "head": context["source"]["head"], "aggregate": report["aggregate"], "changed": report["changed"], "crates": report["crates"]}), flush=True)
+                      "head": context["source"]["head"], "source_binding": binding,
+                      "aggregate": report["aggregate"], "changed": report["changed"], "crates": report["crates"]}), flush=True)
     return result
 
 
