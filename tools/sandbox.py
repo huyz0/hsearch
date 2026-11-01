@@ -21,7 +21,7 @@ GIB = 1024**3
 LABEL = "io.hsearch.owner"
 NAMESPACE = re.compile(r"hsearch-[a-z0-9-]{1,25}-[0-9a-f]{12}\Z")
 VOLUMES = ("ca", "server", "client", "credentials", "data", "cargo", "target")
-HARNESS_FILES = ("execute.py", "init.py", "probe.py")
+HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py")
 BUILD = {"cpu_millis": 2000, "memory_bytes": 4 * GIB, "pids": 512, "disk_bytes": 8 * GIB}
 STORAGE = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 10 * GIB}
 PROBE = {"cpu_millis": 500, "memory_bytes": 256 * 1024**2, "pids": 64, "disk_bytes": 1024**2}
@@ -220,6 +220,12 @@ def assert_owned(objects, owner):
         need(labels and labels.get(LABEL) == owner, "Cleanup refused: resource owner does not match")
 
 
+def image_digest():
+    inputs = {name: hashlib.sha256((ROOT / "dev" / name).read_bytes()).hexdigest()
+              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json")}
+    return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
+
+
 def freeze_harness(destination):
     """Publish public controller code for a different, non-root guest UID."""
     destination.mkdir(mode=0o755)
@@ -296,35 +302,101 @@ class Sandbox:
             need(free >= reserved + 10 * GIB, "Low Docker backend disk reserve; workload not started")
 
     def image(self):
+        digest = image_digest()
+        cached_path = self.registry.root / "images" / (digest + ".json")
+        if cached_path.is_file():
+            cached = json.loads(cached_path.read_text(encoding="utf-8"))
+            need(cached["engine"] == self.docker.engine and cached["build_inputs_sha256"] == digest,
+                 "Cached development image belongs to another engine/source")
+            try:
+                info = json.loads(self.docker.command("image", "inspect", cached["id"]))[0]
+            except Refused:
+                info = None
+            if info is not None:
+                need(info["Id"] == cached["id"] and info["Config"]["User"] == "10001:10001", "Cached development image identity changed")
+                return cached["id"]
         lease_id = self.namespace("image")
         self.registry.acquire(lease_id, BUILD, self.docker.capacity, self.docker.engine, {"kind": "image"})
-        complete = False
+        complete, bootstrap = False, None
         try:
             source = (ROOT / "dev/Dockerfile").read_bytes()
             need(source.decode().splitlines()[0] == "FROM " + self.images["rust"], "Development base image pin disagrees with inventory")
-            digest = hashlib.sha256(source).hexdigest()
-            tag = "hsearch-dev:" + digest[:20]
-            self.docker.command("build", "--pull", "--file", "-", "--tag", tag, str(ROOT / "dev"),
+            digest = image_digest()
+            image_folder = self.registry.root / "images"
+            image_folder.mkdir(exist_ok=True, mode=0o700)
+            base_iid = image_folder / (lease_id + ".base.iid")
+            base_tag = "hsearch-nav-base:" + digest[:12] + "-" + lease_id[-12:]
+            self.docker.command("build", "--pull", "--file", "-", "--tag", base_tag, "--iidfile", str(base_iid), str(ROOT / "dev"),
                                 input_text=source.decode(), stream=True, timeout=600)
-            info = json.loads(self.docker.command("image", "inspect", tag))[0]
-            need(info["Config"]["User"] == "10001:10001", "Development image must be non-root")
-            (self.registry.root / "images").mkdir(exist_ok=True, mode=0o700)
-            atomic_json(self.registry.root / "images" / (digest + ".json"), {"id": info["Id"], "dockerfile_sha256": digest, "engine": self.docker.engine})
+            base_id = base_iid.read_text().strip()
+            need(re.fullmatch(r"sha256:[a-f0-9]{64}", base_id), "Base image identity uncertain")
+            base = json.loads(self.docker.command("image", "inspect", base_id))[0]
+            need(base["Config"]["User"] == "10001:10001", "Development base must be non-root")
+            self.registry.update(lease_id, bootstrap_image_id=base_id, build_inputs_sha256=digest)
             self.docker.command("pull", self.images["rustfs"], stream=True, timeout=300)
+            image_record = {"id": base_id, "engine": self.docker.engine, "build_inputs_sha256": digest,
+                            "dockerfile_sha256": hashlib.sha256(source).hexdigest(), "bootstrap_owner": lease_id}
+            bootstrap = self.up("navigation-toolbuild", _bootstrap_image=image_record)
+            output = self.snapshot(self.registry.get(bootstrap)) / "artifacts"
+            self.run(bootstrap, "navigation-build", artifact_directory=output)
+            self.down(bootstrap)
+            bootstrap = None
+            need(output.resolve() == output.absolute() and {item.name for item in output.iterdir()} == {"lsp", "attestation.json"},
+                 "Unexpected navigation build artifact")
+            for name in ("lsp", "attestation.json"):
+                artifact = output / name
+                need(not artifact.is_symlink() and artifact.is_file(), "Navigation build artifact redirected")
+            need((output / "lsp").stat().st_size <= 64 * 1024**2 and (output / "attestation.json").stat().st_size < 4096,
+                 "Navigation artifact exceeds bounds")
+            binary_hash = hashlib.sha256()
+            with (output / "lsp").open("rb") as binary:
+                while chunk := binary.read(65536):
+                    binary_hash.update(chunk)
+            artifact = json.loads((output / "attestation.json").read_text())
+            profile = json.loads((ROOT / "dev/navigation-tools.json").read_text(encoding="utf-8"))
+            profile_hash = hashlib.sha256(json.dumps(profile, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            need(artifact["revision"] == profile["lsp_cli"]["revision"] and artifact["version"] == "lsp " + profile["lsp_cli"]["version"] and
+                 artifact["cargo_lock_sha256"] == profile["lsp_cli"]["cargo_lock_sha256"] and artifact["profile_sha256"] == profile_hash and
+                 artifact["binary_sha256"] == binary_hash.hexdigest() and artifact["rustc"].startswith("rustc " + profile["rust_analyzer"]["toolchain"] + " "),
+                 "Navigation build identity mismatch")
+            (output / "navigation-tools.json").write_bytes((ROOT / "dev/navigation-tools.json").read_bytes())
+            (output / ".dockerignore").write_text("*\n!lsp\n!navigation-tools.json\n", encoding="utf-8")
+            final_source = (f"FROM {base_tag}\nCOPY --chmod=0755 lsp /usr/local/bin/lsp\n"
+                            "COPY navigation-tools.json /opt/hsearch/navigation-tools.json\n"
+                            f"RUN echo '{binary_hash.hexdigest()}  /usr/local/bin/lsp' | sha256sum --check - && lsp --version\n"
+                            "USER 10001:10001\n")
+            tag = "hsearch-dev:" + digest[:20]
+            final_iid = image_folder / (lease_id + ".final.iid")
+            self.docker.command("build", "--file", "-", "--tag", tag, "--iidfile", str(final_iid), str(output),
+                                input_text=final_source, stream=True, timeout=180)
+            final_id = final_iid.read_text().strip()
+            need(re.fullmatch(r"sha256:[a-f0-9]{64}", final_id) and image_digest() == digest, "Final image/source identity changed")
+            info = json.loads(self.docker.command("image", "inspect", final_id))[0]
+            need(info["Config"]["User"] == "10001:10001", "Development image must be non-root")
+            atomic_json(image_folder / (digest + ".json"), {"id": info["Id"], "build_inputs_sha256": digest,
+                        "dockerfile_sha256": hashlib.sha256(source).hexdigest(), "engine": self.docker.engine,
+                        "navigation_artifact": artifact})
             complete = True
             return info["Id"]
         finally:
+            if bootstrap is not None:
+                self.down(bootstrap)
             if complete:
                 self.registry.release(lease_id)
             else:
                 self.registry.update(lease_id, phase="uncertain-image-operation")
 
-    def up(self, task, *, task_claim=None):
+    def up(self, task, *, task_claim=None, _bootstrap_image=None):
         need(task_claim is None or re.fullmatch(r"m[0-9]{2}-[0-9]{2}-[0-9a-f]{12}", task_claim), "Invalid task claim")
-        digest = hashlib.sha256((ROOT / "dev/Dockerfile").read_bytes()).hexdigest()
-        image = json.loads((self.registry.root / "images" / (digest + ".json")).read_text())
+        digest = image_digest()
+        image = _bootstrap_image or json.loads((self.registry.root / "images" / (digest + ".json")).read_text())
+        if _bootstrap_image:
+            builder = self.registry.get(image["bootstrap_owner"])
+            need(builder["pid"] == os.getpid() and builder["kind"] == "image" and builder.get("bootstrap_image_id") == image["id"],
+                 "Bootstrap image is not owned by this active builder")
         need(image["engine"] == self.docker.engine, "Development image belongs to another engine")
-        need(image["dockerfile_sha256"] == hashlib.sha256((ROOT / "dev/Dockerfile").read_bytes()).hexdigest(), "Development image is stale")
+        need(image["build_inputs_sha256"] == image_digest() and
+             image["dockerfile_sha256"] == hashlib.sha256((ROOT / "dev/Dockerfile").read_bytes()).hexdigest(), "Development image is stale")
         namespace = self.namespace(task)
         owner = secrets.token_hex(16)
         record = {"kind": "topology", "namespace": namespace, "owner": owner, "source": str(self.source_root),
@@ -378,11 +450,16 @@ class Sandbox:
         need(hashlib.sha256(path.read_bytes()).hexdigest() == current["config_sha256"], "Owned Compose snapshot changed")
         return self.docker.command("compose", "--project-name", record["namespace"], "--file", str(path), *args, timeout=150)
 
-    def run(self, namespace, mode, *, output_budget=8 * 1024**2, stream=True):
-        need(mode in {"prefetch", "diagnostics", "check", "probe"}, "Unknown sandbox command")
+    def run(self, namespace, mode, *, output_budget=8 * 1024**2, stream=True, artifact_directory=None):
+        need(mode in {"prefetch", "diagnostics", "check", "probe", "navigation-build"}, "Unknown sandbox command")
         need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)
         need(record.get("source") == str(self.source_root) and record["engine"] == self.docker.engine and record["phase"] == "ready", "Namespace unavailable in this worktree/engine")
+        if mode == "navigation-build":
+            need(artifact_directory == self.snapshot(record) / "artifacts" and artifact_directory.resolve() == artifact_directory.absolute()
+                 and not artifact_directory.exists(), "Navigation artifact output escaped or reused the owned snapshot")
+        else:
+            need(artifact_directory is None, "Unexpected artifact output mount")
         harness = self.harness(record)
         if record.get("resource_protocol") == 2:
             expected = {f"{namespace}-{suffix}" for suffix in VOLUMES}
@@ -404,10 +481,12 @@ class Sandbox:
                 "--user", "10001:10001", "--cpus", str(budget["cpu_millis"] / 1000), "--memory", str(budget["memory_bytes"]), "--pids-limit", str(budget["pids"]), "--read-only",
                 "--memory-swap", str(budget["memory_bytes"]),
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,nosuid,nodev,size=67108864",
-                "--network", "bridge" if mode == "prefetch" else (namespace + "-net" if mode == "probe" else "none"),
+                "--network", "bridge" if mode in {"prefetch", "navigation-build"} else (namespace + "-net" if mode == "probe" else "none"),
                 "--mount", f"type=bind,source={self.source_root},target=/workspace,readonly",
                 "--mount", f"type=bind,source={harness},target=/harness,readonly", "--mount", f"type=volume,source={namespace}-cargo,target=/cargo",
                 "--mount", f"type=volume,source={namespace}-target,target=/target"]
+        if mode == "navigation-build":
+            args += ["--mount", f"type=bind,source={artifact_directory},target=/navigation-output"]
         if mode == "probe":
             args += ["--mount", f"type=volume,source={namespace}-client,target=/certs,readonly",
                      "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly", record["image"], "python3", "/harness/probe.py", namespace]
@@ -420,6 +499,9 @@ class Sandbox:
             free = self.backend_free(record, container + "-admission", data_volumes=True)
             backend_known = True
             self.require_backend_reserve(free)
+            if artifact_directory is not None:
+                artifact_directory.mkdir(mode=0o1777)
+                artifact_directory.chmod(0o1777)
             workload_attempted = True
             self.registry.update(lease_id, protocol=2, phase="creating", container_name=container, mode=mode)
             container_id = self.docker.command(*args).strip()

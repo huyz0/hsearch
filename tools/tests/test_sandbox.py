@@ -125,9 +125,10 @@ class OwnershipControls(unittest.TestCase):
                 docker = FakeDocker()
                 docker.free = free
                 sandbox = Sandbox(directory, docker=docker)
-                digest = MODULE["hashlib"].sha256((Path(MODULE["ROOT"]) / "dev/Dockerfile").read_bytes()).hexdigest()
+                digest = MODULE["image_digest"]()
                 (Path(directory) / "images").mkdir()
-                MODULE["atomic_json"](Path(directory) / "images" / (digest + ".json"), {"id": "image", "engine": "engine", "dockerfile_sha256": digest})
+                MODULE["atomic_json"](Path(directory) / "images" / (digest + ".json"), {"id": "image", "engine": "engine", "build_inputs_sha256": digest,
+                    "dockerfile_sha256": MODULE["hashlib"].sha256((Path(MODULE["ROOT"]) / "dev/Dockerfile").read_bytes()).hexdigest()})
                 if prior:
                     sandbox.registry.acquire("prior", STORAGE, CAPACITY, "engine")
                 with self.assertRaisesRegex(Refused, "backend disk reserve"):

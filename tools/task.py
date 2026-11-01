@@ -386,7 +386,7 @@ class TaskStore:
         token = secrets.token_hex(12)
         with self.edit() as data:
             current = data["tasks"][claim]
-            need(current["phase"] in {"allocated", "running", "interrupted", "resuming"},
+            need(current["phase"] in {"allocated", "running", "interrupted", "resuming", "navigating"},
                  "Worktree lifecycle outcome needs inspection; allocation retained")
             need(not handle_live(current["worker"]), "Task worker is live or uncertain; no duplicate")
             current.update(phase="resuming", lifecycle_token=token,
@@ -463,6 +463,11 @@ class TaskStore:
         with self.edit() as data:
             current = data["tasks"][claim]
             need(current["phase"] == "allocated" and not handle_live(current["worker"]), "Task lifecycle became busy")
+            if data.get("resource_root") is not None:
+                need(str(Path(resource_root).resolve()) == data["resource_root"], "Cleanup must use its recorded shared resource registry")
+                with SANDBOX["Registry"](Path(data["resource_root"])).edit() as resources:
+                    need(not any(item.get("kind") == "navigation" and item.get("task_claim") == claim for item in resources["leases"].values()),
+                         "Close the owned semantic session before worktree cleanup")
             current.update(phase="closing", worker={"pid": os.getpid(), "identity": SANDBOX["owner_identity"]()})
         if record["namespace"]:
             sandbox = self.resources(resource_root, record)

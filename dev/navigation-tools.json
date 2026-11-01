@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "lsp_cli": {
+    "version": "0.4.1",
+    "source": "https://github.com/huyz0/lsp-cli",
+    "revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+    "license": "No redistribution license declared in inspected source; development use only, no vendoring or public image/binary release inferred",
+    "checksums_sha256": "b2a4186b7e59986f608361c700b7d8c393026bf8fb3ad6f1584bf541718c429f",
+    "linux_assets": {
+      "x86_64": {
+        "url": "https://github.com/huyz0/lsp-cli/releases/download/v0.4.1/lsp-x86_64-unknown-linux-gnu.tar.gz",
+        "archive_sha256": "c3d3eed331e5eac07e612a3bc1b05b8a01a7df8396e43ccf33aecce98450513a",
+        "binary_sha256": "c65f439227dc34243478c439b37d511373212b2ddede07ac58505c7acf45962c"
+      },
+      "aarch64": {
+        "url": "https://github.com/huyz0/lsp-cli/releases/download/v0.4.1/lsp-aarch64-unknown-linux-gnu.tar.gz",
+        "archive_sha256": "f167af40547bd4fa3b8546ed15c4d800774d14191cb5f14ac21f1b103912fff9",
+        "binary_sha256": "d7b2e64ebfc2f81fe17c1a2401eef001b32703aeb5e8564965d10c8a78fbd134"
+      }
+    },
+    "install_mode": "source build in capped non-root container; release binaries require newer GLIBC",
+    "cargo_lock_sha256": "bb5efd5f65b0f91ebaaab662fea39775ea3526b088234b574e4ef9f39668a1e0"
+  },
+  "rust_analyzer": {
+    "toolchain": "1.97.1",
+    "distribution": "rustup component rust-analyzer from the exact pinned Rust distribution",
+    "source_component": "rust-src",
+    "version_evidence": "Record actual --version and resolved executable SHA-256 in navigation doctor results"
+  },
+  "commands": [
+    "outline",
+    "definition",
+    "reference",
+    "diagnostics",
+    "rename"
+  ],
+  "token_accounting": "UTF-8 bytes and labelled ceil(bytes/4) estimates; actual tokenizer counts only for an explicitly identified tokenizer"
+}
