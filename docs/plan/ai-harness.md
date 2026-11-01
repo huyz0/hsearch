@@ -1,6 +1,6 @@
 # AI development, review, and operations harness
 
-Status: broader harness design, implemented in M01 and extended with each subsystem. M01.01 adds the [bootstrap check entrypoint](development.md); M01.02/M01.03/M01.06 integrate resource/worktree/recovery/impact CI. Semantic navigation, durable review and generic coverage/corpus gates retain the acceptance below. The user's existing projects inform this design; [the audit](research/repository-audit.md) records what is adopted and changed.
+Status: broader harness design, implemented in M01 and extended with each subsystem. M01.01 adds the [bootstrap check entrypoint](development.md); M01.02/M01.03/M01.06 integrate resource/worktree/recovery/impact CI. M01.04 semantic navigation is integrated; durable review and generic coverage/corpus gates retain the acceptance below. The user's existing projects inform this design; [the audit](research/repository-audit.md) records what is adopted and changed.
 
 ## Agent task lifecycle
 

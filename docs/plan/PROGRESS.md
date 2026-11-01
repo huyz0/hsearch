@@ -10,9 +10,9 @@ M01.02 is integrated as `f630dc8d20860b7765e7b7e021ce3bd59a87e39b`. Two independ
 
 M01.06 is integrated as `69d9163` after both independent reviews, full/docs/types/engine hosted qualification, protected normal PR#3 merge and integrated main CI. [Exact acceptance](evidence/m01-06-integrated.md) includes verified required ci-ok enforcement.
 
-The user's 1 November 2026 direction makes scalability-first OpenSearch-inspired partial compatibility the current priority. M19's [matrix](api-compatibility.md), [standards](engineering-standards.md) and dependency revision are integrated as `367760ad` after two independent reviews and all native/hosted checks. [Integration evidence](evidence/api-direction-integrated.md) records exact source and runs. There is no HTTP/search runtime and all profile support remains planned. M01.03 is integrated as `7555c4b` after independent review and complete PR/main qualification. [Acceptance evidence](evidence/m01-03-integrated.md) retains the fixed findings and failed first native run. M01.04 navigation/context implementation is now in progress; the original WIP is preserved.
+The user's 1 November 2026 direction makes scalability-first OpenSearch-inspired partial compatibility the current priority. M19's [matrix](api-compatibility.md), [standards](engineering-standards.md) and dependency revision are integrated as `367760ad` after two independent reviews and all native/hosted checks. [Integration evidence](evidence/api-direction-integrated.md) records exact source and runs. There is no HTTP/search runtime and all profile support remains planned. M01.03 is integrated as `7555c4b` after independent review and complete PR/main qualification. [Acceptance evidence](evidence/m01-03-integrated.md) retains the fixed findings and failed first native run. M01.04 navigation/context merged as `2c85cd9` after both final reviews and all seven PR/main jobs passed; [integration evidence](evidence/m01-04-integrated.md) records its exact qualification. M01.05 durable review gates are in review; the original M01.03 WIP remains preserved.
 
-The ledger now has 19 active milestones and 121 tasks: 12 done, M01.04 in progress, 108 planned. M00 and completed infrastructure evidence remain valid; API assumptions/future gates are explicitly revised. No release/deployment occurred.
+The ledger now has 19 active milestones and 121 tasks: 13 done, M01.05 in review, 107 planned. M00 and completed infrastructure evidence remain valid; API assumptions/future gates are explicitly revised. No release/deployment occurred.
 
 ## Public hosting and integration
 
@@ -48,7 +48,7 @@ Initial results are recorded in [planning validation evidence](evidence/planning
 
 ## Next implementation action
 
-Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. M19 and M01.03 are integrated. Continue M01.04 navigation/context budgets, then dependency-ready harness/API feasibility tasks. M02/M03 spikes follow their revised prerequisites. Public Git hosting and protected impact CI are already integrated with the evidence above.
+Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. M19 and M01.03 are integrated. Complete M01.05 durable review gates, then dependency-ready generic coverage, agent-corpus and API feasibility tasks. M02/M03 spikes follow their revised prerequisites. Public Git hosting and protected impact CI are already integrated with the evidence above.
 
 The main open risks are K01 remote engine inputs, K03 provider conditional semantics, K04 pin/GC coordination, K07 durable consensus integration, K08-K10 crypto/cache lifecycle, and K18 selected API-profile coverage and truthful adaptation. Real cloud credentials/fleet/hardware/spend are not available as evidence in this planning task; M15/M17 cannot be marked done without them.
 

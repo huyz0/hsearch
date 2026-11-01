@@ -459,11 +459,15 @@
             "M01.03"
           ],
           "owner": "harness/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m01-04-navigation.md",
               "result": "Pinned semantic/router implementation and all seven round1 corrections passed129 Linux cases/no skips, complete Rust/TLS/S3 checks and real concurrent-worktree semantic/freshness/compiler corpus; final independent review and both-architecture hosted CI pending."
+            },
+            {
+              "path": "evidence/m01-04-integrated.md",
+              "result": "Merged reviewed93f825e as2c85cd9; both independent final sessions clear; all7 PR41279467218 and integratedmain41279937533 jobs passed, including real concurrent semantic corpora on both native architectures."
             }
           ]
         },
@@ -484,8 +488,13 @@
             "M01.03"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "review",
+          "evidence": [
+            {
+              "path": "evidence/m01-05-review.md",
+              "result": "Both actual round1 blocked reports recorded and gate refusal observed; four distinct P2s and check-cardinality advice corrected with new controls; full final native qualification, second independent review and hosted CI remain required."
+            }
+          ]
         },
         {
           "id": "M01.06",
