@@ -644,11 +644,11 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "review",
+          "status": "done",
           "evidence": [
             {
-              "path": "coverage-redesign.md",
-              "result": "Concrete decomposition and source-proof contract prepared; independent plan review and hosted qualification pending, no successor acceptance."
+              "path": "evidence/m01-10-integrated.md",
+              "result": "Two actual independent plan reviews and durable gate, protected PR11 merge with matching tree, all7 PR/main native jobs and decoded full corpora passed. Plan only; original M01.07 remains blocked."
             }
           ]
         },
@@ -773,8 +773,17 @@
             "M01.02"
           ],
           "owner": "architecture/scale",
-          "status": "planned",
-          "evidence": []
+          "status": "in_progress",
+          "evidence": [
+            {
+              "path": "research/catalog-admission-model.md",
+              "result": "Executable catalog/admission/snapshot model and larger native scale observations prepared; independent review and full hosted final qualification pending. No runtime/fleet acceptance."
+            },
+            {
+              "path": "evidence/catalog-model-scale-v2.json",
+              "result": "18 fresh native model probes at1000/10000idle, fixed16selected; bounded gate passes; fullscan/indexed per-index record variants refuse. Raw samples and module hash."
+            }
+          ]
         },
         {
           "id": "M02.02",

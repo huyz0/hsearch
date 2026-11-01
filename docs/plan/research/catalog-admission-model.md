@@ -1,0 +1,60 @@
+# Bounded catalog, admission and snapshot model
+
+This M02.08 prototype is an executable synthetic model, awaiting independent review and full hosted qualification. It is not a hsearch runtime, metadata-store selection, wire/token format, physical-I/O benchmark or G01/G03/G04/G05 acceptance. The selected [API profile](../api-compatibility.md) and [engineering standards](../engineering-standards.md) remain authoritative. No API gate changes to observed=true.
+
+`tools/catalog_model.py` uses standard-library SQLite to make indexing and memory observations reproducible. Composite `(tenant, collection)` and `(tenant, collection, incarnation, routing generation, partition)` primary keys support keyset catalog pages and scoped routing. One bounded cache/connection serves the model; no object/timer is allocated per idle collection in the bounded variant. Routing selection is bounded separately from simultaneous RPCs. Its range predicate may inspect the admitted generation's bounded route vector; SQL statement/returned-row counters do not measure physical B-tree page reads or remote metadata/object-store attempts. SQLite transactions model serial publication only; they do not supply a distributed authority protocol.
+
+## Reproduction and measured scale
+
+Run the complete Linux owned sandbox with `python tools/sandbox.py --state-root /private/owned-state smoke`, or the model suite with `python -m unittest tools.tests.test_catalog_model tools.tests.test_catalog_admission tools.tests.test_catalog_snapshots`. The Linux model test launches18 fresh Python children: two cardinalities, three variants and three repetitions. Each gets a30 s timeout/16 KiB output expectation. The outer BUILD resource/deadline/output limits remain necessary. The standalone experiment is `python tools/catalog_model.py scale --output /private/new-directory`; it refuses existing output directories and keeps raw samples/report. It uses100 iterations by default; the qualification test uses20 per child. Fixtures are original synthetic keys, not application traces.
+
+At source `f791408`, the actual owned Linux suite passed199 component cases/no skips, complete Rust qualification, TLS/auth/S3 smoke and two isolated topology cleanup histories. The larger experiment built1,001/10,001 catalog rows and1,016/10,016 route rows (1,000/10,000 idle collections, fixed16 selected routes). Three fresh-process repetitions at each size yielded:
+
+| Variant | Median peak process RSS small/large, bytes | Large/small | Query plans | Fixed work model gate |
+| --- | --- | --- | --- | --- |
+| bounded |21,766,144 /21,827,584|1.002823|indexed SEARCH|passes: two SQL statements/17 returned rows per request; no timer records|
+| full scan |22,102,016 /26,427,392|1.195701|includes SCAN|refuses: enumerates idle catalog|
+| indexed timer records |22,020,096 /23,228,416|1.054874|indexed SEARCH|refuses: per-collection records/work, despite RSS ratio below1.10|
+
+The model criterion is all indexed plans, fixed two SQL statements/17 rows/no timer records, and median process peak RSS growth<=10% for10 x idle cardinality. VmHWM includes the interpreter/SQLite/cache; raw baseline/final VmRSS and three samples expose noise. A large interpreter baseline can hide small model allocations, so RSS alone cannot pass the work gate. These measured thresholds are a model regression screen, not a service memory or latency SLO. The independent timer variant uses indexed keyset pages and zero real timers, so it exposes per-index bookkeeping without relying on a table scan. Retained full logs/raw18 samples and exact module hash are in the coordinator's `M02.08_ENLARGED_SCALE_PROOF.json`; public machine-readable model evidence accompanies final qualification. Historical100/1,000 v1 samples remain separate and must not be relabelled as v2 peak-RSS results.
+
+The fixture caps idle collections at100,000, routes at128, file size at128 MiB and pages at1,000. Batches128 bound construction working sets. The128 MiB observation is a fixture-file bound, not accounting for transaction journals or production storage. Physical pages, storage bytes read, CPU profiles, concurrent-reader/writer behavior, network/service latency, object attempts and production workload scaling remain unmeasured.
+
+## Admission units and calibration
+
+`tools/catalog_admission.py` admits serial state transitions over declared counters. All counters are typed finite integers; booleans cannot alias IDs or costs. Unknown tenants and duplicate targets refuse. This is trusted model input: reporting zero cost does not prove a real operation has zero cost. Actual services must reserve before work, meter retries/decoding/RPC responses and reconcile measured use; the model does not parse or transport requests.
+
+| Resource | Current model seed | Required runtime handoff |
+| --- | --- | --- |
+| total selected partitions / concurrent RPCs |64 /16 per request,32 global|Separate scope cardinality from concurrency; paged dispatch cannot evade total-target admission.|
+| requests / active tenants |4 global; two configured tenants with one reserved request each plus shared capacity|No policy object per idle collection. Known active-cohort tenant shares survive another tenant's skew. Dynamic cohorts/fleet fairness remain unimplemented.|
+| attempts / retries |128 total /2 retries per partition|Charge failed attempts; fixed original deadline, never an automatic deadline extension.|
+| remote bytes / logical CPU work |1 MiB /10,000 units|Calibrate physical bytes and CPU/operation meters; both start and finish costs accrue. No claim that ticks or model units are milliseconds/CPU cycles.|
+| request / decoded / response bytes |10 MiB /20 MiB /10 MiB|Bound allocation/decoding before execution. Model merged JSON response is also checked; no exact result after overflow.|
+| queued bytes |32 MiB per tenant /64 MiBglobal|Reserve request+decoded bytes, return all owned reservations on terminal state; actual buffered frames need their own meter.|
+| deadline |5,000 logical ticks maximum|Monotonic logical clock with explicit advance, not wall-clock service enforcement.|
+| buckets |128 worker /512 coordinator|Exact bounded map only. Overflow refuses and reclaims active RPCs; no hidden truncation/top-k approximation.|
+| count |signed63-bit maximum|Sum all selected successful partitions; overflow/incomplete scope cannot produce exact relation=eq.|
+| terminal receipts |1,024 /5,000 ticks retention|Bounded idempotent cancellation history, one reserved receipt per known tenant. Expired receipts are unknown; no durable mutation/idempotency guarantee.|
+
+Original controls manually enumerate a7 document/three-key exact aggregate, worker/coordinator limit+one, count/byte/CPU/queue refusal, selected65 vs64, concurrency17 vs16, failed-attempt exhaustion, fixed deadline, cancellation/foreign-tenant safety, reserved shares under skew, and receipt churn/expiry. A refusal before admission leaves no request. A refused worker response closes the request and releases its owned RPC/request/queue reservations. A retryable RPC failure consumes counters but does not complete its partition. Successful complete requires every selected partition and no outstanding RPC. Bounded diagnostic history has1,024 events and an explicit dropped counter; it is not a durable audit log.
+
+## Split, version and snapshot contracts
+
+`tools/catalog_snapshots.py` models immutable reader/key views with synthetic16-bit document keys. A split checks the exact collection incarnation/routing generation and parent interval, creates two new partition/reader identities, then publishes a new routing generation in one serial SQLite transaction. Old generation rows remain. Invalid/stale split preparation rolls back; it cannot create a partial generation. At most16 retained generations and128 routes are admitted; further mutation refuses until eligible old generations are collected. This is an explicit bounded prototype restriction, not an accepted production split-frequency limit.
+
+Symbolic document CAS tokens bind tenant/collection/incarnation/document/version and deliberately exclude physical routing generation, so valid versions survive splits. Recreating a collection advances incarnation and invalidates old tokens/snapshots (ABA). Preparation failure never mutates the version dictionary. At most1,024 symbolic version entries are kept; this is a finite history fixture rather than an eviction/version-store design. Tokens are trusted typed model values, not cryptographic credentials or a chosen token encoding.
+
+Snapshot preparation copies exact keys and reader/routing vectors. Prepared and active views jointly reserve tenant/global count and logical serialized-vector byte quotas (two/four views,8 KiB/16 KiB, TTL<=900 logical ticks). The charge includes tenant/collection/incarnation/routing/key epoch/expiry, route vector and document keys, but not Python object/registry allocator overhead; real memory and engine pin/storage costs require separate meters. Commit revalidates current incarnation/generation and retained source rows. Therefore a split/GC between prepare/commit refuses stale preparation, rather than pinning a collected view. Prepared views are not live GC pins; active committed views are.
+
+Pages bind a snapshot identity and exact prior key. Mutations/new splits do not alter an existing valid view, repeat pages remain identical, and a different snapshot's cursor refuses. Live active pins protect old generations from explicit GC. Expiry, unavailable generation, incarnation change and revocation return typed failure; never substitute a current reader. A symbolic monotonic key-policy epoch revokes that tenant's selected epoch and all older epochs. It is not KMS/BYOK key management or proof of cache plaintext revocation. Terminal failure reasons are bounded128 receipts; an evicted terminal receipt becomes typed unknown, never an active view silently expiring. Wrong-tenant access cannot release another owner's pin.
+
+Independent histories enumerate exact paged keys across split, mutation and GC; stale preparation fencing, TTL, byte/count limit+one, per-tenant revocation, split-stable CAS, stale/ABA versions, failed preparation, invalid split rollback and generation retention refusal. Production reader/docvalue pinning, atomic pin registration versus concurrent distributed GC, failure recovery, retention byte charging and authenticated tokens remain obligations for M03/M13/M07 and the snapshot implementation tasks.
+
+## Dependency handoffs and honest exceptions
+
+M02.05 passes the measured per-profile budget seeds/noise/physical-I/O gaps into capacity experiments. M02.07 must refuse capability claims until actual matching/native/adapter/runtime gates pass; these model values do not freeze public defaults. Economy/object-resilient/low-latency profiles may calibrate different finite limits, never omit total-target, tenant queue, retry, bucket or snapshot retention limits. No current profile is exempt from fail-closed scope admission.
+
+M03 persists incarnation, immutable routing/reader identities and generation-publish/retention fences without choosing SQLite as its distributed store. M13 implements paged catalog discovery and authorization, including tenant-cohort policy growth. M07 enforces reservation/metering and real resource accounting at RPC/parser/worker boundaries. M02.02-M02.04/M02.06 validate actual engine, encrypted inputs and cache/pin semantics. Exact counts/aggregates require complete admitted scope; broader/high-cardinality workloads use explicit bounded group pages/precomputed views or a separately qualified approximation profile. No high-cardinality approximation is silently declared OpenSearch compatible.
+
+No SDK/native API execution, private trace, physical metadata-page/object-store attempt, provider bill, fleet/failover, distributed atomicity, token cryptography, runtime security, release or deployment result is established here. M01.09's historical ARM cause and M01.08 remain open independently of this prototype.

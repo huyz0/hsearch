@@ -131,6 +131,7 @@ class Admission:
         self.request_pool.check(tenant)
         self.receipt_pool.check(tenant)
         number(self.now + deadline_ticks, 2**63 - 1, 'deadline_overflow')
+        number(self.now + deadline_ticks + self.limits.receipt_ticks, 2**63 - 1, 'receipt_expiry_overflow')
         number(self.sequence + 1, 2**63 - 1, 'request_identity_overflow')
         self.sequence += 1
         identity = 'request-' + str(self.sequence)

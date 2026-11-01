@@ -16,7 +16,7 @@ M01.09's reviewed diagnostic increment merged normally as `3dfb235` in [PR9](htt
 
 M02.01 is accepted after independently reviewed source, full PR/main qualification and normal PR10 merge `02abc722`; [acceptance](evidence/m02-01-integrated.md) preserves exact source, runs, fixtures and limitations. SDK/native hsearch parity, private workloads and fleet/provider qualification remain unrun.
 
-The original M01.07 attempt is [blocked after its hard third review](evidence/m01-07-blocked.md) by an actual Unicode-driven false coverage pass. Existing passing tests did not clear that adversarial case. The [M01.10/11/12 decomposition](coverage-redesign.md) preserves the old failed registry and replaces patch parsing with immutable-blob source proof plus a separately reviewed complete integration. These replacement tasks are not accepted by this planning checkpoint. M01.09's original cause remains unconfirmed and M01.08 remains blocked; no release/deployment occurred.
+The original M01.07 attempt is [blocked after its hard third review](evidence/m01-07-blocked.md) by an actual Unicode-driven false coverage pass. Existing passing tests did not clear that adversarial case. The [M01.10/11/12 decomposition](coverage-redesign.md) preserves the old failed registry and replaces patch parsing with immutable-blob source proof plus a separately reviewed complete integration. M01.10 plan decomposition is [accepted](evidence/m01-10-integrated.md) after independent review and full PR/main qualification. Source-proof and integration acceptance remain separate. M01.09's original cause remains unconfirmed and M01.08 remains blocked; no release/deployment occurred.
 
 ## Public hosting and integration
 
@@ -65,3 +65,5 @@ The main open risks are K01 remote engine inputs, K03 provider conditional seman
 5. Update affected milestone rollup, regenerate pages, run plan checks and include the ledger/progress change with the implementation integration. Keep requirements and decision register aligned when scope changes.
 
 Use role owners as allocation hints; they are not claims that a person or agent has already accepted work. Planned future PR/publish/deploy actions still follow the user's authorization and actual environment rules.
+
+M02.08 has an unpublished [bounded catalog/admission/snapshot model](research/catalog-admission-model.md), with [raw synthetic scale observations](evidence/catalog-model-scale-v2.json). Larger native qualification passed; independent review and hosted final-tree qualification remain pending. API gates remain unobserved for the runtime.

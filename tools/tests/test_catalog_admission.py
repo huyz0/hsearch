@@ -8,6 +8,26 @@ Admission, Limits, Refused = (MODEL[name] for name in ['Admission', 'Limits', 'R
 
 
 class AdmissionModelControls(unittest.TestCase):
+    def test_count_and_merged_bucket_overflow_reclaim_all_inflight_work(self):
+        for first_count, first_bucket in [(2**63 - 1, 0), (0, 2**63 - 1)]:
+            model = Admission(); request = model.reserve('a', [0, 1, 2])
+            for partition in [0, 1, 2]: model.start_rpc('a', request, partition)
+            model.finish_rpc('a', request, 0, count=first_count, buckets={'same': first_bucket})
+            with self.assertRaisesRegex(Refused, 'overflow'):
+                model.finish_rpc('a', request, 1, count=1, buckets={'same': 1})
+            self.assertNotIn(request, model.requests)
+            self.assertEqual(model.rpc_pool.used['a'], 0)
+            self.assertEqual(model.request_pool.used['a'], 0)
+            self.assertEqual(model.queue['a'], 0)
+            with self.assertRaises(Refused): model.complete('a', request)
+
+    def test_logical_receipt_expiry_overflow_refuses_before_admission(self):
+        model = Admission(Limits(receipt_ticks=2**63 - 1))
+        with self.assertRaisesRegex(Refused, 'receipt_expiry_overflow'):
+            model.reserve('a', [0])
+        self.assertEqual(model.requests, {})
+        self.assertEqual(sum(model.receipt_pool.used.values()), 0)
+
     def test_idle_tenant_receipt_share_survives_cancellation_churn(self):
         model = Admission(Limits(terminal_receipts=4))
         for _ in range(3): model.cancel('a', model.reserve('a', [0]))
