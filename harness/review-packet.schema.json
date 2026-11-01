@@ -232,7 +232,7 @@
     "required_check_names": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 33,
+      "maxItems": 32,
       "uniqueItems": true,
       "items": {
         "type": "string",

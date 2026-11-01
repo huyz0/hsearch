@@ -1,13 +1,17 @@
 """Independent protocol counterexamples; this does not simulate AI defect detection."""
 import copy
+import io
 import json
 import os
 from pathlib import Path
 import runpy
 import shutil
 import subprocess
+import sys
+from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest.mock import patch
 
 API = runpy.run_path(str(Path(__file__).resolve().parents[1] / "review.py"))
 Refused = API["Refused"]
@@ -16,8 +20,45 @@ Refused = API["Refused"]
 class SchemaControls(unittest.TestCase):
     def test_risk_routing_is_derived_from_actual_paths_and_unknown_code_is_sensitive(self):
         self.assertEqual(API["routes"](["docs/usage.md"]), ["correctness_tests_claims"])
-        for path in ("tools/review.py", "crates/types/src/lib.rs", "docs/plan/security.md", ".github/workflows/native.yml", "new_unknown_file"):
+        for path in ("tools/review.py", "crates/types/src/lib.rs", "docs/plan/security.md", ".github/workflows/native.yml", "new_unknown_file",
+                     "docs/plan/tools/plan.py", "docs/plan/tasks.json", "docs/generated.rs", "docs/plan/review-gates.md", "docs/plan/sandbox.md", "docs/sandbox.md"):
             self.assertIn("architecture_security", API["routes"]([path]))
+
+
+class InputControls(unittest.TestCase):
+    def test_regular_inputs_are_bounded_even_when_the_size_snapshot_is_stale(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "input.json"
+            path.write_bytes(b'{"value":1}')
+            self.assertEqual(API["bounded_json"](path, 16), {"value": 1})
+            path.write_bytes(b'{"value":"' + b"x" * 100 + b'"}')
+            with patch.object(API["os"], "fstat", return_value=SimpleNamespace(st_mode=0o100644, st_size=0)):
+                with self.assertRaisesRegex(Refused, "grew beyond"):
+                    API["bounded_json"](path, 16)
+
+    def test_over_nested_json_is_refused_without_unbounded_schema_recursion(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "input.json"
+            path.write_bytes(b"[" * 2000 + b"]" * 2000)
+            with self.assertRaisesRegex(Refused, "over-nested"):
+                API["bounded_json"](path, 8192)
+            value = {"quoted_source": '\\"[[{{' * 100}
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertEqual(API["bounded_json"](path, 8192), value)
+
+    @unittest.skipUnless(os.name == "posix", "FIFO and no-follow controls require native POSIX")
+    def test_fifo_and_redirected_input_are_refused_before_reading(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "input.json"
+            os.mkfifo(path)
+            with self.assertRaisesRegex(Refused, "regular file"):
+                API["read_json"](path)
+            path.unlink()
+            target = Path(folder) / "target.json"
+            target.write_text("{}", encoding="utf-8")
+            path.symlink_to(target)
+            with self.assertRaisesRegex(Refused, "redirected"):
+                API["read_json"](path)
 
 
 @unittest.skipUnless(shutil.which("git"), "Protocol source-binding controls need real Git")
@@ -80,6 +121,22 @@ class ProtocolControls(unittest.TestCase):
         proof = self.store.gate("M01.05", self.checks)
         self.assertEqual(proof["gate"], "pass")
         self.assertFalse(proof["formal_github_review"])
+        self.assertEqual(proof["checks"], self.checks)
+        self.assertEqual(proof["checks_sha256"], API["hashlib"].sha256(API["encoded"](self.checks)).hexdigest())
+
+    def test_status_recovers_issued_packet_and_utf8_output_without_charging_another_round(self):
+        packet = self.store.begin("M01.05", self.base, "implementer", self.reviewers, self.checks, "Inspect quoted source: 雪 λ")
+        self.store.record(self.verdict(packet, "correctness_tests_claims"))
+        buffer = io.BytesIO()
+        console = io.TextIOWrapper(buffer, encoding="ascii")
+        with patch.dict(API["main"].__globals__, ReviewStore=lambda _state: self.store), \
+             patch.object(sys, "argv", ["review.py", "status", "M01.05"]), patch.object(sys, "stdout", console):
+            self.assertEqual(API["main"](), 0)
+        value = json.loads(buffer.getvalue().decode("utf-8"))
+        self.assertEqual(value["packet_sha256"], packet["packet_sha256"])
+        self.assertEqual(value["rounds_issued"], 1)
+        self.assertEqual(set(value["recorded_verdicts"]), {"correctness_tests_claims"})
+        self.assertTrue(value["not_a_current_validation_verdict"])
 
     def test_seeded_correctness_security_and_weak_oracle_findings_block(self):
         for category in ("correctness", "security", "weak_oracle"):
@@ -127,6 +184,53 @@ class ProtocolControls(unittest.TestCase):
                 check["head"] = self.git("rev-parse", "HEAD")
         with self.assertRaisesRegex(Refused, "split/redesign"):
             self.begin()
+
+    def test_follow_up_cannot_omit_a_previously_required_check(self):
+        self.begin()
+        (self.root / "docs/notes.md").write_text("follow-up\n", encoding="utf-8", newline="\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "follow-up")
+        head = self.git("rev-parse", "HEAD")
+        cheap = [{**self.checks[0], "name": "cheap-only", "head": head}]
+        packet = self.begin(checks=cheap)
+        self.assertEqual(set(packet["packet"]["required_check_names"]), {"deterministic-full", "ci-ok", "cheap-only"})
+        for role in self.reviewers:
+            self.store.record(self.verdict(packet, role))
+        with self.assertRaisesRegex(Refused, "check evidence"):
+            self.store.gate("M01.05", cheap + [{**cheap[0], "name": "ci-ok"}])
+        self.store.gate("M01.05", cheap + [{**check, "head": head} for check in self.checks])
+
+    def test_follow_up_base_is_immutable_and_risk_roles_survive_a_source_revert(self):
+        self.begin()
+        self.git("checkout", self.base, "--", "src/lib.rs")
+        self.git("commit", "-qm", "repair by reverting seeded code")
+        repair = self.git("rev-parse", "HEAD")
+        (self.root / "docs/notes.md").write_text("narrative only\n", encoding="utf-8", newline="\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "follow-up narrative")
+        for check in self.checks:
+            check["head"] = self.git("rev-parse", "HEAD")
+        with self.assertRaisesRegex(Refused, "original task base"):
+            self.store.begin("M01.05", repair, "implementer", {"correctness_tests_claims": self.reviewers["correctness_tests_claims"]}, self.checks, "Attempted narrower base")
+        with self.assertRaisesRegex(Refused, "Required reviewers"):
+            self.begin(reviewers={"correctness_tests_claims": self.reviewers["correctness_tests_claims"]})
+        self.assertEqual(set(self.begin()["packet"]["required_roles"]), set(self.reviewers))
+
+    def test_previous_implementer_cannot_become_an_independent_follow_up_reviewer(self):
+        self.begin()
+        with self.assertRaisesRegex(Refused, "every task implementer"):
+            self.begin(implementer="replacement-implementer", reviewers={**self.reviewers, "architecture_security": "implementer"})
+
+    def test_check_cardinality_is_coherent_before_charging_a_round(self):
+        checks = [{**self.checks[0], "name": f"local-{number}"} for number in range(32)]
+        with self.assertRaisesRegex(Refused, "check-name bound"):
+            self.begin(checks=checks)
+        checks = checks[:31]
+        packet = self.begin(checks=checks)
+        self.assertEqual(packet["packet"]["round"], 1)
+        for role in self.reviewers:
+            self.store.record(self.verdict(packet, role))
+        self.assertEqual(self.store.gate("M01.05", checks + [{**self.checks[0], "name": "ci-ok"}])["gate"], "pass")
 
     def test_prior_blocker_requires_explicit_resolution_and_reviews_cannot_be_overwritten(self):
         first = self.begin()
