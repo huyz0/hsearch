@@ -16,6 +16,15 @@ ROOT = Path(__file__).resolve().parents[2]
 COV = runpy.run_path(str(ROOT / "tools/coverage.py"))
 
 
+def native_report(paths):
+    """The same physical-line fixture, encoded in the declared native protocol."""
+    return json.dumps({"type": "llvm.coverage.json.export", "version": "3.1.0", "data": [{
+        "files": [{"filename": path.as_posix(), "segments": [[1, 1, 0, True, True, False]],
+                   "branches": [], "expansions": [], "mcdc_records": [],
+                   "summary": {"lines": {"count": 1, "covered": 0, "percent": 0}}} for path in paths],
+        "functions": [], "totals": {}}]})
+
+
 @contextmanager
 def repository(files):
     """Actual original byte/blob fixtures; no human patch stream is mocked."""
@@ -116,12 +125,66 @@ class CollectionInventoryControls(unittest.TestCase):
                 with self.subTest(variant=variant), self.assertRaisesRegex(ValueError, "source_proof_mismatch"):
                     COV["verify_source_proof"](base, sources, broken)
 
+    def test_source_supported_equal_coordinate_pair_reaches_production_normalizer(self):
+        # Synthetic envelope of the pinned producer's legal skipped/restore pair;
+        # no observed Rust or whole-collector reproduction is asserted.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "crates/prod/src/lib.rs"; source.parent.mkdir(parents=True)
+            source.write_text("pub fn outer() {\n    // zero-length generated region\n        }\n")
+            encoded = json.loads(native_report([source]))
+            file = encoded["data"][0]["files"][0]
+            file["segments"] = [[1, 1, 0, True, True, False], [2, 2, 0, False, True, False],
+                                [2, 2, 0, True, False, False], [3, 10, 0, False, False, False]]
+            file["summary"]["lines"]["count"] = 2
+            packages = {"prod": {"manifest_path": str(source.parent.parent / "Cargo.toml")}}
+            receipts = []
+            with patch.dict(COV["normalize_report"].__globals__, ROOT=root):
+                result = COV["normalize_report"](json.dumps(encoded), {}, packages, ["prod"],
+                                                {"crates/prod/src/lib.rs"}, report_bindings=receipts)
+            self.assertEqual(result, {"crates/prod/src/lib.rs": {1: 0, 3: 0}})
+            self.assertEqual(receipts[0]["selected_file_count"], 1)
+
+    def test_native_protocol_and_raw_export_receipt_bind_the_actual_map(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "crates/prod/src/lib.rs"; source.parent.mkdir(parents=True)
+            source.write_text("pub fn live() {}\n")
+            encoded = native_report([source])
+            receipts = []
+            packages = {"prod": {"manifest_path": str(source.parent.parent / "Cargo.toml")}}
+            with patch.dict(COV["normalize_report"].__globals__, ROOT=root):
+                self.assertEqual(COV["normalize_report"](encoded, {}, packages, ["prod"], {"crates/prod/src/lib.rs"}, report_bindings=receipts),
+                                 {"crates/prod/src/lib.rs": {1: 0}})
+            import hashlib
+            self.assertEqual(receipts, [{"raw_sha256": hashlib.sha256(encoded.encode()).hexdigest(), "file_count": 1, "selected_file_count": 1}])
+        manifest = COV["native_report_protocol"]()
+        self.assertEqual(manifest["version"], "3.1.0")
+        self.assertEqual(manifest["algorithm"], "llvm22-physical-line-v1")
+        self.assertEqual(manifest["projection_sha256"], hashlib.sha256((ROOT / "tools/coverage_reports.py").read_bytes()).hexdigest())
+
+    def test_legacy_context_and_modified_native_protocol_refuse_before_tools(self):
+        # Mock only native attestation boundary; invalid manifests must stop before it.
+        class Runner:
+            def __init__(self, directory, create=False): self.root = directory
+        from unittest.mock import Mock
+        native_probe = Mock(side_effect=AssertionError("native probe must not execute"))
+        identity = {"head": "a" * 40}
+        protocol = COV["native_report_protocol"]()
+        context = {"schema_version": 2, "source": identity, "profile": "dev", "features": "all",
+                   "rustflags": COV["RUSTFLAGS"], "native_report_protocol": protocol}
+        for broken in (context, {**context, "schema_version": 3, "native_report_protocol": {**protocol, "version": "other"}}):
+            with patch.dict(COV["merge"].__globals__, Runner=Runner, load=lambda _path: broken,
+                            source_identity=lambda: identity, nextest_policy=native_probe), self.assertRaises(ValueError):
+                COV["merge"](Path("context"))
+        native_probe.assert_not_called()
+
     def test_only_explicit_dependency_roots_may_exclude_external_maps(self):
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory).resolve(); root = parent / 'checkout'; root.mkdir()
             vendor = parent / 'pinned-vendor'; vendor.mkdir()
             source = vendor / 'original.rs'; source.write_text('pub fn dependency() {}\n')
-            report = f'SF:{source.as_posix()}\nDA:1,0\nLF:1\nLH:0\nend_of_record\n'
+            report = native_report([source])
             with patch.dict(COV['normalize_report'].__globals__, ROOT=root):
                 self.assertEqual(COV['normalize_report'](report, {}, {}, [], set(), external_roots=[str(vendor)]), {})
                 (vendor / 'src').mkdir()
@@ -140,7 +203,7 @@ class CollectionInventoryControls(unittest.TestCase):
             (prod / 'src').mkdir(parents=True); (dev / 'src').mkdir(parents=True)
             (prod / 'src/lib.rs').write_text('pub fn live() {}\n')
             helper = dev / 'src/helper.rs'; helper.write_text('pub fn uncovered() {}\n')
-            report = f'SF:{helper.as_posix()}\nDA:1,0\nLF:1\nLH:0\nend_of_record\n'
+            report = native_report([helper])
             packages = {name: {'manifest_path': str(path / 'Cargo.toml')} for name, path in [('prod', prod), ('hsearch-testkit', dev)]}
             with patch.dict(COV['normalize_report'].__globals__, ROOT=root):
                 with self.assertRaisesRegex(ValueError, 'Unowned first-party'):
@@ -151,7 +214,7 @@ class CollectionInventoryControls(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory).resolve(); root = parent / 'checkout'; root.mkdir()
             external = parent / 'unowned.rs'; external.write_text('pub fn hidden() {}\n')
-            report = f'SF:{external.as_posix()}\nDA:1,0\nLF:1\nLH:0\nend_of_record\n'
+            report = native_report([external])
             with patch.dict(COV['normalize_report'].__globals__, ROOT=root), self.assertRaisesRegex(ValueError, 'Unowned external'):
                 COV['normalize_report'](report, {}, {'prod': {'manifest_path': str(root / 'prod/Cargo.toml')}}, ['prod'], set())
 
@@ -229,8 +292,7 @@ class CollectionInventoryControls(unittest.TestCase):
             (package / "src").mkdir(parents=True)
             (package / "src/lib.rs").write_text('pub fn live() {}\n')
             (root / "shared.rs").write_text('pub fn uncovered() {}\n')
-            report = ''.join(f'SF:{path.as_posix()}\nDA:1,0\nLF:1\nLH:0\nend_of_record\n'
-                             for path in [package / "src/lib.rs", root / "shared.rs"])
+            report = native_report([package / "src/lib.rs", root / "shared.rs"])
             with patch.dict(COV["normalize_report"].__globals__, ROOT=root), self.assertRaisesRegex(ValueError, "[Uu]nowned first-party"):
                 COV["normalize_report"](report, {}, {"prod": {"manifest_path": str(package / "Cargo.toml")}}, ["prod"],
                                         {"crates/prod/src/lib.rs", "shared.rs"})

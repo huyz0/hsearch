@@ -46,3 +46,7 @@ M01.12 preserves actual normal-production-object baselines, runtime-only versus 
 M01.09's historical ARM cause remains unconfirmed and M01.08 remains dependent on its real resolution. M02.01's accepted reference inventory is separate. No search service, provider/fleet qualification, release or deployment is implied by this plan or any targeted/model result.
 
 M01.11's interface, limits and explicit retired-semantics migrations are documented in [source proof](source-proof.md). The source-only component is [accepted](evidence/m01-11-integrated.md); complete collector/CI acceptance remains M01.12's independent obligation.
+
+## Native-report protocol successor
+
+M01.12's actual full PR/main/manual qualification passed on the43-line bootstrap, but a valid new library exposes function-accumulated LCOV summaries versus physical line records. [M01.13](native-coverage-projection.md) must genuinely replace this compiler-report interface with bounded typed segment projection and complete inherited qualification. M01.12's final R3 reports and original M01.07 failure remain immutable; neither receives another round or implied clearance. Generic/composite acceptance stays blocked until the replacement protocol is accepted, with all original floor and false-pass controls retained.

@@ -82,7 +82,12 @@ class ActualOverrideControls(unittest.TestCase):
                     objects.append(str(path))
                 raw = subprocess.check_output([str(llvm / "llvm-cov"), "export", "--empty-profile", "--format=lcov", objects[0],
                                                *[arg for item in objects[1:] for arg in ("--object", item)]], text=True, timeout=20)
-                return sorted(cov["GATE"]["parse_lcov"](raw)[str(source)])
+                legacy = cov["GATE"]["parse_lcov"](raw)
+                native_raw = subprocess.check_output([str(llvm / "llvm-cov"), "export", "--empty-profile", "--format=text", objects[0],
+                    *[argument for item in objects[1:] for argument in ("--object", item)]], cwd=crate, env=runner.env, text=True, timeout=30)
+                native_report = cov["REPORTS"]["decode"](native_raw)
+                self.assertEqual(cov["REPORTS"]["project"](native_report, set(legacy)), legacy)
+                return sorted(legacy[str(source)])
             self.assertEqual(actual_map("suppressed", unqualified), [2])
             reused_env = dict(unqualified_env, CARGO_TARGET_DIR=str(parent / "unqualified-new-target"))
             reused = invoke(cov["cargo_command"](build_args), env=reused_env)
@@ -252,13 +257,17 @@ class SharedProductionMapControl(unittest.TestCase):
                 report = run([str(llvm), "export", "--empty-profile", "--format=lcov", str(objects[0]),
                               *[part for path in objects[1:] for part in ("--object", str(path))]])
                 maps = cov["GATE"]["parse_lcov"](report)
+                native_report = run([str(llvm), "export", "--empty-profile", "--format=text", str(objects[0]),
+                                     *[part for path in objects[1:] for part in ("--object", str(path))]])
+                decoded = cov["REPORTS"]["decode"](native_report)
+                self.assertEqual(cov["REPORTS"]["project"](decoded, set(maps)), maps)
                 self.assertIn(str(helper), maps)
                 packages = {"prod": {"manifest_path": str(package / "Cargo.toml")},
                             "hsearch-testkit": {"manifest_path": str(dev / "Cargo.toml")}}
                 tracked = {"crates/prod/src/lib.rs"}
                 if helper.is_relative_to(root): tracked.add(helper.relative_to(root).as_posix())
                 with patch.dict(cov["normalize_report"].__globals__, ROOT=root), self.assertRaisesRegex(ValueError, error):
-                    cov["normalize_report"](report, {}, packages, ["prod"], tracked)
+                    cov["normalize_report"](native_report, {}, packages, ["prod"], tracked)
                 print(json.dumps({"shared_production_map_control": "pass", "role": role,
                                   "real_compiler_files": len(maps), "unowned_shared_source": "refused"}), flush=True)
 
@@ -365,6 +374,14 @@ class LlvmProductionMaps(unittest.TestCase):
                 self.assertEqual(set(baseline), {str(code)})
                 self.assertEqual(set(runtime), {str(code)})
                 self.assertEqual(baseline[str(code)], {1: 0, 2: 0, 3: 0})
+                native = runpy.run_path(str(Path(__file__).with_name("coverage_reports.py")))
+                for oracle, args in [
+                    (baseline, [llvm_cov, "export", "--format=text", "--num-threads=2", "--empty-profile", objects[0],
+                                *[argument for item in objects[1:] for argument in ("--object", item)]]),
+                    (runtime, [llvm_cov, "export", "--format=text", "--num-threads=2", "--instr-profile=" + str(merged), str(binary)]),
+                ]:
+                    exported = native["decode"](run(args))
+                    self.assertEqual(native["project"](exported, set(oracle)), oracle)
                 metadata = {"fixture.rs": {"crate": "fixture", "sha256": hashlib.sha256(code.read_bytes()).hexdigest(), "line_count": content.count("\n") + int(bool(content) and not content.endswith("\n"))}}
                 report = gate["evaluate"](metadata, {"fixture.rs": baseline[str(code)]}, {"fixture.rs": runtime[str(code)]},
                                           {"fixture.rs": [2]}, {}, ["fixture"])
@@ -384,6 +401,126 @@ class LlvmProductionMaps(unittest.TestCase):
                 print(json.dumps({"real_coverage_gate": "pass", "profile": profile, "uncovered_seed": rejected["aggregate"], "test_repair": accepted["aggregate"],
                                   "unused_generic_retained": True, "test_only_line_excluded": True,
                                   "stale_context_rejected": True, "unrecorded_profile_rejected": True, "missing_binary_rejected": True}), flush=True)
+
+
+class NativeProjectionCostControl(unittest.TestCase):
+    def test_fresh_native_projection_cost_and_sparse_work_are_bounded(self):
+        import sys
+        program = r"""
+import hashlib,json,resource,runpy,sys,time
+m=runpy.run_path(sys.argv[1]);n=int(sys.argv[2])
+segments=[[line,1,1,True,True,False] for line in range(1,n+1)]
+segments.append([n+1,1,0,False,False,False])
+file={"filename":"/fixed/source.rs","segments":segments,"branches":[],"expansions":[],"mcdc_records":[],
+      "summary":{"lines":{"count":n+1,"covered":n+1,"percent":100}}}
+text=json.dumps({"type":"llvm.coverage.json.export","version":"3.1.0",
+                 "data":[{"files":[file],"functions":[],"totals":{}}]})
+started=time.monotonic()
+report=m["decode"](text);output=m["project"](report,{"/fixed/source.rs"})
+assert len(output["/fixed/source.rs"])==n+1 and set(output["/fixed/source.rs"].values())=={1}
+print(json.dumps({"segments":n+1,"physical_lines":n+1,"raw_bytes":len(text.encode()),
+                 "seconds":time.monotonic()-started,"maximum_rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                 "raw_sha256":report.raw_sha256,"module_sha256":hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()}))
+"""
+        reports = []
+        module = Path(__file__).with_name("coverage_reports.py")
+        for size in (1000, 100000):
+            run = subprocess.run([sys.executable, "-c", program, str(module), str(size)], check=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
+            report = json.loads(run.stdout)
+            self.assertEqual(report["physical_lines"], size + 1)
+            self.assertLess(report["seconds"], 10)
+            self.assertLess(report["maximum_rss_kib"], 512 * 1024)
+            self.assertEqual(report["module_sha256"], hashlib.sha256(module.read_bytes()).hexdigest())
+            reports.append(report)
+        self.assertGreater(reports[1]["raw_bytes"], reports[0]["raw_bytes"])
+        print(json.dumps({"native_projection_cost": "pass", "scope": "fresh Linux subprocess per admitted sample; measured peak RSS, not a separate process memory cap or maximum-profile qualification",
+                          "samples": reports}), flush=True)
+
+
+class NativePhysicalOverlapControl(unittest.TestCase):
+    def test_real_overlap_and_unused_body_fail_then_repaired_tests_pass(self):
+        native = runpy.run_path(str(Path(__file__).with_name("coverage_reports.py")))
+        gate = runpy.run_path(str(Path(__file__).with_name("coverage_gate.py")))
+        def run(args, **kwargs):
+            return subprocess.check_output(list(map(str, args)), text=True, stderr=subprocess.STDOUT, timeout=30, **kwargs)
+        sysroot = Path(run(["rustc", "--print", "sysroot"]).strip())
+        host = next(line.removeprefix("host: ") for line in run(["rustc", "-vV"]).split("\n") if line.startswith("host: "))
+        tools = sysroot / "lib/rustlib" / host / "bin"
+        source = "\n".join([
+            "pub fn live(x: Option<u32>) -> u32 {",
+            "    x.map(|value| value + 1).unwrap_or(0)",
+            "}",
+            "pub fn dead() -> u32 { 41 }",
+            "#[cfg(test)] mod tests {",
+            "    #[test] fn calls_live() { assert_eq!(super::live(Some(1)), 2); }",
+            "}", ""])
+        with tempfile.TemporaryDirectory(dir=os.environ["CARGO_TARGET_DIR"]) as directory:
+            def stage(label, content, optimize):
+                root = Path(directory) / label; root.mkdir()
+                code, library, binary = root / "fixture.rs", root / "fixture.rlib", root / "fixture-tests"
+                code.write_text(content)
+                profiles = root / "profiles"; profiles.mkdir()
+                flags = ["--edition=2024", "--crate-name=native_overlap_fixture", "-Cinstrument-coverage", "-Clink-dead-code", "-Copt-level=" + str(optimize)]
+                run(["rustc", *flags, "--crate-type=rlib", code, "-o", library])
+                run(["rustc", *flags, "--test", code, "-o", binary])
+                env = dict(os.environ, LLVM_PROFILE_FILE=str(profiles / "%m-%p.profraw"), DEBUGINFOD_URLS="")
+                self.assertIn("1 passed", run([binary], env=env))
+                objects = []
+                for index, member in enumerate(name for name in run(["ar", "t", library]).split("\n") if name.endswith(".o")):
+                    path = root / (str(index) + ".o")
+                    with path.open("wb") as output:
+                        subprocess.run(["ar", "p", str(library), member], stdout=output, timeout=30, check=True)
+                    objects.append(path)
+                self.assertTrue(objects)
+                baseline_args = [tools / "llvm-cov", "export", "--num-threads=2", "--empty-profile", objects[0],
+                                 *[part for path in objects[1:] for part in ("--object", path)]]
+                baseline_text = run([*baseline_args, "--format=text"])
+                baseline_report = native["decode"](baseline_text)
+                baseline = native["project"](baseline_report, {str(code)})
+                self.assertEqual(baseline, {str(code): {1: 0, 2: 0, 3: 0, 4: 0}})
+                # Independently read the actual LLVM DA coordinates; its old strict
+                # parser must still reject a function-summary/physical mismatch.
+                lcov = run([*baseline_args, "--format=lcov"])
+                rows = lcov.split("\n")
+                detailed = {int(row[3:].split(",")[0]): int(row.split(",")[1]) for row in rows if row.startswith("DA:")}
+                self.assertEqual(detailed, baseline[str(code)])
+                reported_count = int(next(row[3:] for row in rows if row.startswith("LF:")))
+                mismatch = reported_count != 4
+                if mismatch:
+                    with self.assertRaisesRegex(ValueError, "Inconsistent LCOV file summary"):
+                        gate["parse_lcov"](lcov)
+                merged = root / "merged.profdata"
+                raw_profiles = sorted(profiles.glob("*.profraw")); self.assertTrue(raw_profiles)
+                run([tools / "llvm-profdata", "merge", "--sparse", "--num-threads=2", *raw_profiles, "-o", merged])
+                runtime_args = [tools / "llvm-cov", "export", "--num-threads=2", "--instr-profile=" + str(merged), binary]
+                runtime_text = run([*runtime_args, "--format=text"])
+                runtime_report = native["decode"](runtime_text)
+                runtime = native["project"](runtime_report, {str(code)})
+                runtime_lcov = run([*runtime_args, "--format=lcov"])
+                runtime_lines = {int(row[3:].split(",")[0]): int(row.split(",")[1]) for row in runtime_lcov.split("\n") if row.startswith("DA:")}
+                self.assertEqual(runtime[str(code)], runtime_lines)
+                metadata = {"fixture.rs": {"crate": "fixture", "sha256": hashlib.sha256(code.read_bytes()).hexdigest(),
+                                           "line_count": content.count("\n")}}
+                result = gate["evaluate"](metadata, {"fixture.rs": baseline[str(code)]}, {"fixture.rs": runtime[str(code)]},
+                                          {"fixture.rs": [4]}, {}, ["fixture"])
+                return result, {"baseline_raw_sha256": baseline_report.raw_sha256, "runtime_raw_sha256": runtime_report.raw_sha256,
+                                "baseline_physical_lines": 4, "native_summary_count": reported_count, "legacy_refused_mismatch": mismatch}
+            observed_mismatch = False
+            repaired = source.replace("assert_eq!(super::live(Some(1)), 2);", "assert_eq!(super::live(Some(1)), 2); assert_eq!(super::live(None), 0); assert_eq!(super::dead(), 41);")
+            for profile, optimize in (("dev", 0), ("release", 3)):
+                failed, first = stage("uncovered-" + profile, source, optimize)
+                passed, second = stage("repaired-" + profile, repaired, optimize)
+                self.assertFalse(failed["passed"]); self.assertEqual(failed["aggregate"]["coverable"], 4)
+                self.assertEqual(failed["aggregate"]["covered"], 3); self.assertEqual(failed["changed"]["covered"], 0)
+                self.assertEqual(failed["changed"]["coverable"], 1)
+                self.assertTrue(passed["passed"]); self.assertEqual(passed["aggregate"]["coverable"], 4)
+                self.assertEqual(passed["aggregate"]["covered"], 4); self.assertEqual(passed["changed"]["covered"], 1)
+                observed_mismatch |= first["legacy_refused_mismatch"]
+                print(json.dumps({"native_physical_overlap": "pass", "profile": profile, "uncovered_seed": failed["aggregate"],
+                                  "test_repair": passed["aggregate"], "unchanged_production_source": True,
+                                  "native_receipts": [first, second], "protocol": native["PROTOCOL"]}), flush=True)
+            self.assertTrue(observed_mismatch, "Actual overlap fixture must expose at least one native summary mismatch")
 
 
 class NextestDeadlineControl(unittest.TestCase):
