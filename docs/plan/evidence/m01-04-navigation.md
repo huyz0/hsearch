@@ -1,0 +1,5 @@
+# M01.04 implementation checkpoint
+
+Base: integrated runner `7555c4b956a51e2b9c8f667d5997460bf186acca`. Owned branch: codex/m01-context-navigation. The [pinned lsp-cli source](https://github.com/huyz0/lsp-cli/tree/cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48) is version 0.4.1; README, source schemas, Rust fixtures and configuration were inspected. Exact CLI uses --project for workspace override, Unix sockets and LSP_CLI_HOME isolation. Rust diagnostics do not replace cargo check. No lsp-cli redistribution license is declared in the inspected tree; source/binaries must not be vendored or publicly released under an inferred grant.
+
+Implementation and qualification are in progress. Required work includes pinned tool identity/schema, sandbox caps and isolated daemon state, bounded source/context retrieval, stale/missing semantic fallback, outline/reference/rename-preview/diagnostic corpus, and whole-fixture-workflow byte/token accounting. No semantic-navigation or token-saving result is claimed yet. M01.03 completion is recorded separately from this new work.

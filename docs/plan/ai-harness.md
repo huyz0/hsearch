@@ -1,6 +1,6 @@
 # AI development, review, and operations harness
 
-Status: broader harness design, implemented in M01 and extended with each subsystem. M01.01 adds the [bootstrap check entrypoint](development.md); it does not implement the operational worktree/resource/review harness described below. The user's existing projects inform this design; [the audit](research/repository-audit.md) records what is adopted and changed.
+Status: broader harness design, implemented in M01 and extended with each subsystem. M01.01 adds the [bootstrap check entrypoint](development.md); M01.02/M01.03/M01.06 integrate resource/worktree/recovery/impact CI. Semantic navigation, durable review and generic coverage/corpus gates retain the acceptance below. The user's existing projects inform this design; [the audit](research/repository-audit.md) records what is adopted and changed.
 
 ## Agent task lifecycle
 
@@ -20,7 +20,7 @@ Initial budget targets, to measure in M01: always-loaded repo instructions <=2,0
 
 Navigation order: `rg` for unique identifiers/paths; `lsp outline` for structure; `lsp definition/reference/calls/doc` for ambiguous symbols; bounded source slices for implementation. Discover exact CLI options using `lsp schema`/help from the pinned version. Run one rust-analyzer workspace per worktree, passing the project root as supported; isolate `LSP_CLI_HOME` and cap memory. Reuse a warm process within that worktree, invalidate source/cache identities after edits, and fall back to `rg` plus `cargo check` if LSP is missing/stale. Native Windows uses WSL2/container because the inspected tool supports Unix sockets. [lsp-cli source](https://github.com/huyz0/lsp-cli/blob/cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48/README.md).
 
-Proposed `xtask context <task>`, `xtask worktree ...`, `xtask check --affected` and `xtask evidence ...` commands are M01 deliverables, not commands available now. Prefer one Rust xtask/structured CLI contract over a growing collection of agent-specific shell incantations. Keep the provider/model selection configurable; do not hard-code an LLM version into acceptance logic.
+Owned `xtask task/context/worktree/evidence` metadata and lifecycle commands are integrated in M01.03; see [the interface](task-runner.md). Semantic context operations remain M01.04 work. Impact CI uses its separate integrated planner; there is no advertised `xtask check --affected` command. Prefer one Rust xtask/structured CLI contract over a growing collection of agent-specific shell incantations. Keep the provider/model selection configurable; do not hard-code an LLM version into acceptance logic.
 
 ## Review and architecture feedback
 

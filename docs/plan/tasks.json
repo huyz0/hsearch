@@ -426,7 +426,7 @@
             "M01.02"
           ],
           "owner": "harness/integrator",
-          "status": "in_progress",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m01-03-preserved.md",
@@ -435,6 +435,10 @@
             {
               "path": "evidence/m01-03-task-runner.md",
               "result": "Resumed in a fresh worktree from integrated API direction367760ad, preserving original WIPb563042; single-file Docker local log compression disabled; complete qualification/reviews pending."
+            },
+            {
+              "path": "evidence/m01-03-integrated.md",
+              "result": "Both independent final sessions clear at2ff4409;95Linux/Rust/live-store and exact2worktreekill/resume/rerun pass; all7 PR and all7main jobs successful; normal protected PR6 merge7555c4b."
             }
           ]
         },
@@ -455,8 +459,13 @@
             "M01.03"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "in_progress",
+          "evidence": [
+            {
+              "path": "evidence/m01-04-navigation.md",
+              "result": "Pinned lsp-cli0.4.1 sourcecd9d492 and exact schemas/config/fixtures inspected; bounded semantic adapter/router/corpus implementation pending."
+            }
+          ]
         },
         {
           "id": "M01.05",
