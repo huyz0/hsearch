@@ -57,13 +57,18 @@ def nextest_command(tools, action, *args):
 def ordinary_environment(tools):
     return dict(os.environ, RUSTC=tools["cargo_compiler"], RUSTDOC=tools["cargo_rustdoc"],
                 RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="", RUSTC_BOOTSTRAP="-1", RUSTFLAGS="", RUSTDOCFLAGS="",
+                CARGO_TARGET_DIR=tools["ordinary_target"], CARGO_BUILD_TARGET=tools["native_target"],
                 **{tools["test_executor"]["environment_key"]: tools["test_executor"]["command"]})
 
 
 def qualified_tools():
     # Keep bounded probe receipts outside source, including on qualification failure.
     target = Path(os.environ.get("CARGO_TARGET_DIR", tempfile.gettempdir())).absolute()
-    return tool_identity(Runner(target / ("hsearch-tool-policy-" + uuid.uuid4().hex)))[0]
+    runner = Runner(target / ("hsearch-tool-policy-" + uuid.uuid4().hex))
+    tools = tool_identity(runner)[0]
+    ordinary = runner.root / "ordinary-target"
+    ordinary.mkdir(mode=0o700)
+    return {**tools, "ordinary_target": str(ordinary)}
 
 
 def lf_records(text):
@@ -233,6 +238,7 @@ def tool_identity(runner):
     need(rustc.startswith("rustc 1.97.1 "), "Wrong coverage Rust toolchain")
     host = next(line.removeprefix("host: ") for line in rustc.split("\n") if line.startswith("host: "))
     need(host in {"x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"}, "Unqualified native coverage target")
+    runner.env["CARGO_BUILD_TARGET"] = host
     sysroot = Path(runner.command(["rustc", "--print", "sysroot"], limit=8192).strip())
     bind_compiler(runner, sysroot / "bin/rustc")
     runner.env["RUSTDOC"] = str(sysroot / "bin/rustdoc")
@@ -260,7 +266,8 @@ def tool_identity(runner):
                ("llvm_cov", llvm / "llvm-cov"), ("llvm_profdata", llvm / "llvm-profdata"), ("llvm_objdump", llvm / "llvm-objdump"), ("nextest", nextest)]}
     need(receipt["binary_sha256"] == hashes["nextest"] and receipt["profile_sha256"] == hashlib.sha256(INPUT["canonical"](profile)).hexdigest(), "Nextest receipt/source identity mismatch")
     return {"rustc": rustc, "cargo_compiler": runner.env["RUSTC"], "cargo_rustdoc": runner.env["RUSTDOC"],
-            "cargo": cargo, "nextest": version, "nextest_executable": str(nextest), "hashes": hashes,
+            "cargo": cargo, "native_target": runner.env["CARGO_BUILD_TARGET"],
+            "nextest": version, "nextest_executable": str(nextest), "hashes": hashes,
             "compiler_policy_sha256": hashlib.sha256(COMPILER_POLICY_BYTES).hexdigest(),
             "compiler_environment": {"RUSTC_BOOTSTRAP": runner.env["RUSTC_BOOTSTRAP"]}, "test_executor": executor_record,
             "compiler_wrappers": {name: runner.env[name] for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER")}}, host, llvm
@@ -634,6 +641,7 @@ def merge(directory):
     binding = {"context_schema_version": context["schema_version"], "base": context["base"],
                "source_proof_sha256": INPUT["context_digest"](context["source_proof"]),
                "compiler_policy_sha256": tools["compiler_policy_sha256"],
+               "native_target": tools["native_target"],
                "compiler_environment": tools["compiler_environment"], "nextest_executable": tools["nextest_executable"],
                "test_executor": tools["test_executor"],
                "compiler_wrappers": tools["compiler_wrappers"]}

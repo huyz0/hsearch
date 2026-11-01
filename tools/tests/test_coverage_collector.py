@@ -203,6 +203,20 @@ class CollectionInventoryControls(unittest.TestCase):
             with patch.dict(COV["cargo_policy"].__globals__, COMPILER_POLICY=path), self.assertRaisesRegex(ValueError, "compiler-child"):
                 COV["cargo_policy"]()
 
+    def test_ordinary_targets_are_fresh_and_preserve_unqualified_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shared = Path(directory).resolve() / "shared"
+            shared.mkdir()
+            original = shared / "unqualified-artifact"
+            original.write_bytes(b"preserved pre-policy artifact")
+            with patch.dict(os.environ, CARGO_TARGET_DIR=str(shared)), patch.dict(
+                    COV["qualified_tools"].__globals__, tool_identity=lambda _runner: ({}, None, None)):
+                first, second = COV["qualified_tools"](), COV["qualified_tools"]()
+            targets = [Path(value["ordinary_target"]) for value in (first, second)]
+            self.assertNotEqual(*targets)
+            self.assertTrue(all(path.is_relative_to(shared) and path.is_dir() and not list(path.iterdir()) for path in targets))
+            self.assertEqual(original.read_bytes(), b"preserved pre-policy artifact")
+
     def test_nextest_environment_cannot_override_fixed_policy(self):
         for name, value in [("NEXTEST_RETRIES", "1"), ("NEXTEST_TEST_THREADS", "99")]:
             with patch.dict(os.environ, {name: value}), self.assertRaisesRegex(ValueError, "[Ee]nvironment|[Oo]verride"):

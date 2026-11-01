@@ -60,8 +60,8 @@ class ActualOverrideControls(unittest.TestCase):
             source.write_text('#![feature(coverage_attribute)]\npub fn live(x:u32) -> u32 { x+1 }\n#[coverage(off)]\npub fn dead() -> u32 { 41 }\n')
             unqualified = invoke(["cargo", "build", "--lib", "--offline"])
             self.assertEqual(unqualified.returncode, 0, unqualified.stdout)
-            def actual_map(label):
-                archives = list(Path(runner.env["CARGO_TARGET_DIR"]).glob("debug/deps/libconfiguration_policy_fixture-*.rlib"))
+            def actual_map(label, environment):
+                archives = list((Path(environment["CARGO_TARGET_DIR"]) / host).glob("debug/deps/libconfiguration_policy_fixture-*.rlib"))
                 self.assertEqual(len(archives), 1)
                 objects, output = [], parent / label
                 output.mkdir()
@@ -74,21 +74,32 @@ class ActualOverrideControls(unittest.TestCase):
                 raw = subprocess.check_output([str(llvm / "llvm-cov"), "export", "--empty-profile", "--format=lcov", objects[0],
                                                *[arg for item in objects[1:] for arg in ("--object", item)]], text=True, timeout=20)
                 return sorted(cov["GATE"]["parse_lcov"](raw)[str(source)])
-            self.assertEqual(actual_map("suppressed"), [2])
-            fixed_build = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]))
+            self.assertEqual(actual_map("suppressed", runner.env), [2])
+            protected = cov["Runner"](parent / "protected-context")
+            cov["tool_identity"](protected)
+            # Production collection and ordinary checks use fresh policy-owned
+            # targets: Cargo does not fingerprint this compiler-child variable.
+            fixed_build = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]), env=protected.env)
             self.assertNotEqual(fixed_build.returncode, 0)
             self.assertIn("E0554", fixed_build.stdout)
-            fixed_list = invoke(cov["nextest_command"](tools, "list", "--offline"))
+            fixed_list = invoke(cov["nextest_command"](tools, "list", "--offline"), env=protected.env)
             self.assertNotEqual(fixed_list.returncode, 0)
             self.assertIn("E0554", fixed_list.stdout)
             source.write_text('\npub fn live(x:u32) -> u32 { x+1 }\n\npub fn dead() -> u32 { 41 }\n')
-            repaired = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]))
+            repaired = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]), env=protected.env)
             self.assertEqual(repaired.returncode, 0, repaired.stdout)
-            self.assertEqual(actual_map("plain"), [2, 4])
+            self.assertEqual(actual_map("plain", protected.env), [2, 4])
+            config.write_text('[build]\ntarget="unqualified-target-does-not-exist"\n')
+            unbound = dict(protected.env); unbound.pop("CARGO_BUILD_TARGET")
+            unbound_target = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]), env=unbound)
+            self.assertNotEqual(unbound_target.returncode, 0)
+            pinned_target = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]), env=protected.env)
+            self.assertEqual(pinned_target.returncode, 0, pinned_target.stdout)
             print(json.dumps({"cargo_effective_policy_control": "pass", "unqualified_alias_retry_exit": 0,
                               "qualified_alias_exit": 100, "target_runner_override": "pinned-transparent",
                               "unqualified_suppressed_lines": [2], "plain_production_lines": [2, 4],
                               "qualified_bootstrap_build": "E0554", "qualified_bootstrap_nextest": "E0554",
+                              "fresh_policy_target": True, "native_target_policy": host,
                               "valid_source": "pass"}), flush=True)
 
     def test_real_cargo_configuration_wrappers_are_explicitly_disabled(self):
