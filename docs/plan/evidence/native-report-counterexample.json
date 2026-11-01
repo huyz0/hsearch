@@ -1,0 +1,55 @@
+{
+  "main": "75f30ddc74b727dd6cff8dda6c23cf29e2facca7",
+  "reviewed_M01_12": "24966b5457dc1c2b5e7e0b7c8fe7359e4cf2c3a0",
+  "reproducer_head": "44b12408f3e62a93fb089b04a94181b0ff84b2e2",
+  "rust": "1.97.1",
+  "LLVM": "22.1.6",
+  "export": "real llvm-cov export --empty-profile --format=lcov of both actual production object members",
+  "raw_sha256": "cae4c34e66d749324b297615b43a8dfb7d95e3d959f5085082974e0c50ae221b",
+  "raw_bytes": 18297,
+  "files": [
+    {
+      "source": "crates/observe/src/lib.rs",
+      "reported_LF": 208,
+      "physical_DA": 195,
+      "reported_LH": 0,
+      "physical_hit_lines": 0
+    },
+    {
+      "source": "crates/types/src/lib.rs",
+      "reported_LF": 43,
+      "physical_DA": 43,
+      "reported_LH": 0,
+      "physical_hit_lines": 0
+    },
+    {
+      "source": "crates/types/src/observation.rs",
+      "reported_LF": 280,
+      "physical_DA": 272,
+      "reported_LH": 0,
+      "physical_hit_lines": 0
+    }
+  ],
+  "observed": "fail-closed baseline parse: Inconsistent LCOV file summary; no test execution or coverage acceptance",
+  "implication": "M08.01 cannot qualify. Generic native coverage/composite acceptance held; old original gates/history retained. No floor/parser check changed.",
+  "next": "Confirm pinned upstream semantics and genuinely redesign compiler-report projection; no fourth M01.12 review or source edit.",
+  "reproducer_status": "unpublished preserved M08.01 draft, no hosted/API acceptance",
+  "json_export": {
+    "version": "3.1.0",
+    "bytes": 69158,
+    "sha256": "37376b9a1e990035b164b0d2470e8dd17770e544c6035a6d863a0cd6cce43986",
+    "same_production_objects": true,
+    "segments": [
+      616,
+      74,
+      557
+    ],
+    "diagnostic_projection_physical_lines": [
+      195,
+      43,
+      272
+    ],
+    "matches_all_actual_LCOV_DA": true,
+    "implementation_or_independent_oracle": false
+  }
+}

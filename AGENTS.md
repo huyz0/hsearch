@@ -19,3 +19,5 @@ Start with `docs/plan/development.md` for current executable commands. `cargo xt
 Use bounded source navigation and linked task context. Keep progress concise and separate measurements, proposals and unverified work. Runtime instructions and status claims must match observed implementation.
 
 Run `python tools/api_contract.py check`; regenerate the matrix with `python tools/api_contract.py render`. Design gates and examples are not observed runtime evidence. Normal reviewed/check-passing public pushes and protected merges are authorized; release/deployment authorization is separate.
+
+M01.12 is merged with full43-line PR/main/manual qualification, but generic coverage acceptance is held after a real LCOV summary/detail mismatch on new production code. Follow docs/plan/native-coverage-projection.md and M01.13's actual report-interface redesign. Preserve M01.12's three issued rounds and historical clear gate; no fourth packet or relaxed LCOV control. M08.01's event/facade draft is isolated and unaccepted pending this correction.

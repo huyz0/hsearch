@@ -570,7 +570,7 @@
             }
           ],
           "blocker": "Original patch-text implementation b637769 reached the hard three-round review ceiling with an actual Unicode separator false coverage pass; no publication or gate clearance.",
-          "next_action": "Complete genuinely redesigned M01.10 planning, M01.11 immutable-blob source proof and M01.12 integration; preserve the original blocked review registry and all regression obligations."
+          "next_action": "Retain accepted M01.10 decomposition and M01.11 source proof, frozen original failure and all M01.12 review history; complete genuine M01.13 compiler-report redesign before generic M01.12/composite acceptance."
         },
         {
           "id": "M01.08",
@@ -702,6 +702,44 @@
             "No original M01.07 review state or finding is erased or reported cleared; replacement acceptance has its own genuine redesign evidence",
             "Original >=90 aggregate/per-crate/per-file/changed production floors and all feature/target/profile obligations remain; no targeted-only closure",
             "Composite M01.07 closure cites accepted M01.10/11/12 evidence and final replacement source, never a fourth M01.07 packet or the blocked original gate"
+          ],
+          "depends_on": [
+            "M01.11",
+            "M01.05",
+            "M01.06",
+            "M01.13"
+          ],
+          "owner": "harness/integrator",
+          "status": "blocked",
+          "evidence": [
+            {
+              "path": "native-coverage-projection.md",
+              "result": "Merged75f30dd after final R3 clear and full7-job PR/main/manual qualification of43-line baseline. Real next-library LLVM LF/DA mismatch blocks generic acceptance; preserve historical gate/reviews, no fourth M01.12 packet."
+            },
+            {
+              "path": "evidence/native-report-counterexample.json",
+              "result": "Actual pinned production-object denominator fails closed before tests: observe LF208/195DA, observation types LF280/272DA; no floor/control waived."
+            }
+          ],
+          "blocker": "Actual next-library LLVM22.1.6 emits function-summary LF208/280 versus195/272 physical DA records; current native-report parser refuses before tests. Historical43-line PR/main/manual pass and R3clear gate remain scoped/frozen.",
+          "next_action": "Complete genuine M01.13 native-segment report protocol replacement and full inherited integration qualification; no fourth M01.12 packet or relaxed LCOV check."
+        },
+        {
+          "id": "M01.13",
+          "title": "Redesign native physical-line report projection",
+          "goal": "Replace the invalid file-summary equality assumption with a bounded versioned native-segment protocol without weakening physical production coverage.",
+          "deliverables": [
+            "Separate typed LLVM JSON3.1.0 segment-to-physical-line component and collector/merge binding",
+            "Preserved actual LF/DA counterexample, original failed histories/floors and native independent failure/repair oracles"
+          ],
+          "validation": [
+            "Strict framing/version/type/order/bounds and independent small line-projection controls; actual pinned Rust closure/generic/gap/skipped/unused-body exports compare against real LCOV DA and annotated oracles.",
+            "Full both-profile integration qualification and inherited policy/control matrix, separate whole-tree reviews, exact-source durable gate, complete native x86_64/ARM64 PR/main/manual CI and protected merge."
+          ],
+          "definition_of_done": [
+            "M01.12 and original M01.07 review histories/counters remain intact; their frozen source is not silently requalified or given another round.",
+            "No physical source line is discarded, no90% floor or effective compiler/test/bundle/lifecycle control is weakened; genuine report-interface replacement is independently reviewed.",
+            "Generic coverage and dependent observability acceptance cite actual final replacement-source qualification rather than43-line bootstrap or diagnostic prototype success."
           ],
           "depends_on": [
             "M01.11",
@@ -1836,11 +1874,19 @@
           ],
           "depends_on": [
             "M19",
-            "M01.01"
+            "M01.01",
+            "M01.13"
           ],
           "owner": "operations",
-          "status": "planned",
-          "evidence": []
+          "status": "blocked",
+          "evidence": [
+            {
+              "path": "native-coverage-projection.md",
+              "result": "Unpublished event/facade draft preserved in an isolated worktree; preliminary draft Rust/bootstrap passed, new production coverage blocked by native report protocol; no schema/runtime acceptance."
+            }
+          ],
+          "blocker": "Preserved unpublished event/facade draft cannot obtain required actual production coverage because its valid native denominator triggers the report-protocol mismatch.",
+          "next_action": "After M01.13 is independently accepted, integrate that normal main source into the preserved draft, finish schema evidence and rerun complete coverage/tests/reviews/hosted qualification."
         },
         {
           "id": "M08.02",
