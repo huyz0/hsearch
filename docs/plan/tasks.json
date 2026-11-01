@@ -459,11 +459,11 @@
             "M01.03"
           ],
           "owner": "harness/integrator",
-          "status": "in_progress",
+          "status": "review",
           "evidence": [
             {
               "path": "evidence/m01-04-navigation.md",
-              "result": "Implemented pinned semantic adapter, bounded context router and whole-fixture accounting; real Linux semantic/isolation/freshness/compiler corpus passed; final complete checks, independent review and hosted CI pending."
+              "result": "Pinned semantic/router implementation and all seven round1 corrections passed129 Linux cases/no skips, complete Rust/TLS/S3 checks and real concurrent-worktree semantic/freshness/compiler corpus; final independent review and both-architecture hosted CI pending."
             }
           ]
         },
