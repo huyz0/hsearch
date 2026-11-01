@@ -1855,7 +1855,7 @@
       "title": "Telemetry and AI-readable diagnostics",
       "goal": "Make the actual state of the system inspectable without secrets or uncontrolled diagnostic cost.",
       "owner": "operations",
-      "status": "planned",
+      "status": "in_progress",
       "depends_on": [
         "M07"
       ],
@@ -1887,7 +1887,7 @@
             "M01.13"
           ],
           "owner": "operations",
-          "status": "planned",
+          "status": "in_progress",
           "evidence": [
             {
               "path": "native-coverage-projection.md",

@@ -1,4 +1,7 @@
-//! Shared checkpoint types. Persisted encodings and distributed protocols are not defined here.
+//! Shared checkpoint and observation types.
+//! Persisted encodings and distributed protocols are not defined here.
+
+pub mod observation;
 
 /// An ordered logical shard coordinate. Zero denotes the empty prefix.
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]

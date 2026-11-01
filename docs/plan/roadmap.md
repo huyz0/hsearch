@@ -19,7 +19,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | [M05: mTLS, tenant policy and BYOK](milestones/M05.md) | planned | 0/7 | M03 |
 | [M06: Object-durable search store on RustFS](milestones/M06.md) | planned | 0/6 | M04, M05 |
 | [M07: Distributed routing and query serving](milestones/M07.md) | planned | 0/8 | M06 |
-| [M08: Telemetry and AI-readable diagnostics](milestones/M08.md) | planned | 0/6 | M07 |
+| [M08: Telemetry and AI-readable diagnostics](milestones/M08.md) | in_progress | 0/6 | M07 |
 | [M09: Low-latency quorum journal module](milestones/M09.md) | planned | 0/8 | M07, M08 |
 | [M10: Snapshot, export and change-stream contracts](milestones/M10.md) | planned | 0/5 | M07, M09 |
 | [M11: Independent cross-cluster copy module](milestones/M11.md) | planned | 0/5 | M10 |

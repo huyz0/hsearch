@@ -6,10 +6,6 @@
     "hsearch-testkit"
   ],
   "non_executable": {
-    "crates/observe/src/lib.rs": {
-      "sha256": "2e3a5283d2622649f8d30376d80936ef1ab5d5ba2a52efe926afcec17d7a3f45",
-      "reason": "Only a trait declaration with a method signature; no method body or runtime exporter."
-    },
     "crates/engine/src/lib.rs": {
       "sha256": "0f819830057f863c2dbadfc74904696b30b5ac327545fcff0a907d04ade7214b",
       "reason": "Only the pinned revision constant and upstream re-exports; no adapter function body."
