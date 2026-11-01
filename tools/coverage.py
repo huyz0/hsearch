@@ -282,6 +282,16 @@ def source_metadata(path, package):
     return {"crate": package, "sha256": hashlib.sha256(raw).hexdigest(), "line_count": lines}
 
 
+def tracked_paths():
+    records = TASK["git"]("ls-files", "-z", root=ROOT)
+    need(not records or records.endswith("\0"), "Truncated tracked source inventory")
+    paths = records.split("\0")[:-1] if records else []
+    need(len(paths) <= 10000 and len(set(paths)) == len(paths) and all(paths),
+         "Duplicate or oversized tracked source inventory")
+    for path in paths: SOURCES["source_path"](path)
+    return set(paths)
+
+
 def proof_base(base):
     need(type(base) is str and (base == "parentless-root" or SHA.fullmatch(base)), "Exact qualified coverage base required")
     return None if base == "parentless-root" else base
@@ -407,7 +417,7 @@ def collect(directory, base, profile, requested):
     tools, host, llvm = tool_identity(runner)
     runner.command([sys.executable, "tools/workspace.py", "check"])
     packages, selected, policy, external_packages = package_inventory(runner, requested)
-    tracked = set(filter(None, TASK["git"]("ls-files", "-z", root=ROOT).split("\0")))
+    tracked = tracked_paths()
     sources = initial_sources(packages, selected, tracked)
     flags = ["--locked", "--offline", "--all-features", "--target", host,
              *[part for name in selected for part in ("--package", name)], *( ["--release"] if profile == "release" else [])]
@@ -499,13 +509,13 @@ def collect(directory, base, profile, requested):
 def merge(directory):
     runner = Runner(directory, create=False)
     context = load(runner.root / "context.json")
-    need(context["schema_version"] == 2 and context["source"] == source_identity() and context["profile"] in {"dev", "release"} and
+    need(type(context["schema_version"]) is int and context["schema_version"] == 2 and context["source"] == source_identity() and context["profile"] in {"dev", "release"} and
          context["features"] == "all" and context["rustflags"] == RUSTFLAGS, "Stale or unqualified coverage collection")
     nextest_policy()
     tools, host, llvm = tool_identity(runner)
     need(context["toolchain"] == tools and context["target"] == host, "Toolchain/target changed before merge")
     packages, selected, policy, external_packages = package_inventory(runner, context["packages"])
-    tracked = set(filter(None, TASK["git"]("ls-files", "-z", root=ROOT).split("\\0")))
+    tracked = tracked_paths()
     required = initial_sources(packages, selected, tracked)
     need(all(context["sources"].get(name) == record for name, record in required.items()),
          "Coverage context omitted or changed a declared production source")
@@ -547,7 +557,7 @@ def merge(directory):
         text = runner.command([str(llvm / "llvm-cov"), "export", "--num-threads=2", "--format=lcov", "--instr-profile=" + str(merged), binary_paths[0],
                                *[part for item in binary_paths[1:] for part in ("--object", item)]])
         sources = dict(context["sources"])
-        tracked = set(filter(None, TASK["git"]("ls-files", "-z", root=ROOT).split("\0")))
+        tracked = tracked_paths()
         runtime = normalize_report(text, sources, packages, selected, tracked, runtime=True, external_roots=external_roots)
         need(sources == context["sources"], "Runtime introduced an unbound production source")
     map_objects = []
@@ -561,7 +571,7 @@ def merge(directory):
         text = runner.command([str(llvm / "llvm-cov"), "export", "--empty-profile", "--num-threads=2", "--format=lcov", map_objects[0],
                                *[part for item in map_objects[1:] for part in ("--object", item)]])
         sources = dict(context["sources"])
-        tracked = set(filter(None, TASK["git"]("ls-files", "-z", root=ROOT).split("\0")))
+        tracked = tracked_paths()
         baseline = normalize_report(text, sources, packages, selected, tracked, external_roots=external_roots)
         need(sources == context["sources"], "Production baseline introduced an unbound source")
     need({name: {str(line): hits for line, hits in lines.items()} for name, lines in baseline.items()} == context["baseline"], "Production denominator changed before merge")

@@ -46,6 +46,21 @@ def inventory():
 
 
 class CollectionInventoryControls(unittest.TestCase):
+    def test_merge_source_inventory_uses_actual_nul_records_including_unicode_names(self):
+        names = {'crates/a/src/lib.rs': b'pub fn original() -> u32 { 42 }\n',
+                 'crates/a/src/line\u2028name.rs': b'pub const DECL: u32 = 1;\n'}
+        with repository(names) as (root, _git):
+            paths = COV['tracked_paths']()
+            self.assertEqual(paths, set(names))
+            packages = {'a': {'manifest_path': str(root / 'crates/a/Cargo.toml'),
+                              'targets': [{'kind': ['lib'], 'src_path': str(root / 'crates/a/src/lib.rs')}]}}
+            inventory = COV['initial_sources'](packages, ['a'], paths)
+            self.assertEqual(set(inventory), set(names))
+            self.assertTrue(all(record['crate'] == 'a' and record['line_count'] == 1 for record in inventory.values()))
+        for malformed in ['original.rs', 'original.rs\0\0', 'original.rs\0original.rs\0']:
+            with patch.dict(COV['tracked_paths'].__globals__, TASK={'git': lambda *_args, **_kwargs: malformed}), self.assertRaises(ValueError):
+                COV['tracked_paths']()
+
     def test_exact_unicode_counterexample_cannot_hide_uncovered_body_as_changed_na(self):
         fixture = json.loads((ROOT / 'docs/plan/evidence/coverage-unicode-counterexample.json').read_text(encoding='utf-8'))
         with repository({name: raw.encode('utf-8') for name, raw in fixture['before'].items()}) as (root, git):
