@@ -38,8 +38,7 @@ def main():
         print(f"FAIL: {error}", file=sys.stderr)
         return 1
     for command in CHECKS:
-        command = (COVERAGE["nextest_command"](tools, command[2], *command[3:])
-                   if command[:2] == ["cargo", "nextest"] else COVERAGE["cargo_command"](command))
+        command = COVERAGE["cargo_command"](COVERAGE["correctness_command"](tools, command))
         print("CHECK: " + " ".join(command), flush=True)
         try:
             result = subprocess.run(command, cwd=ROOT, env=environment, check=False)

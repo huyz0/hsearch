@@ -56,9 +56,11 @@ class ActualOverrideControls(unittest.TestCase):
             self.assertEqual(fixed_runner.returncode, 100, fixed_runner.stdout)
             self.assertTrue(marker.exists())
             self.assertIn("first attempt controlled seed", fixed_runner.stdout)
-            config.write_text('[env]\nRUSTC_BOOTSTRAP={value="1",force=true}\n')
+            shared_build = parent / "shared-build"
+            config.write_text('[build]\nbuild-dir=' + json.dumps(str(shared_build)) + '\n[env]\nRUSTC_BOOTSTRAP={value="1",force=true}\n')
             source.write_text('#![feature(coverage_attribute)]\npub fn live(x:u32) -> u32 { x+1 }\n#[coverage(off)]\npub fn dead() -> u32 { 41 }\n')
-            unqualified = invoke(["cargo", "build", "--lib", "--offline"])
+            unqualified_env = dict(runner.env, CARGO_BUILD_BUILD_DIR=str(shared_build))
+            unqualified = invoke(["cargo", "build", "--lib", "--offline"], env=unqualified_env)
             self.assertEqual(unqualified.returncode, 0, unqualified.stdout)
             def actual_map(label, environment):
                 archives = list((Path(environment["CARGO_TARGET_DIR"]) / host).glob("debug/deps/libconfiguration_policy_fixture-*.rlib"))
@@ -75,6 +77,9 @@ class ActualOverrideControls(unittest.TestCase):
                                                *[arg for item in objects[1:] for arg in ("--object", item)]], text=True, timeout=20)
                 return sorted(cov["GATE"]["parse_lcov"](raw)[str(source)])
             self.assertEqual(actual_map("suppressed", runner.env), [2])
+            reused_env = dict(unqualified_env, CARGO_TARGET_DIR=str(parent / "unqualified-new-target"))
+            reused = invoke(cov["cargo_command"](["cargo", "build", "--lib", "--offline"]), env=reused_env)
+            self.assertEqual(reused.returncode, 0, reused.stdout)
             protected = cov["Runner"](parent / "protected-context")
             cov["tool_identity"](protected)
             # Production collection and ordinary checks use fresh policy-owned
@@ -100,7 +105,69 @@ class ActualOverrideControls(unittest.TestCase):
                               "unqualified_suppressed_lines": [2], "plain_production_lines": [2, 4],
                               "qualified_bootstrap_build": "E0554", "qualified_bootstrap_nextest": "E0554",
                               "fresh_policy_target": True, "native_target_policy": host,
+                              "unqualified_shared_cache_exit": reused.returncode, "private_intermediate_cache": "E0554",
                               "valid_source": "pass"}), flush=True)
+
+    def test_actual_clippy_format_aliases_and_forced_lint_arguments(self):
+        cov = runpy.run_path(str(Path(__file__).with_name("coverage.py")))
+        with tempfile.TemporaryDirectory(dir=os.environ["CARGO_TARGET_DIR"]) as directory:
+            parent = Path(directory); crate, helper = parent / "crate", parent / "helper"
+            for path in (crate / "src", crate / ".cargo", helper / "src"): path.mkdir(parents=True)
+            for path, name in ((crate, "external-tool-fixture"), (helper, "external-tool-delegate")):
+                (path / "Cargo.toml").write_text('[package]\nname=' + json.dumps(name) + '\nversion="0.0.0"\nedition="2024"\n[workspace]\n')
+            runner = cov["Runner"](parent / "identity")
+            tools, _host, _llvm = cov["tool_identity"](runner)
+            target = parent / "ordinary-target"; target.mkdir()
+            env = cov["ordinary_environment"]({**tools, "ordinary_target": str(target)})
+            env.update(CONTROLLED_CARGO=str(Path(tools["cargo_compiler"]).with_name("cargo")), CONTROLLED_POLICY=str(cov["COMPILER_POLICY"]))
+            (helper / "src/main.rs").write_text('fn main() { let a:Vec<String>=std::env::args().skip(1).collect(); eprintln!("CONTROLLED_EXTERNAL_ALIAS"); if a.first().is_some_and(|s| s=="fmt") { return; } let s=std::process::Command::new(std::env::var("CONTROLLED_CARGO").unwrap()).args(["--config", &std::env::var("CONTROLLED_POLICY").unwrap(), "check", "--offline", "--all-targets", "--all-features"]).status().unwrap(); std::process::exit(s.code().unwrap_or(1)); }\n')
+            source, config = crate / "src/lib.rs", crate / ".cargo/config.toml"
+            source.write_text('pub fn original(x: u32) -> u32 {\n    x + 0\n}\n'); config.write_text('')
+            def invoke(args):
+                return subprocess.run(args, cwd=crate, env=env, stdin=subprocess.DEVNULL, text=True,
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+            clippy = ["cargo", "clippy", "--offline", "--all-targets", "--all-features", "--", "-D", "warnings"]
+            qualified_clippy = cov["correctness_command"](tools, clippy)
+            baseline = invoke(qualified_clippy)
+            self.assertNotEqual(baseline.returncode, 0)
+            self.assertIn("identity_op", baseline.stdout)
+            alias = ["run", "--quiet", "--offline", "--manifest-path", str(helper / "Cargo.toml"), "--"]
+            config.write_text('[alias]\nclippy=' + json.dumps(alias + ["clippy"]) + '\n')
+            unqualified_alias = invoke(cov["cargo_command"](clippy))
+            self.assertEqual(unqualified_alias.returncode, 0, unqualified_alias.stdout)
+            direct = invoke(qualified_clippy)
+            self.assertNotEqual(direct.returncode, 0)
+            self.assertIn("identity_op", direct.stdout)
+            self.assertNotIn("CONTROLLED_EXTERNAL_ALIAS", direct.stdout)
+            config.write_text('[env]\nCLIPPY_ARGS={value="",force=true}\n')
+            unqualified_args = invoke([tools["cargo_clippy_executable"], "clippy", *clippy[2:]])
+            self.assertEqual(unqualified_args.returncode, 0, unqualified_args.stdout)
+            self.assertIn("identity_op", unqualified_args.stdout)
+            qualified_args = invoke(qualified_clippy)
+            self.assertNotEqual(qualified_args.returncode, 0)
+            self.assertIn("identity_op", qualified_args.stdout)
+            source.write_text('pub fn original(x:u32)->u32{x+0}\n'); config.write_text('')
+            fmt = ["cargo", "fmt", "--all", "--", "--check"]
+            qualified_fmt = cov["correctness_command"](tools, fmt)
+            bad_format = invoke(qualified_fmt)
+            self.assertNotEqual(bad_format.returncode, 0)
+            self.assertIn("Diff in", bad_format.stdout)
+            config.write_text('[alias]\nfmt=' + json.dumps(alias + ["fmt"]) + '\n')
+            alias_format = invoke(cov["cargo_command"](fmt))
+            self.assertEqual(alias_format.returncode, 0, alias_format.stdout)
+            fixed_format = invoke(qualified_fmt)
+            self.assertNotEqual(fixed_format.returncode, 0)
+            self.assertIn("Diff in", fixed_format.stdout)
+            self.assertNotIn("CONTROLLED_EXTERNAL_ALIAS", fixed_format.stdout)
+            config.write_text('')
+            source.write_text('pub fn original(x: u32) -> u32 {\n    x\n}\n')
+            good_lint, good_format = invoke(qualified_clippy), invoke(qualified_fmt)
+            self.assertEqual(good_lint.returncode, 0, good_lint.stdout)
+            self.assertEqual(good_format.returncode, 0, good_format.stdout)
+            print(json.dumps({"external_rust_tool_policy": "pass", "unqualified_clippy_alias": 0,
+                              "qualified_clippy_alias": "identity_op", "unqualified_child_args": 0,
+                              "qualified_child_args": "identity_op", "unqualified_fmt_alias": 0,
+                              "qualified_fmt_alias": "format_diff", "repaired_lint_format": "pass"}), flush=True)
 
     def test_real_cargo_configuration_wrappers_are_explicitly_disabled(self):
         cov = runpy.run_path(str(Path(__file__).with_name("coverage.py")))

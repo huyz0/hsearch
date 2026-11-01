@@ -24,7 +24,8 @@ WORKSPACE = {
 def fixture_coverage():
     """Planning tests replace only native attestation, preserving real command policy."""
     value = dict(CI["COVERAGE"])
-    value["qualified_tools"] = lambda: {"nextest_executable": "/verified/cargo-nextest"}
+    value["qualified_tools"] = lambda: {"nextest_executable": "/verified/cargo-nextest",
+                                       "cargo_clippy_executable": "/verified/cargo-clippy", "cargo_fmt_executable": "/verified/cargo-fmt"}
     value["ordinary_environment"] = lambda _tools: {"QUALIFIED_ENVIRONMENT": "fixture"}
     return value
 

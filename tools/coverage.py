@@ -29,8 +29,10 @@ SOURCES = runpy.run_path(str(ROOT / "tools/coverage_sources.py"))
 RUSTFLAGS = "-C instrument-coverage -C link-dead-code"
 SHA = re.compile(r"[0-9a-f]{40}")
 COMPILER_POLICY = ROOT / "harness/cargo-correctness.toml"
+CLIPPY_ARGUMENTS = "-D__CLIPPY_HACKERY__warnings__CLIPPY_HACKERY__"  # Rust 1.97.1 driver protocol.
 COMPILER_POLICY_BYTES = (b'# Explicit CLI config, shared by Cargo and nextest\'s Cargo invocations.\n'
-                         b'[env]\nRUSTC_BOOTSTRAP = { value = "-1", force = true }\n')
+                         b'[env]\nRUSTC_BOOTSTRAP = { value = "-1", force = true }\n'
+                         b'CLIPPY_ARGS = { value = "' + CLIPPY_ARGUMENTS.encode('ascii') + b'", force = true }\n')
 
 
 def need(condition, message):
@@ -54,10 +56,21 @@ def nextest_command(tools, action, *args):
     return [tools["nextest_executable"], "nextest", action, *cargo_policy(), *args]
 
 
+def correctness_command(tools, args):
+    if args[:2] == ["cargo", "nextest"]:
+        return nextest_command(tools, args[2], *args[3:])
+    if args[:2] == ["cargo", "clippy"]:
+        return [tools["cargo_clippy_executable"], "clippy", *cargo_policy(), *args[2:]]
+    if args[:2] == ["cargo", "fmt"]:
+        return [tools["cargo_fmt_executable"], "fmt", *args[2:]]
+    return args
+
+
 def ordinary_environment(tools):
     return dict(os.environ, RUSTC=tools["cargo_compiler"], RUSTDOC=tools["cargo_rustdoc"],
+                RUSTFMT=tools["rustfmt_executable"], CLIPPY_ARGS=CLIPPY_ARGUMENTS,
                 RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="", RUSTC_BOOTSTRAP="-1", RUSTFLAGS="", RUSTDOCFLAGS="",
-                CARGO_TARGET_DIR=tools["ordinary_target"], CARGO_BUILD_TARGET=tools["native_target"],
+                CARGO_TARGET_DIR=tools["ordinary_target"], CARGO_BUILD_BUILD_DIR=tools["ordinary_target"], CARGO_BUILD_TARGET=tools["native_target"],
                 **{tools["test_executor"]["environment_key"]: tools["test_executor"]["command"]})
 
 
@@ -115,6 +128,7 @@ class Runner:
         self.logs.mkdir(mode=0o700)
         self.started, self.number = time.monotonic(), 0
         self.env = dict(os.environ, CARGO_TARGET_DIR=str(self.root / "target"), CARGO_BUILD_JOBS="2", CARGO_INCREMENTAL="0",
+                        CARGO_BUILD_BUILD_DIR=str(self.root / "target"), CLIPPY_ARGS=CLIPPY_ARGUMENTS,
                         RUSTFLAGS=RUSTFLAGS, RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="", RUSTC_BOOTSTRAP="-1",
                         CARGO_TERM_COLOR="never", DEBUGINFOD_URLS="", PYTHONDONTWRITEBYTECODE="1")
         listing = self.root / ("listing-profiles-" + uuid.uuid4().hex[:12])
@@ -233,6 +247,7 @@ def tool_identity(runner):
     for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CARGO_ENCODED_RUSTDOCFLAGS"):
         need(not os.environ.get(name), "Unqualified compiler override: " + name)
     need(os.environ.get("RUSTC_BOOTSTRAP") in {None, "", "-1"}, "Unqualified compiler override: RUSTC_BOOTSTRAP")
+    need(os.environ.get("CLIPPY_ARGS") in {None, "", CLIPPY_ARGUMENTS}, "Unqualified compiler override: CLIPPY_ARGS")
     need(not any(key.startswith("CARGO_PROFILE_") for key in os.environ), "Unqualified Cargo profile override")
     rustc = runner.command(["rustc", "-vV"], limit=8192)
     need(rustc.startswith("rustc 1.97.1 "), "Wrong coverage Rust toolchain")
@@ -263,13 +278,18 @@ def tool_identity(runner):
     receipt = load(receipt_path, 4096)
     hashes = {name: tool_hash(path) for name, path in
                [("rustc", sysroot / "bin/rustc"), ("rustdoc", sysroot / "bin/rustdoc"), ("cargo", sysroot / "bin/cargo"),
+                ("cargo_clippy", sysroot / "bin/cargo-clippy"), ("clippy_driver", sysroot / "bin/clippy-driver"),
+                ("cargo_fmt", sysroot / "bin/cargo-fmt"), ("rustfmt", sysroot / "bin/rustfmt"),
                ("llvm_cov", llvm / "llvm-cov"), ("llvm_profdata", llvm / "llvm-profdata"), ("llvm_objdump", llvm / "llvm-objdump"), ("nextest", nextest)]}
     need(receipt["binary_sha256"] == hashes["nextest"] and receipt["profile_sha256"] == hashlib.sha256(INPUT["canonical"](profile)).hexdigest(), "Nextest receipt/source identity mismatch")
     return {"rustc": rustc, "cargo_compiler": runner.env["RUSTC"], "cargo_rustdoc": runner.env["RUSTDOC"],
+            "cargo_clippy_executable": str(sysroot / "bin/cargo-clippy"), "cargo_fmt_executable": str(sysroot / "bin/cargo-fmt"),
+            "rustfmt_executable": str(sysroot / "bin/rustfmt"),
+            "cargo_build_directory": runner.env["CARGO_BUILD_BUILD_DIR"], "cargo_target_directory": runner.env["CARGO_TARGET_DIR"],
             "cargo": cargo, "native_target": runner.env["CARGO_BUILD_TARGET"],
             "nextest": version, "nextest_executable": str(nextest), "hashes": hashes,
             "compiler_policy_sha256": hashlib.sha256(COMPILER_POLICY_BYTES).hexdigest(),
-            "compiler_environment": {"RUSTC_BOOTSTRAP": runner.env["RUSTC_BOOTSTRAP"]}, "test_executor": executor_record,
+            "compiler_environment": {"RUSTC_BOOTSTRAP": runner.env["RUSTC_BOOTSTRAP"], "CLIPPY_ARGS": runner.env["CLIPPY_ARGS"]}, "test_executor": executor_record,
             "compiler_wrappers": {name: runner.env[name] for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER")}}, host, llvm
 
 
@@ -642,6 +662,8 @@ def merge(directory):
                "source_proof_sha256": INPUT["context_digest"](context["source_proof"]),
                "compiler_policy_sha256": tools["compiler_policy_sha256"],
                "native_target": tools["native_target"],
+               "private_build_directory": tools["cargo_build_directory"] == tools["cargo_target_directory"],
+               "rust_external_tools": {key: tools[key] for key in ("cargo_clippy_executable", "cargo_fmt_executable", "rustfmt_executable")},
                "compiler_environment": tools["compiler_environment"], "nextest_executable": tools["nextest_executable"],
                "test_executor": tools["test_executor"],
                "compiler_wrappers": tools["compiler_wrappers"]}

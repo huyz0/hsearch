@@ -256,7 +256,7 @@ def native(value):
     coverage["nextest_policy"]()
     tools = coverage["qualified_tools"]()
     environment = coverage["ordinary_environment"](tools)
-    def native_run(command): run(command, env=environment)
+    def native_run(command): run(coverage["correctness_command"](tools, command), env=environment)
     native_run([sys.executable, "tools/coverage_corpus.py"])
     native_run([sys.executable, "tools/workspace.py", "check"])
     native_run([sys.executable, "tools/workspace.py", "selftest"])

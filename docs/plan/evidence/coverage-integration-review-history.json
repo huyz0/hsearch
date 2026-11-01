@@ -72,6 +72,130 @@
           ]
         }
       ]
+    },
+    {
+      "round": 2,
+      "head": "5f1ebee5872dd1db75b901734fb4432581208ba9",
+      "tree": "3738e9153e129ced0e86db969505bce43e51b009",
+      "packet_sha256": "4ee63c1a07be41f40339e3fd83149080276979424686245f494be7bd253e2ea8",
+      "reports": [
+        {
+          "role": "correctness_tests_claims",
+          "session": "/root/publication_review",
+          "conclusion": "blocked",
+          "raw_report_sha256": "20adcb3ecd39bfd75c7834ef1571f889db7dd0aaeac034a51f2f0054b8380a4f",
+          "findings": [
+            {
+              "id": "SHARED_BUILD_DIR_REUSES_UNQUALIFIED_COMPILER_OUTPUTS",
+              "priority": "P2",
+              "file": "tools/coverage.py",
+              "line": 57,
+              "reproduction": "Run taskroot M01.12_ROUND2_CORRECTNESS_NATIVE_BUILD_DIR.py using exact5f coverage helper SHA05fdf427d0ed7a90c2e6be948bf9b51572df8453a1524ae2f41dc987ef946607. Tiny same-manifest/source crate uses #![feature(coverage_attribute)], coverage(off), local forced bootstrap1 and [build] build-dir pointing to a shared directory. Unsafe ordinary build to targetA returns0. Current qualified tool_identity+ordinary_environment plus cargo_command build --lib --offline --verbose --message-format=json with previously nonexistent targetB also returns0/Fresh. JSON reports fresh:true; final rlib is copied to targetB while .rmeta remains in shared-build-dir. Keep source unchanged and add explicit fresh CARGO_BUILD_BUILD_DIR: the same protected command returns101/E0554. Plain source then returns0. Raw native receipt M01.12_ROUND2_NATIVE_DISPATCH_CACHE.log SHA baa6d00d9fe11f482cd388353b5a0290572af4cf46f207fda1df11deff2f5a59; independent replay _CORRECTNESS_NATIVE_REPLAY.py verifies outcomes.",
+              "expected": "Fresh policy-owned compilation must isolate or refuse intermediate build-directory overrides as well as final target outputs, so an artifact compiled under unqualified bootstrap cannot qualify stable ordinary checks. Preserve unrelated cache contents; require E0554 for this unchanged feature source.",
+              "observed": "ordinary_environment pins only CARGO_TARGET_DIR; Cargo1.97.1 supports a separately configured intermediate build-dir. Source/policy/tool identities and a fresh final target therefore do not prevent reuse of an unqualified artifact. Actual unsafe0/current-protected0/Fresh versus fresh-intermediate101/E0554 confirms the ordinary stable-policy gap. Whole collector/nextest/shard threshold behavior was not executed; collector owned-artifact checks may independently refuse external paths."
+            },
+            {
+              "id": "CARGO_ALIASES_BYPASS_CLIPPY_AND_FORMAT_GATES",
+              "priority": "P2",
+              "file": "tools/coverage.py",
+              "line": 49,
+              "reproduction": "Inspect/run M01.12_ROUND2_SECURITY_NATIVE_ALIAS.py in the exact-helper native fixture. Source original(x:u32)->u32 { x+0 } produces the Clippy-only identity_op failure101 for the actual required Cargo Clippy flags. A Rust argv alias delegate receives every original flag, runs ordinary cargo check on the same manifest and returns0; no Clippy lint is emitted. Plain alias=[check] fails safely on retained -D args and is not the successful counterexample. An unformatted same-source variant makes Cargo fmt --all -- --check return1; Rust argv alias delegate accepts those same args and returns0. Direct sysroot cargo-clippy/cargo-fmt controls still return101/1 respectively. Raw receipt SHA baa6d00d9fe11f482cd388353b5a0290572af4cf46f207fda1df11deff2f5a59; one actual lint run has two identical printed receipts (script+wrapper), not two independent runs.",
+              "expected": "Required Clippy and formatting gates must run the intended pinned components or refuse configuration that redirects their dispatch. An accepted argv sequence and successful delegate exit do not prove that required lint/format checks executed.",
+              "observed": "The R2 helper fixes nextest dispatch but cargo_command still merely prefixes --config for cargo fmt/clippy in tools/check.py and tools/ci.py. Cargo aliases shadow these external commands. Actual unchanged Clippy-only defect101 becomes0 and actual formatting defect1 becomes0 while original flags are retained. This is confirmed tool-route false-success; no full product-gate false pass is claimed."
+            },
+            {
+              "id": "CARGO_CHILD_CLIPPY_ARGS_WEAKENS_WARNINGS_POLICY",
+              "priority": "P2",
+              "file": "tools/coverage.py",
+              "line": 59,
+              "reproduction": "In the same M01.12_ROUND2_SECURITY_NATIVE_ALIAS.py fixture, direct pinned sysroot cargo-clippy clippy --config /workspace/harness/cargo-correctness.toml --locked --offline --all-targets --all-features -- -D warnings returns101 for identity_op. Remove aliases and configure [env] CLIPPY_ARGS={value=\"\",force=true}. The identical direct component/argv now returns0 and prints identity_op as a warning rather than an error. Actual native receipt SHA baa6d00d9fe11f482cd388353b5a0290572af4cf46f207fda1df11deff2f5a59, direct_cargo_clippy versus direct_cargo_clippy_forced_child_args. The existing required-policy helpers and compiler/target bindings are active in both cases.",
+              "expected": "The effective Clippy-driver warning policy must retain -D warnings despite Cargo compiler-child environment injection, or refuse such input before qualification. Direct component dispatch alone is insufficient; the configuration supplied to its Cargo children must not discard required lint arguments.",
+              "observed": "The complete CLI policy forces bootstrap only, and ordinary_environment clears RUSTFLAGS without constraining Cargo-supplied CLIPPY_ARGS. Cargo can overwrite the Clippy argument channel used by the driver. Actual direct Clippy changes failure101 to warning-only success0 on unchanged source and identical -D warnings argv. The current broader effective lint-policy claim therefore remains unqualified even after the alias route is bypassed."
+            }
+          ],
+          "resolutions": [
+            {
+              "review_key": "1:correctness_tests_claims:CARGO_CONFIG_BOOTSTRAP_REMOVES_PRODUCTION_LINES",
+              "evidence": "Original direct compiler-child injection is repaired by exact-byte cargo_policy()41-45 and shared complete harness/cargo-correctness.toml (SHA1e3680c3065c36b727db88651c1c8a36b7e605697420d5e6d39191f92ddf4cb8): Cargo and direct nextest receive the CLI policy forcing RUSTC_BOOTSTRAP=-1. Runner and ordinary env pin compiler/rustdoc/native target/transparent hashed executor. Final exact5f native corpus retains unsafe build0/map[2], then fresh protected Cargo and nextest E0554, plain0/map[2,4]. Full278/no-skip source-qualified receipt c68f007af42b3016a94db4c2630757434bf89981ffccf47c370f00639c884a1e and dev/release contexts record the policy. This resolves the original direct injection/default-cache reproduction; the additional shared-build-dir cache input now has a separate blocking finding and prevents broader stable-policy clearance."
+            },
+            {
+              "review_key": "1:correctness_tests_claims:CARGO_ALIAS_BYPASSES_ATTESTED_NEXTEST_POLICY",
+              "evidence": "Original nextest route repaired by resolved absolute nextest_executable bound to the attested hash, nextest_command()52-54 with mandatory external-subcommand marker and complete compiler CLI policy, and collect list/run532/556 plus ordinary check.py/ci.py conversions. Context toolchain equality is rederived at merge. Actual final corpus keeps unsafe alias retry-success0 while qualified direct route remains failed-first100; inventory/ignored/filter/no-tests/threads/timeouts, all-feature dev/release and explicit doctest requirements remain. CI mock migrations replace only native attestation and assert direct route/policy while retaining original scope/oracles. New Clippy/fmt alias findings concern remaining separate dispatch paths and do not reclassify the now-fixed nextest example."
+            },
+            {
+              "review_key": "1:architecture_security:SEC-01-alias-shadows-attested-nextest",
+              "evidence": "Original nextest route repaired by resolved absolute nextest_executable bound to the attested hash, nextest_command()52-54 with mandatory external-subcommand marker and complete compiler CLI policy, and collect list/run532/556 plus ordinary check.py/ci.py conversions. Context toolchain equality is rederived at merge. Actual final corpus keeps unsafe alias retry-success0 while qualified direct route remains failed-first100; inventory/ignored/filter/no-tests/threads/timeouts, all-feature dev/release and explicit doctest requirements remain. CI mock migrations replace only native attestation and assert direct route/policy while retaining original scope/oracles. New Clippy/fmt alias findings concern remaining separate dispatch paths and do not reclassify the now-fixed nextest example."
+            },
+            {
+              "review_key": "1:architecture_security:SEC-02-cargo-env-bootstrap-erases-denominator",
+              "evidence": "Original direct compiler-child injection is repaired by exact-byte cargo_policy()41-45 and shared complete harness/cargo-correctness.toml (SHA1e3680c3065c36b727db88651c1c8a36b7e605697420d5e6d39191f92ddf4cb8): Cargo and direct nextest receive the CLI policy forcing RUSTC_BOOTSTRAP=-1. Runner and ordinary env pin compiler/rustdoc/native target/transparent hashed executor. Final exact5f native corpus retains unsafe build0/map[2], then fresh protected Cargo and nextest E0554, plain0/map[2,4]. Full278/no-skip source-qualified receipt c68f007af42b3016a94db4c2630757434bf89981ffccf47c370f00639c884a1e and dev/release contexts record the policy. This resolves the original direct injection/default-cache reproduction; the additional shared-build-dir cache input now has a separate blocking finding and prevents broader stable-policy clearance."
+            },
+            {
+              "review_key": "1:architecture_security:SEC-03-bundle-limit-after-disk-allocation",
+              "evidence": "freeze_bundle() tools/coverage_local.py22-30 captures binary bundle stdout via accepted bounded GitObjects reader at128MiB before exclusive file creation; cap/output failure cannot allocate the bundle file. Independently ran actual small-history over-cap/no-file + under-cap/bundle-verify + existing-output-preservation controls. Exact final full207-file49,090,640-byte checkout plus3x45MiB history replay records git_output_limit, bundle_file_created:false/bytes0 and owned_down+verified temp cleanup; receipt SHA54ee73bdd2913ecd48f53067992c7cdf73dfb582636691d31dbec4b6e6bf9a37 binds5f and freezer SHA b5f5e44852c67cdf1403ff0eadb5d23edaf5dec73242986d438290be2f26a51a. Additional actual bounded pack timeout observed no live-after-return child, completion within1.954s cleanup grace (terminalZ, not asserted fully reaped). No hard host RSS or universal descendant claim is inferred."
+            }
+          ]
+        },
+        {
+          "role": "architecture_security",
+          "session": "/root/sandbox_security_review",
+          "conclusion": "blocked",
+          "raw_report_sha256": "5567504eaee7c4264099e482101f284289c561d65e25a840d8866bc7796ffcd1",
+          "findings": [
+            {
+              "id": "SEC-04-alias-bypasses-clippy-and-format-checks",
+              "priority": "P2",
+              "file": "tools/ci.py",
+              "line": 266,
+              "reproduction": "M01.12_ROUND2_SECURITY_NATIVE_ALIAS.py (SHA f7a66b792dfc0485d28b524099699da05a828138041a4771c0a6ee87e36e622a) runs actual current tool_identity/ordinary_environment/compiler policy under the owned pinned native fixture. Formatted source pub fn original(x:u32)->u32{x+0} produces identity_op and cargo clippy --locked --offline --all-targets --all-features -- -D warnings exit101. Plain alias clippy=[check] fails closed on trailing args. A tiny Rust argv alias via cargo run accepts the unchanged flags and delegates ordinary cargo check: exit0. Same delegate makes cargo fmt --all -- --check exit0 on unformatted source, versus baseline1. Direct sysroot cargo-clippy/cargo-fmt return101/1 on the respective seeds. Exact single-run log M01.12_ROUND2_NATIVE_DISPATCH_CACHE.log SHA baa6d00d9fe11f482cd388353b5a0290572af4cf46f207fda1df11deff2f5a59; parsed receipt in SECURITY_NATIVE_EVIDENCE.json. Two identical printed alias JSON records are one call plus returned-object print, not two runs.",
+              "expected": "Required lint and formatting checks must invoke the qualified actual tools or refuse alias replacement across check.py and ci.py. A required Clippy-only warning or formatting failure must remain nonzero; preserving argv text without binding dispatch is insufficient.",
+              "observed": "nextest now uses direct attested dispatch, while ci.py:263/266 and check.py CHECKS still use alias-sensitive cargo fmt/cargo clippy. The current policy and compiler guards accept those routes; the actual lint failure101 and formatting failure1 become0. The direct-Clippy comparison isolates dispatch only; direct dispatch alone does not fix SEC-05. No whole CI/collector false pass was executed."
+            },
+            {
+              "id": "SEC-05-forced-clippy-args-removes-warning-failure",
+              "priority": "P2",
+              "file": "harness/cargo-correctness.toml",
+              "line": 3,
+              "reproduction": "In the same exact-code native batch, retain formatted identity_op source, the absolute sysroot cargo-clippy route, explicit --config current harness/cargo-correctness.toml, and trailing -- -D warnings. Baseline direct Clippy exits101 with identity_op denied. Replace local config by [env] CLIPPY_ARGS={value=\"\",force=true}; the identical direct command now exits0 and emits the same identity_op as a warning. M01.12_ROUND2_NATIVE_DISPATCH_CACHE.log SHA baa6d00d9fe11f482cd388353b5a0290572af4cf46f207fda1df11deff2f5a59; direct_cargo_clippy_forced_child_args receipt records actual command/output. Probe module binds current coverage.py SHA05fdf427d0ed7a90c2e6be948bf9b51572df8453a1524ae2f41dc987ef946607 and actual policy SHA1e3680c3065c36b727db88651c1c8a36b7e605697420d5e6d39191f92ddf4cb8.",
+              "expected": "The effective compiler-child lint policy must retain required warning-as-error behavior through applicable Cargo configuration. Bind or refuse child CLIPPY_ARGS overrides, including forced config; direct tool selection is only one part of the policy.",
+              "observed": "The explicit complete policy protects RUSTC_BOOTSTRAP only. Cargo forced child environment replaces Clippy's serialized CLI lint arguments, so -D warnings remains in the logged invocation but is absent from effective driver arguments. This is a required command false-success with actual warning output, even on the direct tool route. Rust1.97.1 Clippy main.rs serializes CLI flags to CLIPPY_ARGS and driver.rs reads it from child environment; no whole CI false pass is claimed."
+            },
+            {
+              "id": "SEC-06-shared-build-dir-reuses-bootstrap-artifacts",
+              "priority": "P2",
+              "file": "tools/coverage.py",
+              "line": 60,
+              "reproduction": "M01.12_ROUND2_CORRECTNESS_NATIVE_BUILD_DIR.py binds exact current coverage.py and runs a tiny four-line feature(coverage_attribute)/coverage(off) library. Local build.build-dir points at an owned shared intermediate directory and env.RUSTC_BOOTSTRAP force1. Actual unqualified targetA builds0. Current tool_identity/ordinary_environment with fresh, previously nonexistent targetB plus the explicit -1 CLI policy also builds0 on identical source; Cargo JSON says fresh:true and retains shared-build-dir metadata. Set only CARGO_BUILD_BUILD_DIR to a fresh private directory: actual same protected command now exits101/E0554; plain source positive0. Supported build-dir, unchanged source digest, artifact paths and all raw outcomes are retained in M01.12_ROUND2_NATIVE_DISPATCH_CACHE.log SHA baa6d00d9fe11f482cd388353b5a0290572af4cf46f207fda1df11deff2f5a59 and SECURITY_NATIVE_EVIDENCE.json.",
+              "expected": "Fresh policy-owned ordinary execution must bind all relevant compiler cache/intermediate locations or refuse externally shared build directories before relying on the new stable policy. A cached bootstrap-enabled artifact must not qualify the supposedly protected ordinary build.",
+              "observed": "ordinary_environment/qualified_tools pin only CARGO_TARGET_DIR; build.build-dir/CARGO_BUILD_BUILD_DIR remains independent. A fresh target directory can import an artifact compiled under forbidden bootstrap instead of running stable rustc. This leaves the bootstrap/artifact-reuse fix incomplete for supported ordinary-build configuration. Collector artifact ownership may fail closed on external paths; no full collector/nextest/shard or whole CI false pass was executed."
+            }
+          ],
+          "resolutions": [
+            {
+              "review_key": "1:correctness_tests_claims:CARGO_CONFIG_BOOTSTRAP_REMOVES_PRODUCTION_LINES",
+              "evidence": "tools/coverage.py:31-45 byte-validates the complete harness/cargo-correctness.toml and injects explicit --config into every qualified Cargo/direct-nextest invocation; it forces compiler-child RUSTC_BOOTSTRAP=-1, pins native compiler/rustdoc/target and hashes the transparent executor. collect uses fresh Runner targets; qualified_tools:64-71 creates a fresh exclusive ordinary target to avoid reusing bootstrap-enabled Cargo artifacts. Independent checks verify policy tampering refuses and distinct ordinary targets start empty. Exact-head native log retains unsafe map[2] versus plain[2,4], then fresh protected Cargo build and direct nextest list both E0554 while valid source succeeds. Current dev/release contexts bind policy SHA1e3680c3065c36b727db88651c1c8a36b7e605697420d5e6d39191f92ddf4cb8/environment -1/native target/executor and actual tool hashes; merge rederives them. The failed artifact-reuse run remains documented, not waived. Resolution is partial for the broader ordinary policy: new actual SEC-06 reuses an unsafe artifact through a separately configured shared build.build-dir even with a fresh target and this explicit -1 policy. A fresh intermediate directory restores E0554. Do not treat the default-layout replay as complete compiler/cache clearance."
+            },
+            {
+              "review_key": "1:correctness_tests_claims:CARGO_ALIAS_BYPASSES_ATTESTED_NEXTEST_POLICY",
+              "evidence": "tools/coverage.py:52-54 now constructs [absolute attested cargo-nextest,nextest,list|run,--config,<validated complete policy>,...]; collect list/run at532/556 and check.py:42-44/ci.py:274 use this direct route. tool_identity:253-272 resolves, hashes and records the exact executable, and merge:572 rederives equality. Independent SECURITY_CHECKS.py verifies exact argv, tampered-policy refusal, and source bookends. Hash-checked exact-head FINAL_SMOKE native control reports unsafe alias retry exit0 versus protected direct exit100 on the unchanged fail-first seed; no whole-collector false pass is inferred. Existing retries0, threads2, ignored/filter/inventory/no-tests/deadline controls remain."
+            },
+            {
+              "review_key": "1:architecture_security:SEC-01-alias-shadows-attested-nextest",
+              "evidence": "tools/coverage.py:52-54 now constructs [absolute attested cargo-nextest,nextest,list|run,--config,<validated complete policy>,...]; collect list/run at532/556 and check.py:42-44/ci.py:274 use this direct route. tool_identity:253-272 resolves, hashes and records the exact executable, and merge:572 rederives equality. Independent SECURITY_CHECKS.py verifies exact argv, tampered-policy refusal, and source bookends. Hash-checked exact-head FINAL_SMOKE native control reports unsafe alias retry exit0 versus protected direct exit100 on the unchanged fail-first seed; no whole-collector false pass is inferred. Existing retries0, threads2, ignored/filter/inventory/no-tests/deadline controls remain."
+            },
+            {
+              "review_key": "1:architecture_security:SEC-02-cargo-env-bootstrap-erases-denominator",
+              "evidence": "tools/coverage.py:31-45 byte-validates the complete harness/cargo-correctness.toml and injects explicit --config into every qualified Cargo/direct-nextest invocation; it forces compiler-child RUSTC_BOOTSTRAP=-1, pins native compiler/rustdoc/target and hashes the transparent executor. collect uses fresh Runner targets; qualified_tools:64-71 creates a fresh exclusive ordinary target to avoid reusing bootstrap-enabled Cargo artifacts. Independent checks verify policy tampering refuses and distinct ordinary targets start empty. Exact-head native log retains unsafe map[2] versus plain[2,4], then fresh protected Cargo build and direct nextest list both E0554 while valid source succeeds. Current dev/release contexts bind policy SHA1e3680c3065c36b727db88651c1c8a36b7e605697420d5e6d39191f92ddf4cb8/environment -1/native target/executor and actual tool hashes; merge rederives them. The failed artifact-reuse run remains documented, not waived. Resolution is partial for the broader ordinary policy: new actual SEC-06 reuses an unsafe artifact through a separately configured shared build.build-dir even with a fresh target and this explicit -1 policy. A fresh intermediate directory restores E0554. Do not treat the default-layout replay as complete compiler/cache clearance."
+            },
+            {
+              "review_key": "1:architecture_security:SEC-03-bundle-limit-after-disk-allocation",
+              "evidence": "tools/coverage_local.py:22-30 reads raw Git stdout through accepted bounded GitObjects.command(limit<=134217728) before any output open, then exclusively creates the bundle after successful admission. Independent real history control verified a124011-byte exact cap passes bundle verify;124010 cap raises git_output_limit with no output file; existing output is preserved. Hash-checked exact-head M01.12_R2_FINAL_BUNDLE.json binds freezer module SHA b5f5e44852c67cdf1403ff0eadb5d23edaf5dec73242986d438290be2f26a51a and records all207 project paths/49090640 current bytes plus3x47185920 historical blobs refusing with zero bundle-file bytes and verified owned cleanup. This resolves allocation-before-output-cap; finite roughly256MiB payload/join storage is explicitly distinguished from a hard host RSS sandbox. Original143458832-byte failed R1 receipt/report remains unchanged."
+            }
+          ]
+        }
+      ],
+      "native_batch_log_sha256": "baa6d00d9fe11f482cd388353b5a0290572af4cf46f207fda1df11deff2f5a59",
+      "scope": "Actual tiny ordinary builds/lint/format route controls, not a whole collector/whole CI false pass"
     }
   ]
 }
