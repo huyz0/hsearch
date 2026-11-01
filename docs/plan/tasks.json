@@ -782,8 +782,21 @@
             "M01.02"
           ],
           "owner": "architecture/scale",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m02-08-integrated.md",
+              "result": "Final independent R3 resolves all7P2s; full225local/no skips plus all7 PR/main native jobs and raw18probe reports each, durable gate and protected expected-head PR13 merge with matching reviewed tree. Synthetic model only."
+            },
+            {
+              "path": "evidence/catalog-model-final-native.json",
+              "result": "Both actual native main reports retain36fresh-process samples/source module hashes/row counters/query plans/noise, independently recomputed. No runtime/fleet/physical-I/O acceptance."
+            },
+            {
+              "path": "evidence/catalog-model-review-history.json",
+              "result": "Both earlier blocked rounds/reproduction hashes retained; original base/counters unchanged."
+            }
+          ]
         },
         {
           "id": "M02.02",
