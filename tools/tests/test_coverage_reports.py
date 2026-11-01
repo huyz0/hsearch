@@ -82,6 +82,20 @@ class NativeReportControls(unittest.TestCase):
         self.assertEqual(project([file(segments=[])])["/source/lib.rs"], {})
         self.assertEqual(project([file(segments=[[2, 1, 9, True, False, False], [4, 1, 0, False, False, False]])])["/source/lib.rs"], {3: 9, 4: 9})
 
+    def test_source_supported_skipped_restore_pair_keeps_order_and_native_lines(self):
+        # LLVM22 SegmentBuilder1188-1199/1292-1294 permits this equal-location
+        # pair. It is a producer-source conformance fixture, not a Rust export.
+        for hits in (0, 3):
+            rows = [[1, 1, hits, True, True, False], [2, 2, 0, False, True, False],
+                    [2, 2, hits, True, False, False], [3, 10, 0, False, False, False]]
+            report = N["decode"](json.dumps(document([file(segments=rows, count=2, covered=2 if hits else 0)])))
+            self.assertEqual(report.files[0].segments, tuple(map(tuple, rows)))
+            self.assertEqual(N["project"](report, {"/source/lib.rs"}), {"/source/lib.rs": {1: hits, 3: hits}})
+            self.assertEqual(dense_oracle(rows), {1: hits, 3: hits})
+            # Reversing the pair gives a forbidden tie after a counted segment.
+            invalid = rows[:1] + [rows[2], rows[1]] + rows[3:]
+            with self.assertRaisesRegex(ValueError, "Duplicate/unordered"): project([file(segments=invalid)])
+
     def test_small_generated_maps_match_dense_independent_oracle(self):
         rng = random.Random(582041)
         for _ in range(300):

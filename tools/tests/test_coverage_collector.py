@@ -125,6 +125,26 @@ class CollectionInventoryControls(unittest.TestCase):
                 with self.subTest(variant=variant), self.assertRaisesRegex(ValueError, "source_proof_mismatch"):
                     COV["verify_source_proof"](base, sources, broken)
 
+    def test_source_supported_equal_coordinate_pair_reaches_production_normalizer(self):
+        # Synthetic envelope of the pinned producer's legal skipped/restore pair;
+        # no observed Rust or whole-collector reproduction is asserted.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "crates/prod/src/lib.rs"; source.parent.mkdir(parents=True)
+            source.write_text("pub fn outer() {\n    // zero-length generated region\n        }\n")
+            encoded = json.loads(native_report([source]))
+            file = encoded["data"][0]["files"][0]
+            file["segments"] = [[1, 1, 0, True, True, False], [2, 2, 0, False, True, False],
+                                [2, 2, 0, True, False, False], [3, 10, 0, False, False, False]]
+            file["summary"]["lines"]["count"] = 2
+            packages = {"prod": {"manifest_path": str(source.parent.parent / "Cargo.toml")}}
+            receipts = []
+            with patch.dict(COV["normalize_report"].__globals__, ROOT=root):
+                result = COV["normalize_report"](json.dumps(encoded), {}, packages, ["prod"],
+                                                {"crates/prod/src/lib.rs"}, report_bindings=receipts)
+            self.assertEqual(result, {"crates/prod/src/lib.rs": {1: 0, 3: 0}})
+            self.assertEqual(receipts[0]["selected_file_count"], 1)
+
     def test_native_protocol_and_raw_export_receipt_bind_the_actual_map(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

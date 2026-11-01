@@ -116,7 +116,7 @@ def decode(text):
              unsigned(summary["count"], 2**64 - 1) and unsigned(summary["covered"], summary["count"]) and
              type(summary["percent"]) in (int, float) and 0 <= summary["percent"] <= 100,
              "Native diagnostic line summary")
-        previous, segments = (0, 0), []
+        previous, previous_counted, segments = (0, 0), False, []
         segment_count += len(file["segments"])
         need(segment_count <= MAX_SEGMENTS, "Native segment count bound")
         for row in file["segments"]:
@@ -126,8 +126,12 @@ def decode(text):
                  unsigned(row[2], 2**63 - 1) and all(type(flag) is bool for flag in row[3:]),
                  "Native segment shape/type/range")
             need(row[3] or row[2] == 0, "Uncounted native segment has a counter")
-            need((row[0], row[1]) > previous, "Duplicate/unordered native segment")
-            previous = row[0], row[1]
+            point = row[0], row[1]
+            # LLVM emits a skipped/restore pair at the same location. Its debug
+            # invariant permits a tie only after a segment without a count.
+            need(point > previous or (point == previous and not previous_counted),
+                 "Duplicate/unordered native segment")
+            previous, previous_counted = point, row[3]
             segments.append(tuple(row))
         files.append(NativeFile(name, tuple(segments), (summary["count"], summary["covered"], summary["percent"])))
     return NativeReport(hashlib.sha256(content).hexdigest(), tuple(files))
