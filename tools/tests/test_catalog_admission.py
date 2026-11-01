@@ -8,6 +8,13 @@ Admission, Limits, Refused = (MODEL[name] for name in ['Admission', 'Limits', 'R
 
 
 class AdmissionModelControls(unittest.TestCase):
+    def test_explicit_empty_or_wrong_typed_tenant_policies_do_not_silently_become_defaults(self):
+        for field in ['request_shares', 'rpc_shares']:
+            for policy in [{}, False, [], 0]:
+                with self.assertRaisesRegex(Refused, 'tenant_policy_bound'):
+                    Admission(**{field: policy})
+        self.assertEqual(Admission().request_pool.reserved, {'a': 1, 'b': 1})
+
     def test_late_deadline_observation_never_creates_immortal_receipts(self):
         maximum = 2**63 - 1
         model = Admission(Limits(terminal_receipts=2, receipt_ticks=maximum - 100))

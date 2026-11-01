@@ -102,8 +102,8 @@ class Request:
 class Admission:
     def __init__(self, limits=Limits(), *, request_shares=None, rpc_shares=None):
         self.limits = limits
-        self.request_pool = ReservedPool(limits.global_requests, request_shares or {'a': 1, 'b': 1})
-        self.rpc_pool = ReservedPool(limits.global_inflight, rpc_shares or {'a': 8, 'b': 8})
+        self.request_pool = ReservedPool(limits.global_requests, {'a': 1, 'b': 1} if request_shares is None else request_shares)
+        self.rpc_pool = ReservedPool(limits.global_inflight, {'a': 8, 'b': 8} if rpc_shares is None else rpc_shares)
         need(set(self.request_pool.used) == set(self.rpc_pool.used), 'inconsistent_tenant_policies')
         self.receipt_pool = ReservedPool(limits.terminal_receipts, dict.fromkeys(self.request_pool.used, 1))
         self.queue = dict.fromkeys(self.request_pool.used, 0)
