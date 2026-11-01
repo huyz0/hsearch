@@ -5,6 +5,7 @@ import copy
 import json
 import os
 import runpy
+import subprocess
 import sys
 import tempfile
 import time
@@ -240,6 +241,19 @@ class GuestControls(unittest.TestCase):
             path.write_text("x" * 32769)
             with self.assertRaisesRegex(RuntimeError, "limit_or_type"):
                 self.guest["read_ready"]()
+
+    def test_artifact_mount_is_charged_to_the_frozen_build_monitor(self):
+        code = """import os,runpy,sys
+m=runpy.run_path(sys.argv[1]); g=m['run'].__globals__
+g['verify_limits']=lambda *args: {}
+g['usage']=lambda paths: 2048 if '/navigation-output' in paths else 0
+g['COMMANDS']['navigation-build']=[sys.executable,'-c','import time; time.sleep(0.2)']
+os.environ.pop('HSEARCH_BACKEND_RESERVE_BYTES',None)
+try: m['run']('navigation-build',1024,3,4096)
+except RuntimeError as error: print(str(error))
+"""
+        result = subprocess.check_output([sys.executable, "-c", code, str(ROOT / "dev/execute.py")], text=True, timeout=10)
+        self.assertIn("cache/target disk budget exceeded", result)
 
     def test_dead_cli_with_descendant_holding_pipes_cannot_escape_deadline_cleanup(self):
         with tempfile.TemporaryDirectory() as folder:
