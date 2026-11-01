@@ -220,6 +220,26 @@ def assert_owned(objects, owner):
         need(labels and labels.get(LABEL) == owner, "Cleanup refused: resource owner does not match")
 
 
+def freeze_harness(destination):
+    """Publish public controller code for a different, non-root guest UID."""
+    destination.mkdir(mode=0o755)
+    # The host registry's ancestors stay private. The bind-mounted directory
+    # itself must be traversable by UID 10001 even under a host umask of 077.
+    destination.chmod(0o755)
+    hashes = {}
+    for name in HARNESS_FILES:
+        content = (ROOT / "dev" / name).read_bytes()
+        need(len(content) < 65536, "Trusted harness script exceeds bound")
+        script = destination / name
+        with script.open("xb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        script.chmod(0o444)
+        hashes[name] = hashlib.sha256(content).hexdigest()
+    return hashes
+
+
 class Sandbox:
     def __init__(self, state_root, docker=None, free_disk=None, *, source_root=None):
         self.registry = Registry(state_root, free_disk=free_disk)
@@ -318,16 +338,7 @@ class Sandbox:
             self.require_backend_reserve(backend_free)
             folder.mkdir(parents=True, exist_ok=False)
             frozen = folder / "harness"
-            frozen.mkdir(mode=0o700)
-            hashes = {}
-            for name in HARNESS_FILES:
-                content = (ROOT / "dev" / name).read_bytes()
-                need(len(content) < 65536, "Trusted harness script exceeds bound")
-                with (frozen / name).open("xb") as handle:
-                    handle.write(content)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                hashes[name] = hashlib.sha256(content).hexdigest()
+            hashes = freeze_harness(frozen)
             self.registry.update(namespace, harness_hashes=hashes)
             template = Template((ROOT / "dev/compose.json").read_text())
             # JSON-escape substituted path values before parsing the concrete snapshot.

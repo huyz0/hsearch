@@ -3,6 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import runpy
+import stat
 import subprocess
 import sys
 import tempfile
@@ -57,6 +58,22 @@ class DockerFixture:
 
 @unittest.skipIf(os.name == "nt", "Temporary resource fixtures are qualified in the Linux image")
 class RecoveryControls(unittest.TestCase):
+    def test_public_frozen_code_is_readable_by_a_different_guest_uid_under_private_umask(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory) / "harness"
+            previous = os.umask(0o077)
+            try:
+                hashes = API["freeze_harness"](folder)
+            finally:
+                os.umask(previous)
+            self.assertEqual(folder.stat().st_mode & 0o005, 0o005, "Guest needs read/traverse on the mount root")
+            for name, digest in hashes.items():
+                script = folder / name
+                self.assertTrue(stat.S_ISREG(script.stat().st_mode))
+                self.assertEqual(script.stat().st_mode & 0o004, 0o004, "Distinct guest UID must read the code")
+                self.assertEqual(script.stat().st_mode & 0o222, 0, "Published controller files must not be writable")
+                self.assertEqual(hashlib.sha256(script.read_bytes()).hexdigest(), digest)
+
     def ready(self, directory, docker, source=None, frozen=False):
         sandbox = Sandbox(directory, docker=docker, free_disk=lambda: 100 * GIB, source_root=source)
         record = {"namespace": NAMESPACE, "owner": "mine", "source": str(sandbox.source_root), "image": "image", "phase": "ready"}
