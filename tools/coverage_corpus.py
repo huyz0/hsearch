@@ -529,11 +529,14 @@ class NextestDeadlineControl(unittest.TestCase):
             root = Path(directory)
             (root / "src").mkdir()
             (root / "Cargo.toml").write_text('[package]\nname="coverage-nextest-fixture"\nversion="0.0.0"\nedition="2024"\n[workspace]\n')
-            (root / "src/lib.rs").write_text('#[test] fn fast() { assert_eq!(2+2,4); }\n#[test] fn timeout_seed() { std::thread::sleep(std::time::Duration::from_secs(10)); }\n'
+            # This positive deliberately exceeds the negative-only100ms budget.
+            # Production startup is not a100ms performance promise.
+            (root / "src/lib.rs").write_text('#[test] fn fast() { std::thread::sleep(std::time::Duration::from_millis(300)); assert_eq!(2+2,4); }\n#[test] fn timeout_seed() { std::thread::sleep(std::time::Duration::from_secs(10)); }\n'
                 '#[test] fn retry_seed() { let marker = std::path::PathBuf::from(std::env::var_os("HSEARCH_RETRY_SEED").unwrap()); '
                 'if !marker.exists() { std::fs::write(marker, b"controlled initial failure").unwrap(); panic!("controlled initial failure"); } }\n')
             config = root / "nextest.toml"
-            config.write_text('[profile.default]\nretries=0\ntest-threads=1\nslow-timeout={period="100ms",terminate-after=1,grace-period="100ms",on-timeout="fail"}\nglobal-timeout="3s"\n')
+            config.write_text('[profile.default]\nretries=0\ntest-threads=1\nslow-timeout={period="30s",terminate-after=4,grace-period="5s",on-timeout="fail"}\nglobal-timeout="3s"\n'
+                '[[profile.default.overrides]]\nfilter="test(=timeout_seed)"\nslow-timeout={period="100ms",terminate-after=1,grace-period="100ms",on-timeout="fail"}\n')
             listing = root / "listing-profiles"
             listing.mkdir()
             env = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"), CARGO_TERM_COLOR="never",
@@ -549,13 +552,24 @@ class NextestDeadlineControl(unittest.TestCase):
             self.assertEqual(len(suites), 1)
             self.assertEqual(set(suites[0]["testcases"]), {"fast", "timeout_seed", "retry_seed"})
             self.assertTrue(Path(suites[0]["binary-path"]).is_file())
+            # Retain the original broad100ms fixture as a failing regression:
+            # the successful300ms body is not the intentional timeout seed.
+            wide_config = root / "wide-timeout-seed.toml"
+            wide_config.write_text('[profile.default]\nretries=0\ntest-threads=1\nslow-timeout={period="100ms",terminate-after=1,grace-period="100ms",on-timeout="fail"}\nglobal-timeout="3s"\n')
+            wide = subprocess.run([*base, "run", "--manifest-path", str(root / "Cargo.toml"),
+                                   "--locked", "--offline", "--config-file", str(wide_config), "-E", "test(=fast)"],
+                                  text=True, timeout=10, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            self.assertEqual(wide.returncode, 100, wide.stdout)
+            self.assertIn("TIMEOUT", wide.stdout)
             passing = subprocess.run([*base, "run", *common, "-E", "test(=fast)"], text=True, timeout=10, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             self.assertEqual(passing.returncode, 0, passing.stdout)
             self.assertIn("1 passed", passing.stdout)
             started = time.monotonic()
             failed = subprocess.run([*base, "run", *common, "-E", "test(=timeout_seed)"], text=True, timeout=10, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             self.assertNotEqual(failed.returncode, 0)
+            self.assertEqual(failed.returncode, 100, failed.stdout)
             self.assertIn("TIMEOUT", failed.stdout)
+            self.assertRegex(failed.stdout, r"TERMINATING\s+\[>\s+0\.100s\]")
             self.assertLess(time.monotonic() - started, 5)
             marker = root / "retry-seed-receipt"
             overridden = dict(env, NEXTEST_RETRIES="1", HSEARCH_RETRY_SEED=str(marker))
@@ -570,7 +584,7 @@ class NextestDeadlineControl(unittest.TestCase):
             cov = runpy.run_path(str(Path(__file__).with_name("coverage.py")))
             with patch.dict(os.environ, NEXTEST_RETRIES="1"), self.assertRaisesRegex(ValueError, "environment override"):
                 cov["nextest_policy"]()
-            print(json.dumps({"nextest_inventory": "pass", "tests": 3, "positive_test": "pass", "timeout_seed": "rejected", "exit": failed.returncode,
+            print(json.dumps({"nextest_inventory": "pass", "tests": 3, "positive_test": "pass", "positive_body_delay_ms": 300, "wide_positive_timeout": "reproduced", "timeout_scope": "only_timeout_seed", "timeout_seed_ms": 100, "timeout_seed": "rejected", "exit": failed.returncode,
                               "retry_override_false_success_observed": True, "explicit_no_retry_seed": "rejected", "production_override": "refused"}), flush=True)
 
 
