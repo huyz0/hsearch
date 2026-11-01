@@ -36,10 +36,18 @@ def verify_limits(cpu_millis, memory_bytes, pids, *, limits=None, uid=None):
 
 def usage(paths, max_entries=2_000_000):
     total, entries, seen = 0, 0, set()
-    pending = list(paths)
+    pending = [(path, True) for path in paths]
     while pending:
-        directory = pending.pop()
-        with os.scandir(directory) as entries_iter:
+        directory, declared_root = pending.pop()
+        try:
+            entries_iter = os.scandir(directory)
+        except FileNotFoundError:
+            # Compilers remove discovered scratch directories during a sample.
+            # A vanished declared root still means accounting is unavailable.
+            if declared_root:
+                raise
+            continue
+        with entries_iter:
             for entry in entries_iter:
                 entries += 1
                 if entries > max_entries:
@@ -52,7 +60,7 @@ def usage(paths, max_entries=2_000_000):
                     seen.add(identity)
                     total += max(stat.st_size, getattr(stat, "st_blocks", 0) * 512)
                     if entry.is_dir(follow_symlinks=False):
-                        pending.append(entry.path)
+                        pending.append((entry.path, False))
                 except FileNotFoundError:
                     continue
     return total

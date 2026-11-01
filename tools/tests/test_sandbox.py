@@ -347,6 +347,42 @@ class ExecutionControls(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "entry bound"):
                 execute["usage"]([path], max_entries=0)
 
+    def test_disk_scanner_tolerates_a_discovered_directory_deleted_by_the_workload(self):
+        usage = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))["usage"]
+        real_scandir = os.scandir
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transient = root / "rmeta-ephemeral"
+            transient.mkdir()
+            def disappearing(path):
+                if Path(path) == transient:
+                    transient.rmdir()
+                return real_scandir(path)
+            with patch.object(os, "scandir", side_effect=disappearing):
+                self.assertGreaterEqual(usage([root]), 0)
+            self.assertFalse(transient.exists())
+
+    def test_disk_scanner_refuses_a_missing_declared_root(self):
+        usage = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))["usage"]
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(FileNotFoundError):
+                usage([Path(directory) / "absent"])
+
+    def test_disk_scanner_preserves_descendant_permission_failures(self):
+        usage = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))["usage"]
+        real_scandir = os.scandir
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inaccessible = root / "inaccessible"
+            inaccessible.mkdir()
+            def refused(path):
+                if Path(path) == inaccessible:
+                    raise PermissionError("controlled descendant refusal")
+                return real_scandir(path)
+            with patch.object(os, "scandir", side_effect=refused):
+                with self.assertRaisesRegex(PermissionError, "controlled descendant refusal"):
+                    usage([root])
+
     @unittest.skipIf(os.name == "nt", "Linux container filesystem is the symlink target")
     def test_disk_scanner_does_not_follow_a_parent_symlink(self):
         execute = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))
