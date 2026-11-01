@@ -14,13 +14,15 @@ class CatalogModelControls(unittest.TestCase):
     @unittest.skipUnless(platform.system() == 'Linux', 'Fresh-process RSS experiment requires native Linux')
     def test_actual_tenfold_idle_experiment_and_full_scan_timer_counterexamples(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('CARGO_TARGET_DIR')) as directory:
-            report = MODEL['scale_experiment'](Path(directory) / 'evidence', small=100, large=1000, repetitions=3, iterations=10)
+            report = MODEL['scale_experiment'](Path(directory) / 'evidence', small=1000, large=10000, repetitions=3, iterations=20)
             self.assertEqual(len(report['samples']), 18)
-            self.assertEqual([dataset['collection_rows'] for dataset in report['datasets']], [101, 1001])
+            self.assertEqual([dataset['collection_rows'] for dataset in report['datasets']], [1001, 10001])
             self.assertTrue(report['passed'])
             self.assertTrue(report['outcomes']['bounded']['model_gate_passed'])
             self.assertFalse(report['outcomes']['full_scan']['model_gate_passed'])
             self.assertFalse(report['outcomes']['timer_records']['model_gate_passed'])
+            self.assertTrue(report['outcomes']['timer_records']['indexed_plans'])
+            self.assertFalse(report['outcomes']['timer_records']['fixed_selected_work'])
             print(json.dumps({'catalog_model_experiment': report}), flush=True)
 
     def test_fixed_selection_and_metadata_statements_do_not_enumerate_idle_catalog(self):

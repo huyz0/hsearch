@@ -1,6 +1,7 @@
 """Deterministic admission/work accounting model; no network/runtime guarantees."""
 from dataclasses import dataclass, field, fields
 from collections import deque
+import json
 
 
 class Refused(ValueError):
@@ -104,6 +105,7 @@ class Admission:
         self.request_pool = ReservedPool(limits.global_requests, request_shares or {'a': 1, 'b': 1})
         self.rpc_pool = ReservedPool(limits.global_inflight, rpc_shares or {'a': 8, 'b': 8})
         need(set(self.request_pool.used) == set(self.rpc_pool.used), 'inconsistent_tenant_policies')
+        self.receipt_pool = ReservedPool(limits.terminal_receipts, dict.fromkeys(self.request_pool.used, 1))
         self.queue = dict.fromkeys(self.request_pool.used, 0)
         self.requests, self.terminal, self.now, self.sequence = {}, {}, 0, 0
         self.events = deque(maxlen=1024)
@@ -127,11 +129,13 @@ class Admission:
              sum(self.queue.values()) + queued <= self.limits.global_queue_bytes, 'queue_bytes')
         need(len(self.requests) + len(self.terminal) < self.limits.terminal_receipts, 'idempotency_retention')
         self.request_pool.check(tenant)
+        self.receipt_pool.check(tenant)
         number(self.now + deadline_ticks, 2**63 - 1, 'deadline_overflow')
         number(self.sequence + 1, 2**63 - 1, 'request_identity_overflow')
         self.sequence += 1
         identity = 'request-' + str(self.sequence)
         self.request_pool.acquire(tenant)
+        self.receipt_pool.acquire(tenant)
         self.queue[tenant] += queued
         self.requests[identity] = Request(tenant, tuple(selected), queued, self.now + deadline_ticks)
         self.event('admitted', identity, tenant=tenant, selected=len(selected))
@@ -217,6 +221,9 @@ class Admission:
         request = self.request(tenant, identity)
         need(not request.active and request.completed == set(request.selected), 'incomplete_scope')
         result = {'count': {'value': request.count, 'relation': 'eq', 'complete': True}, 'buckets': dict(sorted(request.buckets.items()))}
+        if len(json.dumps(result, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) > self.limits.response_bytes:
+            self._close(identity, 'response_bytes')
+            raise Refused('response_bytes')
         self._close(identity, 'complete')
         return result
 
@@ -227,4 +234,6 @@ class Admission:
         for identity, request in tuple(self.requests.items()):
             if request.deadline <= self.now: self._close(identity, 'deadline')
         for identity, receipt in tuple(self.terminal.items()):
-            if receipt['expires'] <= self.now: del self.terminal[identity]
+            if receipt['expires'] <= self.now:
+                self.receipt_pool.release(receipt['tenant'])
+                del self.terminal[identity]

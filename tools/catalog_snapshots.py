@@ -15,6 +15,7 @@ need, integer, key, Refused = (MODEL[name] for name in ['need', 'integer', 'key'
 
 class MutableCatalog:
     def __init__(self, catalog):
+        catalog.guard_identity()
         self.catalog = catalog
         self.path = catalog.path
         self.connection = sqlite3.connect(self.path.as_uri() + '?mode=rw', uri=True)
@@ -37,6 +38,7 @@ class MutableCatalog:
         return current
 
     def create(self, tenant, collection):
+        self.catalog.guard_identity()
         key(tenant); key(collection)
         try:
             self.connection.execute('BEGIN IMMEDIATE')
@@ -85,6 +87,7 @@ class MutableCatalog:
             self.connection.rollback(); raise
 
     def gc(self, pins, tenant, collection):
+        self.catalog.guard_identity()
         need(pins.catalog.file_identity == self.catalog.file_identity, 'foreign_pin_registry')
         key(tenant); key(collection)
         protected = pins.references(tenant, collection)
@@ -149,12 +152,15 @@ class Pins:
         need(type(keys) in {list, tuple} and len(keys) <= 1024, 'snapshot_key_bound')
         for value in keys: integer(value, 0, MODEL['HASH_SPACE'] - 1, 'document_key')
         need(len(set(keys)) == len(keys), 'duplicate_document_key')
-        need(len(self.prepared) < self.global_limit and sum(view.tenant == tenant for view in self.prepared.values()) < self.tenant_limit, 'prepared_snapshot_quota')
+        reserved = [*self.active.values(), *self.prepared.values()]
+        need(len(reserved) < self.global_limit and sum(view.tenant == tenant for view in reserved) < self.tenant_limit, 'active_snapshot_quota')
         selection = self.catalog.select(tenant, collection)
         frozen = tuple(sorted(keys))
         encoded = json.dumps([tenant, collection, selection.incarnation, selection.generation,
-                              [[route.partition, route.lower, route.upper, route.reader] for route in selection.routes], frozen], separators=(',', ':')).encode()
-        need(len(encoded) <= self.tenant_bytes and len(encoded) <= self.global_bytes, 'snapshot_pin_bytes')
+                              [[route.partition, route.lower, route.upper, route.reader] for route in selection.routes], frozen,
+                              key_generation, self.now + ttl], separators=(',', ':')).encode()
+        need(sum(view.charged_bytes for view in reserved) + len(encoded) <= self.global_bytes and
+             sum(view.charged_bytes for view in reserved if view.tenant == tenant) + len(encoded) <= self.tenant_bytes, 'snapshot_pin_bytes')
         integer(self.now + ttl, 0, 2**63 - 1, 'expiry_overflow')
         integer(self.sequence + 1, 1, 2**63 - 1, 'snapshot_identity_overflow')
         self.sequence += 1

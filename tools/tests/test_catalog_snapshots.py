@@ -116,3 +116,18 @@ class SnapshotModelHistories(unittest.TestCase):
         self.assertIn(token, pins.active)
         with self.assertRaisesRegex(Refused, 'incarnation_changed'): pins.page('synthetic', token)
         self.assertEqual(len(self.writer.gc(pins, 'synthetic', 'hot')), 15)
+
+    def test_prepared_views_reserve_combined_count_and_byte_quotas(self):
+        pins = Pins(self.catalog)
+        one = pins.prepare('synthetic', 'hot', [1])
+        cost = pins.prepared[one].charged_bytes
+        two = pins.prepare('synthetic', 'hot', [2])
+        with self.assertRaisesRegex(Refused, 'active_snapshot_quota'):
+            pins.prepare('synthetic', 'hot', [3])
+        pins.commit('synthetic', one); pins.commit('synthetic', two)
+        self.assertEqual(len(pins.active), 2)
+        bounded = Pins(self.catalog, tenant_bytes=2 * cost - 1, global_bytes=4 * cost - 2)
+        bounded.prepare('synthetic', 'hot', [1])
+        with self.assertRaisesRegex(Refused, 'snapshot_pin_bytes'):
+            bounded.prepare('synthetic', 'hot', [2])
+        self.assertEqual(len(bounded.prepared), 1)

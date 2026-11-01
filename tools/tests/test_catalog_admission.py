@@ -8,6 +8,22 @@ Admission, Limits, Refused = (MODEL[name] for name in ['Admission', 'Limits', 'R
 
 
 class AdmissionModelControls(unittest.TestCase):
+    def test_idle_tenant_receipt_share_survives_cancellation_churn(self):
+        model = Admission(Limits(terminal_receipts=4))
+        for _ in range(3): model.cancel('a', model.reserve('a', [0]))
+        with self.assertRaisesRegex(Refused, 'reserved_capacity'): model.reserve('a', [0])
+        other = model.reserve('b', [0])
+        self.assertEqual(model.receipt_pool.used, {'a': 3, 'b': 1})
+        model.cancel('b', other)
+
+    def test_complete_model_response_bytes_are_checked_without_a_false_exact_result(self):
+        model = Admission(Limits(response_bytes=16))
+        request = model.reserve('a', [0]); model.start_rpc('a', request, 0)
+        model.finish_rpc('a', request, 0, count=1)
+        with self.assertRaisesRegex(Refused, 'response_bytes'): model.complete('a', request)
+        self.assertEqual(model.terminal[request]['reason'], 'response_bytes')
+        self.assertEqual(sum(model.request_pool.used.values()), 0)
+
     def test_total_targets_and_concurrency_are_separate(self):
         model = Admission()
         with self.assertRaisesRegex(Refused, 'selected_partitions'): model.reserve('a', list(range(65)))

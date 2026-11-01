@@ -26,6 +26,7 @@ MAX_CATALOG_BYTES = 128 * 1024**2
 MAX_ROUTES = 128
 IDENTITY_SQL = "SELECT incarnation,generation FROM collections WHERE tenant=? AND name=?"
 ROUTE_SQL = "SELECT partition,lower,upper,reader FROM routes WHERE tenant=? AND name=? AND incarnation=? AND generation=? AND lower<? AND upper>? ORDER BY partition LIMIT ?"
+PAGE_SQL = "SELECT name,incarnation,generation FROM collections WHERE tenant=? AND name>? ORDER BY name LIMIT ?"
 
 
 class Refused(ValueError):
@@ -148,10 +149,14 @@ class Catalog:
         self.close()
 
     def _rows(self, statement, arguments, bound):
+        self.guard_identity()
         rows = self.connection.execute(statement, arguments).fetchmany(bound + 1)
         need(len(rows) <= bound, "Catalog result exceeded admitted row bound")
         self.returned_rows += len(rows)
         return rows
+
+    def guard_identity(self):
+        need((self.path.stat().st_dev, self.path.stat().st_ino) == self.file_identity, 'catalog_replaced')
 
     def page(self, tenant, *, after="", limit=128):
         key(tenant)
@@ -159,7 +164,7 @@ class Catalog:
         if after:
             key(after)
         integer(limit, 1, 1000, "page size")
-        rows = self._rows("SELECT name,incarnation,generation FROM collections WHERE tenant=? AND name>? ORDER BY name LIMIT ?",
+        rows = self._rows(PAGE_SQL,
                           (tenant, after, limit + 1), limit + 1)
         return rows[:limit], rows[limit - 1][0] if len(rows) > limit else None
 
@@ -197,12 +202,12 @@ class Catalog:
                                (tenant, collection, incarnation, generation), 1))
 
 
-def rss_bytes():
+def rss_bytes(field='VmRSS'):
     need(platform.system() == "Linux", "RSS model experiment requires native Linux")
     status = Path('/proc/self/status').read_text(encoding='ascii')
     need(len(status) < 65536, "Process status exceeds bound")
     for line in status.splitlines():
-        if line.startswith('VmRSS:'):
+        if line.startswith(field + ':'):
             value, units = line.split()[1:]
             need(units == 'kB' and value.isdecimal(), "Unknown RSS units")
             return int(value) * 1024
@@ -218,26 +223,33 @@ def probe(path, *, iterations=100, variant='bounded'):
     with Catalog(path) as catalog:
         for _ in range(5): catalog.select('synthetic', 'hot')
         plans = [row[3] for row in catalog.selection_query_plan()]
-        if variant != 'bounded':
+        if variant == 'full_scan':
             plans += [row[3] for row in catalog.connection.execute('EXPLAIN QUERY PLAN SELECT tenant,name FROM collections LIMIT 100001')]
+        elif variant == 'timer_records':
+            plans += [row[3] for row in catalog.connection.execute('EXPLAIN QUERY PLAN ' + PAGE_SQL, ('synthetic', '', 129))]
         catalog.metadata_statements = catalog.returned_rows = 0
         started = time.perf_counter()
         for _ in range(iterations):
             rows_before = catalog.returned_rows
-            if variant != 'bounded':
+            if variant == 'full_scan':
                 retained = catalog._rows('SELECT tenant,name FROM collections LIMIT 100001', (), 100001)
-                if variant == 'timer_records':
-                    # Model allocation only; never spawn a timer/thread per idle collection.
-                    retained = [(tenant, name, 0) for tenant, name in retained]
-                    timer_records = len(retained)
+            elif variant == 'timer_records':
+                # Indexed pages avoid a table SCAN, but per-index bookkeeping is still O(idle catalog).
+                retained, after = [], ''
+                while True:
+                    page, after = catalog.page('synthetic', after=after)
+                    retained.extend(('synthetic', row[0], 0) for row in page)
+                    if after is None: break
+                timer_records = len(retained)  # Model records, never actual threads/timers.
             selected = catalog.select('synthetic', 'hot')
             need(len(selected.routes) == 16, 'Selected work differs from original fixture')
             maximum_rows = max(maximum_rows, catalog.returned_rows - rows_before)
         elapsed = time.perf_counter() - started
         after = rss_bytes()
-        return {'schema_version': 1, 'scope': 'synthetic SQLite model; not hsearch runtime/fleet G01 qualification',
+        return {'schema_version': 2, 'scope': 'synthetic SQLite model; not hsearch runtime/fleet G01 qualification',
                 'variant': variant, 'iterations': iterations, 'selected_partitions': 16,
                 'rss_before_catalog_bytes': before, 'rss_after_hot_work_bytes': after,
+                'peak_process_rss_bytes': rss_bytes('VmHWM'),
                 'sql_statement_attempts': catalog.metadata_statements, 'returned_rows': catalog.returned_rows,
                 'maximum_rows_per_request': maximum_rows, 'timer_model_records': timer_records,
                 'retained_negative_control_rows': len(retained), 'query_plans': plans,
@@ -277,19 +289,19 @@ def scale_experiment(directory, *, small=1000, large=10000, repetitions=3, itera
     outcomes = {}
     for variant in ['bounded', 'full_scan', 'timer_records']:
         groups = [[sample for sample in samples if sample['variant'] == variant and sample['idle_collections'] == idle] for idle in [small, large]]
-        medians = [statistics.median(sample['rss_after_hot_work_bytes'] for sample in group) for group in groups]
+        medians = [statistics.median(sample['peak_process_rss_bytes'] for sample in group) for group in groups]
         ratio = medians[1] / medians[0]
         no_scan = all(all('SEARCH' in plan and 'SCAN' not in plan for plan in sample['query_plans']) for group in groups for sample in group)
         bounded_work = all(sample['maximum_rows_per_request'] == 17 and sample['timer_model_records'] == 0 and
                            sample['sql_statement_attempts'] == iterations * 2 for group in groups for sample in group)
         outcomes[variant] = {'model_gate_passed': no_scan and bounded_work and ratio <= 1.10,
-                             'median_hot_rss_bytes': medians, 'rss_ratio': ratio, 'indexed_plans': no_scan,
+                             'median_peak_process_rss_bytes': medians, 'rss_ratio': ratio, 'indexed_plans': no_scan,
                              'fixed_selected_work': bounded_work}
-    report = {'schema_version': 1, 'scope': 'model evidence only; API G01 remains unobserved for hsearch runtime',
+    report = {'schema_version': 2, 'profile': 'catalog-model-scale-v2', 'scope': 'model evidence only; API G01 remains unobserved for hsearch runtime',
               'model_source_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               'datasets': datasets, 'samples': samples, 'outcomes': outcomes,
               'counts_note': 'SQL statement attempts and returned rows; not object-store or physical page-read attempts',
-              'rss_note': 'Fresh-process absolute hot RSS includes Python/SQLite; raw baseline and repeat noise remain visible',
+              'rss_note': 'Fresh-process peak VmHWM includes Python/SQLite; raw VmRSS baseline, final VmRSS and repeat noise remain visible',
               'passed': outcomes['bounded']['model_gate_passed'] and not outcomes['full_scan']['model_gate_passed'] and not outcomes['timer_records']['model_gate_passed']}
     encoded = json.dumps(report, indent=2).encode('utf-8')
     need(len(encoded) <= 1024**2, 'Model report exceeds bound')
