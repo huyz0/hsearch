@@ -1,6 +1,6 @@
 # Source-bound coverage integration
 
-Current status: [complete M13 native-report successor accepted](evidence/m01-13-integrated.md). Context3/versioned JSON3.1 physical segments and independently rederived raw native receipts are authoritative. Earlier prototype/review/pending stages below are historical provenance; original failed gates remain frozen. M08/runtime are unaccepted.
+Current status: [complete M13 native-report successor accepted](evidence/m01-13-integrated.md). Context3/versioned JSON3.1 physical segments and independently rederived raw native receipts are authoritative. Earlier prototype/review/pending stages below are historical provenance; original failed gates remain frozen. M08.01's [typed contract/facade is accepted](evidence/m08-01-integrated.md); SDK/exporter/runtime remain unimplemented.
 
 Historical M12 prototype status before accepted M13: private and unaccepted. M01.11's [source-proof component](source-proof.md) is [accepted](evidence/m01-11-integrated.md). Original M01.07 remains blocked at its hard third round. Reused collector machinery is subject to full independent review of this redesigned integration and every [retained original finding](evidence/m01-07-review-history.json); its old gate is never cleared or reset.
 
