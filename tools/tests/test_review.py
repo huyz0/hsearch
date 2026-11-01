@@ -19,9 +19,12 @@ Refused = API["Refused"]
 
 class SchemaControls(unittest.TestCase):
     def test_risk_routing_is_derived_from_actual_paths_and_unknown_code_is_sensitive(self):
-        self.assertEqual(API["routes"](["docs/usage.md"]), ["correctness_tests_claims"])
+        with patch.dict(API["routes"].__globals__, NARRATIVE_DOCS=frozenset({"docs/known-narrative.md"})):
+            self.assertEqual(API["routes"](["docs/known-narrative.md"]), ["correctness_tests_claims"])
+            self.assertIn("architecture_security", API["routes"](["docs/known-narrative.md", "docs/unknown.md"]))
         for path in ("tools/review.py", "crates/types/src/lib.rs", "docs/plan/security.md", ".github/workflows/native.yml", "new_unknown_file",
-                     "docs/plan/tools/plan.py", "docs/plan/tasks.json", "docs/generated.rs", "docs/plan/review-gates.md", "docs/plan/sandbox.md", "docs/sandbox.md"):
+                     "docs/plan/tools/plan.py", "docs/plan/tasks.json", "docs/generated.rs", "docs/plan/review-gates.md", "docs/plan/sandbox.md", "docs/sandbox.md",
+                     "docs/usage.md", "docs/authentication.md", "docs/access-control.md", "docs/contracts/durability.md", "docs/operating-profiles.md", "docs/new_contract.txt"):
             self.assertIn("architecture_security", API["routes"]([path]))
 
 
@@ -213,9 +216,30 @@ class ProtocolControls(unittest.TestCase):
             check["head"] = self.git("rev-parse", "HEAD")
         with self.assertRaisesRegex(Refused, "original task base"):
             self.store.begin("M01.05", repair, "implementer", {"correctness_tests_claims": self.reviewers["correctness_tests_claims"]}, self.checks, "Attempted narrower base")
+        # Positively approve only this fixture's narrative to exercise the
+        # cumulative floor even when current paths would otherwise be lighter.
+        with patch.dict(API["routes"].__globals__, NARRATIVE_DOCS=frozenset({"docs/notes.md"})):
+            with self.assertRaisesRegex(Refused, "Required reviewers"):
+                self.begin(reviewers={"correctness_tests_claims": self.reviewers["correctness_tests_claims"]})
+            self.assertEqual(set(self.begin()["packet"]["required_roles"]), set(self.reviewers))
+
+    def test_new_behavioral_markdown_cannot_begin_or_gate_with_only_one_review(self):
+        path = self.root / "docs/authentication.md"
+        path.write_text("Require the exact configured token.\n", encoding="utf-8", newline="\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "baseline authentication contract")
+        base = self.git("rev-parse", "HEAD")
+        path.write_text("Accept any bearer token.\n", encoding="utf-8", newline="\n")
+        self.git("commit", "-qam", "seed behavioral documentation downgrade")
+        for check in self.checks:
+            check["head"] = self.git("rev-parse", "HEAD")
         with self.assertRaisesRegex(Refused, "Required reviewers"):
-            self.begin(reviewers={"correctness_tests_claims": self.reviewers["correctness_tests_claims"]})
-        self.assertEqual(set(self.begin()["packet"]["required_roles"]), set(self.reviewers))
+            self.store.begin("M01.05", base, "implementer", {"correctness_tests_claims": self.reviewers["correctness_tests_claims"]}, self.checks, "Only a document changed")
+        packet = self.store.begin("M01.05", base, "implementer", self.reviewers, self.checks, "Review the actual behavioral contract")
+        self.assertEqual(packet["packet"]["round"], 1)
+        self.store.record(self.verdict(packet, "correctness_tests_claims"))
+        with self.assertRaisesRegex(Refused, "missing/pending"):
+            self.store.gate("M01.05", self.checks)
 
     def test_previous_implementer_cannot_become_an_independent_follow_up_reviewer(self):
         self.begin()

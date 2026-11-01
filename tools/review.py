@@ -18,6 +18,9 @@ need, Refused, encoded = TASK["need"], TASK["Refused"], TASK["encoded"]
 SANDBOX = TASK["SANDBOX"]
 HARD_CEILING, PLANNED_ROUNDS = 3, 2
 ROLES = {"correctness_tests_claims", "architecture_security"}
+# No standalone narrative paths have been approved for reduced routing yet.
+# Future exact-path exceptions require an independently reviewed policy change.
+NARRATIVE_DOCS = frozenset()
 
 
 def schema(name, value):
@@ -26,11 +29,11 @@ def schema(name, value):
 
 
 def routes(paths):
-    # Unknown/non-documentation changes fail toward the additional risk review.
-    sensitive = ("architecture", "security", "api-", "replication", "engineering-standards", "ci-testing", "review-gates", "task-runner", "ai-harness", "context-navigation", "sandbox")
-    ordinary_docs = all(path.casefold().startswith("docs/") and not path.casefold().startswith("docs/plan/") and
-                        Path(path).suffix.casefold() in {".md", ".txt"} and
-                        not any(word in path.casefold() for word in sensitive) for path in paths)
+    # A suffix or filename cannot establish that a document is nonbehavioral.
+    # Unknown Markdown receives the additional review just like unknown code.
+    ordinary_docs = bool(paths) and all(path in NARRATIVE_DOCS and path.startswith("docs/") and
+                        not path.casefold().startswith("docs/plan/") and Path(path).suffix.casefold() in {".md", ".txt"}
+                        for path in paths)
     return ["correctness_tests_claims"] + ([] if ordinary_docs else ["architecture_security"])
 
 
