@@ -16,12 +16,14 @@
   "files": {
     "documents.json": "5d96ef5b991a66d2757bbc8e1bf5feaba02d2a3a29343a6327b88f1d30517f04",
     "schema.json": "38e6c912a21e096ea0ff0388c9045bd430a36026f967030bee28d6c2c89f173f",
-    "search-cases.json": "a3821063be9370214c901cfcfd5fc9d8398b2e3cea9f0bc7af632bb696cc7bf3",
-    "analyzer-cases.json": "1d759273809ab7951901e7d0dc3f197881f0e633d1bb324a76aaf59795102756"
+    "search-cases.json": "825496fcf3992caa4357ba869b2282644d42963a26ba26e378bc901fd99466d1",
+    "analyzer-cases.json": "1d759273809ab7951901e7d0dc3f197881f0e633d1bb324a76aaf59795102756",
+    "mutation-cases.json": "78450f10dab308e53ac932e658caf5881a160e3d257510779830ba5dfdce789c",
+    "profile-cases.json": "db09d6a5d8215e9209100df1d0c6f749347399637aba3e45690e4ea7942e8e5d"
   },
   "missing": [
     "The pinned user OpenSearch fork/serverless request tests are available and selectively inspected; current application-specific client/proxy configuration and private representative traces/datasets have not been supplied or identified.",
-    "CRUD/bulk mutation histories, native receipt/OCC/visibility/pagination/admission properties and unsupported request fixtures remain to be added.",
+    "Mutation/reference histories and all16 native-property/unsupported input records exist; actual mutation execution, native property execution and final controller qualification remain pending.",
     "Exploratory local reference search/analyzer observations exist separately; portable/native controller qualification, client execution and native adapter/service conformance remain pending."
   ],
   "constraints": [

@@ -1,0 +1,623 @@
+[
+  {
+    "area": "A01",
+    "profile_class": "difference",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "unknown_indexed_field": "unadvertised",
+      "field_count_limit": 4,
+      "field_count": 5
+    },
+    "independent_oracle": {
+      "typed_refusal": true,
+      "silent_coercion": false,
+      "automatic_field_growth": false
+    },
+    "reference_case_ids": [
+      "strict-unknown-field"
+    ],
+    "unsupported_requests": [],
+    "alternatives": "Schema migration creates a new generation and a bounded alias cutover; unindexed source-only attributes remain retrievable, not searchable.",
+    "owning_tasks": [
+      "M03.03",
+      "M06.05"
+    ]
+  },
+  {
+    "area": "A02",
+    "profile_class": "subset",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "tenant": "t1",
+      "collection_incarnation": "c1",
+      "id": "001",
+      "actions": [
+        "create",
+        "lose_reply",
+        "retry_same_identity",
+        "delete",
+        "recreate_collection"
+      ]
+    },
+    "independent_oracle": {
+      "latest_get_stale_success": false,
+      "old_incarnation_write": false,
+      "retry_changes_committed_identity": false
+    },
+    "reference_case_ids": [
+      "stable-id-crud",
+      "create-conflict",
+      "generated-id-adaptation"
+    ],
+    "unsupported_requests": [],
+    "alternatives": "Native /v1 document operations expose explicit receipts and read modes.",
+    "owning_tasks": [
+      "M04.03",
+      "M06.05",
+      "M07.03"
+    ]
+  },
+  {
+    "area": "A03",
+    "profile_class": "subset",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "ordered_ids": [
+        "001",
+        "001",
+        "002"
+      ],
+      "max_items": 2,
+      "max_request_bytes": 128,
+      "structural_bad_tail": "{\"index\":\n"
+    },
+    "independent_oracle": {
+      "limit_plus_one_admitted": false,
+      "bad_tail_commits": 0,
+      "semantic_errors_erase_other_receipts": false
+    },
+    "reference_case_ids": [
+      "bulk-semantic-isolation",
+      "bulk-repeated-id-order",
+      "bulk-malformed-tail"
+    ],
+    "unsupported_requests": [],
+    "alternatives": "Large imports use bounded batches and resumable import jobs; retries use stable IDs/idempotency keys. Any later native allocated-ID profile must bound idempotency state and specify lost-reply recovery.",
+    "owning_tasks": [
+      "M04.03",
+      "M06.05",
+      "M07.03"
+    ]
+  },
+  {
+    "area": "A04",
+    "profile_class": "difference",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "tenant": "t1",
+      "incarnation": "c1",
+      "id": "001",
+      "actions": [
+        "capture_v1",
+        "replace_v2",
+        "replay_v1",
+        "recreate_c2",
+        "replay_c1_token"
+      ]
+    },
+    "independent_oracle": {
+      "stale_token_commits": 0,
+      "cross_tenant_token_commits": 0,
+      "old_incarnation_token_commits": 0
+    },
+    "reference_case_ids": [
+      "stale-occ-condition"
+    ],
+    "unsupported_requests": [],
+    "alternatives": "Read a native version token and submit conditional replace/delete; an adapter translates only a separately proved mode.",
+    "owning_tasks": [
+      "M04.03",
+      "M06.05",
+      "M07.03"
+    ]
+  },
+  {
+    "area": "A05",
+    "profile_class": "difference",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "id": "001",
+      "durability": "selected_profile",
+      "visibility_wait_ms": 1,
+      "event": "commit_then_visibility_timeout"
+    },
+    "independent_oracle": {
+      "committed_receipt_retained": true,
+      "rollback_claim": false,
+      "retry_creates_new_identity": false
+    },
+    "reference_case_ids": [
+      "forced-refresh-adaptation"
+    ],
+    "unsupported_requests": [
+      {
+        "method": "PUT",
+        "path": "/{index}/_doc/001?refresh=true",
+        "json": {
+          "uid": "001",
+          "tenant": "acct-a",
+          "category": "book",
+          "title": "Original public fixture",
+          "price": 10,
+          "active": true,
+          "created_at": "2026-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "alternatives": "Use at_least(receipt) or native visibility wait, and a versioned object/quorum durability profile. Maintenance is an admitted job, not per-write segment forcing.",
+    "owning_tasks": [
+      "M06.05",
+      "M07.05",
+      "M09.08"
+    ]
+  },
+  {
+    "area": "A06",
+    "profile_class": "subset",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "query_clause_limit": 2,
+      "clauses": 3,
+      "unknown_operator": "unadvertised_query",
+      "rank_mode": "shard_local_bm25"
+    },
+    "independent_oracle": {
+      "over_limit_evaluated": false,
+      "unknown_operator_empty_success": false,
+      "bit_identical_global_score_claim": false
+    },
+    "reference_case_ids": [
+      "match-all",
+      "keyword-term",
+      "keyword-terms",
+      "integer-range",
+      "integer-threshold-bool",
+      "standard-match",
+      "standard-phrase",
+      "standard-accent-preserved",
+      "analyzed-text-term-is-case-sensitive",
+      "bounded-field-sort",
+      "date-range",
+      "local-bm25-ranking-order"
+    ],
+    "unsupported_requests": [
+      {
+        "method": "POST",
+        "path": "/{index}/_search",
+        "json": {
+          "query": {
+            "unadvertised_query": {}
+          }
+        }
+      }
+    ],
+    "alternatives": "Typed native query IR and capability discovery; global-statistics scoring is a later budgeted profile if justified.",
+    "owning_tasks": [
+      "M02.02",
+      "M04.01",
+      "M07.04"
+    ]
+  },
+  {
+    "area": "A07",
+    "profile_class": "difference",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "snapshot_symbols": [
+        "s1",
+        "s2"
+      ],
+      "ttl_ms": 1,
+      "snapshot_quota": 1,
+      "actions": [
+        "pin_s1",
+        "mutate",
+        "split",
+        "repeat_page",
+        "expire_s1",
+        "replay_s1"
+      ]
+    },
+    "independent_oracle": {
+      "new_data_under_old_cursor": false,
+      "expired_snapshot_success": false,
+      "quota_plus_one_admitted": false,
+      "global_serializable_timestamp_claim": false
+    },
+    "reference_case_ids": [
+      "pit-mutation-repeat-pages"
+    ],
+    "unsupported_requests": [],
+    "alternatives": "POST /v1/search-snapshots and cursor pages; bulk export uses resumable jobs. Tokens pin routing/catalog and per-partition reader generations.",
+    "owning_tasks": [
+      "M07.05",
+      "M10.01"
+    ]
+  },
+  {
+    "area": "A08",
+    "profile_class": "difference",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "known_total": 11,
+      "count_budget": 2,
+      "requested_mode": "lower_bound"
+    },
+    "independent_oracle": {
+      "exact_value_if_complete": 11,
+      "allowed_lower_bound_min": 2,
+      "allowed_lower_bound_max": 11,
+      "incomplete_reported_exact": false
+    },
+    "reference_case_ids": [
+      "bounded-total-hit-relation"
+    ],
+    "unsupported_requests": [],
+    "alternatives": "Budgeted count requests or resumable snapshot count jobs; relation/completeness fields state what was established.",
+    "owning_tasks": [
+      "M06.05",
+      "M07.04"
+    ]
+  },
+  {
+    "area": "A09",
+    "profile_class": "difference",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "counts": {
+        "book": 7,
+        "music": 2,
+        "tool": 2
+      },
+      "bucket_budget": 2,
+      "requested_mode": "exact_terms"
+    },
+    "independent_oracle": {
+      "silent_truncation": false,
+      "invented_error_bound": false,
+      "key_order_substitutes_global_count_top_k": false
+    },
+    "reference_case_ids": [
+      "finite-metrics",
+      "finite-key-ordered-terms"
+    ],
+    "unsupported_requests": [],
+    "alternatives": "Key-ordered snapshot group pages or admitted materialized views. Key order is not a substitute for global count-descending top-k.",
+    "owning_tasks": [
+      "M07.04",
+      "M07.08"
+    ]
+  },
+  {
+    "area": "A10",
+    "profile_class": "unsupported",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "query": {
+        "nested": {
+          "path": "children",
+          "query": {
+            "term": {
+              "children.color": "blue"
+            }
+          }
+        }
+      }
+    },
+    "independent_oracle": {
+      "typed_unsupported": true,
+      "join_equivalence_claim": false
+    },
+    "reference_case_ids": [],
+    "unsupported_requests": [
+      {
+        "method": "POST",
+        "path": "/{index}/_search",
+        "json": {
+          "query": {
+            "nested": {
+              "path": "children",
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/{index}/_search",
+        "json": {
+          "query": {
+            "has_child": {
+              "type": "child",
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        }
+      }
+    ],
+    "alternatives": "Denormalized search documents, precomputed views or explicitly bounded application-side key lookups; these change the data model and are not equivalent joins.",
+    "owning_tasks": [
+      "M02.01",
+      "M07.04"
+    ]
+  },
+  {
+    "area": "A11",
+    "profile_class": "unsupported",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "update": {
+        "script": {
+          "source": "ctx._source.price += params.delta",
+          "params": {
+            "delta": 1
+          }
+        }
+      },
+      "client_transform_attempt_limit": 2
+    },
+    "independent_oracle": {
+      "server_executes_user_code": false,
+      "before_mutation_refusal": true,
+      "native_patch_implicitly_implemented": false
+    },
+    "reference_case_ids": [],
+    "unsupported_requests": [
+      {
+        "method": "POST",
+        "path": "/{index}/_update/001",
+        "json": {
+          "doc": {
+            "price": 11
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/{index}/_search",
+        "json": {
+          "query": {
+            "script": {
+              "script": {
+                "source": "doc['price'].value > 10"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "alternatives": "Typed client-side transforms and precomputed indexed fields; future bounded declarative transforms require replay determinism and CPU budgets.",
+    "owning_tasks": [
+      "M04.03",
+      "M06.05"
+    ]
+  },
+  {
+    "area": "A12",
+    "profile_class": "unsupported",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "requested_features": [
+        "knn",
+        "sql",
+        "arbitrary_plugin"
+      ]
+    },
+    "independent_oracle": {
+      "advertised_as_implemented": false,
+      "silent_fallback_success": false
+    },
+    "reference_case_ids": [],
+    "unsupported_requests": [
+      {
+        "method": "POST",
+        "path": "/_plugins/_sql",
+        "json": {
+          "query": "SELECT uid FROM fixtures"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/{index}/_search",
+        "json": {
+          "query": {
+            "knn": {
+              "embedding": {
+                "vector": [
+                  1,
+                  0
+                ],
+                "k": 2
+              }
+            }
+          }
+        }
+      }
+    ],
+    "alternatives": "Separate opt-in modules/profiles only after workload value, engine capability, recall/quality, resource and cost evidence; use external analytics where appropriate.",
+    "owning_tasks": [
+      "M02.01",
+      "M14.01",
+      "M16.06"
+    ]
+  },
+  {
+    "area": "A13",
+    "profile_class": "difference",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "logical_id": "tenant-a/docs/001",
+      "routing_generation": 1,
+      "next_generation": 2,
+      "actions": [
+        "capture_route",
+        "split",
+        "send_stale_route"
+      ]
+    },
+    "independent_oracle": {
+      "logical_mutation_identity_changed": false,
+      "stale_hint_grants_authority": false,
+      "fixed_physical_shard_contract": false
+    },
+    "reference_case_ids": [],
+    "unsupported_requests": [
+      {
+        "method": "PUT",
+        "path": "/{index}",
+        "json": {
+          "settings": {
+            "number_of_shards": 32
+          }
+        }
+      }
+    ],
+    "alternatives": "Native topology policy, bounded paged catalog and online split/cutover jobs; routing hints never grant authority or replace tenant authorization.",
+    "owning_tasks": [
+      "M02.08",
+      "M13.01",
+      "M07.03",
+      "M13.03"
+    ]
+  },
+  {
+    "area": "A14",
+    "profile_class": "unsupported",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "catalog_ids": [
+        "c1",
+        "c2",
+        "c3"
+      ],
+      "page_limit": 2,
+      "maintenance_scope_limit": 2
+    },
+    "independent_oracle": {
+      "whole_cluster_catalog_response": false,
+      "all_partition_maintenance_without_admission": false,
+      "invented_replica_status": false
+    },
+    "reference_case_ids": [],
+    "unsupported_requests": [
+      {
+        "method": "GET",
+        "path": "/_cluster/state"
+      },
+      {
+        "method": "GET",
+        "path": "/_cat/indices?format=json"
+      },
+      {
+        "method": "POST",
+        "path": "/{index}/_forcemerge"
+      }
+    ],
+    "alternatives": "Bounded authorized /v1 diagnostics, paginated catalog, admitted maintenance and native snapshot/export/copy contracts.",
+    "owning_tasks": [
+      "M08.03",
+      "M10.01",
+      "M16.01"
+    ]
+  },
+  {
+    "area": "A15",
+    "profile_class": "unsupported",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "index_expression": "remote:docs",
+      "requested_mode": "synchronous_federation"
+    },
+    "independent_oracle": {
+      "typed_unsupported": true,
+      "remote_rpc_attempts": 0,
+      "independent_copy_or_ccr_removed": false
+    },
+    "reference_case_ids": [],
+    "unsupported_requests": [
+      {
+        "method": "POST",
+        "path": "/remote:{index}/_search",
+        "json": {
+          "query": {
+            "match_all": {}
+          }
+        }
+      }
+    ],
+    "alternatives": "Replicate/copy into a local read model; a future federation profile must price remote failure, latency and fanout separately.",
+    "owning_tasks": [
+      "M10.01",
+      "M11.01",
+      "M12.01"
+    ]
+  },
+  {
+    "area": "A16",
+    "profile_class": "difference",
+    "execution_target": "future_hsearch_conformance",
+    "wire_abi_frozen": false,
+    "native_property_input": {
+      "implemented_operations": [
+        "get"
+      ],
+      "advertised_operations": [
+        "get",
+        "nested_query"
+      ],
+      "unknown_parameter": "unadvertised_option"
+    },
+    "independent_oracle": {
+      "accept_false_advertisement": false,
+      "unknown_parameter_ignored": false,
+      "universal_sdk_compatibility_claim": false
+    },
+    "reference_case_ids": [],
+    "unsupported_requests": [
+      {
+        "method": "POST",
+        "path": "/{index}/_search?unadvertised_option=true",
+        "json": {
+          "query": {
+            "match_all": {}
+          }
+        }
+      }
+    ],
+    "alternatives": "A versioned thin adapter/SDK maps tested requests and documents required application changes; no universal drop-in claim.",
+    "owning_tasks": [
+      "M06.05",
+      "M07.06",
+      "M16.01"
+    ]
+  }
+]

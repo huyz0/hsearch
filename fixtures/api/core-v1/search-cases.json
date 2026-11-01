@@ -532,5 +532,45 @@
       }
     },
     "adaptation": "Reference baseline for bounded native metrics/group semantics; no universal aggregation DSL compatibility."
+  },
+  {
+    "id": "local-bm25-ranking-order",
+    "area": "A06",
+    "profile_class": "subset",
+    "request": {
+      "method": "POST",
+      "path": "/{index}/_search",
+      "json": {
+        "size": 100,
+        "track_total_hits": true,
+        "sort": [
+          {
+            "_score": "desc"
+          },
+          {
+            "uid": "asc"
+          }
+        ],
+        "_source": [
+          "uid"
+        ],
+        "query": {
+          "match": {
+            "title": "brown fox"
+          }
+        }
+      }
+    },
+    "reference_oracle": {
+      "kind": "hits",
+      "ids": [
+        "009",
+        "001",
+        "004",
+        "003",
+        "011"
+      ],
+      "exact_total": 5
+    }
   }
 ]
