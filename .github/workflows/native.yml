@@ -62,3 +62,16 @@ jobs:
       - name: Qualify real semantic corpus, worktree isolation and whole fixture costs
         if: ${{ inputs.mode == 'sandbox' }}
         run: python3 tools/navigation_corpus.py --state-root "${{ runner.temp }}/hsearch-leases" --evidence-parent "${{ runner.temp }}/hsearch-navigation"
+      - name: Qualify pinned public reference corpus and isolated cleanup
+        if: ${{ inputs.mode == 'sandbox' }}
+        run: python3 tools/reference.py --state-root "${{ runner.temp }}/hsearch-leases" --evidence-parent "${{ runner.temp }}/hsearch-api-reference"
+      - name: Preserve only public reference observations and failure evidence
+        if: ${{ always() && inputs.mode == 'sandbox' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2, MIT, node24
+        with:
+          name: api-reference-${{ inputs.runner }}-${{ github.run_id }}
+          # Never upload the shared lease/snapshot directory: it has TLS keys.
+          path: ${{ runner.temp }}/hsearch-api-reference
+          retention-days: 3
+          include-hidden-files: false
+          if-no-files-found: error

@@ -44,10 +44,10 @@ No hsearch redistribution license has been selected. Public GitHub visibility pe
 
 ## Continue delivery
 
-Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02 and M01.06 impact CI are integrated. Owned task/recovery and bounded semantic context are integrated. M01.05 durable review is in review; complete generic coverage and the frozen agent/concurrent recovery corpus remain required. The broader engine/storage/security/search/replication/provider work remains M02-M17. Keep the original acceptance criteria; bootstrap/sandbox success cannot close those milestones.
+Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02 and M01.06 impact CI are integrated. Owned task/recovery and bounded semantic context are integrated. M01.05 durable review is integrated; complete generic coverage and the frozen agent/concurrent recovery corpus remain required. The broader engine/storage/security/search/replication/provider work remains M02-M17. Keep the original acceptance criteria; bootstrap/sandbox success cannot close those milestones.
 
 API-dependent work follows integrated [core-v1](api-compatibility.md) and [engineering standards](engineering-standards.md). M01.03 is integrated; its [runner interface](task-runner.md) and [qualification record](evidence/m01-03-integrated.md) remain distinct from M01.04 semantic navigation and later harness gates. Run `python tools/api_contract.py check` alongside workspace/plan checks.
 
 M01.04 development interface and qualification are documented in [source-bound context and navigation](context-navigation.md). Its corpus is a development harness check, separate from product and M01.08 agent qualification.
 
-M01.05's [independent review gate](review-gates.md) is implemented locally and undergoing qualification; it does not submit formal GitHub reviews or grant merge permission.
+M01.05's [independent review gate](review-gates.md) is integrated with [complete protocol qualification](evidence/m01-05-integrated.md); it does not submit formal GitHub reviews or grant merge permission. M01.09's original ARM cold-navigation cause remains open despite the integrated diagnostic increment and subsequent green native runs; M01.08 remains blocked.

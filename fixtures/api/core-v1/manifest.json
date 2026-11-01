@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "status": "fixture inventory; execution evidence is recorded separately",
+  "hsearch_runtime_implemented": false,
+  "reference": {
+    "server_version": "3.9.0",
+    "server_revision": "4ee42a94e87f66fbf1e62a9871b1b87f91e02472",
+    "client_version": "3.2.0",
+    "client_revision": "8991792d3fcdfc221c9aef62d7e82c3d15ff0206",
+    "image_index": "sha256:3b55f6b6249cfdb92b52ee59adc8a266203ba9ef9f5d82544fad6f1af2f3609e",
+    "linux_amd64": "sha256:5c20af6b5cb472a74ba99f663bee3dd03afbeced14b3897b220a87fc75278445",
+    "linux_arm64": "sha256:bbdf65cb3d35c61a8ba495f22c1a42d7d7f0df23412e3419bf1e6cfca3ba4774",
+    "source_license": "Apache-2.0; no dependency source or binary is vendored"
+  },
+  "profile_sha256": "7f4e729404b38dabd1090da78543f0398a2732ab8a1bd9254e0f5cc9ed354a5a",
+  "files": {
+    "documents.json": "5d96ef5b991a66d2757bbc8e1bf5feaba02d2a3a29343a6327b88f1d30517f04",
+    "schema.json": "38e6c912a21e096ea0ff0388c9045bd430a36026f967030bee28d6c2c89f173f",
+    "search-cases.json": "825496fcf3992caa4357ba869b2282644d42963a26ba26e378bc901fd99466d1",
+    "analyzer-cases.json": "1d759273809ab7951901e7d0dc3f197881f0e633d1bb324a76aaf59795102756",
+    "mutation-cases.json": "78450f10dab308e53ac932e658caf5881a160e3d257510779830ba5dfdce789c",
+    "profile-cases.json": "db09d6a5d8215e9209100df1d0c6f749347399637aba3e45690e4ea7942e8e5d"
+  },
+  "missing": [
+    "The pinned user OpenSearch fork/serverless request tests are available and selectively inspected; current application-specific client/proxy configuration and private representative traces/datasets have not been supplied or identified.",
+    "Mutation/reference histories and all16 native-property/unsupported input records exist; actual mutation execution, native property execution and final controller qualification remain pending.",
+    "Exploratory local reference search/analyzer observations exist separately; portable/native controller qualification, client execution and native adapter/service conformance remain pending."
+  ],
+  "constraints": [
+    "Original public toy documents; no private user workload or copied reference responses.",
+    "The tenant field is sample data, not an authorization/isolation proof.",
+    "Scores are not compared bit for bit; selected document IDs/counts and bounded sort order have independent manually enumerated oracles.",
+    "The fixture standard analyzer is an exact reference configuration candidate; it does not freeze the eventual hsearch analyzer profile or prove engine equivalence."
+  ]
+}

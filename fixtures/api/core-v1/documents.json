@@ -1,0 +1,134 @@
+[
+  {
+    "id": "001",
+    "source": {
+      "uid": "001",
+      "tenant": "acct-a",
+      "category": "book",
+      "title": "Quick brown fox",
+      "price": 10,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "002",
+    "source": {
+      "uid": "002",
+      "tenant": "acct-a",
+      "category": "book",
+      "title": "The quick blue hare",
+      "price": 20,
+      "active": false,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "003",
+    "source": {
+      "uid": "003",
+      "tenant": "acct-a",
+      "category": "music",
+      "title": "Slow brown bear",
+      "price": 30,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "004",
+    "source": {
+      "uid": "004",
+      "tenant": "acct-b",
+      "category": "book",
+      "title": "Quick brown fox jumps",
+      "price": 15,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "005",
+    "source": {
+      "uid": "005",
+      "tenant": "acct-b",
+      "category": "tool",
+      "title": "Blue steel hammer",
+      "price": 25,
+      "active": false,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "006",
+    "source": {
+      "uid": "006",
+      "tenant": "acct-c",
+      "category": "tool",
+      "title": "Red steel saw",
+      "price": 35,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "007",
+    "source": {
+      "uid": "007",
+      "tenant": "acct-c",
+      "category": "book",
+      "title": "Quiet northern lake",
+      "price": 40,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "008",
+    "source": {
+      "uid": "008",
+      "tenant": "acct-c",
+      "category": "music",
+      "title": "Blue moon rises",
+      "price": 50,
+      "active": false,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "009",
+    "source": {
+      "uid": "009",
+      "tenant": "acct-d",
+      "category": "book",
+      "title": "Brown fox brown fox",
+      "price": 5,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "010",
+    "source": {
+      "uid": "010",
+      "tenant": "acct-d",
+      "category": "book",
+      "title": "",
+      "price": 0,
+      "active": false,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "011",
+    "source": {
+      "uid": "011",
+      "tenant": "acct-d",
+      "category": "book",
+      "title": "QUICK café fox",
+      "price": 10,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  }
+]

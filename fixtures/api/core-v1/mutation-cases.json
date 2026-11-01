@@ -1,0 +1,878 @@
+[
+  {
+    "id": "stable-id-crud",
+    "area": "A02",
+    "profile_class": "subset",
+    "intent": "matching_target",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/stable",
+          "json": {
+            "uid": "stable",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 10,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 201,
+          "fields": {
+            "/result": "created",
+            "/_id": "stable"
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/stable"
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/found": true,
+            "/_source": {
+              "uid": "stable",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 10,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/stable",
+          "json": {
+            "uid": "stable",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Replacement",
+            "price": 20,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/result": "updated"
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/stable"
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/found": true,
+            "/_source": {
+              "uid": "stable",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Replacement",
+              "price": 20,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "DELETE",
+          "path": "/{index}/_doc/stable"
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/result": "deleted"
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/stable"
+        },
+        "expect": {
+          "status": 404,
+          "fields": {
+            "/found": false
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "DELETE",
+          "path": "/{index}/_doc/stable"
+        },
+        "expect": {
+          "status": 404,
+          "fields": {
+            "/result": "not_found"
+          }
+        }
+      }
+    ],
+    "native_target": "Stable identity and authoritative latest GET; native receipt/version extensions are separate."
+  },
+  {
+    "id": "create-conflict",
+    "area": "A02",
+    "profile_class": "subset",
+    "intent": "matching_target",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_create/stable",
+          "json": {
+            "uid": "stable",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 10,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 201,
+          "fields": {
+            "/result": "created"
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_create/stable",
+          "json": {
+            "uid": "stable",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 99,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 409,
+          "error_required": true
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/stable"
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/_source": {
+              "uid": "stable",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 10,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          }
+        }
+      }
+    ],
+    "native_target": "Create conflict cannot replace the existing document."
+  },
+  {
+    "id": "strict-unknown-field",
+    "area": "A01",
+    "profile_class": "difference",
+    "intent": "intentional_difference",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/bad",
+          "json": {
+            "uid": "bad",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 10,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z",
+            "unadvertised": 1
+          }
+        },
+        "expect": {
+          "status": 400,
+          "error_required": true
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/bad"
+        },
+        "expect": {
+          "status": 404,
+          "fields": {
+            "/found": false
+          }
+        }
+      }
+    ],
+    "native_target": "Explicit schema refuses unknown indexed fields before mutation."
+  },
+  {
+    "id": "bulk-semantic-isolation",
+    "area": "A03",
+    "profile_class": "subset",
+    "intent": "matching_target",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/_bulk",
+          "ndjson_lines": [
+            {
+              "index": {
+                "_index": "{index}",
+                "_id": "bad"
+              }
+            },
+            {
+              "uid": "bad",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": "not-an-integer",
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            },
+            {
+              "index": {
+                "_index": "{index}",
+                "_id": "good"
+              }
+            },
+            {
+              "uid": "good",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 10,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          ]
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/errors": true,
+            "/items/0/index/status": 400,
+            "/items/1/index/status": 201
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/bad"
+        },
+        "expect": {
+          "status": 404,
+          "fields": {
+            "/found": false
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/good"
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/_source": {
+              "uid": "good",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 10,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          }
+        }
+      }
+    ],
+    "native_target": "Per-item semantic failure preserves successful receipts in submitted order; no cross-item transaction."
+  },
+  {
+    "id": "bulk-repeated-id-order",
+    "area": "A03",
+    "profile_class": "subset",
+    "intent": "matching_target",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/_bulk",
+          "ndjson_lines": [
+            {
+              "index": {
+                "_index": "{index}",
+                "_id": "same"
+              }
+            },
+            {
+              "uid": "same",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 1,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            },
+            {
+              "index": {
+                "_index": "{index}",
+                "_id": "same"
+              }
+            },
+            {
+              "uid": "same",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 2,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            },
+            {
+              "create": {
+                "_index": "{index}",
+                "_id": "same"
+              }
+            },
+            {
+              "uid": "same",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 3,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            },
+            {
+              "delete": {
+                "_index": "{index}",
+                "_id": "absent"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/errors": true,
+            "/items/0/index/status": 201,
+            "/items/1/index/status": 200,
+            "/items/2/create/status": 409,
+            "/items/3/delete/status": 404
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/same"
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/_source": {
+              "uid": "same",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 2,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          }
+        }
+      }
+    ],
+    "native_target": "Response order and per-document mutation order are preserved."
+  },
+  {
+    "id": "bulk-malformed-tail",
+    "area": "A03",
+    "profile_class": "subset",
+    "intent": "matching_target",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/_bulk",
+          "ndjson_lines": [
+            {
+              "index": {
+                "_index": "{index}",
+                "_id": "before-tail"
+              }
+            },
+            {
+              "uid": "before-tail",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 10,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          ],
+          "raw_tail": "{\"index\":\n"
+        },
+        "expect": {
+          "status": 400,
+          "error_required": true
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/before-tail"
+        },
+        "expect": {
+          "status": 404,
+          "fields": {
+            "/found": false
+          }
+        }
+      }
+    ],
+    "native_target": "The entire bounded structural frame must validate before any item commits; distinguish this from semantic item errors."
+  },
+  {
+    "id": "generated-id-adaptation",
+    "area": "A02",
+    "profile_class": "subset",
+    "intent": "outside_declared_subset",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_doc",
+          "json": {
+            "uid": "allocated",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 10,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 201,
+          "fields": {
+            "/result": "created"
+          },
+          "nonempty_strings": [
+            "/_id"
+          ]
+        },
+        "capture": {
+          "allocated_id": "/_id"
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/{allocated_id}"
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/_source": {
+              "uid": "allocated",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 10,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          }
+        }
+      }
+    ],
+    "native_target": "Out of the hsearch stable-ID subset: allocate IDs client-side and retain idempotent retry identity."
+  },
+  {
+    "id": "stale-occ-condition",
+    "area": "A04",
+    "profile_class": "difference",
+    "intent": "intentional_difference",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/stable",
+          "json": {
+            "uid": "stable",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 1,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 201,
+          "nonnegative_integers": [
+            "/_seq_no",
+            "/_primary_term"
+          ]
+        },
+        "capture": {
+          "first_seq": "/_seq_no",
+          "first_term": "/_primary_term"
+        }
+      },
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/stable",
+          "json": {
+            "uid": "stable",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 2,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/stable?if_seq_no={first_seq}&if_primary_term={first_term}",
+          "json": {
+            "uid": "stable",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 3,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 409,
+          "error_required": true
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/stable"
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/_source": {
+              "uid": "stable",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 2,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          }
+        }
+      }
+    ],
+    "native_target": "Reference sequence/term conditions are context only; native opaque versions must bind tenant/incarnation/version and cannot be field-renamed from these values."
+  },
+  {
+    "id": "forced-refresh-adaptation",
+    "area": "A05",
+    "profile_class": "difference",
+    "intent": "intentional_difference",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/visible?refresh=true",
+          "json": {
+            "uid": "visible",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 10,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 201
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_search",
+          "json": {
+            "query": {
+              "term": {
+                "uid": "visible"
+              }
+            },
+            "track_total_hits": true
+          }
+        },
+        "expect": {
+          "status": 200,
+          "hit_ids": [
+            "visible"
+          ],
+          "exact_total": 1
+        }
+      }
+    ],
+    "native_target": "Forced per-write refresh is excluded from hsearch. Use deferred visibility or bounded receipt wait; a committed wait timeout retains its receipt."
+  },
+  {
+    "id": "pit-mutation-repeat-pages",
+    "area": "A07",
+    "profile_class": "difference",
+    "intent": "intentional_difference",
+    "setup": "dataset",
+    "steps": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_search/point_in_time?keep_alive=1m"
+        },
+        "expect": {
+          "status": 200,
+          "nonempty_strings": [
+            "/pit_id"
+          ]
+        },
+        "capture": {
+          "pit_id": "/pit_id"
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/_search",
+          "json": {
+            "size": 3,
+            "track_total_hits": true,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "uid": "asc"
+              }
+            ],
+            "pit": {
+              "id": "{pit_id}",
+              "keep_alive": "1m"
+            }
+          }
+        },
+        "expect": {
+          "status": 200,
+          "hit_ids": [
+            "001",
+            "002",
+            "003"
+          ],
+          "exact_total": 11
+        },
+        "capture": {
+          "last_sort": "/hits/hits/2/sort"
+        }
+      },
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/000?refresh=wait_for",
+          "json": {
+            "uid": "000",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 10,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 201
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/_search",
+          "json": {
+            "size": 3,
+            "track_total_hits": true,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "uid": "asc"
+              }
+            ],
+            "pit": {
+              "id": "{pit_id}",
+              "keep_alive": "1m"
+            },
+            "search_after": "{last_sort}"
+          }
+        },
+        "expect": {
+          "status": 200,
+          "hit_ids": [
+            "004",
+            "005",
+            "006"
+          ],
+          "exact_total": 11
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/_search",
+          "json": {
+            "size": 3,
+            "track_total_hits": true,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "uid": "asc"
+              }
+            ],
+            "pit": {
+              "id": "{pit_id}",
+              "keep_alive": "1m"
+            }
+          }
+        },
+        "expect": {
+          "status": 200,
+          "hit_ids": [
+            "001",
+            "002",
+            "003"
+          ],
+          "exact_total": 11
+        }
+      },
+      {
+        "request": {
+          "method": "DELETE",
+          "path": "/_search/point_in_time",
+          "json": {
+            "pit_id": [
+              "{pit_id}"
+            ]
+          }
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/pits/0/successful": true
+          }
+        }
+      }
+    ],
+    "native_target": "Native snapshots/cursors use explicit quotas/TTL/catalog/reader bindings, not a globally serializable instant or another system's opaque PIT identity."
+  },
+  {
+    "id": "bounded-total-hit-relation",
+    "area": "A08",
+    "profile_class": "difference",
+    "intent": "intentional_difference",
+    "setup": "dataset",
+    "steps": [
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_search",
+          "json": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "uid": "asc"
+              }
+            ],
+            "track_total_hits": 2
+          }
+        },
+        "expect": {
+          "status": 200,
+          "truthful_total": {
+            "exact": 11,
+            "threshold": 2
+          },
+          "hit_ids": [
+            "001",
+            "002",
+            "003"
+          ]
+        }
+      }
+    ],
+    "native_target": "An exact count must be complete; a requested lower bound cannot exceed the independent eleven-document total. Native count admission remains separate."
+  }
+]
