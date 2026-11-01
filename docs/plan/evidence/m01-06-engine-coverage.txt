@@ -1,0 +1,39 @@
+CHECK: cargo llvm-cov --version
+cargo-llvm-cov 0.9.1
+CHECK: cargo llvm-cov --locked --offline --all-features --package hsearch-engine --ignore-filename-regex /tests/ --json --output-path /target/engine-coverage.json
+info: cargo-llvm-cov currently setting cfg(coverage); you can opt-out it by passing --no-cfg-coverage
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling libc v0.2.191
+   Compiling crc32fast v1.5.3
+   Compiling thiserror v1.0.69
+   Compiling syn v2.0.119
+   Compiling cfg-if v1.0.5
+   Compiling thiserror-impl v1.0.69
+   Compiling memmap2 v0.9.12
+   Compiling lucene-util v0.1.0 (https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc)
+   Compiling hsearch-testkit v0.1.0 (/workspace/crates/testkit)
+   Compiling lucene-store v0.1.0 (https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc)
+   Compiling hsearch-engine v0.1.0 (/workspace/crates/engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.36s
+     Running unittests src/lib.rs (/target/llvm-cov-target/debug/deps/hsearch_engine-e1129f491e49e0ba)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/input.rs (/target/llvm-cov-target/debug/deps/input-685b324ddc82b3d7)
+
+running 2 tests
+test pinned_input_supports_shared_bounded_slices ... ok
+test pinned_input_rejects_out_of_bounds_and_overflow ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+    Finished report saved to /target/engine-coverage.json
+CHECK: /usr/bin/python3 tools/coverage_check.py /target/engine-coverage.json --package hsearch-engine
+N/A: hsearch-engine: no executable production lines in this bootstrap
+{"mode": "engine-coverage", "exit": 0, "elapsed_seconds": 21.76, "peak_disk_bytes": 642481670}
+PASS: actual pinned engine-only LLVM command reaches N/A checker; owned lease released

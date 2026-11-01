@@ -1,0 +1,61 @@
+name: native qualification
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      mode:
+        required: true
+        type: string
+      plan:
+        required: true
+        type: string
+      head:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: always
+      CI_PLAN: ${{ inputs.plan }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.head }}
+          persist-credentials: false
+      - name: Validate reusable job mode and exact head
+        env:
+          QUALIFICATION_MODE: ${{ inputs.mode }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          assert os.environ['QUALIFICATION_MODE'] in ('native', 'sandbox')
+          assert json.loads(os.environ['CI_PLAN'])['head'] == subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          PY
+      - name: Install exact bootstrap toolchain
+        if: ${{ inputs.mode == 'native' }}
+        run: rustup toolchain install 1.97.1 --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
+      - name: Prefetch locked dependencies
+        if: ${{ inputs.mode == 'native' }}
+        run: cargo fetch --locked
+      - name: Install pinned coverage tool
+        if: ${{ inputs.mode == 'native' }}
+        run: cargo install cargo-llvm-cov --version 0.9.1 --locked
+      - name: Qualify selected packages in debug, release, doctests and coverage
+        if: ${{ inputs.mode == 'native' }}
+        run: python3 tools/ci.py native
+      - name: Build pinned non-root development image
+        if: ${{ inputs.mode == 'sandbox' }}
+        run: python3 tools/sandbox.py --state-root "${{ runner.temp }}/hsearch-leases" image
+      - name: Qualify private RustFS sandbox and cleanup isolation
+        if: ${{ inputs.mode == 'sandbox' }}
+        run: python3 tools/sandbox.py --state-root "${{ runner.temp }}/hsearch-leases" smoke

@@ -6,9 +6,11 @@ Last updated: 1 November 2026 (Australia/Sydney).
 
 M00 research and M01.01 bootstrap are integrated. M01.01 merged normally as `81bde7398bec3ebb50a82f9661f50faae1a02852` after independent review and native x86_64/ARM64 checks. The user authorized normal automatic merges after independent multi-session review and passing required checks. No formal approving reviews are submitted under the user's identity; releases/deployments remain unauthorized.
 
-M01.02 is under review on `codex/m01-sandbox`. It adds a pinned non-root Linux dev image, an internal-network RustFS/test-CA topology, unique credential volumes, host admission leases, actual container caps, monitored command budgets, private serving sockets and ownership-checked cleanup. [Sandbox instructions](sandbox.md) and [observed evidence](evidence/m01-02-sandbox.md) give the implemented scope and limits. The final local cold smoke passed the full bootstrap suite, the full offline suite, actual TLS/authentication/S3 round trips and cleanup isolation. Two separate independent reviews found uncertain-claim release, aggregate disk headroom and effective-cap gaps; fixes passed a fresh full smoke plus 29 regression tests without Linux skips. No command is stalled; follow-up found a remaining command-time backend-space gap. That final correction passed a complete fresh smoke with 30 tests and actual-volume sampling; final delta review within the three-round ceiling and hosted native CI remain pending.
+M01.02 is integrated as `f630dc8d20860b7765e7b7e021ce3bd59a87e39b`. Two independent reviewers found no blockers at final head d542b45, and native x86_64/ARM64 CI plus ci-ok passed the complete Rust/coverage/image/private-store smoke. [Integration evidence](evidence/m01-02-integrated.md) records the immutable checks and normal PR#2 merge. Its corrected contract uses distinct internal networks, no published host ports, effective non-root hard caps, uncertain-lease retention and actual-volume disk sensing.
 
-The ledger has 18 milestones and 118 tasks: eight done (M00 plus M01.01), one in review (M01.02), and 109 planned. M01 as a whole remains in progress. The hsearch storage/search runtime, operational task/review harness, providers, native optimization and release qualification remain open. No product delivery is inferred from the bootstrap/sandbox subset.
+M01.06 is under independent review, implemented locally on `codex/m01-impact-ci`: [impact CI](impact-ci.md) maps complete declared Cargo edges and non-Cargo ownership, selects transitive consumers, defaults ambiguous history/paths to the full matrix, and rejects every missing/cancelled/skipped selected result. Fresh full Linux smoke50, final51 Python cases without skips and checksum-verified workflow lint pass. First independent review found two P2 gaps (zero-line LLVM threshold and broad Markdown ownership); both fixes passed all54 Linux controls and the actual engine-only LLVM/N/A command. Exact-tree follow-up review and hosted acceptance remain pending. No command is stalled.
+
+The ledger has 18 milestones and 118 tasks: nine done (M00 plus M01.01/M01.02), one in review (M01.06), and 108 planned. M01 as a whole remains in progress. The hsearch storage/search runtime, remaining operational harness, providers, native optimization and release qualification remain open.
 
 ## Public hosting and integration
 
@@ -44,7 +46,7 @@ Initial results are recorded in [planning validation evidence](evidence/planning
 
 ## Next implementation action
 
-Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. Begin M01 workspace/bootstrap and harness, then run the engine and storage spikes in M02/M03 as their task dependencies allow. Set up Git hosting/authorization through the actual chosen repository before claiming protected CI or external PRs exist.
+Use `python docs/plan/tools/plan.py next` to select dependency-ready tasks. Continue the dependency-ready M01 harness tasks, then run the engine and storage spikes in M02/M03 as their task dependencies allow. Set up Git hosting/authorization through the actual chosen repository before claiming protected CI or external PRs exist.
 
 The main open risks are K01 remote engine inputs, K03 provider conditional semantics, K04 pin/GC coordination, K07 durable consensus integration, K08-K10 crypto/cache lifecycle, and K18 exact required OpenSearch API coverage. Real cloud credentials/fleet/hardware/spend are not available as evidence in this planning task; M15/M17 cannot be marked done without them.
 
