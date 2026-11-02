@@ -22,7 +22,7 @@ LAYERS = {
 }
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine"}
 EXTERNAL = {name: ({"lucene-store"} if name == "hsearch-engine" else set()) for name in LAYERS}
-TEST_FEATURES = {"test-util", "test-support"}
+TEST_FEATURES = {"test-util", "test-support", "asserting"}
 
 
 class PolicyError(ValueError):
@@ -101,7 +101,7 @@ def validate(metadata, production_tree):
         if package["id"] not in metadata["workspace_members"]:
             need(bool(package["license"] or package["license_file"]),
                  f"Missing upstream license declaration: {package['name']}")
-    for forbidden in ("hsearch-testkit", "test-util", "test-support"):
+    for forbidden in ("hsearch-testkit", *sorted(TEST_FEATURES)):
         need(forbidden not in production_tree, f"Release dependency/feature leak: {forbidden}")
 
 
@@ -111,9 +111,9 @@ def cargo(*args):
 
 
 def inputs():
-    data = json.loads(cargo("metadata", "--locked", "--offline", "--format-version", "1"))
+    data = json.loads(cargo("metadata", "--locked", "--offline", "--all-features", "--format-version", "1"))
     tree = cargo("tree", "--locked", "--offline", "--package", "hsearch-engine", "--package",
-                 "hsearch-observe", "--edges", "normal,build", "--prefix", "none", "--format", "{p} {f}")
+                 "hsearch-observe", "--all-features", "--edges", "normal,build", "--prefix", "none", "--format", "{p} {f}")
     return data, tree
 
 
@@ -183,7 +183,11 @@ def selftest(data, tree):
     case("Lucene outside boundary", "Only engine owns", lambda d, p: edge(p, "hsearch-types", "lucene-store"))
     case("wrong pin", "Incorrect engine pin", lambda d, p: p["lucene-store"].update(source="git+unreviewed"))
     case("upstream test feature", "Test feature in production",
-         lambda d, p: p["hsearch-engine"]["dependencies"][0].update(features=["test-util"]))
+         lambda d, p: next(x for x in p["hsearch-engine"]["dependencies"] if x["name"] == "lucene-store").update(features=["test-util"]))
+    case("declared production asserting feature", "Test feature in production",
+         lambda d, p: next(x for x in p["hsearch-engine"]["dependencies"] if x["name"] == "lucene-store").update(features=["asserting"]))
+    case("transitive asserting feature", "Release dependency/feature leak", lambda d, p: None,
+         altered_tree=tree + "\nlucene-search asserting\n")
     case("license declaration missing", "Missing upstream license",
          lambda d, p: p["lucene-store"].update(license=None, license_file=None))
     case("testkit is default", "Default members",

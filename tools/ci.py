@@ -223,6 +223,7 @@ def run(command, root=ROOT, env=None):
 
 def docs():
     for command in ([sys.executable, "tools/api_contract.py", "check"],
+                    [sys.executable, "tools/engine_research.py", "check"],
                     [sys.executable, "docs/plan/tools/plan.py", "check"],
                     [sys.executable, "docs/plan/tools/plan.py", "selftest"],
                     [sys.executable, "docs/plan/tools/cost_model.py", "--selftest"],
@@ -258,6 +259,7 @@ def native(value):
     environment = coverage["ordinary_environment"](tools)
     def native_run(command): run(coverage["correctness_command"](tools, command), env=environment)
     native_run([sys.executable, "tools/coverage_corpus.py"])
+    native_run([sys.executable, "tools/engine_research.py", "check"])
     native_run([sys.executable, "tools/workspace.py", "check"])
     native_run([sys.executable, "tools/workspace.py", "selftest"])
     native_run(["cargo", "fmt", "--all", "--", "--check"])

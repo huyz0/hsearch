@@ -12,6 +12,10 @@ lucene-store.workspace = true
 
 [dev-dependencies]
 hsearch-testkit.workspace = true
+lucene-analysis.workspace = true
+lucene-codecs.workspace = true
+lucene-index.workspace = true
+lucene-search.workspace = true
 
 [lints]
 workspace = true

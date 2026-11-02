@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COVERAGE = runpy.run_path(str(ROOT / "tools/coverage.py"))
 CHECKS = [
     [sys.executable, "tools/api_contract.py", "check"],
+    [sys.executable, "tools/engine_research.py", "check"],
     [sys.executable, "tools/workspace.py", "check"],
     [sys.executable, "tools/workspace.py", "selftest"],
     ["cargo", "fmt", "--all", "--", "--check"],

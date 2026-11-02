@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "task": "M02.09",
+  "status": "exploratory only; not final-source acceptance",
+  "public_base": "8d675dac7d48679e26b3e1e2069fd35e1382aae0",
+  "initial_dev_probe": {
+    "source": {
+      "head": "8cd94348f017dd853ec5c4cbb991af1bc91f9e3d",
+      "source_tree_sha256": "1f0d5600f621f4f5dd1282cbee62aa3899a2e0841d9d46ad657f6674b576149e",
+      "index_sha256": "66e02dbe23274990b933c1fe949f5cd9ff839b9e9a058cbef68b08e3cfd6abb8",
+      "input_bytes": 2285684,
+      "file_count": 233,
+      "clean": false,
+      "digest": "af9fc52f60d95e5eb22c2d4dd422225aab7cd2e0a70bb8d702f32fd30074fb55"
+    },
+    "result": "6 passed,0failed,0ignored,0filtered;14search4analyzers and lifecycle/visibility/bounds",
+    "raw_log_sha256": "1aafce2dfb94a688e1a0eff8ec16e2f473ff367103ae135fbf172864abd2369d",
+    "caps": {
+      "cpu_cores": 2,
+      "ram_bytes": 4294967296,
+      "pids": 256,
+      "network": "none"
+    },
+    "scope_limits": [
+      "x86_64 dev only, one freshprocess",
+      "Source identity is recovery-time only, no persisted prelaunch journal",
+      "Subsequent dev-only dependency separation, formatting and stronger refresh ordering require requalification"
+    ]
+  },
+  "retained_failures": [
+    {
+      "kind": "initial strict compile",
+      "result": "7API-shape compiler errors; native behavior not run",
+      "raw_sha256": "0b9345553697117759d66bea3a80458a4bbd94a6ba0a96bf29ef608e1a7212f8"
+    },
+    {
+      "kind": "host report parser",
+      "result": "Rejected valid progress completed events/cargo-nextest spelling after acknowledged cleanup; recovered retained raw result without rerunning program"
+    }
+  ],
+  "outstanding": [
+    "dev/release3freshprocess repetitions and journaled exact-source binding",
+    "Both native architectures and complete ordinary/lint/doctest/prodcoverage matrix",
+    "Independent final-source review, hostedCI, normalprotectedmerge and postmerge verification",
+    "No34-step wire mutation/runtime/provider/format acceptance"
+  ]
+}
