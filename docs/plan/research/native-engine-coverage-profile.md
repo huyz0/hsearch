@@ -2,6 +2,8 @@
 
 Status: implemented draft, NOT qualified or accepted. M02.09's frozen30f080e passed the complete x86_64 ordinary suite and three extra native repetitions/profile. Runtime LLVM JSON export then exceeded the existing64MiB command bound; the owned process group stopped and failed evidence was retained. The full debug/runtime report retained exactly64MiB before refusal. No release/ARM/coverage or research acceptance follows from that failed collection.
 
+Subsequent e01a07f local qualification passed complete x86 suites and 523/523 production coverage in both profiles, with all 9 test binaries exported per profile. Formal R1 remains blocked by the separate uncapped duplicate CI scheduling path; no hosted or integration acceptance follows. The repaired source must requalify all local and hosted gates. Root function data alone is omitted; the raw64MiB and all source/floor controls remain.
+
 ## Bounded representation
 
 The [LLVM export guide](https://llvm.org/docs/CommandGuide/llvm-cov.html#export-command) documents skip-functions. The [pinned LLVM22.1.6 exporter](https://github.com/llvm/llvm-project/blob/llvmorg-22.1.6/llvm/tools/llvm-cov/CoverageExporterJson.cpp) builds file records independently and conditionally omits the root functions list. This motivates the draft; actual full-vs-compact compiler equivalence remains required.

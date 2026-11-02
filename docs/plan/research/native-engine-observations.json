@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "task": "M02.09",
-  "status": "exploratory only; not final-source acceptance",
+  "status": "Local e01 evidence retained; R1 CI resource-provenance blocker under repair, final-source and hosted acceptance pending",
   "public_base": "8d675dac7d48679e26b3e1e2069fd35e1382aae0",
   "initial_dev_probe": {
     "source": {
@@ -39,9 +39,36 @@
     }
   ],
   "outstanding": [
+    "Repaired final source complete local native and source-bound coverage qualification",
+    "Final formal R2/overallhard3 resolving every previous blocking key, no counter reset",
+    "Both native architectures with the entire strict capped3repetitions/profile matrix and mandatory ordinary native suites; barehost experiment frames forbidden",
+    "Exact final-source full hosted CI/protected integration/postmerge verification",
+    "No34-step wire mutation/runtime/provider/format acceptance"
+  ],
+  "initial_dev_probe_outstanding_history": [
     "dev/release3freshprocess repetitions and journaled exact-source binding",
     "Both native architectures and complete ordinary/lint/doctest/prodcoverage matrix",
     "Independent final-source review, hostedCI, normalprotectedmerge and postmerge verification",
     "No34-step wire mutation/runtime/provider/format acceptance"
-  ]
+  ],
+  "subsequent_e01_local_qualification": {
+    "head": "e01a07f3f8dbe687c3cce24c3df5138339a05204",
+    "full_native_proof_sha256": "072fb388c3765d606bcff751ae61005237311ca7fc66a2a496c270119e3bea54",
+    "coverage_proof_sha256": "4d30d3f3e50c7562d1d105236d30e80122e261206b6050a2545beade8ee1ecb0",
+    "python_tests": 307,
+    "actual_compiler_controls": 11,
+    "rust_tests_per_profile": 33,
+    "strict_fresh_process_repetitions": {
+      "dev": 3,
+      "release": 3
+    },
+    "production_coverage": {
+      "dev": "523/523",
+      "release": "523/523",
+      "engine": "0/0 not applicable",
+      "changed": "0/0 not applicable; immutable production bodies and inventoried dev graph checked"
+    },
+    "formal_review": "R1 correctness BLOCKED: UNCAPPED_RESEARCH_RUNS_OUTSIDE_FROZEN_ENVELOPE. Architecture/security independently clear; preserve both judgments. No actual overuse asserted.",
+    "scope": "Local exact-source x86 only, no hosted/integration/runtime acceptance."
+  }
 }

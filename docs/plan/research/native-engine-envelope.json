@@ -251,5 +251,11 @@
     "max_segments": 2000000,
     "diagnostic_output_bytes": 1048576,
     "retained_contract": "No source/file filter, lost expansion/segment, skipped required binary or threshold increase; initialworkload freeze and failed64MiB export remain historical evidence."
+  },
+  "qualification_provenance": {
+    "research_repetitions": "Only owned capped sandbox-x64/qualify and sandbox-arm64/qualify check workers; exact three/profile/architecture required.",
+    "ordinary_native_matrix": "Mandatory full functional tests/doctests/lint/coverage; no extra framed research repetitions and no bounded-resource inference.",
+    "acceptance": "No native_engine_research frames may be admitted on bare-host jobs; all qualified frame caps must match the unchanged resource_limits.",
+    "retained_review_failure": "e01a07f formalR1 P2 UNCAPPED_RESEARCH_RUNS_OUTSIDE_FROZEN_ENVELOPE; no actual overuse asserted, all capped local evidence retained."
   }
 }
