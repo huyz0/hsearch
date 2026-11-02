@@ -1,6 +1,6 @@
 # Coordinator research split: concrete scope before implementation
-Status: M01.14 private plan scaffold, unaccepted. M08 contract/facade is accepted; independent exact-tree plan review/CI and protected integration remain required before any research claim.
-Use a new M01.14 planning task in unfinished M01, depending on M19/M01.13/M08.01; preserve M19 completion and every accepted task.
+Status: M01.14's [plan and guard are accepted](evidence/m01-14-integrated.md). M02.09/.10 remain planned coordinator-run experiments; their own source, results, reviews and full qualification are still required.
+The accepted M01.14 planning task lives in unfinished M01 and depends on M19/M01.13/M08.01; preserve M19 completion and every accepted task.
 Add M02.09 bounded native lifecycle experiments and M02.10 bounded local durability/metadata experiments, depending explicitly on M19, accepted M01.02-.07/.13, M01.14, M02.01/.08 and M08.01.
 Preserve M02.02/.04 whole-M01 dependencies and all existing deliverables/validation/DoD. Add M02.09 as input to M02.02 and M02.10 as input to M02.04. No format/API/runtime selection or M02.03/.05/.06/.07 shortcut.
 M01.09 original cause remains UNCONFIRMED, M01.08 open. Research does not accept delegated/parallel product productivity, agent corpus, token savings, baseline, provider/fleet/release qualification.

@@ -782,8 +782,13 @@
             "M08.01"
           ],
           "owner": "harness/integrator",
-          "status": "in_progress",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m01-14-integrated.md",
+              "result": "Actual finalsource independent CLEAR, conservative overallround2, protected PR18 merge with identical reviewed tree and complete all7 PR/main native proof. Coordinator-research plan only; original harness/product gates retained."
+            }
+          ]
         }
       ]
     },
