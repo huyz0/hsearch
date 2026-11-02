@@ -98,6 +98,9 @@ def validate(metadata, production_tree):
     for package in packages.values():
         if package["name"].startswith("lucene-"):
             need(package["source"] == ENGINE_SOURCE, f"Incorrect engine pin: {package['name']}")
+            node = nodes.get(package["id"])
+            need(node is not None and not TEST_FEATURES.intersection(node["features"]),
+                 f"Upstream test instrumentation in native experiment graph: {package['name']}")
         if package["id"] not in metadata["workspace_members"]:
             need(bool(package["license"] or package["license_file"]),
                  f"Missing upstream license declaration: {package['name']}")
@@ -188,6 +191,14 @@ def selftest(data, tree):
          lambda d, p: next(x for x in p["hsearch-engine"]["dependencies"] if x["name"] == "lucene-store").update(features=["asserting"]))
     case("transitive asserting feature", "Release dependency/feature leak", lambda d, p: None,
          altered_tree=tree + "\nlucene-search asserting\n")
+    def resolved_test_feature(d, packages, name, feature):
+        node = next(n for n in d["resolve"]["nodes"] if n["id"] == packages[name]["id"])
+        node["features"].append(feature)
+
+    case("resolved dev search asserting", "Upstream test instrumentation",
+         lambda d, p: resolved_test_feature(d, p, "lucene-search", "asserting"))
+    case("resolved native store test utility", "Upstream test instrumentation",
+         lambda d, p: resolved_test_feature(d, p, "lucene-store", "test-util"))
     case("license declaration missing", "Missing upstream license",
          lambda d, p: p["lucene-store"].update(license=None, license_file=None))
     case("testkit is default", "Default members",

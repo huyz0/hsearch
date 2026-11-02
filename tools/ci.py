@@ -281,6 +281,8 @@ def native(value):
     if production:
         native_run(["cargo", "build", "--locked", "--offline", "--release", "--lib",
              *[part for name in production for part in ("--package", name)]])
+    if value["full"] or "hsearch-engine" in value["packages"]:
+        runpy.run_path(str(ROOT / "tools/engine_research.py"))["run_samples"](native_run)
     if value["coverage_packages"]:
         destination = Path(os.environ["CARGO_TARGET_DIR"]).absolute().parent / ("hsearch-coverage-" + uuid.uuid4().hex)
         native_run([sys.executable, "tools/coverage.py", "run", "--base", base, "--output", str(destination),

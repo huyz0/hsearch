@@ -45,6 +45,18 @@ class NativeFixtureProjection(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 R["clause"]({"range": {"price": value}})
 
+    def test_failed_native_sample_cannot_emit_completion_or_later_samples(self):
+        import contextlib
+        import io
+        output = io.StringIO()
+        failure = RuntimeError("retained native failure")
+        def fail(_command):
+            raise failure
+        with contextlib.redirect_stdout(output), self.assertRaisesRegex(RuntimeError, "retained native failure"):
+            R["run_samples"](fail)
+        events = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(events, [{"native_engine_research": {"profile": "dev", "repetition": 1, "state": "started"}}])
+
     def test_unknown_unbounded_and_text_ranges_are_refused(self):
         query = {"term": {"category": "book"}}
         deep = copy.deepcopy(query)

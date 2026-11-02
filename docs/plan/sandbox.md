@@ -31,7 +31,7 @@ python3 tools/sandbox.py --state-root /private/hsearch-leases down NAMESPACE
 
 | Process | CPU | Memory | PIDs | Network |
 | --- | --- | --- | --- | --- |
-| Build/test/diagnostics | 2 | 4 GiB | 512 | None after prefetch |
+| Build/test/diagnostics | 2 | 4 GiB | 256 | None after prefetch |
 | RustFS | 1 | 2 GiB | 256 | Task-private internal bridge |
 | Test CA initialization | 0.5 | 256 MiB | 64 | None |
 | TLS/S3 probe | 0.5 | 256 MiB | 64 | Its task's internal bridge |
@@ -55,3 +55,5 @@ The Rust base, components and RustFS image are pinned in the build recipe and `d
 Low disk, engine unavailability, nonlocal/unsupported engines, exhausted CPU/memory/PID/disk admission, stale images, changed Compose snapshots, foreign resource labels, changed container identities and active/uncertain owners refuse the operation. Diagnose with `status` and the exact recorded namespace. Do not clear a lease just because a timestamp is old or a command timed out. A failed read-only preflight that is known to have completed releases its empty claim; an uncertain setup/build/run retains its claim for inspection. A momentarily empty container listing never resolves an uncertain create; run claims are released here only after successful synchronous completion and absence of the completed container.
 
 Automatic crash recovery and live-handle reclamation are M01.03/M01.08 deliverables. This controller intentionally refuses ambiguous cleanup rather than guessing that an owner has died. The tests cover low-resource refusals, concurrent admission, lifecycle exclusion, unrelated-process survival under deadline/disk termination, and foreign-resource cleanup refusal. The live two-topology smoke verifies independent stores remain usable after targeted cleanup. See [task evidence](evidence/m01-02-sandbox.md) for observed results and remaining qualification.
+
+The M02.09 research continuation tightens the shared build/initialization/monitor PID cap from512to256, preserving CPU/RAM/swap/disk/deadline and every original refusal/cleanup control. Complete ordinary suites remain, with three additional fresh-process native experiment repetitions in each dev/release profile. Current semantic research acceptance still requires final-source review and both native targets; the historical512-PID receipts are retained as history, not the stricter envelope qualification.

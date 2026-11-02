@@ -665,3 +665,21 @@ fn bounded_preparation_and_256_resolved_operations() {
         "NATIVE_BOUNDS operations=256 live_documents=64 physical_documents<=128 actors<=3 segments<=32 passed"
     );
 }
+
+#[test]
+fn native_execution_envelope_receipt() {
+    let read = |name: &str| {
+        std::fs::read_to_string(format!("/sys/fs/cgroup/{name}"))
+            .map(|value| value.trim().to_string())
+            .unwrap_or_else(|_| "unavailable".to_string())
+    };
+    println!(
+        "NATIVE_RESEARCH_ENVELOPE target={} memory={} swap={} pids={} cpu={}",
+        std::env::consts::ARCH,
+        read("memory.max"),
+        read("memory.swap.max"),
+        read("pids.max"),
+        read("cpu.max")
+    );
+    assert!(matches!(std::env::consts::ARCH, "x86_64" | "aarch64"));
+}

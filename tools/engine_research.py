@@ -127,6 +127,25 @@ def render(root=ROOT):
     return "\n".join(out) + "\n"
 
 
+def sample_commands(root=ROOT):
+    """Fixed fresh-process repeats, additional to the complete ordinary suites."""
+    envelope = json.loads((root / "docs/plan/research/native-engine-envelope.json").read_text(encoding="utf-8"))
+    need(envelope["matrix"]["profiles"] == ["dev", "release"] and envelope["resource_limits"]["fresh_process_repetitions"] == 3,
+         "Research sample matrix changed without runner qualification")
+    return [(profile, repetition, ["cargo", "nextest", "run", "--locked", "--offline", "--package", "hsearch-engine", "--all-features",
+            "--test", "native_feasibility", *(["--release"] if profile == "release" else []), "--profile", "hsearch", "--no-tests=fail", "--success-output", "immediate"])
+            for profile in ("dev", "release") for repetition in (1, 2, 3)]
+
+
+def run_samples(run):
+    """Emit completion only after the caller's checked native command succeeds."""
+    for profile, repetition, command in sample_commands():
+        event = {"profile": profile, "repetition": repetition}
+        print(json.dumps({"native_engine_research": dict(event, state="started")}), flush=True)
+        run(command)
+        print(json.dumps({"native_engine_research": dict(event, state="completed")}), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["render", "check"])
