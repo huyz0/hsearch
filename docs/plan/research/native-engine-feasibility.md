@@ -1,0 +1,23 @@
+# Bounded native engine feasibility
+
+Current review state: e01a07f passed complete local x86 dev/release correctness and 523/523 production coverage in both profiles, but formal R1 blocked duplicate uncapped native-CI experiment scheduling. The repair keeps all ordinary native tests and both strict capped three-repetition/profile/architecture matrices, removes the unqualified duplicate framing path and requires fresh final-source qualification. The initial exploratory probe below remains historical evidence.
+
+M02.09 is in progress under the [accepted coordinator research scope](../coordinator-research.md). The [frozen envelope](native-engine-envelope.json) pins sources, public fixtures, exact target/profile intent, finite workloads and resource limits before experiment execution. The first x86_64 development probe passed six experiment groups, including the14 selected search/aggregation and4 analyzer cases. This is exploratory evidence only; release/ARM/final-source/fullCI/coverage/review gates remain pending. The first strict compile failed on API shapes and is retained, followed by the corrected probe; no failed history was erased.
+
+The scope is library embedding and observed limitations. Native Lucene commit, refresh and reader generations do not establish hsearch WAL/object commitment. The fixture tenant field is public sample data, not isolation proof. Scratch contains public fixtures only; encryption/runtime/provider/fleet qualification remains later work.
+
+Inspect real symbols and compile outcomes rather than treating upstream comments or examples as capability proof. Record each selected search/analyzer/history ID as exercised, failed or explicitly unresolved with a concrete next port/profile proposal. Preserve the independent reference oracles and all negative controls. No broad API/drop-in claim follows from a selected passing fixture.
+
+The original M01.09 ARM diagnostic cause remains UNCONFIRMED and M01.08 open. M02.02/M02.04 retain their whole-M01 dependencies, original acceptance and final-source requalification.
+
+## Current experiment boundary
+
+The native experiment implementation lives in engine integration tests. Index/search/analysis/codecs are exact-pinned dev dependencies, while the production engine boundary and normal Lucene-store-only graph remain unchanged. No hsearch runtime adapter or persisted format is accepted by this research. The generated Rust fixture projection is checked against the original public JSON hashes, without replacing its independent oracles.
+
+Two initial design risks are preserved: all original core dates lie inside the same date window, and the original phrase hits also satisfy unordered conjunction. Separate hash-bound held-out date boundary and phrase order/gap controls reject those wrong implementations. The native point queries execute through IndexSearcher with opened points; stale upstream parsing-only comments do not establish lack of support.
+
+The observed lifecycle uses finite in-memory public scratch, native commit/reopen, merged files, frozen readers and replay of resolved logical IDs/title values/versions. It does not establish filesystem crash durability, authoritative latest GET, conditional writes, bulk wire framing or all34 reference mutation steps. Those remain explicit M02.02/M02.04 port/adapter and later authority obligations. Finite metrics are observed over long doc values; terms key ordering is a bounded local adaptation after the native terms result. No global/group cardinality, distributed ranking or wire compatibility follows.
+
+The visibility experiment separately exercises malformed private preparation, valid-but-simulated-authority-refused private preparation concurrent with NRT refresh, and a deliberately unsafe valid write inserted into the serving writer before authority refusal. NRT then exposes that tentative document, detecting the counterexample. Simulated authority refusal is a test decision, never a real WAL/backend acceptance.
+
+M02.09 resource-qualified repetitions execute only through the owned capped sandbox check workers on both native architectures: three fresh runs for each dev/release profile, with the frozen source-build, CPU, RAM, PID, scratch, deadline and retained-output limits. The complete ordinary native CI tests, doctests, lint and production coverage remain required. That bare-host stage does not schedule the additional framed research repetitions and supplies no bounded-resource proof. The CI verifier must reject such frames there and require every strict capped sandbox repetition; ordinary tests cannot substitute for this matrix.

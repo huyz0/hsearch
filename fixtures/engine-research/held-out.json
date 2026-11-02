@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "task": "M02.09",
+  "status": "Frozen before first native execution; NOT_RUN",
+  "purpose": "Held-out semantic discrimination; original core-v1 fixtures unchanged",
+  "phrase": {
+    "query": [
+      "brown",
+      "fox"
+    ],
+    "slop": 0,
+    "documents": [
+      {
+        "id": "adjacent",
+        "title": "brown fox"
+      },
+      {
+        "id": "gap",
+        "title": "brown red fox"
+      },
+      {
+        "id": "reversed",
+        "title": "fox brown"
+      }
+    ],
+    "exact_phrase_ids": [
+      "adjacent"
+    ],
+    "unsafe_unordered_and_ids": [
+      "adjacent",
+      "gap",
+      "reversed"
+    ]
+  },
+  "date": {
+    "encoding": "explicit signed i64 epoch milliseconds; strict wire date parsing remains outside native experiment",
+    "minimum": 1767225600000,
+    "maximum": 1767225600002,
+    "documents": [
+      {
+        "id": "below",
+        "epoch_ms": 1767225599999
+      },
+      {
+        "id": "lower",
+        "epoch_ms": 1767225600000
+      },
+      {
+        "id": "middle",
+        "epoch_ms": 1767225600001
+      },
+      {
+        "id": "upper",
+        "epoch_ms": 1767225600002
+      },
+      {
+        "id": "above",
+        "epoch_ms": 1767225600003
+      }
+    ],
+    "inclusive_range_ids": [
+      "lower",
+      "middle",
+      "upper"
+    ],
+    "unsafe_match_all_ids": [
+      "below",
+      "lower",
+      "middle",
+      "upper",
+      "above"
+    ]
+  },
+  "visibility": {
+    "valid_tentative_document": "authority-refused",
+    "simulated_authority": "explicit refusal after private preparation; never real WAL commitment",
+    "safe_expected": "fresh serving reader contains committed prefix only",
+    "unsafe_expected": "same valid tentative document inserted in serving native writer becomes visible to NRT despite simulated authority refusal"
+  },
+  "budgets": "Existing frozen CPU/RAM/PID/disk/output/deadline/document/operation/actor/repetition caps unchanged; this adds bounded held-out fixtures only"
+}

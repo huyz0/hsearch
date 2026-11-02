@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-11-01",
+  "updated": "2026-11-02",
   "timezone": "Australia/Sydney",
   "scope": "Scalability-first OpenSearch-inspired partial compatibility is the current direction. M00, M19 and M01.01/M01.02/M01.03/M01.04/M01.05/M01.06 are integrated. M01.09 original cold-navigation cause remains open after reviewed diagnostics; M01.08 stays blocked. M02.01 selected fixture inventory is in progress. Runtime, provider, scale and release obligations remain explicit.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
@@ -782,8 +782,13 @@
             "M08.01"
           ],
           "owner": "harness/integrator",
-          "status": "in_progress",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m01-14-integrated.md",
+              "result": "Actual finalsource independent CLEAR, conservative overallround2, protected PR18 merge with identical reviewed tree and complete all7 PR/main native proof. Coordinator-research plan only; original harness/product gates retained."
+            }
+          ]
         }
       ]
     },
@@ -878,13 +883,15 @@
           "deliverables": [
             "Pinned native source-symbol and capability inventory for selected core-v1 operators",
             "Bounded writer/reader/insert/update/delete/merge/commit/reopen and identity-preserving replay experiments, including failed preparation before concurrent refresh",
-            "Public/reference differential fixtures and explicit unsupported-native port/profile proposals; inputs for M02.02, not its acceptance"
+            "Public/reference differential fixtures and explicit unsupported-native port/profile proposals; inputs for M02.02, not its acceptance",
+            "Explicit compact native coverage export profile needed to qualify the real engine graph; retain full file maps, legacy regressions, all source/artifact checks and existing thresholds"
           ],
           "validation": [
             "Coordinator-run pinned-source/public-fixture component experiments only; independent sessions review code/results, with no delegated implementation claim",
             "Freeze exact feature/target/profile/workload and CPU/RAM/disk/PID/output/deadline envelope before execution; retain raw failure/ambiguity and deliberately failing controls",
             "Both native targets dev/release/applicable allfeatures/doctests/lint and >=90% aggregate/percrate/changed production coverage, exact-source independent review and required full CI",
-            "Use direct compiler outcomes and independent Java/reference histories; semantic navigation is fallible and never an authority"
+            "Use direct compiler outcomes and independent Java/reference histories; semantic navigation is fallible and never an authority",
+            "Compare actual pinned full/compact baseline and runtime file records/totals/physical projections in both profiles; malformed/mixed/legacy contexts and unowned/missing sources still refuse, with unchanged64MiB raw limits and90percent floors"
           ],
           "definition_of_done": [
             "Raw observations, independent oracles, rejected candidates and unresolved questions are reviewable; no final persisted format, runtime authority/service, provider/fleet, baseline or release acceptance",
@@ -905,9 +912,26 @@
             "M08.01"
           ],
           "owner": "coordinator/engine-research",
-          "status": "planned",
+          "status": "in_progress",
           "execution_scope": "coordinator-research",
-          "evidence": []
+          "evidence": [
+            {
+              "path": "research/native-engine-envelope.json",
+              "result": "Initial source/fixture/workload/resource envelope frozen before experiments; all native cases NOT_RUN. Source/license/dependency preflight next, no research acceptance."
+            },
+            {
+              "path": "research/native-engine-observations.json",
+              "result": "Initial strict compile failure and corrected exploratory x86_64 dev probe retained;14search4analyzer cases and sixgroups passed, subsequent source still requires complete requalification. No research/product acceptance."
+            },
+            {
+              "path": "research/native-engine-capabilities.md",
+              "result": "Exact pinned operator/lifetime/authority inventory, initial scoped observations and remaining port/profile obligations; all34wire mutation steps unimplemented, no source-comment-only incompatibility claims."
+            },
+            {
+              "path": "research/native-engine-coverage-profile.md",
+              "result": "30f080e complete local native suite passed; runtimeexport hit64MiB bound. Explicit compact-profile/context4 continuation is implemented draft only, all finalsource coverage/review/hosted gates pending."
+            }
+          ]
         },
         {
           "id": "M02.10",

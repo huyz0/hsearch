@@ -1,5 +1,7 @@
 """Counterexamples for impact ownership, transitive selection and final results."""
 import copy
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -192,6 +194,10 @@ class ResultControls(unittest.TestCase):
         self.assertEqual(commands, [])
 
     def setUp(self):
+        # Mock dispatch traces are unit controls, never native qualification receipts.
+        console = patch("sys.stdout", new=io.StringIO())
+        console.start()
+        self.addCleanup(console.stop)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         environment = patch.dict(os.environ, CARGO_TARGET_DIR=str(Path(directory.name) / "native-outputs"))
@@ -264,7 +270,7 @@ class ResultControls(unittest.TestCase):
         self.assertTrue(all("--workspace" in command and "--all-features" in command for command in tests))
         self.assertEqual(sum("--release" in command for command in tests), 1)
         self.assertTrue(all("--doc" in command for command in tests))
-        ordinary = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "-E" not in command]
+        ordinary = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "-E" not in command and "--test" not in command]
         self.assertEqual(len(ordinary), 2)
         self.assertTrue(all('--config' in command and any(str(arg).endswith('cargo-correctness.toml') for arg in command) for command in ordinary))
         self.assertTrue(all("--workspace" in command and "--all-features" in command and
@@ -384,6 +390,39 @@ class RealHistoryControls(unittest.TestCase):
             self.assertTrue(CI["plan"]("0" * 40, delete_head, root)["full"])
             self.assertTrue(CI["plan"]("f" * 40, delete_head, root)["full"])
 
+
+
+class BoundedResearchSchedulingControls(unittest.TestCase):
+    def test_bare_native_ci_cannot_schedule_experiment_frames(self):
+        commands, captured = [], io.StringIO()
+        with patch.dict(CI["native"].__globals__, output=lambda command: HEAD.encode() if command[0] == "git" else b"{}",
+                        graph=lambda _metadata, _root: WORKSPACE,
+                        run=lambda command, **kwargs: commands.append(command), COVERAGE=fixture_coverage(),
+                        qualified_coverage_base=lambda base, head: base), contextlib.redirect_stdout(captured), \
+                patch.dict(os.environ, CARGO_TARGET_DIR=str(Path(tempfile.gettempdir()) / "native-ci-correctness-fixture")):
+            CI["native"](choose(b"M\0unknown\0"))
+        samples = [command for command in commands if "--test" in command and "native_feasibility" in command]
+        self.assertEqual(samples, [], "Bare-host ordinary CI cannot launch declared resource experiments")
+        self.assertNotIn('"native_engine_research"', captured.getvalue())
+
+    def test_complete_worker_check_retains_all_six_experiment_commands(self):
+        check = runpy.run_path(str(Path(__file__).resolve().parents[1] / "check.py"))
+        commands, captured = [], io.StringIO()
+        with patch.dict(check["main"].__globals__, COVERAGE=fixture_coverage()), \
+                patch.object(check["subprocess"], "run", side_effect=lambda command, **kwargs: commands.append(command)), \
+                contextlib.redirect_stdout(captured):
+            self.assertEqual(check["main"](), 0)
+        self.assertEqual(len(commands), len(check["CHECKS"]) + 6)
+        samples = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "--test" in command]
+        self.assertEqual(len(samples), 6)
+        self.assertEqual(sum("--release" in command for command in samples), 3)
+        for command in samples:
+            self.assertEqual(command[command.index("--package") + 1], "hsearch-engine")
+            self.assertEqual(command[command.index("--test") + 1], "native_feasibility")
+            self.assertEqual(command[command.index("--success-output") + 1], "immediate")
+            self.assertEqual(command[command.index("--profile") + 1], "hsearch")
+            self.assertTrue(all(flag in command for flag in ["--locked", "--offline", "--all-features", "--no-tests=fail"]))
+            self.assertTrue("--config" in command and any(str(arg).endswith("cargo-correctness.toml") for arg in command))
 
 if __name__ == "__main__":
     unittest.main()

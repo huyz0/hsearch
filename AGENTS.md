@@ -24,4 +24,4 @@ M01.12's earlier generic hold is resolved by the accepted M01.13 native-report r
 
 Current M13 native JSON3.1 physical projection/context3 and complete M12 successor integration are accepted; see docs/plan/evidence/m01-13-integrated.md. Composite M07 is satisfied via successors; original b637/hard3gate and all M12/M13 issued histories stay frozen. The original ARM cause/M01.09 and M01.08 remain open.
 
-M01.14's [coordinator research split](docs/plan/coordinator-research.md) is under review, not research readiness. Original M01.09 cause and M01.08 remain open; no whole-M01/product acceptance edge is removed.
+M01.14's [coordinator research plan/guard is accepted](docs/plan/evidence/m01-14-integrated.md); claim only the declared coordinator research tasks after their prerequisites, with their own complete qualification. Original M01.09 cause and M01.08 remain open; no whole-M01/product acceptance edge is removed.

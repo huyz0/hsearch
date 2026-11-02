@@ -424,6 +424,18 @@ class ResourceCapabilityControls(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "non-root"):
             verify(2000, 4 * GIB, 512, limits=baseline, uid=0)
 
+    def test_compile_monitor_rejects_prior_512_pid_profile_before_launch(self):
+        execute = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))
+        verify = execute["verify_limits"]
+        caps = {"memory.max": str(4 * GIB), "memory.swap.max": "0", "cpu.max": "200000 100000", "pids.max": "512"}
+        def effective(*args):
+            verify(*args, limits=caps, uid=10001)
+            self.fail("Prior512PID profile admitted; no compiler may launch")
+        with patch.dict(execute["run"].__globals__, {"verify_limits": effective}):
+            with self.assertRaisesRegex(RuntimeError, "Effective cgroup caps"):
+                execute["run"]("compile", 8 * GIB, 1200)
+        self.assertEqual(MODULE["BUILD"]["pids"], 256)
+
     def test_diagnostics_rejects_the_all_unlimited_counterexample(self):
         execute = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))
         def sensor(path, *args, **kwargs):

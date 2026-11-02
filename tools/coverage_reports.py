@@ -40,8 +40,13 @@ def unsigned(value, maximum):
     return type(value) is int and 0 <= value <= maximum
 
 
-def decode(text):
-    """Validate bounded JSON framing/types before any physical projection."""
+def decode(text, *, profile="full"):
+    """Validate an explicitly selected native export shape before projection.
+
+    Full remains the strict legacy API. Files is LLVM --skip-functions output;
+    it retains every file/segment/branch/expansion and the same physical rules.
+    """
+    need(type(profile) is str and profile in {"full", "files"}, "Unknown native export profile")
     need(type(text) is str, "Native report must be text")
     need(0 < len(text) <= MAX_BYTES, "Native report character preflight bound")
     content = text.encode("utf-8")
@@ -97,9 +102,9 @@ def decode(text):
     need(type(document["data"]) is list and len(document["data"]) == 1,
          "Native report export count")
     export = document["data"][0]
-    need(type(export) is dict and set(export) == {"files", "functions", "totals"} and
-         type(export["functions"]) is list and type(export["totals"]) is dict,
-         "Native export shape")
+    keys = {"files", "functions", "totals"} if profile == "full" else {"files", "totals"}
+    need(type(export) is dict and set(export) == keys and type(export["totals"]) is dict and
+         (profile != "full" or type(export["functions"]) is list), "Native export shape")
     need(type(export["files"]) is list and len(export["files"]) <= MAX_FILES, "Native file count bound")
     names, files, segment_count = set(), [], 0
     for file in export["files"]:

@@ -1,0 +1,16 @@
+# Coordinator research plan acceptance
+
+Normally merged [PR18](https://github.com/huyz0/hsearch/pull/18) reviewed cfd861b5705156b7c9c7656f60c5a191b7a5c8d2 as 8d675dac7d48679e26b3e1e2069fd35e1382aae0, with identical tree 86c1ea41eaee6b422867436aa419b261948a93d2. Both actual independent finalsource reports cleared with no findings; exact-source durable gate and live strict ci-ok/app15368/admin protection passed. No formal GitHub approval was submitted.
+
+- [PR run41362984908](https://github.com/huyz0/hsearch/actions/runs/41362984908): all seven jobs passed; complete decoded exact-run proof SHA256 1901ed907825890e6979a3c31e985b0ec1cbf7e166174a5735d106072b5fe6d7.
+- [MAIN run41363929318](https://github.com/huyz0/hsearch/actions/runs/41363929318): all seven jobs passed; complete decoded exact-run proof SHA256 04dab107798c7c71948a6895e3061f9b2caa202746866cbd40d16d7741ca9143.
+
+Final native qualification includes both targets/profiles/allfeatures/doctests/lint/format,296 Linux component cases without skips and ten actual compiler controls. Source/projection/negative controls, five fresh cold semantic sessions,14search/4analyzer/34mutation reference steps and18fresh catalog samples per architecture remain. Production coverage523/523 in both profiles; changed0/0 is N/A because immutable Rust/workspace/compiler-policy objects match the base, not a waived floor.
+
+The first source protocol round is conservative overall round2: the actual initial code-design precheck counts1. Its nine missing-original-prerequisite guard omissions were fixed before the finalsource packet, with initial snapshot/report and false-pass evidence retained. Independent final checks derived all original prerequisites from the immutable base and refused their removal. Three actual legacy validators falsely accepted/ready product graphs after hypothetical research completion and whole-M01 removal; the current guard refuses them. Pure tests build in-memory counterexamples and never write acceptance into the live ledger.
+
+Packet SHA256 6afc09d87d3144df433ab9df183da2540f9a8afd3d78b51ddfe5db24ea5abc09; gate checks 15bed49c7c58fffd6098bd22dde7d883ecf135500e48154790779b8bd75d30f7. Raw correctness/security reports 66c7692056423abc01bc8e54bffd61632831bde75c79110cd6ca785fef4286a2 / d31306b7dcb74f9c21ecbccc6889962086dd1919af038e5ae53237f7e906a030. Acceptance record SHA256 b4a3cb746cd88eec10c8fdda14ec00de00b26c2b5dc9ae54f222b6251a7424d8.
+
+M02.09/.10 can now be claimed through normal ownership after their explicit prerequisites. Their numerical resource/workload caps are requirements for future coordinator-run experiments, not observed service enforcement or performance. Existing M02.02/.04 keep whole-M01 dependencies and every original deliverable/validation/DoD, with research added as an input. M02 completion and later format/runtime/provider/fleet/release gates remain.
+
+M01.09's original ARM diagnostic underlying cause is UNCONFIRMED and M01.08 remains open. Factual accepted M08 records the typed facade only; no SDK/exporter/runtime exists. No research result, delegated-agent productivity/baseline, engine/format authority, provider/fleet/license/release/deployment acceptance is asserted. Historical failures, review budgets and evidence remain unchanged.

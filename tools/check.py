@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COVERAGE = runpy.run_path(str(ROOT / "tools/coverage.py"))
 CHECKS = [
     [sys.executable, "tools/api_contract.py", "check"],
+    [sys.executable, "tools/engine_research.py", "check"],
     [sys.executable, "tools/workspace.py", "check"],
     [sys.executable, "tools/workspace.py", "selftest"],
     ["cargo", "fmt", "--all", "--", "--check"],
@@ -40,17 +41,18 @@ def main():
     except (ValueError, OSError) as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1
-    for command in CHECKS:
+    def checked(command):
         command = COVERAGE["cargo_command"](COVERAGE["correctness_command"](tools, command))
         print("CHECK: " + " ".join(command), flush=True)
-        try:
-            result = subprocess.run(command, cwd=ROOT, env=environment, check=False)
-        except OSError as error:
-            print(f"FAIL: {error}", file=sys.stderr)
-            return 1
-        if result.returncode:
-            print(f"FAIL: exit {result.returncode}", file=sys.stderr)
-            return 1
+        subprocess.run(command, cwd=ROOT, env=environment, check=True)
+
+    try:
+        for command in CHECKS:
+            checked(command)
+        runpy.run_path(str(ROOT / "tools/engine_research.py"))["run_samples"](checked)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        print(f"FAIL: {error}", file=sys.stderr)
+        return 1
     print("PASS: complete bootstrap suite; remaining milestone/runtime gates are recorded in the ledger")
     return 0
 

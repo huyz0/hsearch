@@ -23,7 +23,7 @@ LABEL = "io.hsearch.owner"
 NAMESPACE = re.compile(r"hsearch-[a-z0-9-]{1,25}-[0-9a-f]{12}\Z")
 VOLUMES = ("ca", "server", "client", "credentials", "data", "cargo", "target")
 HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py", "install_correctness.py", "coverage_entry.py")
-BUILD = {"cpu_millis": 2000, "memory_bytes": 4 * GIB, "pids": 512, "disk_bytes": 8 * GIB}
+BUILD = {"cpu_millis": 2000, "memory_bytes": 4 * GIB, "pids": 256, "disk_bytes": 8 * GIB}
 NAVIGATION = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 4 * GIB}
 STORAGE = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 10 * GIB}
 PROBE = {"cpu_millis": 500, "memory_bytes": 256 * 1024**2, "pids": 64, "disk_bytes": 1024**2}
@@ -470,7 +470,7 @@ class Sandbox:
         args = ["create", "--name", lease_id + "-compile", "--label", f"{LABEL}={owner}", "--label", f"io.hsearch.namespace={lease_id}",
                 "--log-driver", "local", "--log-opt", "max-size=16m", "--log-opt", "max-file=1", "--log-opt", "compress=false",
                 "--user", "10001:10001", "--read-only", "--cpus", "2", "--memory", str(4 * GIB), "--memory-swap", str(4 * GIB),
-                "--pids-limit", "512", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--network", "bridge",
+                "--pids-limit", "256", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--network", "bridge",
                 "--tmpfs", "/tmp:rw,nosuid,nodev,size=67108864", "--env", f"HSEARCH_BACKEND_RESERVE_BYTES={reserve}",
                 "--mount", f"type=volume,source={names[0]},target=/cargo", "--mount", f"type=volume,source={names[1]},target=/target",
                 "--mount", f"type=bind,source={folder / 'harness'},target=/harness,readonly",
@@ -563,7 +563,7 @@ class Sandbox:
         need(hashlib.sha256(path.read_bytes()).hexdigest() == current["config_sha256"], "Owned Compose snapshot changed")
         return self.docker.command("compose", "--project-name", record["namespace"], "--file", str(path), *args, timeout=150)
 
-    def run(self, namespace, mode, *, output_budget=8 * 1024**2, stream=True, artifact_directory=None):
+    def run(self, namespace, mode, *, output_budget=1024**2, stream=True, artifact_directory=None):
         need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build", "coverage"}, "Unknown sandbox command")
         need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)

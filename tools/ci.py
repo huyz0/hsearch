@@ -223,6 +223,7 @@ def run(command, root=ROOT, env=None):
 
 def docs():
     for command in ([sys.executable, "tools/api_contract.py", "check"],
+                    [sys.executable, "tools/engine_research.py", "check"],
                     [sys.executable, "docs/plan/tools/plan.py", "check"],
                     [sys.executable, "docs/plan/tools/plan.py", "selftest"],
                     [sys.executable, "docs/plan/tools/cost_model.py", "--selftest"],
@@ -258,6 +259,7 @@ def native(value):
     environment = coverage["ordinary_environment"](tools)
     def native_run(command): run(coverage["correctness_command"](tools, command), env=environment)
     native_run([sys.executable, "tools/coverage_corpus.py"])
+    native_run([sys.executable, "tools/engine_research.py", "check"])
     native_run([sys.executable, "tools/workspace.py", "check"])
     native_run([sys.executable, "tools/workspace.py", "selftest"])
     native_run(["cargo", "fmt", "--all", "--", "--check"])
@@ -279,6 +281,8 @@ def native(value):
     if production:
         native_run(["cargo", "build", "--locked", "--offline", "--release", "--lib",
              *[part for name in production for part in ("--package", name)]])
+    # Resource-qualified research repetitions run only in the existing capped
+    # sandbox check workers. Keep this complete native ordinary matrix intact.
     if value["coverage_packages"]:
         destination = Path(os.environ["CARGO_TARGET_DIR"]).absolute().parent / ("hsearch-coverage-" + uuid.uuid4().hex)
         native_run([sys.executable, "tools/coverage.py", "run", "--base", base, "--output", str(destination),

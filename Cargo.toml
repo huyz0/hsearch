@@ -14,7 +14,11 @@ repository = "https://github.com/huyz0/hsearch"
 hsearch-types = { path = "crates/types" }
 hsearch-observe = { path = "crates/observe" }
 hsearch-testkit = { path = "crates/testkit" }
-lucene-store = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a208544fb36ecd95932e89cd8bc5618" }
+lucene-analysis = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a208544fb36ecd95932e89cd8bc5618", default-features = false }
+lucene-codecs = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a208544fb36ecd95932e89cd8bc5618", default-features = false }
+lucene-index = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a208544fb36ecd95932e89cd8bc5618", default-features = false }
+lucene-search = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a208544fb36ecd95932e89cd8bc5618", default-features = false }
+lucene-store = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a208544fb36ecd95932e89cd8bc5618", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

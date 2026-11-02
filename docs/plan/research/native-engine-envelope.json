@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "status": "frozen initial research envelope; all native experiments NOT_RUN",
+  "task": "M02.09",
+  "execution_scope": "coordinator-research",
+  "source": {
+    "lucene_revision": "46e280bc2a208544fb36ecd95932e89cd8bc5618",
+    "rust_toolchain": "1.97.1",
+    "reference": {
+      "server_version": "3.9.0",
+      "server_revision": "4ee42a94e87f66fbf1e62a9871b1b87f91e02472",
+      "client_version": "3.2.0",
+      "client_revision": "8991792d3fcdfc221c9aef62d7e82c3d15ff0206",
+      "image_index": "sha256:3b55f6b6249cfdb92b52ee59adc8a266203ba9ef9f5d82544fad6f1af2f3609e",
+      "linux_amd64": "sha256:5c20af6b5cb472a74ba99f663bee3dd03afbeced14b3897b220a87fc75278445",
+      "linux_arm64": "sha256:bbdf65cb3d35c61a8ba495f22c1a42d7d7f0df23412e3419bf1e6cfca3ba4774",
+      "source_license": "Apache-2.0; no dependency source or binary is vendored"
+    },
+    "fixture_sha256": {
+      "documents.json": "5d96ef5b991a66d2757bbc8e1bf5feaba02d2a3a29343a6327b88f1d30517f04",
+      "schema.json": "38e6c912a21e096ea0ff0388c9045bd430a36026f967030bee28d6c2c89f173f",
+      "search-cases.json": "825496fcf3992caa4357ba869b2282644d42963a26ba26e378bc901fd99466d1",
+      "analyzer-cases.json": "1d759273809ab7951901e7d0dc3f197881f0e633d1bb324a76aaf59795102756",
+      "mutation-cases.json": "78450f10dab308e53ac932e658caf5881a160e3d257510779830ba5dfdce789c",
+      "profile-cases.json": "db09d6a5d8215e9209100df1d0c6f749347399637aba3e45690e4ea7942e8e5d"
+    }
+  },
+  "matrix": {
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu"
+    ],
+    "profiles": [
+      "dev",
+      "release"
+    ],
+    "features": "all applicable hsearch workspace features, with upstream test-util/test-support absent from production graph",
+    "ordinary_suite": "full tests/doctests/lint/format plus independent finalsource review and required fullCI"
+  },
+  "resource_limits": {
+    "cpu_cores": 2,
+    "memory_bytes": 4294967296,
+    "pids": 256,
+    "scratch_bytes": 19327352832,
+    "command_seconds": 1200,
+    "retained_command_output_bytes": 1048576,
+    "maximum_fixture_bytes": 65536,
+    "maximum_documents": 128,
+    "maximum_document_utf8_bytes": 8192,
+    "maximum_fields": 16,
+    "maximum_terms_per_document": 128,
+    "maximum_segments": 32,
+    "maximum_actors": 4,
+    "maximum_lifecycle_operations": 64,
+    "maximum_stress_operations": 256,
+    "fresh_process_repetitions": 3
+  },
+  "workloads": {
+    "core_documents": 11,
+    "core_document_ids": [
+      "001",
+      "002",
+      "003",
+      "004",
+      "005",
+      "006",
+      "007",
+      "008",
+      "009",
+      "010",
+      "011"
+    ],
+    "search_cases": [
+      {
+        "id": "match-all",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "keyword-term",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "keyword-terms",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "integer-range",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "integer-threshold-bool",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "standard-match",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "standard-phrase",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "standard-accent-preserved",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "analyzed-text-term-is-case-sensitive",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "bounded-field-sort",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "date-range",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "finite-metrics",
+        "profile_class": "difference",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "finite-key-ordered-terms",
+        "profile_class": "difference",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "local-bm25-ranking-order",
+        "profile_class": "subset",
+        "status": "native NOT_RUN"
+      }
+    ],
+    "analyzer_cases": [
+      {
+        "id": "ascii-lowercase",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "accent-preserved",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "no-default-stopword-removal",
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "empty-text",
+        "status": "native NOT_RUN"
+      }
+    ],
+    "mutation_histories": [
+      {
+        "id": "stable-id-crud",
+        "steps": 7,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "create-conflict",
+        "steps": 3,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "strict-unknown-field",
+        "steps": 2,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "bulk-semantic-isolation",
+        "steps": 3,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "bulk-repeated-id-order",
+        "steps": 2,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "bulk-malformed-tail",
+        "steps": 2,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "generated-id-adaptation",
+        "steps": 2,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "stale-occ-condition",
+        "steps": 4,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "forced-refresh-adaptation",
+        "steps": 2,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "pit-mutation-repeat-pages",
+        "steps": 6,
+        "status": "native NOT_RUN"
+      },
+      {
+        "id": "bounded-total-hit-relation",
+        "steps": 1,
+        "status": "native NOT_RUN"
+      }
+    ],
+    "native_schedules": [
+      "bounded insert/update/delete/native merge/native commit/reopen",
+      "stable logical ID and version replay in separate fresh histories",
+      "frozen reader remains unchanged while a fresh reader advances",
+      "invalid preparation plus concurrent refresh; retain pre-mutation visibility oracle",
+      "deliberately unsafe speculative serving-writer variant as expected counterexample, never a service path",
+      "limit+one refusal before native mutation/I/O where applicable"
+    ]
+  },
+  "oracles": {
+    "matching_candidates": "Existing independently enumerated public reference oracles; source/fixture hashes bound. Actual operator execution and gaps recorded per ID.",
+    "intentional_differences": "Independent logical/native oracle and explicit adaptation, never inferred unsupported behavior from comments.",
+    "visibility": "Native Lucene commit/refresh is distinct from hsearch WAL/object authority. This experiment has no real commit backend.",
+    "replay": "Logical resolved IDs/values/assigned versions, not equality of Lucene internal doc IDs or freshly generated physical segment IDs.",
+    "coverage": "At least90% aggregate/percrate/changed production coverage; zero coverable is N/A. No test or source-protocol/floor weakening."
+  },
+  "limits_of_evidence": [
+    "Every native case is NOT_RUN until real compiled execution is retained; incomplete/gap records cannot pass as matching capabilities.",
+    "No final persisted format, runtime authority/service, agent-baseline/productivity, provider/fleet, license/release/deployment acceptance.",
+    "Original M01.09 cause UNCONFIRMED, M01.08 open; M02.02/.04 retain wholeM01 and all original criteria.",
+    "Source/dependency/license inventory precedes production dependency introduction; no real user data, credentials or unbounded source/log capture."
+  ],
+  "held_out_sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89",
+  "initial_native_compile": "Initial dev compilation failed before test execution; retain raw API-shape errors, no native cases passed. Initial envelope and design precheck retained externally.",
+  "qualification_artifacts": {
+    "context_schema": 4,
+    "native_json_version": "3.1.0",
+    "export_profile": "files",
+    "command_flag": "--skip-functions",
+    "raw_report_bytes": 67108864,
+    "max_files": 10000,
+    "max_segments": 2000000,
+    "diagnostic_output_bytes": 1048576,
+    "retained_contract": "No source/file filter, lost expansion/segment, skipped required binary or threshold increase; initialworkload freeze and failed64MiB export remain historical evidence."
+  },
+  "qualification_provenance": {
+    "research_repetitions": "Only owned capped sandbox-x64/qualify and sandbox-arm64/qualify check workers; exact three/profile/architecture required.",
+    "ordinary_native_matrix": "Mandatory full functional tests/doctests/lint/coverage; no extra framed research repetitions and no bounded-resource inference.",
+    "acceptance": "No native_engine_research frames may be admitted on bare-host jobs; all qualified frame caps must match the unchanged resource_limits.",
+    "retained_review_failure": "e01a07f formalR1 P2 UNCAPPED_RESEARCH_RUNS_OUTSIDE_FROZEN_ENVELOPE; no actual overuse asserted, all capped local evidence retained."
+  }
+}

@@ -1,8 +1,9 @@
 # Progress and handoff
 
+M02.09: local e01a07f full x86 suites and both-profile 523/523 production coverage passed, but formal R1 found an uncapped duplicate CI experiment path. The repair preserves every ordinary test and the complete strict capped matrix, rejects bare-host experiment frames, and remains pending final-source requalification/review/native CI. No M02.09 publication or acceptance is claimed.
 ## Current implementation checkpoint
 
-M08.01's [typed contract/facade is accepted](evidence/m08-01-integrated.md). M01.14's [coordinator-only feasibility split](coordinator-research.md) is in progress; no new research task is yet claimable. Original M01.09 ARM cause remains UNCONFIRMED, M01.08 open, and original engine/runtime/format/release gates remain. No SDK/exporter/service/provider/fleet/release/deploy acceptance.
+M08.01's [typed contract/facade is accepted](evidence/m08-01-integrated.md). M01.14's [coordinator-only feasibility plan is accepted](evidence/m01-14-integrated.md). M02.09 is [in progress with a frozen native experiment envelope](research/native-engine-feasibility.md); source/dependency preflight, a complete x86_64 dev/release native suite and three additional repetitions/profile are retained at30f080e. Runtimecoverage export then hit64MiB; the [explicit compact-export/context4 continuation](research/native-engine-coverage-profile.md) is unqualified. Final-source/ARM/coverage/review/hostedCI research acceptance remains pending. M02.10 remains planned and dependency-ready. Original M01.09 ARM cause remains UNCONFIRMED, M01.08 open, and original engine/runtime/format/release gates remain. No SDK/exporter/service/provider/fleet/release/deploy acceptance.
 
 The prior checkpoints below are historical provenance.
 
