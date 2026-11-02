@@ -51,7 +51,7 @@ struct AnalyzerCase {
     text: &'static str,
     tokens: Vec<(&'static str, i32, i32, i32)>,
 }
-include!("../../../fixtures/engine-research/core.rs");
+include!("fixtures/native_core.rs");
 
 fn analyzer() -> Analyzer {
     Analyzer::new(StandardAnalyzer::new())

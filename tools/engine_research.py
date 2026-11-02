@@ -152,7 +152,7 @@ def main():
     args = parser.parse_args()
     try:
         expected = render()
-        path = ROOT / "fixtures/engine-research/core.rs"
+        path = ROOT / "crates/engine/tests/fixtures/native_core.rs"
         if args.command == "render":
             path.write_text(expected, encoding="utf-8", newline="\n")
         else:
