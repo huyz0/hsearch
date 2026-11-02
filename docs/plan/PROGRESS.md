@@ -2,7 +2,7 @@
 
 ## Current implementation checkpoint
 
-M08.01's [typed contract/facade is accepted](evidence/m08-01-integrated.md). M01.14's [coordinator-only feasibility plan is accepted](evidence/m01-14-integrated.md). M02.09/.10 are dependency-ready for normal coordinator claims; their experiments are unimplemented/unqualified. Original M01.09 ARM cause remains UNCONFIRMED, M01.08 open, and original engine/runtime/format/release gates remain. No SDK/exporter/service/provider/fleet/release/deploy acceptance.
+M08.01's [typed contract/facade is accepted](evidence/m08-01-integrated.md). M01.14's [coordinator-only feasibility plan is accepted](evidence/m01-14-integrated.md). M02.09 is [in progress with a frozen native experiment envelope](research/native-engine-feasibility.md); its source/dependency preflight and every native case remain unqualified. M02.10 remains planned and dependency-ready. Original M01.09 ARM cause remains UNCONFIRMED, M01.08 open, and original engine/runtime/format/release gates remain. No SDK/exporter/service/provider/fleet/release/deploy acceptance.
 
 The prior checkpoints below are historical provenance.
 

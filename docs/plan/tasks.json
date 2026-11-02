@@ -910,9 +910,14 @@
             "M08.01"
           ],
           "owner": "coordinator/engine-research",
-          "status": "planned",
+          "status": "in_progress",
           "execution_scope": "coordinator-research",
-          "evidence": []
+          "evidence": [
+            {
+              "path": "research/native-engine-envelope.json",
+              "result": "Initial source/fixture/workload/resource envelope frozen before experiments; all native cases NOT_RUN. Source/license/dependency preflight next, no research acceptance."
+            }
+          ]
         },
         {
           "id": "M02.10",
