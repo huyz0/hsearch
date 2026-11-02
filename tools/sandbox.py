@@ -563,7 +563,7 @@ class Sandbox:
         need(hashlib.sha256(path.read_bytes()).hexdigest() == current["config_sha256"], "Owned Compose snapshot changed")
         return self.docker.command("compose", "--project-name", record["namespace"], "--file", str(path), *args, timeout=150)
 
-    def run(self, namespace, mode, *, output_budget=8 * 1024**2, stream=True, artifact_directory=None):
+    def run(self, namespace, mode, *, output_budget=1024**2, stream=True, artifact_directory=None):
         need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build", "coverage"}, "Unknown sandbox command")
         need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)

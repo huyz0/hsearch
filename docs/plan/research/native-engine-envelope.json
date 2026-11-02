@@ -240,5 +240,16 @@
     "Source/dependency/license inventory precedes production dependency introduction; no real user data, credentials or unbounded source/log capture."
   ],
   "held_out_sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89",
-  "initial_native_compile": "Initial dev compilation failed before test execution; retain raw API-shape errors, no native cases passed. Initial envelope and design precheck retained externally."
+  "initial_native_compile": "Initial dev compilation failed before test execution; retain raw API-shape errors, no native cases passed. Initial envelope and design precheck retained externally.",
+  "qualification_artifacts": {
+    "context_schema": 4,
+    "native_json_version": "3.1.0",
+    "export_profile": "files",
+    "command_flag": "--skip-functions",
+    "raw_report_bytes": 67108864,
+    "max_files": 10000,
+    "max_segments": 2000000,
+    "diagnostic_output_bytes": 1048576,
+    "retained_contract": "No source/file filter, lost expansion/segment, skipped required binary or threshold increase; initialworkload freeze and failed64MiB export remain historical evidence."
+  }
 }

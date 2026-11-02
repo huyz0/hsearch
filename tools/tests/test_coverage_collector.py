@@ -173,7 +173,11 @@ class CollectionInventoryControls(unittest.TestCase):
         protocol = COV["native_report_protocol"]()
         context = {"schema_version": 2, "source": identity, "profile": "dev", "features": "all",
                    "rustflags": COV["RUSTFLAGS"], "native_report_protocol": protocol}
-        for broken in (context, {**context, "schema_version": 3, "native_report_protocol": {**protocol, "version": "other"}}):
+        for broken in (context, {**context, "schema_version": 3, "native_report_protocol": {**protocol, "version": "other"}},
+                       {**context, "schema_version": 3},
+                       {**context, "schema_version": 4, "native_report_protocol": {**protocol, "version": "other"}},
+                       {**context, "schema_version": 4, "native_report_protocol": {**protocol, "export_profile": "full"}},
+                       {**context, "schema_version": 4, "native_report_protocol": {k: v for k, v in protocol.items() if k != "export_profile"}}):
             with patch.dict(COV["merge"].__globals__, Runner=Runner, load=lambda _path: broken,
                             source_identity=lambda: identity, nextest_policy=native_probe), self.assertRaises(ValueError):
                 COV["merge"](Path("context"))

@@ -434,10 +434,18 @@ def owned_artifact(runner, filename):
 
 
 def native_report_protocol():
-    return {**REPORTS["PROTOCOL"], "projection_sha256": hashlib.sha256((ROOT / "tools/coverage_reports.py").read_bytes()).hexdigest()}
+    return {**REPORTS["PROTOCOL"], "export_profile": "files", "projection_sha256": hashlib.sha256((ROOT / "tools/coverage_reports.py").read_bytes()).hexdigest()}
 
 
-def normalize_report(text, sources, packages, selected, tracked, *, runtime=False, external_roots=(), report_bindings=None):
+def native_export_command(llvm, objects, *, profile_path=None):
+    """Export all file maps without redundant per-function data or source filters."""
+    need(objects, "Native export needs every inventoried object")
+    profile = ["--empty-profile"] if profile_path is None else ["--instr-profile=" + str(profile_path)]
+    return [str(llvm / "llvm-cov"), "export", *profile, "--num-threads=2", "--format=text", "--skip-functions", objects[0],
+            *[part for item in objects[1:] for part in ("--object", item)]]
+
+
+def normalize_report(text, sources, packages, selected, tracked, *, runtime=False, external_roots=(), report_bindings=None, export_profile="full"):
     result = {}
     owners = sorted(((Path(packages[name]["manifest_path"]).parent, name) for name in selected), key=lambda pair: len(str(pair[0])), reverse=True)
     def include(filename):
@@ -463,7 +471,7 @@ def normalize_report(text, sources, packages, selected, tracked, *, runtime=Fals
         need(relative in tracked and relative.endswith(".rs"), "Generated/untracked first-party coverage requires explicit policy")
         sources.setdefault(relative, source_metadata(relative, owner))
         return True
-    native = REPORTS["decode"](text)
+    native = REPORTS["decode"](text, profile=export_profile)
     wanted = {file.filename for file in native.files if include(file.filename)}
     if report_bindings is not None:
         report_bindings.append({"raw_sha256": native.raw_sha256, "file_count": len(native.files), "selected_file_count": len(wanted)})
@@ -550,9 +558,8 @@ def collect(directory, base, profile, requested):
                 map_objects.append(artifact)
     baseline, baseline_reports = {}, []
     if map_objects:
-        text = runner.command([str(llvm / "llvm-cov"), "export", "--empty-profile", "--num-threads=2", "--format=text", map_objects[0],
-                               *[part for item in map_objects[1:] for part in ("--object", item)]])
-        baseline = normalize_report(text, sources, packages, selected, tracked, external_roots=external_roots, report_bindings=baseline_reports)
+        text = runner.command(native_export_command(llvm, map_objects))
+        baseline = normalize_report(text, sources, packages, selected, tracked, external_roots=external_roots, report_bindings=baseline_reports, export_profile="files")
     non_executable = {name: assertion for name, assertion in policy["non_executable"].items() if name in sources}
     proof = source_proof(base, sources)
     changed = proof_changes(proof)
@@ -564,7 +571,7 @@ def collect(directory, base, profile, requested):
     inventory_path = runner.root / "test-inventory.json"
     save(inventory_path, inventory)
     binaries = {binary_id: {"artifact": owned_artifact(runner, suite["binary-path"]), "test_count": len(suite["testcases"])} for binary_id, suite in suites.items()}
-    context = {"schema_version": 3, "native_report_protocol": native_report_protocol(), "baseline_native_reports": baseline_reports, "source_proof": proof, "generation": uuid.uuid4().hex, "source": before, "base": base, "toolchain": tools,
+    context = {"schema_version": 4, "native_report_protocol": native_report_protocol(), "baseline_native_reports": baseline_reports, "source_proof": proof, "generation": uuid.uuid4().hex, "source": before, "base": base, "toolchain": tools,
                "target": host, "profile": profile, "features": "all", "rustflags": RUSTFLAGS, "packages": selected,
                "sources": sources, "baseline": {name: {str(line): hits for line, hits in lines.items()} for name, lines in baseline.items()},
                "changed": changed, "non_executable": non_executable, "binaries": binaries, "production_objects": production_objects,
@@ -594,7 +601,7 @@ def collect(directory, base, profile, requested):
 def merge(directory):
     runner = Runner(directory, create=False)
     context = load(runner.root / "context.json")
-    need(type(context["schema_version"]) is int and context["schema_version"] == 3 and context["source"] == source_identity() and context["profile"] in {"dev", "release"} and
+    need(type(context["schema_version"]) is int and context["schema_version"] == 4 and context["source"] == source_identity() and context["profile"] in {"dev", "release"} and
          context["features"] == "all" and context["rustflags"] == RUSTFLAGS, "Stale or unqualified coverage collection")
     need(context["native_report_protocol"] == native_report_protocol(), "Native report protocol changed before merge")
     nextest_policy()
@@ -640,11 +647,10 @@ def merge(directory):
         merged = runner.root / ("merged-" + uuid.uuid4().hex[:12] + ".profdata")
         runner.command([str(llvm / "llvm-profdata"), "merge", "--sparse", "--num-threads=2", *profiles, "-o", merged])
         binary_paths = [runner.root / value["artifact"]["path"] for value in context["binaries"].values()]
-        text = runner.command([str(llvm / "llvm-cov"), "export", "--num-threads=2", "--format=text", "--instr-profile=" + str(merged), binary_paths[0],
-                               *[part for item in binary_paths[1:] for part in ("--object", item)]])
+        text = runner.command(native_export_command(llvm, binary_paths, profile_path=merged))
         sources = dict(context["sources"])
         tracked = tracked_paths()
-        runtime = normalize_report(text, sources, packages, selected, tracked, runtime=True, external_roots=external_roots, report_bindings=runtime_reports)
+        runtime = normalize_report(text, sources, packages, selected, tracked, runtime=True, external_roots=external_roots, report_bindings=runtime_reports, export_profile="files")
         need(sources == context["sources"], "Runtime introduced an unbound production source")
     map_objects = []
     for record in context["production_objects"]:
@@ -654,11 +660,10 @@ def merge(directory):
             map_objects.append(path)
     baseline, baseline_reports = {}, []
     if map_objects:
-        text = runner.command([str(llvm / "llvm-cov"), "export", "--empty-profile", "--num-threads=2", "--format=text", map_objects[0],
-                               *[part for item in map_objects[1:] for part in ("--object", item)]])
+        text = runner.command(native_export_command(llvm, map_objects))
         sources = dict(context["sources"])
         tracked = tracked_paths()
-        baseline = normalize_report(text, sources, packages, selected, tracked, external_roots=external_roots, report_bindings=baseline_reports)
+        baseline = normalize_report(text, sources, packages, selected, tracked, external_roots=external_roots, report_bindings=baseline_reports, export_profile="files")
         need(sources == context["sources"], "Production baseline introduced an unbound source")
     need(baseline_reports == context["baseline_native_reports"], "Native baseline export changed before merge")
     need({name: {str(line): hits for line, hits in lines.items()} for name, lines in baseline.items()} == context["baseline"], "Production denominator changed before merge")

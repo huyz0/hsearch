@@ -77,7 +77,7 @@ def diagnostics():
     print(json.dumps({"uid": os.getuid(), "architecture": platform.machine(), "versions": versions, "cgroup_limits": caps}))
 
 
-def run(mode, disk_bytes, timeout, output_bytes=8 * 1024**2):
+def run(mode, disk_bytes, timeout, output_bytes=1024**2):
     verify_limits(2000, 4 * 1024**3, 256)
     writable = (("/cargo", "/target", "/navigation-output") if mode == "navigation-build" else
                 ("/cargo", "/target", "/coverage-evidence") if mode == "coverage" else ("/cargo", "/target"))
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     parser.add_argument("mode", choices=(*COMMANDS, "diagnostics"))
     parser.add_argument("--disk-bytes", type=int, required=True)
     parser.add_argument("--timeout", type=int, required=True)
-    parser.add_argument("--output-bytes", type=int, default=8 * 1024**2)
+    parser.add_argument("--output-bytes", type=int, default=1024**2)
     args = parser.parse_args()
     if not 1 <= args.disk_bytes <= 64 * 1024**3 or not 1 <= args.timeout <= 1800 or not 4096 <= args.output_bytes <= 8 * 1024**2:
         parser.error("Budget outside the supported bounded range")

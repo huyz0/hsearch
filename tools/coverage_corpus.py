@@ -588,6 +588,56 @@ class NextestDeadlineControl(unittest.TestCase):
                               "retry_override_false_success_observed": True, "explicit_no_retry_seed": "rejected", "production_override": "refused"}), flush=True)
 
 
+class ActualCompactExportControls(unittest.TestCase):
+    def test_pinned_full_and_compact_exports_have_identical_file_maps(self):
+        cov = runpy.run_path(str(Path(__file__).with_name("coverage.py")))
+        with tempfile.TemporaryDirectory(dir=os.environ["CARGO_TARGET_DIR"]) as directory:
+            parent = Path(directory)
+            source = parent / "profile.rs"
+            source.write_text('macro_rules! bump { ($x:expr) => { $x + 1 } }\n#[inline(never)] fn generic<T>(x: u32) -> u32 { let _ = std::mem::size_of::<T>(); bump!(x) }\nfn main() { assert_eq!(generic::<u8>(1) + generic::<u64>(2), 5); }\n', encoding="utf-8")
+            for profile, optimization in [("dev", "0"), ("release", "3")]:
+                runner = cov["Runner"](parent / profile)
+                tools, host, llvm = cov["tool_identity"](runner)
+                binary = runner.root / "native-profile"
+                runner.command([tools["cargo_compiler"], "--edition=2024", "--target", host,
+                                "-Cinstrument-coverage", "-Ccodegen-units=1", "-Copt-level=" + optimization,
+                                str(source), "-o", binary])
+                profiles = runner.root / "runtime-profiles"
+                profiles.mkdir()
+                environment = dict(runner.env, LLVM_PROFILE_FILE=str(profiles / "%m-%p.profraw"))
+                runner.command([tools["test_executor"]["path"], "--", binary], env=environment)
+                raw = sorted(profiles.glob("*.profraw"))
+                self.assertTrue(raw)
+                merged = runner.root / "actual.profdata"
+                runner.command([str(llvm / "llvm-profdata"), "merge", "--sparse", "--num-threads=2", *raw, "-o", merged])
+                receipts = []
+                for scope, data in [("baseline", None), ("runtime", merged)]:
+                    compact_command = cov["native_export_command"](llvm, [binary], profile_path=data)
+                    full_command = [arg for arg in compact_command if arg != "--skip-functions"]
+                    full_text = runner.command(full_command)
+                    compact_text = runner.command(compact_command)
+                    full_doc, compact_doc = json.loads(full_text), json.loads(compact_text)
+                    self.assertTrue(full_doc["data"][0]["functions"])
+                    self.assertNotIn("functions", compact_doc["data"][0])
+                    self.assertEqual(full_doc["data"][0]["files"], compact_doc["data"][0]["files"])
+                    self.assertEqual(full_doc["data"][0]["totals"], compact_doc["data"][0]["totals"])
+                    full_map = cov["REPORTS"]["decode"](full_text)
+                    compact_map = cov["REPORTS"]["decode"](compact_text, profile="files")
+                    names = {item.filename for item in full_map.files}
+                    self.assertTrue(str(source) in names)
+                    self.assertEqual(full_map.files, compact_map.files)
+                    self.assertEqual(cov["REPORTS"]["project"](full_map, names), cov["REPORTS"]["project"](compact_map, names))
+                    with self.assertRaisesRegex(ValueError, "Native export shape"):
+                        cov["REPORTS"]["decode"](compact_text)
+                    receipts.append({"scope": scope, "files": len(full_map.files), "full_bytes": len(full_text.encode()),
+                                     "compact_bytes": len(compact_text.encode()), "full_raw_sha256": full_map.raw_sha256,
+                                     "compact_raw_sha256": compact_map.raw_sha256})
+                print(json.dumps({"native_compact_export": "pass", "profile": profile, "target": host,
+                                  "all_file_records_and_totals_identical": True, "physical_projection_identical": True,
+                                  "legacy_full_decoder_still_strict": True, "file_filters": False,
+                                  "raw_report_limit_bytes": cov["REPORTS"]["MAX_BYTES"], "receipts": receipts}), flush=True)
+
+
 if __name__ == "__main__":
     if platform.system() != "Linux":
         raise SystemExit("Compiler coverage/deadline corpus requires qualified Linux")
