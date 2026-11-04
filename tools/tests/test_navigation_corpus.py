@@ -1,6 +1,8 @@
 """Corpus failures must remain visible without discarding unexpected work."""
 from contextlib import redirect_stdout
 import io
+import hashlib
+import json
 import os
 from pathlib import Path
 import runpy
@@ -10,6 +12,121 @@ import unittest
 
 API = runpy.run_path(str(Path(__file__).resolve().parents[1] / "navigation_corpus.py"))
 Refused = API["API"]["Refused"]
+
+
+class WitnessControls(unittest.TestCase):
+    def response(self, items=None):
+        return {"status": "semantic", "semantic": True,
+                "source": {"head": "a" * 40, "digest": "b" * 64},
+                "tool_identity": {"lsp_revision": "c" * 40, "lsp_sha256": "d" * 64},
+                "data": {"items": items if items is not None else [
+                    {"severity": "error", "code": "E0308", "line": 2}]}}
+
+    def observe(self, response, acknowledged=None):
+        lines = []
+        witness = API["ColdWitness"](lines.append)
+        self.assertTrue(witness.emit(response, 0, acknowledged))
+        self.assertEqual(len(lines), 1)
+        return witness, json.loads(lines[0])
+
+    def test_actual_diagnostic_and_current_identity_are_retained(self):
+        witness, record = self.observe(self.response(), {"lsp_sha256": "e" * 64})
+        self.assertEqual(record["items"], [{"item_index": 0, "severity": "error", "code": "E0308", "line": 2}])
+        self.assertTrue(record["e0308_line2_present"])
+        self.assertEqual(record["source_digest"], "b" * 64)
+        self.assertEqual(record["lsp_sha256"], "d" * 64)
+        self.assertEqual(record["identity_origin"], "context_response")
+        self.assertEqual(witness.records, 1)
+        self.assertTrue(witness.complete)
+
+    def test_expected_metadata_cannot_turn_wrong_or_empty_items_into_match(self):
+        for items in ([], [{"severity": "error", "code": "E0308", "line": 3}],
+                      [{"severity": "error", "code": "E9999", "line": 2}]):
+            response = self.response(items)
+            response["expected"] = {"code": "E0308", "line": 2}
+            _, record = self.observe(response)
+            self.assertFalse(record["e0308_line2_present"])
+
+    def test_actual_target_after_prefix_keeps_its_original_index(self):
+        items = [{"severity": "warning", "code": "W1", "line": 4}] * 9
+        items += [{"severity": "error", "code": "E0308", "line": 2}]
+        _, record = self.observe(self.response(items))
+        self.assertEqual(record["diagnostics_count"], 10)
+        self.assertEqual(record["items"][0]["item_index"], 9)
+        self.assertEqual(record["items"][0]["code"], "E0308")
+        self.assertLessEqual(len(record["items"]), 8)
+        self.assertTrue(record["truncated"])
+
+    def test_failed_context_uses_labelled_acknowledged_identity(self):
+        response = self.response()
+        response.pop("tool_identity")
+        response.update(status="fallback", semantic=False, reason="navigation_cli_query_failed",
+                        data={"semantic_failure": {"exit_code": 1, "stderr_head": "LSP error -32800"}})
+        _, record = self.observe(response, {"lsp_revision": "e" * 40, "lsp_sha256": "f" * 64})
+        self.assertFalse(record["semantic"])
+        self.assertIsNone(record["diagnostics_count"])
+        self.assertEqual(record["diagnostics_shape"], "unavailable")
+        self.assertEqual(record["identity_origin"], "acknowledged_start")
+        self.assertEqual(record["lsp_sha256"], "f" * 64)
+        self.assertEqual(record["reason"], "navigation_cli_query_failed")
+
+    def test_missing_identity_and_invalid_digests_are_not_invented(self):
+        response = self.response()
+        response.pop("tool_identity")
+        response["source"] = {"digest": "not-a-digest"}
+        _, record = self.observe(response)
+        self.assertEqual(record["identity_origin"], "unavailable")
+        self.assertIsNone(record["lsp_sha256"])
+        self.assertIsNone(record["source_digest"])
+        self.assertIsNone(record["source_head"])
+
+    def test_serialized_control_characters_and_unicode_respect_record_bound(self):
+        response = self.response([{"severity": "\x00" * 32, "code": "\x01\u03bb" * 100, "line": 4}] * 8)
+        response["reason"] = "\x02\u03bb" * 300
+        witness, record = self.observe(response)
+        self.assertLessEqual(len(API["encoded"](record)) + 1, witness.RECORD_BYTES)
+        self.assertTrue(record["truncated"])
+        self.assertEqual(witness.bytes, len(API["encoded"](record)) + 1)
+
+    def test_whole_run_budget_refuses_before_writing(self):
+        lines = []
+        witness = API["ColdWitness"](lines.append)
+        witness.bytes = witness.TOTAL_BYTES - 1
+        self.assertFalse(witness.emit(self.response(), 0))
+        self.assertEqual(lines, [])
+        self.assertFalse(witness.complete)
+
+    def test_closed_sink_cannot_replace_original_failure(self):
+        def closed(_value):
+            raise BrokenPipeError("closed")
+        witness = API["ColdWitness"](closed)
+        primary = Refused("actual semantic oracle failure")
+        with self.assertRaises(Refused) as caught:
+            try:
+                raise primary
+            finally:
+                self.assertFalse(witness.emit(self.response(), 0))
+        self.assertIs(caught.exception, primary)
+        self.assertFalse(witness.complete)
+        self.assertEqual(witness.records, 0)
+        self.assertGreater(witness.bytes, 0)
+
+    def test_full_bounded_response_is_hashed_and_changes_with_source(self):
+        response = self.response()
+        _, first = self.observe(response)
+        self.assertEqual(first["response_sha256"], hashlib.sha256(API["encoded"](response)).hexdigest())
+        response["source"]["digest"] = "e" * 64
+        _, second = self.observe(response)
+        self.assertNotEqual(first["response_sha256"], second["response_sha256"])
+
+    def test_oversized_context_response_cannot_qualify_evidence(self):
+        response = self.response()
+        response["extra"] = "x" * 131072
+        lines = []
+        witness = API["ColdWitness"](lines.append)
+        self.assertFalse(witness.emit(response, 0))
+        self.assertFalse(witness.complete)
+        self.assertEqual(lines, [])
 
 
 class CleanupControls(unittest.TestCase):

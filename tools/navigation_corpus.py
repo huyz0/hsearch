@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Qualify real pinned Rust navigation, isolation, freshness and whole fixture costs."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
+import re
 import runpy
 import os
 import stat
@@ -14,6 +16,88 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 API = runpy.run_path(str(ROOT / "tools/context.py"))
 need, encoded = API["need"], API["encoded"]
+
+
+class ColdWitness:
+    """Retain bounded actual cold-query evidence before its semantic assertions."""
+    RECORD_BYTES, TOTAL_BYTES = 4096, 65536
+
+    def __init__(self, sink=None):
+        self.sink = sink if sink is not None else lambda value: print(value, flush=True)
+        self.bytes, self.records, self.complete = 0, 0, True
+
+    def emit(self, response, repetition, acknowledged_identity=None):
+        try:
+            wire = encoded(response)
+            need(len(wire) <= 131072, "Cold witness input exceeds context bound")
+            source, data = response.get("source", {}), response.get("data", {})
+            items = data.get("items")
+            identity = response.get("tool_identity")
+            origin = "context_response" if isinstance(identity, dict) else "acknowledged_start"
+            identity = identity if isinstance(identity, dict) else acknowledged_identity
+            if not isinstance(identity, dict):
+                identity, origin = {}, "unavailable"
+
+            def digest(value, size):
+                return value if isinstance(value, str) and re.fullmatch("[a-f0-9]{%d}" % size, value) else None
+
+            indexed = list(enumerate(items)) if isinstance(items, list) else []
+            matches = [(index, item) for index, item in indexed if isinstance(item, dict)
+                       and item.get("severity") == "error" and item.get("code") == "E0308" and item.get("line") == 2]
+            # The fixture's actual target comes first even if other diagnostics
+            # precede it. Its original index and selection policy remain explicit.
+            selected = (matches[:1] + [(index, item) for index, item in indexed
+                         if not matches or index != matches[0][0]])[:8]
+            clipped = False
+            preview = []
+            for index, item in selected:
+                if not isinstance(item, dict):
+                    preview.append({"item_index": index, "invalid_item": True})
+                    continue
+                row = {"item_index": index}
+                for key, bound in (("severity", 16), ("code", 64)):
+                    value = item.get(key)
+                    if isinstance(value, str):
+                        clipped |= len(value) > bound
+                        row[key] = value[:bound]
+                    elif key == "code" and type(value) is int and abs(value) < 2**31:
+                        row[key] = value
+                    else:
+                        clipped |= value is not None
+                        row[key] = None
+                line = item.get("line")
+                row["line"] = line if type(line) is int and 0 < line < 2**31 else None
+                clipped |= line is not None and row["line"] is None
+                preview.append(row)
+            status, reason = str(response.get("status")), str(response.get("reason", ""))
+            clipped |= len(status) > 32 or len(reason) > 160
+            record = {"navigation_cold_witness": 1, "repetition": repetition,
+                      "status": status[:32], "semantic": response.get("semantic") is True,
+                      "source_digest": digest(source.get("digest"), 64), "source_head": digest(source.get("head"), 40),
+                      "identity_origin": origin, "lsp_sha256": digest(identity.get("lsp_sha256"), 64),
+                      "lsp_revision": digest(identity.get("lsp_revision"), 40),
+                      "response_sha256": hashlib.sha256(wire).hexdigest(),
+                      "diagnostics_count": len(items) if isinstance(items, list) else None,
+                      "diagnostics_shape": "items_list" if isinstance(items, list) else "unavailable",
+                      "e0308_line2_present": bool(matches), "selection": "first_target_then_original_order",
+                      "items": preview, "truncated": clipped or len(indexed) > len(preview),
+                      "reason": reason[:160]}
+            raw = encoded(record)
+            while len(raw) + 1 > self.RECORD_BYTES and record["items"]:
+                record["items"].pop()
+                record["truncated"] = True
+                raw = encoded(record)
+            need(len(raw) + 1 <= self.RECORD_BYTES and self.bytes + len(raw) + 1 <= self.TOTAL_BYTES,
+                 "Cold witness diagnostic allowance exhausted")
+            # Account the attempted write too: a partial sink failure cannot
+            # authorize an unbounded retry or a successful corpus report.
+            self.bytes += len(raw) + 1
+            self.sink(raw.decode("utf-8"))
+            self.records += 1
+            return True
+        except (OSError, ValueError, KeyError, TypeError, API["Refused"]):
+            self.complete = False
+            return False
 
 
 def cleanup_claims(store, claims, resources, query, known_edits, primary_error):
@@ -89,11 +173,16 @@ def corpus(resources, evidence_parent):
     git(source, "commit", "-qm", "frozen navigation fixture")
     store = API["TASK"]["TaskStore"](area / "tasks", source)
     claims, events, results, known_edits = [], [], [], {}
+    cold_witness, identities = ColdWitness(), {}
 
-    def query(claim, owner, operation, **fields):
+    def query(claim, owner, operation, *, cold_repetition=None, **fields):
         value = {"schema_version": 1, "operation": operation, **fields}
         started = time.monotonic()
         result = API["route"](store, claim, owner, value, resources)
+        if operation == "start" and result.get("status") == "ready":
+            identities[claim] = result.get("data", {}).get("identity")
+        if cold_repetition is not None:
+            cold_witness.emit(result, cold_repetition, identities.get(claim))
         event = {"role": owner, "request": value, "response": result}
         events.append(event)
         results.append({"operation": operation, "owner": owner, "status": result["status"],
@@ -181,7 +270,7 @@ def corpus(resources, evidence_parent):
             if repetition:
                 need(query(first, owner, "stop")["status"] == "stopped", "Cold diagnostic session did not stop")
                 need(query(first, owner, "start")["status"] == "ready", "Cold diagnostic session did not start")
-            invalid = query(first, owner, "diagnostics", file="src/lib.rs")
+            invalid = query(first, owner, "diagnostics", cold_repetition=repetition, file="src/lib.rs")
             need(invalid["cargo_check_required"] and invalid["status"] == "semantic", "Cold diagnostics must return semantic data with compiler authority declared")
             need(any(item.get("severity") == "error" and item.get("code") == "E0308" and item.get("line") == 2
                      for item in invalid["data"]["items"]), "Cold diagnostic E0308 location oracle mismatch")
@@ -193,6 +282,7 @@ def corpus(resources, evidence_parent):
         (first_root / "src/lib.rs").write_text(files["src/lib.rs"], encoding="utf-8", newline="\n")
         passed = query(first, owner, "compile")
         need(passed["status"] == "compile" and passed["data"]["passed"] is True, "Authoritative cargo check rejected valid fixture")
+        need(cold_witness.complete and cold_witness.records == 5, "Cold diagnostic witness incomplete; corpus cannot qualify")
 
         shared = common + [{"role": "compiler", "request": {"operation": "compile"}, "response": passed},
                            {"role": "reviewer", "findings": [], "basis": "Frozen location oracle and source-preservation assertions above"}]
@@ -207,6 +297,8 @@ def corpus(resources, evidence_parent):
                   "warm_manager_reused": True, "other_worktree_survived_cleanup": True, "stale_fallback": True,
                   "cargo_check_type_error_failed": True, "cargo_check_valid_passed": True,
                   "cold_diagnostic_sessions": cold_diagnostic_sessions,
+                  "cold_diagnostic_witness": {"records": cold_witness.records, "payload_bytes": cold_witness.bytes,
+                                              "complete": cold_witness.complete},
                   "accounting_scope": "Complete deterministic fixture JSON transcript including both roles, commands, responses and fixed review; excludes model internals, actual token billing, transport framing and unrelated tools",
                   "tokenizer": None, "token_counts_are_estimates": True, "actual_agent_trial": "M01.08 remains separate",
                   "costs": [costs("tiny Rust semantic workflow including cold/warm lifecycle", baseline, semantic_events),
