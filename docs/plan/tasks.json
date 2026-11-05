@@ -833,6 +833,36 @@
               "result": "User-authorized proposal in progress. No replacement gate, incident or agent-baseline acceptance yet."
             }
           ]
+        },
+        {
+          "id": "M01.16",
+          "title": "Reconcile qualified integration evidence and factual task states",
+          "goal": "Record already qualified ARM incident policy and bounded native engine research integrations with exact provenance and truthful ledger state, without reopening original source reviews or weakening product gates.",
+          "deliverables": [
+            "Factual M01.15 disposition acceptance record bound to reviewed source, normal merge, complete PR/main qualification and actual cold witnesses",
+            "Preserved M02.09 evidence-only author contribution plus independently checked accepted research status and immutable historical failures",
+            "Serialized ledger, progress, instruction and generated-page reconciliation; original policy criteria, source histories, M01.08 and whole-M01 product boundaries retained"
+          ],
+          "validation": [
+            "Inspect actual source, independent reports, durable gates, live protected integration and complete native x86_64/ARM64/sandbox/coverage job logs for every accepted claim",
+            "Retain PR22 native nonancestor and sandbox disk-admission failures; fresh current-base integration checks must pass without weakening ancestry, resource or coverage controls",
+            "Both independent roles review the complete final factual integration tree and are independent of both contributing author sessions; complete applicable checks and normal protected integration remain required"
+          ],
+          "definition_of_done": [
+            "Factual records cite exact accepted source/trees, both original independent reports, complete successful PR/main qualification and explicit limits; no missing or failed result is represented as passing",
+            "New factual integration artifact has its own source-bound independent review and check history; no original M01.15/M02.09 counter is reset or borrowed, and no old M02.10 source/claim/resource is changed",
+            "M01.09 closes operationally only after actual M01.15 policy qualification; its cause remains unconfirmed, M01.08 remains independently unqualified and downstream whole-M01 product gates remain"
+          ],
+          "depends_on": [
+            "M19",
+            "M01.05",
+            "M01.06",
+            "M01.13",
+            "M01.14"
+          ],
+          "owner": "harness/integrator",
+          "status": "in_progress",
+          "evidence": []
         }
       ]
     },
