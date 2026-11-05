@@ -1,5 +1,13 @@
 # Progress and handoff
 
+## 5 November 2026: qualified facts, pending factual consolidation
+
+M01.15 policy [PR21](https://github.com/huyz0/hsearch/pull/21) merged normally as `fc6b48e` with the reviewed tree and complete seven-job PR/main qualification. [The factual disposition record](evidence/m01-15-incident-disposition.md) closes the composite M01.09 goal operationally; its historical cause remains unconfirmed. M01.08 remains planned and unqualified, with its own frozen corpus and session/usage trials still required. Whole-M01 product dependencies remain.
+
+M02.09's [accepted PR19 research](evidence/m02-09-integrated.md) is recorded retrospectively with its actual independent review and complete PR/main/manual evidence. Old exploratory and failed stages below remain history. M01.16 is a [new factual consolidation candidate](evidence/m01-16-factual-integration.md), pending its own final-tree reviews and exact-head checks; no old source-review counter is reset. PR22's failed ancestry/disk-admission run remains failed. M02.10's frozen private source, claims, histories and resources remain untouched.
+
+The entries below are historical and do not supersede this checkpoint.
+
 ## 5 November 2026: proposed incident disposition
 
 The user authorized preparation of an independently reviewed acceptance change for the historical ARM diagnostic incident. [M01.15's proposal](incident-disposition.md) replaces the unavailable historical-cause proof with an explicit unresolved-cause disposition, current native x86_64/ARM64 qualification and retained bounded failure witnesses. This is a proposal only: M01.15 is in progress, M01.09 remains in progress, its cause remains unconfirmed, and M01.08 remains dependency-blocked. Original source, failed runs, all three M01.09 review rounds and whole-M01 product dependencies are preserved. M02.10's existing private blocked candidate is untouched.

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "updated": "2026-11-05",
   "timezone": "Australia/Sydney",
-  "scope": "Scalability-first OpenSearch-inspired partial compatibility is the current direction. M00, M19 and M01.01/M01.02/M01.03/M01.04/M01.05/M01.06 are integrated. M01.09 original cold-navigation cause remains open after reviewed diagnostics; M01.08 stays blocked. M02.01 selected fixture inventory is in progress. Runtime, provider, scale and release obligations remain explicit.",
+  "scope": "Scalability-first OpenSearch-inspired partial compatibility is the current direction. M00, M19 and M01.01/M01.02/M01.03/M01.04/M01.05/M01.06 are integrated. M01.09 is operationally closed through qualified M01.15; its historical cause remains unconfirmed and M01.08 remains separately unqualified. M02.01 selected fixture inventory is in progress. Runtime, provider, scale and release obligations remain explicit.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
   "milestones": [
     {
@@ -620,7 +620,7 @@
             "M01.04"
           ],
           "owner": "harness/integrator",
-          "status": "in_progress",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m01-09-cold-diagnostics.md",
@@ -629,6 +629,10 @@
             {
               "path": "incident-disposition.md",
               "result": "User authorized preparation of an independently reviewed replacement gate on 5 November 2026. Proposed only; original cause remains unconfirmed and M01.09/M01.08 are not accepted by this draft."
+            },
+            {
+              "path": "evidence/m01-15-incident-disposition.md",
+              "result": "PR21 normally merged fc6b48e with identical reviewed tree after both independent R1 clear reports and all7 PR/main jobs. Operational unresolved-cause disposition only; historical cause stays unconfirmed, M01.08 and whole-M01 product gates remain."
             }
           ],
           "acceptance_route": "M01.15-unresolved-incident",
@@ -826,11 +830,15 @@
             "M01.13"
           ],
           "owner": "harness/integrator",
-          "status": "in_progress",
+          "status": "done",
           "evidence": [
             {
               "path": "incident-disposition.md",
               "result": "User-authorized proposal in progress. No replacement gate, incident or agent-baseline acceptance yet."
+            },
+            {
+              "path": "evidence/m01-15-incident-disposition.md",
+              "result": "PR21 normally merged fc6b48e with identical reviewed tree after both independent R1 clear reports and all7 PR/main jobs. Operational unresolved-cause disposition only; historical cause stays unconfirmed, M01.08 and whole-M01 product gates remain."
             }
           ]
         },
@@ -862,7 +870,12 @@
           ],
           "owner": "harness/integrator",
           "status": "in_progress",
-          "evidence": []
+          "evidence": [
+            {
+              "path": "evidence/m01-16-factual-integration.md",
+              "result": "New factual integration candidate with both author identities and retained failed PR22 evidence. Its independent final-tree reviews/full applicable checks/normal integration remain pending; original accepted integrations do not qualify this artifact."
+            }
+          ]
         }
       ]
     },
@@ -986,7 +999,7 @@
             "M08.01"
           ],
           "owner": "coordinator/engine-research",
-          "status": "in_progress",
+          "status": "done",
           "execution_scope": "coordinator-research",
           "evidence": [
             {
@@ -1004,6 +1017,10 @@
             {
               "path": "research/native-engine-coverage-profile.md",
               "result": "30f080e complete local native suite passed; runtimeexport hit64MiB bound. Explicit compact-profile/context4 continuation is implemented draft only, all finalsource coverage/review/hosted gates pending."
+            },
+            {
+              "path": "evidence/m02-09-integrated.md",
+              "result": "Retrospective status correction: accepted PR19 reviewed95bcf0d/treea58bb0f normalmergeb19074d; final formal2/overall3 clear and all7 PR/main/explicitbase manual jobs. Bounded coordinator component research/context4 only; all historical failures and downstream gates retained."
             }
           ]
         },

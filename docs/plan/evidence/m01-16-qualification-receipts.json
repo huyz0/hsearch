@@ -1,0 +1,1246 @@
+{
+  "schema_version": 1,
+  "scope": "Retrospective qualification receipts, not qualification of the M01.16 factual integration candidate",
+  "policy_head": "0180d482e529ca9691dd66b7b5d0a5d95cb75e42",
+  "merge": "fc6b48e3138e198d9b462fa8d5649f85e9ef6552",
+  "reviewed_and_merged_tree": "2ccf5bc592a4ef4bf9ef2a816b8b24fdc456e66e",
+  "original_incident_run": "41283307456",
+  "historical_cause": "unconfirmed",
+  "m01_15_packet_sha256": "cd22c7fab20e94edc16fdfd7d3989beb1de18ccfc8e035b0315b48ae1f1162ad",
+  "m01_15_gate": {
+    "checks": [
+      {
+        "conclusion": "success",
+        "evidence": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab60-4bff-7752-9544-a9eab0fca10a\\incident-linux-checks.log; SHA256 2efbf8b7782b664142cc7dd06f11e04936204e6420fecb66a3e5707e45165e83; complete 326 tests/no skips,API/plan16negative/cost15controls; kernel verified2CPU4GiB256PID2GiBtmp;38.2s; owned container removed/lease released.",
+        "head": "0180d482e529ca9691dd66b7b5d0a5d95cb75e42",
+        "name": "linux-docs"
+      },
+      {
+        "conclusion": "success",
+        "evidence": "https://github.com/huyz0/hsearch/actions/runs/42016188559/job/127222624609",
+        "head": "0180d482e529ca9691dd66b7b5d0a5d95cb75e42",
+        "name": "ci-ok"
+      }
+    ],
+    "checks_sha256": "9ab49e04284e51bf27347e7ca69fdb53350a4b7907a7f2b1472f43a491538941",
+    "formal_github_review": false,
+    "gate": "pass",
+    "head": "0180d482e529ca9691dd66b7b5d0a5d95cb75e42",
+    "packet_sha256": "cd22c7fab20e94edc16fdfd7d3989beb1de18ccfc8e035b0315b48ae1f1162ad",
+    "round": 1,
+    "scope": "Trusted coordinator evidence protocol; not reviewer authentication or automatic permission to merge",
+    "task_id": "M01.15",
+    "tree": "2ccf5bc592a4ef4bf9ef2a816b8b24fdc456e66e"
+  },
+  "reviews": {
+    "correctness_tests_claims": {
+      "session": "01a1ab64-1401-7740-9cd1-5320979e293b",
+      "conclusion": "clear",
+      "verdict_sha256": "7b559af17d13cc45430d5e6d4fa7b41f7f203ac1f2b9714c68705970d0e2d978"
+    },
+    "architecture_security": {
+      "session": "01a1ab64-5beb-7431-b3f9-bea4a729c0d6",
+      "conclusion": "clear",
+      "verdict_sha256": "1c00d73eddd892f85945ced3b29f80835df006f1d44a60f438be45796b8145fd"
+    }
+  },
+  "runs": [
+    {
+      "run_id": 42016188559,
+      "head": "0180d482e529ca9691dd66b7b5d0a5d95cb75e42",
+      "jobs": [
+        {
+          "id": 127207194329,
+          "name": "plan",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42016188559/job/127207194329",
+          "log_sha256": "b68bf52c3c30f0d4917eb58ef14724a9811f91abda505da6558a77fabb729f44",
+          "log_bytes": 19689
+        },
+        {
+          "id": 127208915256,
+          "name": "linux-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42016188559/job/127208915256",
+          "log_sha256": "4be21d454ada5fb7115aed402e07e2378fda7bb6e6e45522d93a417d8509620c",
+          "log_bytes": 111849,
+          "coverage": [
+            {
+              "profile": "dev",
+              "target": "aarch64-unknown-linux-gnu",
+              "head": "0180d482e529ca9691dd66b7b5d0a5d95cb75e42",
+              "aggregate": {
+                "covered": 523,
+                "coverable": 523,
+                "percent": 100.0,
+                "status": "pass"
+              },
+              "changed": {
+                "covered": 0,
+                "coverable": 0,
+                "percent": null,
+                "status": "not_applicable"
+              },
+              "crates": {
+                "hsearch-engine": {
+                  "covered": 0,
+                  "coverable": 0,
+                  "percent": null,
+                  "status": "not_applicable"
+                },
+                "hsearch-observe": {
+                  "covered": 199,
+                  "coverable": 199,
+                  "percent": 100.0,
+                  "status": "pass"
+                },
+                "hsearch-types": {
+                  "covered": 324,
+                  "coverable": 324,
+                  "percent": 100.0,
+                  "status": "pass"
+                }
+              }
+            },
+            {
+              "profile": "release",
+              "target": "aarch64-unknown-linux-gnu",
+              "head": "0180d482e529ca9691dd66b7b5d0a5d95cb75e42",
+              "aggregate": {
+                "covered": 523,
+                "coverable": 523,
+                "percent": 100.0,
+                "status": "pass"
+              },
+              "changed": {
+                "covered": 0,
+                "coverable": 0,
+                "percent": null,
+                "status": "not_applicable"
+              },
+              "crates": {
+                "hsearch-engine": {
+                  "covered": 0,
+                  "coverable": 0,
+                  "percent": null,
+                  "status": "not_applicable"
+                },
+                "hsearch-observe": {
+                  "covered": 199,
+                  "coverable": 199,
+                  "percent": 100.0,
+                  "status": "pass"
+                },
+                "hsearch-types": {
+                  "covered": 324,
+                  "coverable": 324,
+                  "percent": 100.0,
+                  "status": "pass"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 127208915302,
+          "name": "docs",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42016188559/job/127208915302",
+          "log_sha256": "21bcd2037ab1b3e6cb0dbb69a899d53f1aaf3f6bc41af2e574d52d520588d375",
+          "log_bytes": 95628
+        },
+        {
+          "id": 127208915326,
+          "name": "sandbox-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42016188559/job/127208915326",
+          "log_sha256": "8ca72c797dfe5c614021e369c2a858e50f1a23911cfc54b58a0fa7b1a470c7bd",
+          "log_bytes": 270581,
+          "cold_witnesses": [
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 0,
+              "response_sha256": "a5816a2fcfc9c9160d42434be5cc8bfa51a9598ac4caa13b5c0fedc4fd6a260f",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "31e7ba4ffc4f23f1cefd69ae55a33db68483966a0a7022bbcb9b7b97d80025d0",
+              "source_head": "08f3b56cc7d31e8d7d142ce72ee8d76c0adceea7",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 1,
+              "response_sha256": "a5816a2fcfc9c9160d42434be5cc8bfa51a9598ac4caa13b5c0fedc4fd6a260f",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "31e7ba4ffc4f23f1cefd69ae55a33db68483966a0a7022bbcb9b7b97d80025d0",
+              "source_head": "08f3b56cc7d31e8d7d142ce72ee8d76c0adceea7",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 2,
+              "response_sha256": "a5816a2fcfc9c9160d42434be5cc8bfa51a9598ac4caa13b5c0fedc4fd6a260f",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "31e7ba4ffc4f23f1cefd69ae55a33db68483966a0a7022bbcb9b7b97d80025d0",
+              "source_head": "08f3b56cc7d31e8d7d142ce72ee8d76c0adceea7",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 3,
+              "response_sha256": "a5816a2fcfc9c9160d42434be5cc8bfa51a9598ac4caa13b5c0fedc4fd6a260f",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "31e7ba4ffc4f23f1cefd69ae55a33db68483966a0a7022bbcb9b7b97d80025d0",
+              "source_head": "08f3b56cc7d31e8d7d142ce72ee8d76c0adceea7",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 4,
+              "response_sha256": "a5816a2fcfc9c9160d42434be5cc8bfa51a9598ac4caa13b5c0fedc4fd6a260f",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "31e7ba4ffc4f23f1cefd69ae55a33db68483966a0a7022bbcb9b7b97d80025d0",
+              "source_head": "08f3b56cc7d31e8d7d142ce72ee8d76c0adceea7",
+              "status": "semantic",
+              "truncated": false
+            }
+          ],
+          "corpus": {
+            "cold_diagnostic_witness": {
+              "complete": true,
+              "payload_bytes": 3550,
+              "records": 5
+            },
+            "cargo_check_type_error_failed": true,
+            "cargo_check_valid_passed": true,
+            "owned_claims_closed": true,
+            "concurrent_isolated_worktrees": true,
+            "other_worktree_survived_cleanup": true,
+            "independent_location_oracle": true,
+            "actual_agent_trial": "M01.08 remains separate"
+          }
+        },
+        {
+          "id": 127208915383,
+          "name": "sandbox-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42016188559/job/127208915383",
+          "log_sha256": "4e66cdde7e18d526e198456237b30d5a7bef3fb01e34463b7c443e51211e721e",
+          "log_bytes": 270119,
+          "cold_witnesses": [
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 0,
+              "response_sha256": "2cbc4283777a54b23032a21b7da7e5b9e13c41bf584b83b84f70350df1eff134",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "eded787977317cb3b244a8ed78b92d3f5e1e14b871f4e70f80c9edd5fc39c74a",
+              "source_head": "a27997983fe1b418579fb1d9cb48cae3cd029549",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 1,
+              "response_sha256": "2cbc4283777a54b23032a21b7da7e5b9e13c41bf584b83b84f70350df1eff134",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "eded787977317cb3b244a8ed78b92d3f5e1e14b871f4e70f80c9edd5fc39c74a",
+              "source_head": "a27997983fe1b418579fb1d9cb48cae3cd029549",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 2,
+              "response_sha256": "2cbc4283777a54b23032a21b7da7e5b9e13c41bf584b83b84f70350df1eff134",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "eded787977317cb3b244a8ed78b92d3f5e1e14b871f4e70f80c9edd5fc39c74a",
+              "source_head": "a27997983fe1b418579fb1d9cb48cae3cd029549",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 3,
+              "response_sha256": "2cbc4283777a54b23032a21b7da7e5b9e13c41bf584b83b84f70350df1eff134",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "eded787977317cb3b244a8ed78b92d3f5e1e14b871f4e70f80c9edd5fc39c74a",
+              "source_head": "a27997983fe1b418579fb1d9cb48cae3cd029549",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 4,
+              "response_sha256": "2cbc4283777a54b23032a21b7da7e5b9e13c41bf584b83b84f70350df1eff134",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "eded787977317cb3b244a8ed78b92d3f5e1e14b871f4e70f80c9edd5fc39c74a",
+              "source_head": "a27997983fe1b418579fb1d9cb48cae3cd029549",
+              "status": "semantic",
+              "truncated": false
+            }
+          ],
+          "corpus": {
+            "cold_diagnostic_witness": {
+              "complete": true,
+              "payload_bytes": 3550,
+              "records": 5
+            },
+            "cargo_check_type_error_failed": true,
+            "cargo_check_valid_passed": true,
+            "owned_claims_closed": true,
+            "concurrent_isolated_worktrees": true,
+            "other_worktree_survived_cleanup": true,
+            "independent_location_oracle": true,
+            "actual_agent_trial": "M01.08 remains separate"
+          }
+        },
+        {
+          "id": 127208915433,
+          "name": "linux-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42016188559/job/127208915433",
+          "log_sha256": "8524d42ca8e53d185b128c0e9cff5448d2a138b327b740e4563c930cc08077bd",
+          "log_bytes": 111762,
+          "coverage": [
+            {
+              "profile": "dev",
+              "target": "x86_64-unknown-linux-gnu",
+              "head": "0180d482e529ca9691dd66b7b5d0a5d95cb75e42",
+              "aggregate": {
+                "covered": 523,
+                "coverable": 523,
+                "percent": 100.0,
+                "status": "pass"
+              },
+              "changed": {
+                "covered": 0,
+                "coverable": 0,
+                "percent": null,
+                "status": "not_applicable"
+              },
+              "crates": {
+                "hsearch-engine": {
+                  "covered": 0,
+                  "coverable": 0,
+                  "percent": null,
+                  "status": "not_applicable"
+                },
+                "hsearch-observe": {
+                  "covered": 199,
+                  "coverable": 199,
+                  "percent": 100.0,
+                  "status": "pass"
+                },
+                "hsearch-types": {
+                  "covered": 324,
+                  "coverable": 324,
+                  "percent": 100.0,
+                  "status": "pass"
+                }
+              }
+            },
+            {
+              "profile": "release",
+              "target": "x86_64-unknown-linux-gnu",
+              "head": "0180d482e529ca9691dd66b7b5d0a5d95cb75e42",
+              "aggregate": {
+                "covered": 523,
+                "coverable": 523,
+                "percent": 100.0,
+                "status": "pass"
+              },
+              "changed": {
+                "covered": 0,
+                "coverable": 0,
+                "percent": null,
+                "status": "not_applicable"
+              },
+              "crates": {
+                "hsearch-engine": {
+                  "covered": 0,
+                  "coverable": 0,
+                  "percent": null,
+                  "status": "not_applicable"
+                },
+                "hsearch-observe": {
+                  "covered": 199,
+                  "coverable": 199,
+                  "percent": 100.0,
+                  "status": "pass"
+                },
+                "hsearch-types": {
+                  "covered": 324,
+                  "coverable": 324,
+                  "percent": 100.0,
+                  "status": "pass"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 127222624609,
+          "name": "ci-ok",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42016188559/job/127222624609",
+          "log_sha256": "ced853444b56afbf5daf9c5487e17deefe5ebf8d3eb14360c241525adc0fd356",
+          "log_bytes": 14952
+        }
+      ]
+    },
+    {
+      "run_id": 42021126157,
+      "head": "fc6b48e3138e198d9b462fa8d5649f85e9ef6552",
+      "jobs": [
+        {
+          "id": 127223869563,
+          "name": "plan",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42021126157/job/127223869563",
+          "log_sha256": "817f87e901313464e800f0224c93e3c15b2432f792e4eb14e8a365a7145930d9",
+          "log_bytes": 19695
+        },
+        {
+          "id": 127224134580,
+          "name": "docs",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42021126157/job/127224134580",
+          "log_sha256": "a61e39093b35e8ab0f097d8cd7644df0d623ad4b430fcb3a9ab4b14caa3b0020",
+          "log_bytes": 95619
+        },
+        {
+          "id": 127224134714,
+          "name": "linux-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42021126157/job/127224134714",
+          "log_sha256": "1052c1395dc1a4035e9e8a8fd203005a79f899733d9fb1b1802ff87d9fb6def0",
+          "log_bytes": 111885,
+          "coverage": [
+            {
+              "profile": "dev",
+              "target": "x86_64-unknown-linux-gnu",
+              "head": "fc6b48e3138e198d9b462fa8d5649f85e9ef6552",
+              "aggregate": {
+                "covered": 523,
+                "coverable": 523,
+                "percent": 100.0,
+                "status": "pass"
+              },
+              "changed": {
+                "covered": 0,
+                "coverable": 0,
+                "percent": null,
+                "status": "not_applicable"
+              },
+              "crates": {
+                "hsearch-engine": {
+                  "covered": 0,
+                  "coverable": 0,
+                  "percent": null,
+                  "status": "not_applicable"
+                },
+                "hsearch-observe": {
+                  "covered": 199,
+                  "coverable": 199,
+                  "percent": 100.0,
+                  "status": "pass"
+                },
+                "hsearch-types": {
+                  "covered": 324,
+                  "coverable": 324,
+                  "percent": 100.0,
+                  "status": "pass"
+                }
+              }
+            },
+            {
+              "profile": "release",
+              "target": "x86_64-unknown-linux-gnu",
+              "head": "fc6b48e3138e198d9b462fa8d5649f85e9ef6552",
+              "aggregate": {
+                "covered": 523,
+                "coverable": 523,
+                "percent": 100.0,
+                "status": "pass"
+              },
+              "changed": {
+                "covered": 0,
+                "coverable": 0,
+                "percent": null,
+                "status": "not_applicable"
+              },
+              "crates": {
+                "hsearch-engine": {
+                  "covered": 0,
+                  "coverable": 0,
+                  "percent": null,
+                  "status": "not_applicable"
+                },
+                "hsearch-observe": {
+                  "covered": 199,
+                  "coverable": 199,
+                  "percent": 100.0,
+                  "status": "pass"
+                },
+                "hsearch-types": {
+                  "covered": 324,
+                  "coverable": 324,
+                  "percent": 100.0,
+                  "status": "pass"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 127224134854,
+          "name": "linux-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42021126157/job/127224134854",
+          "log_sha256": "5a458ae1b3a158f3c846a7eaf1d72fbe87d1d9d1af8580636f9e80bc3456da60",
+          "log_bytes": 111968,
+          "coverage": [
+            {
+              "profile": "dev",
+              "target": "aarch64-unknown-linux-gnu",
+              "head": "fc6b48e3138e198d9b462fa8d5649f85e9ef6552",
+              "aggregate": {
+                "covered": 523,
+                "coverable": 523,
+                "percent": 100.0,
+                "status": "pass"
+              },
+              "changed": {
+                "covered": 0,
+                "coverable": 0,
+                "percent": null,
+                "status": "not_applicable"
+              },
+              "crates": {
+                "hsearch-engine": {
+                  "covered": 0,
+                  "coverable": 0,
+                  "percent": null,
+                  "status": "not_applicable"
+                },
+                "hsearch-observe": {
+                  "covered": 199,
+                  "coverable": 199,
+                  "percent": 100.0,
+                  "status": "pass"
+                },
+                "hsearch-types": {
+                  "covered": 324,
+                  "coverable": 324,
+                  "percent": 100.0,
+                  "status": "pass"
+                }
+              }
+            },
+            {
+              "profile": "release",
+              "target": "aarch64-unknown-linux-gnu",
+              "head": "fc6b48e3138e198d9b462fa8d5649f85e9ef6552",
+              "aggregate": {
+                "covered": 523,
+                "coverable": 523,
+                "percent": 100.0,
+                "status": "pass"
+              },
+              "changed": {
+                "covered": 0,
+                "coverable": 0,
+                "percent": null,
+                "status": "not_applicable"
+              },
+              "crates": {
+                "hsearch-engine": {
+                  "covered": 0,
+                  "coverable": 0,
+                  "percent": null,
+                  "status": "not_applicable"
+                },
+                "hsearch-observe": {
+                  "covered": 199,
+                  "coverable": 199,
+                  "percent": 100.0,
+                  "status": "pass"
+                },
+                "hsearch-types": {
+                  "covered": 324,
+                  "coverable": 324,
+                  "percent": 100.0,
+                  "status": "pass"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 127224134855,
+          "name": "sandbox-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42021126157/job/127224134855",
+          "log_sha256": "5447b3c6625d57d5cf5a28df97e6746c4f59c0244d98916521b5ce5e3e0038b3",
+          "log_bytes": 270203,
+          "cold_witnesses": [
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 0,
+              "response_sha256": "e97b6a1693ddde3eef08923d1723dbefe16e7999064941b6580d34b384734879",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "ac43a07679664fbd04d6e1c9c309257e5f086490d0f5b767c80865b0289e0be1",
+              "source_head": "1e5f2e00ee22b60c46ddb6110d84070eff072192",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 1,
+              "response_sha256": "e97b6a1693ddde3eef08923d1723dbefe16e7999064941b6580d34b384734879",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "ac43a07679664fbd04d6e1c9c309257e5f086490d0f5b767c80865b0289e0be1",
+              "source_head": "1e5f2e00ee22b60c46ddb6110d84070eff072192",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 2,
+              "response_sha256": "e97b6a1693ddde3eef08923d1723dbefe16e7999064941b6580d34b384734879",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "ac43a07679664fbd04d6e1c9c309257e5f086490d0f5b767c80865b0289e0be1",
+              "source_head": "1e5f2e00ee22b60c46ddb6110d84070eff072192",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 3,
+              "response_sha256": "e97b6a1693ddde3eef08923d1723dbefe16e7999064941b6580d34b384734879",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "ac43a07679664fbd04d6e1c9c309257e5f086490d0f5b767c80865b0289e0be1",
+              "source_head": "1e5f2e00ee22b60c46ddb6110d84070eff072192",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "aeec0c35dd4a0b71f482815660e9952ba0c55ba24080d5f05f57fa72994f4b45",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 4,
+              "response_sha256": "e97b6a1693ddde3eef08923d1723dbefe16e7999064941b6580d34b384734879",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "ac43a07679664fbd04d6e1c9c309257e5f086490d0f5b767c80865b0289e0be1",
+              "source_head": "1e5f2e00ee22b60c46ddb6110d84070eff072192",
+              "status": "semantic",
+              "truncated": false
+            }
+          ],
+          "corpus": {
+            "cold_diagnostic_witness": {
+              "complete": true,
+              "payload_bytes": 3550,
+              "records": 5
+            },
+            "cargo_check_type_error_failed": true,
+            "cargo_check_valid_passed": true,
+            "owned_claims_closed": true,
+            "concurrent_isolated_worktrees": true,
+            "other_worktree_survived_cleanup": true,
+            "independent_location_oracle": true,
+            "actual_agent_trial": "M01.08 remains separate"
+          }
+        },
+        {
+          "id": 127224134893,
+          "name": "sandbox-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42021126157/job/127224134893",
+          "log_sha256": "85bb7258f2fc95d6b9367596fc5d3b277c0996a16cda3010243ee1b703a8ac13",
+          "log_bytes": 269753,
+          "cold_witnesses": [
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 0,
+              "response_sha256": "60909d3dd0e8453feb852d6bae7cfa93b2c9afd1c172c93687de81264f23e688",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "3a1e5362b950ded651c633e3f80286dadf22769fa60142e43e590a5bab96011a",
+              "source_head": "af34e71af7b683ce343cc7cc424c1b149190274d",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 1,
+              "response_sha256": "60909d3dd0e8453feb852d6bae7cfa93b2c9afd1c172c93687de81264f23e688",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "3a1e5362b950ded651c633e3f80286dadf22769fa60142e43e590a5bab96011a",
+              "source_head": "af34e71af7b683ce343cc7cc424c1b149190274d",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 2,
+              "response_sha256": "60909d3dd0e8453feb852d6bae7cfa93b2c9afd1c172c93687de81264f23e688",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "3a1e5362b950ded651c633e3f80286dadf22769fa60142e43e590a5bab96011a",
+              "source_head": "af34e71af7b683ce343cc7cc424c1b149190274d",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 3,
+              "response_sha256": "60909d3dd0e8453feb852d6bae7cfa93b2c9afd1c172c93687de81264f23e688",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "3a1e5362b950ded651c633e3f80286dadf22769fa60142e43e590a5bab96011a",
+              "source_head": "af34e71af7b683ce343cc7cc424c1b149190274d",
+              "status": "semantic",
+              "truncated": false
+            },
+            {
+              "diagnostics_count": 1,
+              "diagnostics_shape": "items_list",
+              "e0308_line2_present": true,
+              "identity_origin": "context_response",
+              "items": [
+                {
+                  "code": "E0308",
+                  "item_index": 0,
+                  "line": 2,
+                  "severity": "error"
+                }
+              ],
+              "lsp_revision": "cd9d492f950ab8fb8a9f54e4aea2f72cfd1aab48",
+              "lsp_sha256": "4461056875c8da62c1f68150eb521c1c15a7cbd86d088548932933f7616b4ad2",
+              "navigation_cold_witness": 1,
+              "reason": "",
+              "repetition": 4,
+              "response_sha256": "60909d3dd0e8453feb852d6bae7cfa93b2c9afd1c172c93687de81264f23e688",
+              "selection": "first_target_then_original_order",
+              "semantic": true,
+              "source_digest": "3a1e5362b950ded651c633e3f80286dadf22769fa60142e43e590a5bab96011a",
+              "source_head": "af34e71af7b683ce343cc7cc424c1b149190274d",
+              "status": "semantic",
+              "truncated": false
+            }
+          ],
+          "corpus": {
+            "cold_diagnostic_witness": {
+              "complete": true,
+              "payload_bytes": 3550,
+              "records": 5
+            },
+            "cargo_check_type_error_failed": true,
+            "cargo_check_valid_passed": true,
+            "owned_claims_closed": true,
+            "concurrent_isolated_worktrees": true,
+            "other_worktree_survived_cleanup": true,
+            "independent_location_oracle": true,
+            "actual_agent_trial": "M01.08 remains separate"
+          }
+        },
+        {
+          "id": 127233214795,
+          "name": "ci-ok",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/42021126157/job/127233214795",
+          "log_sha256": "a837c31defc1dacb08b08e559c7b81e09f5927c528e94ab10fa4ca693d5d5c0d",
+          "log_bytes": 14946
+        }
+      ]
+    }
+  ],
+  "research_hosted_verification": [
+    {
+      "run_id": 41383556832,
+      "event": "pull_request",
+      "head": "95bcf0d97ec4c9ce1eca7addc40c2f29ee774f40",
+      "conclusion": "success",
+      "url": "https://github.com/huyz0/hsearch/actions/runs/41383556832",
+      "jobs": [
+        {
+          "id": 125079350425,
+          "name": "plan",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41383556832/job/125079350425"
+        },
+        {
+          "id": 125079437979,
+          "name": "docs",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41383556832/job/125079437979"
+        },
+        {
+          "id": 125079437997,
+          "name": "linux-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41383556832/job/125079437997"
+        },
+        {
+          "id": 125079438010,
+          "name": "sandbox-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41383556832/job/125079438010"
+        },
+        {
+          "id": 125079438018,
+          "name": "linux-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41383556832/job/125079438018"
+        },
+        {
+          "id": 125079438084,
+          "name": "sandbox-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41383556832/job/125079438084"
+        },
+        {
+          "id": 125083666828,
+          "name": "ci-ok",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41383556832/job/125083666828"
+        }
+      ]
+    },
+    {
+      "run_id": 41386107324,
+      "event": "push",
+      "head": "b19074d3022694b6180f115c875f9883c1ac9425",
+      "conclusion": "success",
+      "url": "https://github.com/huyz0/hsearch/actions/runs/41386107324",
+      "jobs": [
+        {
+          "id": 125087189368,
+          "name": "plan",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386107324/job/125087189368"
+        },
+        {
+          "id": 125087285379,
+          "name": "docs",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386107324/job/125087285379"
+        },
+        {
+          "id": 125087285499,
+          "name": "linux-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386107324/job/125087285499"
+        },
+        {
+          "id": 125087285577,
+          "name": "sandbox-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386107324/job/125087285577"
+        },
+        {
+          "id": 125087285611,
+          "name": "sandbox-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386107324/job/125087285611"
+        },
+        {
+          "id": 125087285739,
+          "name": "linux-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386107324/job/125087285739"
+        },
+        {
+          "id": 125091872400,
+          "name": "ci-ok",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386107324/job/125091872400"
+        }
+      ]
+    },
+    {
+      "run_id": 41386195319,
+      "event": "workflow_dispatch",
+      "head": "b19074d3022694b6180f115c875f9883c1ac9425",
+      "conclusion": "success",
+      "url": "https://github.com/huyz0/hsearch/actions/runs/41386195319",
+      "jobs": [
+        {
+          "id": 125087464637,
+          "name": "plan",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386195319/job/125087464637"
+        },
+        {
+          "id": 125087544786,
+          "name": "docs",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386195319/job/125087544786"
+        },
+        {
+          "id": 125087544863,
+          "name": "linux-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386195319/job/125087544863"
+        },
+        {
+          "id": 125087544901,
+          "name": "sandbox-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386195319/job/125087544901"
+        },
+        {
+          "id": 125087544917,
+          "name": "linux-x64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386195319/job/125087544917"
+        },
+        {
+          "id": 125087544938,
+          "name": "sandbox-arm64 / qualify",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386195319/job/125087544938"
+        },
+        {
+          "id": 125091846485,
+          "name": "ci-ok",
+          "conclusion": "success",
+          "url": "https://github.com/huyz0/hsearch/actions/runs/41386195319/job/125091846485"
+        }
+      ]
+    }
+  ],
+  "integration_authors": [
+    "01a1ab60-4bff-7752-9544-a9eab0fca10a",
+    "01a1ab64-5beb-7431-b3f9-bea4a729c0d6"
+  ],
+  "pr22_preserved_failures": [
+    {
+      "run_id": 42021288576,
+      "head": "a4b6b83b2a018677bd79fe47fd481c81becfd254",
+      "job_id": 127225316682,
+      "cause": "Native ARM rejected base_is_not_ancestor",
+      "log_sha256": "bd07ed5b3d2c31a3504beeb073959ef5d475c16a29c2a9a3104a374ca07bd9c9",
+      "url": "https://github.com/huyz0/hsearch/actions/runs/42021288576/job/127225316682"
+    },
+    {
+      "run_id": 42021288576,
+      "head": "a4b6b83b2a018677bd79fe47fd481c81becfd254",
+      "job_id": 127225316754,
+      "cause": "Native x86 rejected base_is_not_ancestor",
+      "log_sha256": "f5af310841e90f928d61e9ca7b16ef9cab66c964a9a05bfe1efce2070fca4148",
+      "url": "https://github.com/huyz0/hsearch/actions/runs/42021288576/job/127225316754"
+    },
+    {
+      "run_id": 42021288576,
+      "head": "a4b6b83b2a018677bd79fe47fd481c81becfd254",
+      "job_id": 127225316767,
+      "cause": "x86 sandbox refused low host disk reserve before allocation; missing reference artifact followed nonexecution",
+      "log_sha256": "b54a0bbc53e87f8677014b524582b619aabd0a0bfa5f214f33bf4e94dcb60042",
+      "url": "https://github.com/huyz0/hsearch/actions/runs/42021288576/job/127225316767"
+    }
+  ]
+}
