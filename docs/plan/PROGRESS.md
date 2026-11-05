@@ -1,5 +1,13 @@
 # Progress and handoff
 
+## 5 November 2026: proposed incident disposition
+
+The user authorized preparation of an independently reviewed acceptance change for the historical ARM diagnostic incident. [M01.15's proposal](incident-disposition.md) replaces the unavailable historical-cause proof with an explicit unresolved-cause disposition, current native x86_64/ARM64 qualification and retained bounded failure witnesses. This is a proposal only: M01.15 is in progress, M01.09 remains in progress, its cause remains unconfirmed, and M01.08 remains dependency-blocked. Original source, failed runs, all three M01.09 review rounds and whole-M01 product dependencies are preserved. M02.10's existing private blocked candidate is untouched.
+
+The proposed validator refuses premature incident completion, invented cause/run identity, missing disposition acceptance records and missing replacement prerequisites. Existing research/baseline guards remain. Exact-head independent reviews and complete required CI are still pending; no product or incident acceptance is claimed.
+
+The checkpoints below are historical provenance and do not supersede this proposal's status.
+
 M02.09: local e01a07f full x86 suites and both-profile 523/523 production coverage passed, but formal R1 found an uncapped duplicate CI experiment path. The repair preserves every ordinary test and the complete strict capped matrix, rejects bare-host experiment frames, and remains pending final-source requalification/review/native CI. No M02.09 publication or acceptance is claimed.
 ## Current implementation checkpoint
 
