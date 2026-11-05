@@ -86,6 +86,26 @@ def research_gate_contract(milestones: dict, tasks: dict) -> None:
          "Research acceptance gate missing: milestone M02")
 
 
+def incident_gate_contract(tasks: dict) -> None:
+    """An unresolved incident needs its own accepted replacement policy."""
+    need("M01.15" in tasks, "Missing incident disposition task")
+    successor = tasks["M01.15"]
+    need({"M19", "M01.04", "M01.05", "M01.06", "M01.07", "M01.13"}
+         <= set(successor["depends_on"]), "Incident disposition prerequisite missing")
+    incident = tasks["M01.09"]
+    need(incident.get("acceptance_route") == "M01.15-unresolved-incident" and
+         incident.get("incident_cause_status") == "unconfirmed" and
+         incident.get("incident_run") == "41283307456",
+         "Incident disposition must retain the unresolved original cause")
+    if incident["status"] == "done":
+        need(successor["status"] == "done", "Incident disposition is not accepted")
+        need(any(item.get("path") == "evidence/m01-15-incident-disposition.md"
+                 for item in incident["evidence"]) and
+             any(item.get("path") == "evidence/m01-15-incident-disposition.md"
+                 for item in successor["evidence"]),
+             "Incident disposition acceptance record missing")
+
+
 def validate(data: dict, files: bool = True) -> None:
     need(isinstance(data, dict), "Ledger must be an object")
     need(data.get("schema_version") == 1, "Unsupported ledger schema")
@@ -176,6 +196,7 @@ def validate(data: dict, files: bool = True) -> None:
             need(all(tasks[d]["status"] == "done" for d in edges[tid]),
                  f"Active/done task has unfinished dependency: {tid}")
     research_gate_contract(milestones, tasks)
+    incident_gate_contract(tasks)
 
 
 def bullet(items: list[str]) -> str:

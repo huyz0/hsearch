@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-11-02",
+  "updated": "2026-11-05",
   "timezone": "Australia/Sydney",
   "scope": "Scalability-first OpenSearch-inspired partial compatibility is the current direction. M00, M19 and M01.01/M01.02/M01.03/M01.04/M01.05/M01.06 are integrated. M01.09 original cold-navigation cause remains open after reviewed diagnostics; M01.08 stays blocked. M02.01 selected fixture inventory is in progress. Runtime, provider, scale and release obligations remain explicit.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
@@ -602,18 +602,19 @@
         {
           "id": "M01.09",
           "title": "Qualify cold diagnostics and preserve corpus failure evidence",
-          "goal": "Resolve the observed native ARM cold-diagnostic failure without weakening semantic or compiler assertions.",
+          "goal": "Qualify current native cold diagnostics and retain future failure evidence; dispose of the historical incident through the user-authorized M01.15 route without claiming a known cause.",
           "deliverables": [
             "Bounded acknowledged CLI failure evidence and primary-error-preserving fixture cleanup",
-            "Reproduced cold-start cause, narrowly scoped repair and repeated native qualification"
+            "User-authorized unresolved-cause incident disposition through M01.15, current native qualification and bounded evidence before every cold assertion"
           ],
           "validation": [
-            "Reproduce first diagnostics after fresh server/source changes and retain exact bounded CLI cause",
+            "Exercise first diagnostics after fresh server/source changes; retain actual status, reason, diagnostic items and acknowledged CLI/source identity before assertions. A current pass does not prove the historical cause.",
             "Seed cleanup failure and unexpected source edits; primary failures remain visible and unknown work is preserved",
             "Preserve strict semantic assertions and authoritative bad/valid cargo checks; run full native x86_64/ARM64 matrix"
           ],
           "definition_of_done": [
-            "Original failure has an evidenced cause and regression control, cold diagnostics remain bounded, and full relevant checks plus independent reviews pass."
+            "M01.15 is independently reviewed, fully qualified and normally integrated; its unresolved-cause disposition and current native evidence close this task operationally, without asserting an evidenced historical cause.",
+            "Cold diagnostics and future failure evidence remain bounded and fail closed; primary errors and unknown work are preserved, strict semantic/compiler assertions and full native x86_64/ARM64 qualification pass."
           ],
           "depends_on": [
             "M01.04"
@@ -624,8 +625,15 @@
             {
               "path": "evidence/m01-09-cold-diagnostics.md",
               "result": "Main996b84b run41283307456 failed the ARM semantic corpus after cold invalid-source diagnostics; original error masked by dirty fixture cleanup. Observability/reproduction repair in progress; no blind rerun or relaxed assertion."
+            },
+            {
+              "path": "incident-disposition.md",
+              "result": "User authorized preparation of an independently reviewed replacement gate on 5 November 2026. Proposed only; original cause remains unconfirmed and M01.09/M01.08 are not accepted by this draft."
             }
-          ]
+          ],
+          "acceptance_route": "M01.15-unresolved-incident",
+          "incident_cause_status": "unconfirmed",
+          "incident_run": "41283307456"
         },
         {
           "id": "M01.10",
@@ -787,6 +795,42 @@
             {
               "path": "evidence/m01-14-integrated.md",
               "result": "Actual finalsource independent CLEAR, conservative overallround2, protected PR18 merge with identical reviewed tree and complete all7 PR/main native proof. Coordinator-research plan only; original harness/product gates retained."
+            }
+          ]
+        },
+        {
+          "id": "M01.15",
+          "title": "Qualify an unresolved-cause disposition for the ARM diagnostic incident",
+          "goal": "Replace the unavailable historical-cause proof with explicit unresolved-incident closure, current native qualification and retained future failure evidence, as directed by the user.",
+          "deliverables": [
+            "User-directed acceptance change with immutable original incident, original criteria, review histories, known facts, missing evidence and residual risk",
+            "Exact-source independent review and full native x86_64/ARM64 qualification of existing cold diagnostics, strict compiler oracles, bounded witnesses and primary-error cleanup",
+            "Executable controls rejecting incident completion before this successor is accepted, invented cause claims and removal of the separate M01.08 or whole-M01 product gates"
+          ],
+          "validation": [
+            "Inspect original failed run 41283307456, merged PR9/PR20 diagnostics and current native evidence; never infer an original backend cause from later green runs",
+            "Keep all existing navigation/corpus/compiler and coordinator research controls; run plan/API/docs checks and full selected native/sandbox matrix at the reviewed head",
+            "Both independent review roles inspect exact plan/validator changes; preserve original M01.09 three-round source history and issue no fourth M01.09 source packet"
+          ],
+          "definition_of_done": [
+            "Replacement acceptance policy has independent correctness and architecture/security review, current complete protected CI and normal integration; the original incident remains explicitly unconfirmed",
+            "All five cold semantic sessions on each native architecture report actual E0308 at line 2, bad/valid Cargo controls behave as expected, every preassertion witness is complete and bounded, and cleanup/isolation checks pass",
+            "M01.09 may then close only via this accepted disposition and cited evidence; M01.08 frozen agent corpus remains unqualified and whole-M01 product gates remain until its own acceptance"
+          ],
+          "depends_on": [
+            "M19",
+            "M01.04",
+            "M01.05",
+            "M01.06",
+            "M01.07",
+            "M01.13"
+          ],
+          "owner": "harness/integrator",
+          "status": "in_progress",
+          "evidence": [
+            {
+              "path": "incident-disposition.md",
+              "result": "User-authorized proposal in progress. No replacement gate, incident or agent-baseline acceptance yet."
             }
           ]
         }
