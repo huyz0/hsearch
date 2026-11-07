@@ -6,7 +6,7 @@ from .codec import decode, digest, encode, fields, integer, need, pin, Refused
 
 MAX_DURATION_NS = 1200000 * 1000000
 CAPS = dict(raw_bytes=8192, raw_reservations=512, audit_bytes=268435456,
-            rescans=32, entries=4096)
+            rescans=32)
 
 
 @dataclass(frozen=True)
@@ -70,6 +70,8 @@ class Original:
     @classmethod
     def begin(cls, operation, source, request, clock, duration_ns):
         integer(duration_ns, 1, MAX_DURATION_NS)
+        if hasattr(clock, 'bind'):
+            clock.bind(operation, source, request)
         start = clock.sample()
         start.validate()
         value = cls(1, 'linux-monotonic-boottime-realtime-v1', 'integer-nanoseconds',
@@ -118,7 +120,7 @@ def state_from(raw, expected_pin):
     need(all(a >= b for a, b in zip((observed.monotonic_ns, observed.boottime_ns, observed.wall_ns),
                                    (original.start.monotonic_ns, original.start.boottime_ns, original.start.wall_ns))),
          'observed-regression')
-    fields(state['credits'], 'raw_bytes raw_reservations audit_bytes rescans entries')
+    fields(state['credits'], 'raw_bytes raw_reservations audit_bytes rescans')
     for name, cap in CAPS.items():
         integer(state['credits'][name], 0, cap)
     need(state['credits']['raw_bytes'] <= 16*state['credits']['raw_reservations'], 'raw-credit-history')
@@ -184,6 +186,8 @@ class Session:
             before = self.clock.sample()
             before.validate()
             raw, state, original, observed = self._read()
+            if hasattr(self.clock, 'bind'):
+                self.clock.bind(original.operation, original.source, original.request)
             self._sample(state, original, observed, before)
             self._sample(state, original, before, self.clock.sample())
             need(set(charges).issubset(CAPS) and 'raw_reservations' not in charges, 'credit-name')

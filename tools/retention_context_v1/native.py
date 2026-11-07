@@ -1,7 +1,7 @@
-"""Linux FD cursor and host clock ports, conditional on independent host proof.
+"""Linux FD cursor and clock ports with bounded application/native allocation.
 
-No bundled host attestation exists. These safe APIs cannot establish a bound on
-hidden native work or arbitrary blocked syscall latency. Unknown proof refuses.
+Hidden kernel work, physical I/O and arbitrary syscall latency are not measured.
+Original clock bookends refuse accepted success from late/unknown calls.
 """
 from dataclasses import dataclass
 import hashlib
@@ -56,6 +56,10 @@ class LinuxClock:
     def __init__(self, authority: DomainAuthority):
         self.authority = authority
 
+    def bind(self, operation, source, request):
+        if hasattr(self.authority, 'bind'):
+            self.authority.bind(operation, source, request)
+
     def sample(self):
         before = observe_host()
         domain = self.authority.verify(before)
@@ -77,7 +81,6 @@ class CursorProof:
     name_bytes: int
     entry_allocation_bytes: int
     stream_allocation_bytes: int
-    native_work_bytes: int
     max_streams: int
     max_depth: int
 
@@ -88,16 +91,15 @@ class CursorProof:
         integer(self.entry_allocation_bytes, 8*self.name_bytes+4096, 1048576)
         # A conservative qualified glibc2.36 candidate includes its 1MiB
         # maximum buffer PLUS DIR/Python/allocator overhead. Version text alone
-        # never supplies that qualification or the separate native-work bound.
+        # never supplies deployed source/build correspondence.
         integer(self.stream_allocation_bytes, 1048576+65536, 4194304)
-        integer(self.native_work_bytes, 1, 268435456)
         integer(self.max_streams, 1, 24)
         integer(self.max_depth, 1, 24)
 
 
 class CursorAuthority(Protocol):
-    def verify(self, facts: dict, directory: os.stat_result, name_max: int) -> CursorProof:
-        """Attest exact implementation/filesystem bounds, including hidden work."""
+    def verify(self, facts: dict, directory: os.stat_result, name_max: int, directory_fd: int) -> CursorProof:
+        """Admit supported implementation, filesystem and allocation/name bounds."""
         ...
 
 
@@ -110,15 +112,36 @@ class Entry:
     size: int
 
 
-class CursorPool:
-    """One operation-wide stack/FD/allocation pool backed by its audit credits.
+# Windows belong to ONE trusted entered consumer instance, not a new payload
+# budget. M21 must retain/reconcile that instance's source/metadata read bounds.
+SCOPES = dict(archive=(4096, 32), source=(10000, 8), metadata=(96, 128),
+              driver=(64, 8), plan=(1, 1))
+EVIDENCE_MEMORY_BYTES = 8388608
+EVIDENCE_FDS = 8
 
-    Closing releases live capacity, never cumulative work/byte/entry credits.
+
+@dataclass
+class Traversal:
+    cap: int
+    entries: int = 0
+    probes: int = 0
+    opens: int = 0
+
+
+class CursorPool:
+    """One bounded discovery window with shared traversal/FD/materialization costs.
+
+    Closing releases live stream capacity, never cumulative materialization.
+    Audit/raw credits remain in Session; discovery does not debit payload reads.
     The caller supplies the original held directory FD; each cursor owns a
     newly opened FD and scandir's duplicate. Its borrowed input FD is also
     conservatively reserved until close, even if the caller closes it earlier.
     """
-    def __init__(self, session, authority: CursorAuthority, memory_bytes, fd_limit):
+    def __init__(self, session, authority: CursorAuthority, memory_bytes, fd_limit, *, scope='archive'):
+        need(scope in SCOPES, 'discovery-scope')
+        self.scope = scope
+        self.entry_limit, self.scan_limit = SCOPES[scope]
+        self.scans = self.materialized_bytes = 0
         integer(memory_bytes, 1, 4294967296)
         integer(fd_limit, 3, 256)
         self.session, self.authority = session, authority
@@ -127,32 +150,46 @@ class CursorPool:
         self.memory_used = self.fds_used = 0
         self.denied = False
 
-    def open(self, directory_fd, *, cap=4096):
-        self.session.reserve(rescans=1)
-        return self._open(directory_fd, depth=1, cap=cap)
+    def open(self, directory_fd, *, cap=None):
+        cap = self.entry_limit if cap is None else cap
+        integer(cap, 0, self.entry_limit)
+        need(self.scans < self.scan_limit, 'discovery-scan-limit')
+        if self.scope == 'archive':
+            self.session.reserve(rescans=1)
+        else:
+            self.session.check()
+        self.scans += 1
+        traversal = Traversal(cap)
+        return self._open(directory_fd, depth=1, cap=cap, traversal=traversal)
 
-    def _open(self, directory_fd, *, depth, cap):
+    def _open(self, directory_fd, *, depth, cap, traversal):
         need(not self.denied, 'cursor-pool-denied')
         integer(directory_fd)
         integer(depth, 1, 24)
-        integer(cap, 0, 4096)
+        integer(cap, 0, self.entry_limit)
+        traversal.opens += 1
+        need(traversal.opens <= traversal.cap+1, 'cursor-open-bound')
+        need(self.fds_used+3+EVIDENCE_FDS <= self.fd_limit and
+             self.memory_used+self.materialized_bytes+EVIDENCE_MEMORY_BYTES <= self.memory_bytes,
+             'cursor-evidence-capacity')
         self.session.check()
-        # The held FD's identity/name/profile inspection is itself charged.
-        self.session.reserve(audit_bytes=4096)
         info = os.fstat(directory_fd)
         need(stat.S_ISDIR(info.st_mode), 'cursor-not-directory')
         facts = observe_host()
         name_max = os.fpathconf(directory_fd, 'PC_NAME_MAX')
-        proof = self.authority.verify(facts, info, name_max)
+        # Fixed metadata/guardian evidence descriptors are also capacity:
+        # three pidfd/namespace/token handles plus bounded proc/build helpers.
+        proof = self.authority.verify(facts, info, name_max, directory_fd)
         need(type(proof) is CursorProof, 'cursor-attestation')
         proof.validate()
         need(proof.profile == self.session._read()[2].start.domain.profile, 'cursor-profile')
         need(0 < name_max <= proof.name_bytes, 'filesystem-name-bound')
         charge = proof.stream_allocation_bytes+proof.entry_allocation_bytes
         need(len(self.active) < proof.max_streams and depth <= proof.max_depth and
-             self.memory_used+charge <= self.memory_bytes and self.fds_used+3 <= self.fd_limit,
+             self.memory_used+self.materialized_bytes+charge+EVIDENCE_MEMORY_BYTES <= self.memory_bytes and
+             self.fds_used+3+EVIDENCE_FDS <= self.fd_limit,
              'cursor-capacity')
-        self.session.reserve(audit_bytes=charge)
+        self.session.check()
         self.memory_used += charge
         self.fds_used += 3
         fd = iterator = None
@@ -166,7 +203,7 @@ class CursorPool:
             need((fresh.st_dev, fresh.st_ino) == (info.st_dev, info.st_ino), 'cursor-directory-changed')
             iterator = os.scandir(fd)
             self.session.check()
-            cursor = Cursor(self, fd, iterator, proof, depth, cap, charge)
+            cursor = Cursor(self, fd, iterator, proof, depth, cap, charge, traversal)
             self.active.append(cursor)
             return cursor
         except Exception:
@@ -203,7 +240,8 @@ class CursorPool:
 
 
 class Cursor:
-    def __init__(self, pool, fd, iterator, proof, depth, cap, allocation):
+    def __init__(self, pool, fd, iterator, proof, depth, cap, allocation, traversal):
+        self.traversal = traversal
         self.pool, self.fd, self.iterator, self.proof = pool, fd, iterator, proof
         self.depth, self.cap, self.allocation = depth, cap, allocation
         self.delivered = self.probes = 0
@@ -220,9 +258,14 @@ class Cursor:
         need(not self.closed and not self.eof and not self.pool.denied, 'cursor-closed')
         session = self.pool.session
         try:
-            # Reserve worst-case allocation and hidden native read work even
-            # for the one EOF/overflow probe. No eager wrapper or free EOF.
-            session.reserve(audit_bytes=self.proof.entry_allocation_bytes+self.proof.native_work_bytes)
+            # Allocation and application steps are NOT payload/audit reads.
+            # Reserve even the one EOF/overflow probe before native next.
+            session.check()
+            need(self.pool.memory_used+self.pool.materialized_bytes+self.proof.entry_allocation_bytes+EVIDENCE_MEMORY_BYTES
+                 <= self.pool.memory_bytes, 'cursor-materialization-bound')
+            self.pool.materialized_bytes += self.proof.entry_allocation_bytes
+            self.traversal.probes += 1
+            need(self.traversal.probes <= 2*self.traversal.cap+1, 'cursor-probe-bound')
             self.probes += 1
             try:
                 native = next(self.iterator)
@@ -233,13 +276,13 @@ class Cursor:
                 session.check()
                 return None
             session.check()
-            need(self.delivered < self.cap, 'cursor-overflow')
+            need(self.delivered < self.cap and self.traversal.entries < self.traversal.cap, 'cursor-overflow')
             name = native.name
             need(type(name) is str and 0 < len(name) <= self.proof.name_bytes and
                  '/' not in name and '\x00' not in name and name not in {'.', '..'}, 'cursor-name')
             # Transient encoding is covered by the worst-case entry allowance.
             need(len(os.fsencode(name)) <= self.proof.name_bytes, 'cursor-name-bytes')
-            session.reserve(entries=1)
+            self.traversal.entries += 1
             session.check()
             info = os.stat(name, dir_fd=self.fd, follow_symlinks=False)
             session.check()
@@ -256,12 +299,14 @@ class Cursor:
             self.close()
             raise
 
-    def open_child(self, entry, *, cap=4096):
+    def open_child(self, entry, *, cap=None):
+        cap = self.traversal.cap if cap is None else cap
+        integer(cap, 0, self.traversal.cap)
         need(type(entry) is Entry and not self.closed and not self.pool.denied, 'child-state')
         need(type(entry.name) is str and 0 < len(entry.name) <= self.proof.name_bytes and
              '/' not in entry.name and '\x00' not in entry.name and entry.name not in {'.', '..'}, 'child-name')
         need(stat.S_ISDIR(entry.mode), 'child-not-directory')
-        self.pool.session.reserve(audit_bytes=4096)
+        self.pool.session.check()
         fd = None
         try:
             # Reserve the temporary descriptor before open, beyond both cursor
@@ -272,7 +317,7 @@ class Cursor:
             self.pool.session.check()
             info = os.fstat(fd)
             need((info.st_dev, info.st_ino) == (entry.device, entry.inode), 'child-identity')
-            child = self.pool._open(fd, depth=self.depth+1, cap=cap)
+            child = self.pool._open(fd, depth=self.depth+1, cap=cap, traversal=self.traversal)
         except Exception:
             self.pool.denied = True
             try:
