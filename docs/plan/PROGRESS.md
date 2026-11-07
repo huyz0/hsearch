@@ -1,5 +1,11 @@
 # Progress and handoff
 
+## 7 November 2026: proposed retention redesign after frozen hard3
+
+M01.17 at `c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8` remains unaccepted after both final R3 reports blocked at issued3/hard3. Correctness retains the eager OS-enumeration failure; architecture records fresh-process original-duration reconstruction. Their differing conclusions on the old enumeration key remain unchanged. All original task predicates and parent/product boundaries stay intact.
+
+[M01.18's plan-only decomposition](forensic-retention-redesign.md) proposes separately qualified host-context (M01.19), opaque-image (M01.20) and complete integration (M01.21) responsibilities. The [history](evidence/m01-17-hard3-disposition.json) and [verbatim eleven-clause bridge](evidence/m01-18-acceptance-bridge.json) retain the original failures and acceptance. This candidate is not accepted, creates no implementation claim or live authority, and requires its own exact-final-tree independent plan reviews/checks/protected integration. No fourth M17 review, counter reset or original-gate clearance is proposed.
+
 ## Proposed M01.17 standalone failed-forensic unit
 
 M01.17 is planned as a genuine disjoint code/integrity qualification unit for the failed FFF84 pair, with accepted M01.02/03/05/06 prerequisites. It does not depend on completed M01.08, remove any parent acceptance gate, qualify a CLI1 job or authorize a live inventory, pack/map, probe/worker or unlink. Parent M01.08 authors and original review base/history remain preserved. The new unit must retain its own charged plan-admission and implementation review history; no counter-free gate or reset is introduced.

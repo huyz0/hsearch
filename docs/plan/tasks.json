@@ -907,6 +907,117 @@
           "owner": "harness/integrator",
           "status": "planned",
           "evidence": []
+        },
+        {
+          "id": "M01.18",
+          "title": "Plan bounded forensic-retention contract redesign",
+          "goal": "Review and integrate a genuine plan-only decomposition after M01.17 hard3, preserving its failed source, counters, every original acceptance predicate and all independent parent/product gates.",
+          "deliverables": [
+            "docs/plan/forensic-retention-redesign.md with distinct host-context, opaque-image and complete operation-integration trust interfaces and proposed owned paths.",
+            "Versioned committed hard3 history and exact eleven-clause acceptance bridge in docs/plan/evidence/m01-17-hard3-disposition.json and docs/plan/evidence/m01-18-acceptance-bridge.json; no implementation source or claim."
+          ],
+          "validation": [
+            "Validate original132 tasks and dependency/acceptance objects unchanged, original M01.17 gate permanently frozen at c0a0050/issued3/both blocked, reviewer enumeration disagreement and new recovery-duration failure preserved.",
+            "Run API contract check/render freshness, plan render/check/selftest, bounded ownership/diff/source checks and applicable inherited plan CI; retain exact-head two eligible nonauthor correctness and architecture/security plan reviews before normal protected integration.",
+            "Prove plan admission cannot authorize implementation claims before this task is accepted, reset M17 counters, grant live preparation/mutation or weaken original duration/recovery/bounds/integrity/parent gates."
+          ],
+          "definition_of_done": [
+            "Only the reviewed decomposition, history and complete original-clause bridge are accepted; host-context/image/integration remain unimplemented until their own prerequisites and qualification.",
+            "Original M01.17 reports/source/gate remain blocked and immutable. Composite closure requires actually accepted M01.19/M01.20/M01.21 and every original predicate; no original-gate clearance or fourth packet.",
+            "Record exact plan source, serialized ownership/bootstrap exception, required checks, actual independent reviewers and protected integration; no new resources, implementation/prototype/native campaign or live FFF operation."
+          ],
+          "depends_on": [
+            "M01.02",
+            "M01.03",
+            "M01.05",
+            "M01.06"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.19",
+          "title": "Qualify bounded host-context and original-duration proof",
+          "goal": "Replace raw directory discovery and wall-derived local meters with an independently qualified bounded cursor and durable original clock/budget context, without artifact, approval or retirement authority.",
+          "deliverables": [
+            "Proposed tools/retention_context_v1 and tools/tests/test_retention_context_v1.py: typed versioned context/cursor interfaces, strict bounded encode/decode and qualified native host adapters.",
+            "Original integer MONOTONIC/BOOTTIME endpoints, trusted boot/time-domain bindings and no-refresh durable aggregate credits; no TaskStore, Docker, FFF or deletion-policy imports."
+          ],
+          "validation": [
+            "Qualify real OS iterator boundary and charged worst-case entry/name/native-buffer plus N+1/EOF probe, aggregate nested traversal/depth/FD/work limits, close/error/alias and cap-1/cap/cap+1/large-overflow controls on native Linux x86_64/ARM64.",
+            "Qualify truly fresh-process same-domain positive recovery and original-end expiry/equality/wall rollback/forward/absence time; unknown boot/namespace/domain/rewind proof or malformed/uncertain legacy proof refuses without resetting duration or credits.",
+            "Pin exact toolchain/image/dependencies; bind observed deployed interpreter/libc/kernel/filesystem/time-domain capability evidence without inventing an exact managed host-kernel install requirement. Native-buffer/name and blocked-syscall uncertainty remain explicit.",
+            "Retain both R3 counterexamples and all inherited relevant controls, exact-source both-role independent review, applicable coverage/no-exclusion predicates and complete required native CI/ci-ok before acceptance."
+          ],
+          "definition_of_done": [
+            "Accepted component proves its declared bounded host-context contract only, with source-backed native assumptions and no new allowance; it cannot authenticate a human, create a lease, choose an artifact or retire bytes.",
+            "Within-budget fresh-process recovery is preserved. A new object/process never reconstructs remaining duration from wall time; unsupported or incomparable continuity fails closed and preserves evidence.",
+            "No unverified buffering, syscall-latency, suspend/reboot/migration/snapshot or physical-persistence claim; any required unsupported case remains an explicit unmet predicate rather than a waiver."
+          ],
+          "depends_on": [
+            "M01.18"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.20",
+          "title": "Qualify opaque image and byte-conservation contract",
+          "goal": "Qualify the exact failed-pair opaque representation and consumers through accepted bounded context/byte ports, separate from host discovery, task authority, transport and retirement.",
+          "deliverables": [
+            "Proposed tools/opaque_retention_image_v1 and tools/tests/test_opaque_retention_image_v1.py: versioned deterministic image/index/conservation proof and opaque range/consumer interfaces.",
+            "Complete source/import/licensing/author provenance for every reused definition, with frozen M17 code treated as unaccepted incoming source."
+          ],
+          "validation": [
+            "Retain exact84 nodes/69 files/224852 bytes, complete parent closure and every recorded metadata field under independent original-byte/metadata oracles; corruption/truncation/alias/range/partial-write/byte/node/serialization caps refuse.",
+            "Consume accepted M01.19 context/read/write capabilities; no raw root traversal, local clock construction, TaskStore/approval/resource/transport/deletion authority, semantic Readers or qualification export.",
+            "Run exact-source native x86_64/ARM64 component qualification, all applicable inherited controls/coverage and both eligible independent review roles plus complete required CI/ci-ok."
+          ],
+          "definition_of_done": [
+            "Accepted representation preserves all bytes/metadata and composite opaque accounting within original pack/index/archive/diagnostic/I/O limits, with no authority to execute the complete operation.",
+            "No wrapping or alias import of the frozen M17 controller; retained/reused code is inventoried and independently reviewed in its new context, and remains subject to final integration review."
+          ],
+          "depends_on": [
+            "M01.18",
+            "M01.19"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M01.21",
+          "title": "Qualify complete forensic-retention successor integration",
+          "goal": "Independently qualify the complete exact-scope retention lifecycle consuming accepted host-context and image contracts, preserving every original M01.17 predicate and all parent gates.",
+          "deliverables": [
+            "Proposed tools/failed_retention_v2 and tools/tests/test_failed_retention_v2.py: genuine task/source/closed-writer/resource/human interlocks, preparation, one-probe/one-worker transport, durable map/audit, exact-prefix retirement/recovery, tentative completion and opaque consumers.",
+            "Whole final-tree imported/reused code/provenance closure, exact original eleven-clause composite acceptance evidence and retained failed M17 history."
+          ],
+          "validation": [
+            "Require actual accepted M01.18/M01.19/M01.20 before this implementation claim; retain original M01.02/03/05/06 prerequisites and normal exclusive task/resource ownership.",
+            "Exercise the whole source/failure graph, all retained controls and both R3 counterexamples, fresh-process original-duration recovery, durable byte/raw/rescan accounting, prefix11/83/84 and late/unknown effect reconciliation without redispatch or budget refresh.",
+            "Qualify exact-source ordinary inherited tests and actual operation-specific synthetic transport/kernel boundaries on native x86_64/ARM64 under the unchanged caps; do not infer these from mock ports or unrelated smoke. No unrequired physical-power-loss/suspend/reboot campaign is added merely because evidence is absent.",
+            "Independently review the complete final source, including every retained/reused body and claims, with both eligible nonauthor roles after deterministic checks; require applicable production coverage, all selected native checks and protected ci-ok before normal integration."
+          ],
+          "definition_of_done": [
+            "Every original M01.17 deliverable, validation item and definition-of-done clause remains satisfied by actual successor evidence and the exact bridge; component acceptance alone never qualifies this integration.",
+            "Original c0a0050/M17 hard3 gate and reports stay frozen blocked. Any later composite disposition cites accepted successors and preserves the original predicates, independent M01.08/whole-M01/product edges and all historical failures; it never rewrites an original verdict or grants a fourth round.",
+            "Source acceptance and bounded read-only preparation remain distinct from any actual FFF operation. Live mutation still requires concrete manifest/source/review/resource/integrity gates, root disposition and fresh exact84 human permission; no semantic qualification, new allowance or automatic authority follows."
+          ],
+          "depends_on": [
+            "M01.02",
+            "M01.03",
+            "M01.05",
+            "M01.06",
+            "M01.18",
+            "M01.19",
+            "M01.20"
+          ],
+          "owner": "harness/integrator",
+          "status": "planned",
+          "evidence": []
         }
       ]
     },
