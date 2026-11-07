@@ -1,0 +1,428 @@
+{
+  "scope": "Complete exact-text allocation of every M01.17 deliverable, validation and definition-of-done clause; no original predicate removed or amended",
+  "task": "M01.17",
+  "original_status_unchanged": "planned",
+  "entries": [
+    {
+      "original_clause": "deliverables[0]",
+      "original_text": "Disjoint tools/forensic_retention_v1 implementation and tools/tests/test_forensic_retention_v1.py, with a standalone versioned M01.17 task/component admission and fail-closed lifecycle.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.19",
+        "M01.20",
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "deliverables[1]",
+      "original_text": "Exact-scope FFF84 manifest/opaque map/read grammar, full byte/metadata conservation and durable mapping/audit-before-unlink controls, bounded diagnostics and interruption evidence.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.19",
+        "M01.20",
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "deliverables[2]",
+      "original_text": "Explicit provenance and independently reviewed incoming code closure for any pinned M01.08 primitives; existing parent source, authors, failed runs and review histories remain preserved.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.19",
+        "M01.20",
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "validation[0]",
+      "original_text": "Run deterministic positive/negative controls for source/task/owner/image/approval/closed-writer identity, aliases, partial write/fsync/map/unlink interruption, all-member/range integrity, logical accounting and every byte/node/read/metadata/deadline cap.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.19",
+        "M01.20",
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "validation[1]",
+      "original_text": "Prove standalone admission cannot call M01.08 author admission, override a task identity or let default TaskStore run/resume/cleanup mis-handle an active or interrupted forensic lifecycle; no edits to parent-owned shared adapters.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "validation[2]",
+      "original_text": "Qualify exact-source synthetic operation and ordinary inherited checks on native x86_64/ARM64 with no required skips; obtain both distinct nonauthor review roles within this genuine unit's counted history and all required exact-head CI/ci-ok before acceptance.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.19",
+        "M01.20",
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "validation[3]",
+      "original_text": "Qualified-source, root/owner-authorized bounded read-only inventory and dry-run preparation may prepare the content-bound manifest before mutation authorization, under closed/dead-writer, source and identity checks. This grants no shared-state write, actual pack/map, probe/worker, unlink or operation authority. Keep live mutating retention and runtime disabled until the concrete manifest/source/review/resource/integrity gates, root disposition and fresh exact84 human authorization exist.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "definition_of_done[0]",
+      "original_text": "Only the exact failed pair can be selected; every byte and recorded metadata field remains reachable through a verified opaque mapping, and candidate/CLI1 bytes cannot become successful original-job Readers or current qualification proof.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.20",
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "definition_of_done[1]",
+      "original_text": "Source and failure-state graphs have complete bounded allocation/I/O/node/output/metadata/deadline proofs and independent seeded fault controls; normal 4096/64MiB, 42-node qualification reserve and operation raw8KiB/public16KiB ceilings are preserved.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.19",
+        "M01.20",
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "definition_of_done[2]",
+      "original_text": "The final source artifact, its explicit imported primitive closure and claims have complete exact-head checks, two eligible independent roles and normal protected integration. Source acceptance and bounded read-only preparation are distinct from any later live mutating local retained-artifact operation; no unrun operation is claimed complete.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.19",
+        "M01.20",
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    },
+    {
+      "original_clause": "definition_of_done[3]",
+      "original_text": "M01.08 full51/oracle/pretrial/trial/token/recovery/native/coverage/CI/product boundaries, old PAIRS/AUTH/older229 current-qualified-native gate, new15 and all historical failures/authors/issued rounds are unchanged.",
+      "required_final_result": "Exact original predicate preserved; component proof cannot substitute for full final integration or operation authority",
+      "status": "proposed proof allocation only; no task admission or acceptance",
+      "proposed_owners": [
+        "M01.21"
+      ],
+      "plan_obligation": "M01.18 must preserve and review this exact clause allocation; component qualification never substitutes for complete M01.21 evidence."
+    }
+  ],
+  "plan_unit": "M01.18",
+  "original_task_contract": {
+    "id": "M01.17",
+    "title": "Qualify standalone opaque failed-artifact retention",
+    "goal": "Implement and independently review a standalone, exact-scope lossless opaque retention/integrity operation for the failed FFF84 pair, without granting semantic qualification, changing the parent agent-corpus gates or authorizing live data mutation.",
+    "deliverables": [
+      "Disjoint tools/forensic_retention_v1 implementation and tools/tests/test_forensic_retention_v1.py, with a standalone versioned M01.17 task/component admission and fail-closed lifecycle.",
+      "Exact-scope FFF84 manifest/opaque map/read grammar, full byte/metadata conservation and durable mapping/audit-before-unlink controls, bounded diagnostics and interruption evidence.",
+      "Explicit provenance and independently reviewed incoming code closure for any pinned M01.08 primitives; existing parent source, authors, failed runs and review histories remain preserved."
+    ],
+    "validation": [
+      "Run deterministic positive/negative controls for source/task/owner/image/approval/closed-writer identity, aliases, partial write/fsync/map/unlink interruption, all-member/range integrity, logical accounting and every byte/node/read/metadata/deadline cap.",
+      "Prove standalone admission cannot call M01.08 author admission, override a task identity or let default TaskStore run/resume/cleanup mis-handle an active or interrupted forensic lifecycle; no edits to parent-owned shared adapters.",
+      "Qualify exact-source synthetic operation and ordinary inherited checks on native x86_64/ARM64 with no required skips; obtain both distinct nonauthor review roles within this genuine unit's counted history and all required exact-head CI/ci-ok before acceptance.",
+      "Qualified-source, root/owner-authorized bounded read-only inventory and dry-run preparation may prepare the content-bound manifest before mutation authorization, under closed/dead-writer, source and identity checks. This grants no shared-state write, actual pack/map, probe/worker, unlink or operation authority. Keep live mutating retention and runtime disabled until the concrete manifest/source/review/resource/integrity gates, root disposition and fresh exact84 human authorization exist."
+    ],
+    "definition_of_done": [
+      "Only the exact failed pair can be selected; every byte and recorded metadata field remains reachable through a verified opaque mapping, and candidate/CLI1 bytes cannot become successful original-job Readers or current qualification proof.",
+      "Source and failure-state graphs have complete bounded allocation/I/O/node/output/metadata/deadline proofs and independent seeded fault controls; normal 4096/64MiB, 42-node qualification reserve and operation raw8KiB/public16KiB ceilings are preserved.",
+      "The final source artifact, its explicit imported primitive closure and claims have complete exact-head checks, two eligible independent roles and normal protected integration. Source acceptance and bounded read-only preparation are distinct from any later live mutating local retained-artifact operation; no unrun operation is claimed complete.",
+      "M01.08 full51/oracle/pretrial/trial/token/recovery/native/coverage/CI/product boundaries, old PAIRS/AUTH/older229 current-qualified-native gate, new15 and all historical failures/authors/issued rounds are unchanged."
+    ],
+    "depends_on": [
+      "M01.02",
+      "M01.03",
+      "M01.05",
+      "M01.06"
+    ],
+    "owner": "harness/integrator",
+    "status": "planned",
+    "evidence": []
+  },
+  "original_task_contract_sha256": "ccbfae927db7f0d82d1cf09c87eed5bb97e3d163a7a27630769ba5dcf87a3309",
+  "preserved_limits": {
+    "status": "Existing values copied without amendment; any replacement must satisfy these within the original profile",
+    "protocol_limits": {
+      "archive_nodes": 4096,
+      "archive_bytes": 67108864,
+      "selected_nodes": 84,
+      "selected_files": 69,
+      "selected_bytes": 224852,
+      "pack_bytes": 2097152,
+      "index_bytes": 1048576,
+      "raw_bytes": 8192,
+      "public_bytes": 16384,
+      "cpu_millis": 2000,
+      "memory_bytes": 4294967296,
+      "swap_bytes": 0,
+      "pids": 256,
+      "scratch_bytes": 2147483648,
+      "duration_ms": 1200000,
+      "audit_bytes": 268435456,
+      "audit_rescans": 32,
+      "range_bytes": 65536,
+      "records": 96,
+      "journal_events": 72,
+      "record_bytes": 131072,
+      "plan_slots": 2,
+      "plan_bytes": 1048576
+    },
+    "additional_retained_bounds": {
+      "qualification_reserve_nodes": 42,
+      "metadata_total_bytes": 14417920,
+      "manifest_record_bytes": 1048576,
+      "source_snapshots_per_instance": 8,
+      "source_paths_per_snapshot": 10000,
+      "source_bytes_per_snapshot": 134217728,
+      "driver_files": 16,
+      "driver_file_bytes": 1048576,
+      "driver_directory_entries": 64,
+      "source_aggregate_bytes_per_instance": 1207959552,
+      "TaskStore_registry_bytes": 67108864,
+      "raw_reservation_bytes": 16,
+      "raw_max_reservations_per_operation": 512,
+      "selected_payload_file_max_bytes": 8388608,
+      "transport_wait_timeout_ms": 30000,
+      "run_recover_metadata_snapshot_call_graph_bound": 128,
+      "run_recover_mapping_audit_reaffirmations": 2,
+      "run_recover_mapping_audit_record_max_bytes": 131072,
+      "forensic_metadata_container_max_depth": 24,
+      "forensic_object_graph_max_depth": 24,
+      "forensic_object_graph_max_nodes": 50000,
+      "forensic_decode_default_input_bytes": 1048576,
+      "forensic_object_encoded_max_bytes": 1048576,
+      "forensic_object_string_max_characters": 1048576
+    },
+    "source": "Exact frozen c0a0050 protocol, parser and caller-specific source citations above. Enforced component limits, shared harness envelopes and declared call-graph estimates have distinct scopes; all original predicates remain, no new pool or wider codec input is authorized.",
+    "shared_harness_input_bounds": {
+      "review_input_JSON_max_depth": 32,
+      "scope": "tools/review.py bounded_json input envelope only; not forensic metadata/object depth, not a general TaskStore parser rule and not a successor codec allowance. The stricter forensic24 checks remain conjunctive."
+    },
+    "numeric_bound_provenance": {
+      "frozen_head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+      "source_sha256": {
+        "tools/forensic_retention_v1/protocol.py": "d975b535a556e80f9c643d19ee0a015573b43c9b0e94bf385e9e8c1cf48247f8",
+        "tools/forensic_retention_v1/controller.py": "a8bc079b2496a4a6641cb67d60927bfceb5959aced34b7e5271dfebdebd70033",
+        "tools/forensic_retention_v1/storage.py": "aa529f75fdcc4cce2711db19f0f8f28283a861549ddf124d1a85b8d8973a5941",
+        "tools/forensic_retention_v1/lifecycle.py": "083cd72310df6480aea023f18810addeea60d352ca0db5d6024e8c3471833340",
+        "tools/task.py": "88afc24814efb8382371020daa87a52da8a418f62ba391ed1e5af402d21b826f",
+        "tools/forensic_retention_v1/capture.py": "2d76ab2dde4a69f0e9ab0712637f2e5846920209e4ec50a69a9aeb96b443bf58",
+        "tools/forensic_retention_v1/_pack.py": "ea4d0914fca2fde81524b2ff596ad093df418cb26311e31922543702d71c6f6f",
+        "tools/forensic_retention_v1/backend.py": "bca0cabe5216590081a3e593cd8985642200d90d3405eb9f4c767eecdf5ddbc7",
+        "tools/forensic_retention_v1/README.md": "5969a6181f65b9cc4cbfe7471c2b4abe319e79a0787e91146878dca2e5711e4c",
+        "tools/review.py": "3da058f88d520f01e6e68fe7684bb8c682e1a6ed0aa55239fe43b4cf7452b98d"
+      },
+      "protocol_limits": {
+        "scope": "All23 fixed forensic-operation fields statically compared to the unchanged LIMITS definition. No field value changed.",
+        "path": "tools/forensic_retention_v1/protocol.py",
+        "line": 11
+      },
+      "scoped_bounds": {
+        "additional_retained_bounds.qualification_reserve_nodes": {
+          "scope": "Final physical occupancy plus future qualification reserve; no concurrent qualification",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/controller.py",
+          "line": 78
+        },
+        "additional_retained_bounds.metadata_total_bytes": {
+          "scope": "Metadata stream bytes including orphans; separate from shared registry",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/storage.py",
+          "line": 82
+        },
+        "additional_retained_bounds.manifest_record_bytes": {
+          "scope": "Manifest-kind metadata record only; ordinary record cap remains131072",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/storage.py",
+          "line": 133
+        },
+        "additional_retained_bounds.source_snapshots_per_instance": {
+          "scope": "Per TaskLifecycle instance; not a fresh global payload/raw budget",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/lifecycle.py",
+          "line": 74
+        },
+        "additional_retained_bounds.source_paths_per_snapshot": {
+          "scope": "TaskStore source fingerprint paths per snapshot, driver pool separately charged",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/task.py",
+          "line": 200
+        },
+        "additional_retained_bounds.source_bytes_per_snapshot": {
+          "scope": "TaskStore source fingerprint total bytes per snapshot, before separate driver inputs",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/task.py",
+          "line": 29
+        },
+        "additional_retained_bounds.driver_files": {
+          "scope": "Selected Python driver files per digest/source scan; original eager enumeration defect is not qualified",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/lifecycle.py",
+          "line": 23
+        },
+        "additional_retained_bounds.driver_file_bytes": {
+          "scope": "Per selected driver source file input",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/lifecycle.py",
+          "line": 25
+        },
+        "additional_retained_bounds.driver_directory_entries": {
+          "scope": "Logical entries checked by original driver consumer; no native streaming-allocation claim",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/lifecycle.py",
+          "line": 21
+        },
+        "additional_retained_bounds.source_aggregate_bytes_per_instance": {
+          "scope": "TaskLifecycle aggregate fingerprint plus driver bytes per instance",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/lifecycle.py",
+          "line": 90
+        },
+        "additional_retained_bounds.TaskStore_registry_bytes": {
+          "scope": "Shared normal TaskStore registry storage bound only; forensic decode still applies its1MiB default input and24/50000 object limits",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/task.py",
+          "line": 30
+        },
+        "additional_retained_bounds.raw_reservation_bytes": {
+          "scope": "At-most bytes durably reserved before each combined pipe read/EOF probe; unused bytes not refunded",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/capture.py",
+          "line": 24
+        },
+        "additional_retained_bounds.raw_max_reservations_per_operation": {
+          "scope": "Derived8192/16 finite reservations across the operation/recovery; not a separate allowance",
+          "kind": "derived/declared scoped call-graph or record bound, not a new runtime counter",
+          "path": "tools/forensic_retention_v1/capture.py",
+          "line": 16
+        },
+        "additional_retained_bounds.selected_payload_file_max_bytes": {
+          "scope": "Forensic selected-payload file read ceiling; not every shared harness/source input buffer",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/_pack.py",
+          "line": 7
+        },
+        "additional_retained_bounds.transport_wait_timeout_ms": {
+          "scope": "Per Docker command child.wait timeout up to30s clipped to original remaining time; not a hard bound on blocked syscalls/late cleanup",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/backend.py",
+          "line": 53
+        },
+        "additional_retained_bounds.run_recover_metadata_snapshot_call_graph_bound": {
+          "scope": "Declared96 appending plus32 other metadata snapshots per entered run/recover path; not arbitrary invocations or a runtime counter",
+          "kind": "derived/declared scoped call-graph or record bound, not a new runtime counter",
+          "path": "tools/forensic_retention_v1/README.md",
+          "line": 49
+        },
+        "additional_retained_bounds.run_recover_mapping_audit_reaffirmations": {
+          "scope": "Declared two map/audit reaffirmations per entered retirement path; not a generic Metadata.reaffirm call limit",
+          "kind": "derived/declared scoped call-graph or record bound, not a new runtime counter",
+          "path": "tools/forensic_retention_v1/controller.py",
+          "line": 262
+        },
+        "additional_retained_bounds.run_recover_mapping_audit_record_max_bytes": {
+          "scope": "Actual mapping/audit ordinary record bytes from Metadata.rows/append; generic reaffirm regular-read limit remains1MiB",
+          "kind": "derived/declared scoped call-graph or record bound, not a new runtime counter",
+          "path": "tools/forensic_retention_v1/storage.py",
+          "line": 133
+        },
+        "additional_retained_bounds.forensic_metadata_container_max_depth": {
+          "scope": "Lexical JSON container depth checked before json.loads; separate from object-graph rooted depth",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/storage.py",
+          "line": 54
+        },
+        "additional_retained_bounds.forensic_object_graph_max_depth": {
+          "scope": "Rooted object/key/value traversal depth; walk starts at depth0, both limits checked",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/_pack.py",
+          "line": 15
+        },
+        "additional_retained_bounds.forensic_object_graph_max_nodes": {
+          "scope": "Object/key/value node visits; separate from lexical JSON containers",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/_pack.py",
+          "line": 15
+        },
+        "additional_retained_bounds.forensic_decode_default_input_bytes": {
+          "scope": "Default raw-byte argument of forensic storage.decode; caller-specific smaller limits and object checks also apply",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/storage.py",
+          "line": 36
+        },
+        "additional_retained_bounds.forensic_object_encoded_max_bytes": {
+          "scope": "Canonical encoded object byte ceiling MAX_INDEX, independent of raw decode maximum",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/_pack.py",
+          "line": 23
+        },
+        "additional_retained_bounds.forensic_object_string_max_characters": {
+          "scope": "Per object-graph string character count MAX_INDEX; not a byte-unit or directory-name allowance",
+          "kind": "enforced input/consumer bound",
+          "path": "tools/forensic_retention_v1/_pack.py",
+          "line": 20
+        },
+        "shared_harness_input_bounds.review_input_JSON_max_depth": {
+          "scope": "tools/review.py bounded_json input envelope only; not forensic metadata/object depth, not a general TaskStore parser rule and not a successor codec allowance. The stricter forensic24 checks remain conjunctive.",
+          "kind": "shared review-envelope bound only",
+          "path": "tools/review.py",
+          "line": 67
+        }
+      }
+    }
+  },
+  "status": "Plan candidate only; all eleven original clauses and numeric limits remain unchanged.",
+  "admission_sequence": {
+    "M01.18": "Independent plan review/checks/protected integration first; only plan claim now",
+    "M01.19": [
+      "M01.18 actually accepted"
+    ],
+    "M01.20": [
+      "M01.18 actually accepted",
+      "M01.19 actually accepted"
+    ],
+    "M01.21": [
+      "M01.02",
+      "M01.03",
+      "M01.05",
+      "M01.06",
+      "M01.18 actually accepted",
+      "M01.19 actually accepted",
+      "M01.20 actually accepted"
+    ]
+  },
+  "plan_provenance": {
+    "plan_author": "01a1ad0c-a57c-7462-9adc-44dda960885a",
+    "coordinator_design_direction": "01a1ab4c-4786-7472-bdb7-59c35c310347",
+    "platform_research_author": "01a1ab60-4bff-7752-9544-a9eab0fca10a",
+    "excluded_from_own_review": [
+      "01a1ad0c-a57c-7462-9adc-44dda960885a",
+      "01a1ab4c-4786-7472-bdb7-59c35c310347",
+      "01a1ab60-4bff-7752-9544-a9eab0fca10a"
+    ],
+    "prior_reporters": "Original reviewer reports are unchanged evidence, not new plan prose/design authorship; actual eligibility must be confirmed before separate review issuance.",
+    "implementation_authors": "All retained/reused code contributors remain provenance and excluded from their own implementation review; no code imported by this plan."
+  }
+}
