@@ -52,7 +52,13 @@ class TaskLifecycle:
         measured = self.store.fingerprint(record)
         # Bind every executable input through TaskStore and the package driver
         # separately. No import from frozen parent worktrees or private oracles.
-        paths = sorted((self.source_root/'tools/forensic_retention_v1').glob('*.py'))
+        paths=[]
+        for count,p in enumerate((self.source_root/'tools/forensic_retention_v1').iterdir(),1):
+            need(count<=64,'driver-directory-entries')
+            if p.suffix=='.py':
+                need(len(paths)<16 and p.is_file(),'driver-files')
+                paths.append(p)
+        paths.sort()
         need(1 <= len(paths) <= 16, 'driver-files')
         driver = [{'path':p.name, 'sha256':hashlib.sha256(regular(p, 1048576)).hexdigest()} for p in paths]
         self.source_bytes += measured['input_bytes'] + sum(p.stat().st_size for p in paths)
@@ -121,10 +127,10 @@ class ClosedJob:
     def check(self):
         need(identity(self.path) == self.identity, 'closed-record-identity')
         row = decode(regular(self.path, 131072, self.pin))
-        F.keys(row, 'kind claim owner_session groups phase controller container_ids source_head source_tree cli_exit guest_tests host_proof cause')
+        F.keys(row, 'kind claim owner_session groups phase controller container_ids engine_id source_head source_tree cli_exit guest_tests host_proof cause')
         need(row['kind'] == 'failed-forensic-closed-job-v1' and row['claim'] == F.CLAIM and
              row['owner_session'] == F.OWNER and row['groups'] == list(F.PAIR) and
-             row['phase'] == 'closed' and row['cli_exit'] == 1 and row['guest_tests'] == 601 and
+             row['phase'] == 'closed' and type(row['cli_exit'])is int and row['cli_exit'] == 1 and row['guest_tests'] == 601 and
              row['host_proof'] is False and row['cause'] == 'unconfirmed', 'closed-job-binding')
         need(row['source_head'] == 'fffbe1142717f45d538b2979021719db7f09d302' and
              row['source_tree'] == '86c6636f934d1648747a5d9d7849c2b776f48740', 'closed-job-source')
@@ -137,6 +143,8 @@ class ClosedJob:
         need(type(ids) is list and 1 <= len(ids) <= 8 and len(set(ids)) == len(ids), 'closed-ids')
         for cid in ids:
             F.sha(cid)
+        need(type(row['engine_id'])is str and 1<=len(row['engine_id'])<=128 and
+             row['engine_id']==self.docker.engine_id,'closed-engine-binding')
         self.docker.absent(ids)
         registry = decode(regular(self.registry.path, 67108864), canonical=False)
         need(registry['schema_version']==1 and len(registry['leases'])<=512, 'closed-registry-bound')
@@ -153,6 +161,7 @@ def authority(manifest, authorization, disposition, review_gate, *, owner, claim
     the existing ReviewStore consumes coordinator-observed check receipts.
     """
     F.validate(manifest)
+    F.source(disposition['source_binding'])
     need(authorization == F.authorization(manifest, authorization['answer']), 'human-binding')
     F.keys(disposition, 'kind task claim owner_session manifest_sha256 source_binding review_packet_sha256 human_message_sha256 archive_identity metadata_root image_id limits')
     need(disposition['kind'] == 'root-exact84-retention-v1' and disposition['task'] == 'M01.17' and
@@ -160,7 +169,7 @@ def authority(manifest, authorization, disposition, review_gate, *, owner, claim
          disposition['manifest_sha256'] == F.digest(manifest) and
          disposition['source_binding'] == manifest['source_binding'] and
          disposition['image_id'] == manifest['source_binding']['image_id'] and
-         disposition['limits'] == F.LIMITS, 'root-disposition')
+         disposition['limits'] == F.LIMITS and F.enc(disposition['limits'])==F.enc(F.LIMITS), 'root-disposition')
     F.sha(disposition['human_message_sha256'])
     F.sha(disposition['review_packet_sha256'])
     need(review_gate['gate'] == 'pass' and review_gate['task_id'] == 'M01.17' and

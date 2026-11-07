@@ -65,7 +65,8 @@ def closure(entries):
 
 
 def manifest(closed,root,physical,binding,outside_sha):
-    need(closed==closure(closed['entries']),'closure');source(binding);sha(outside_sha)
+    expected=closure(closed['entries'])
+    need(closed==expected and enc(closed)==enc(expected),'closure');source(binding);sha(outside_sha)
     keys(physical,'entries bytes');integer(physical['entries'],84,4096);integer(physical['bytes'],224852,67108864)
     index=dict(schema_name='hsearch-retained-artifacts-v1',schema_version=1,claim=CLAIM,owner_session=OWNER,groups=sorted(PAIR),inventory_sha256s=[digest(closed)],closed_evidence_sha256=digest(closed),entries=closed['entries'])
     index_raw=enc(index);need(len(index_raw)<=P['MAX_INDEX'],'index-size');align=P['align']
@@ -79,9 +80,9 @@ def manifest(closed,root,physical,binding,outside_sha):
 def validate(m):
     keys(m,'schema_version operation closure source_binding outside_sha256 limits payload_plan pack_name')
     need(type(m['schema_version'])is int and m['schema_version']==1 and m['operation']==OP,'operation')
-    need(m['limits']==LIMITS,'limits')
+    need(m['limits']==LIMITS and all(type(v)is int for v in m['limits'].values()),'limits')
     p=m['payload_plan'];rebuilt=manifest(m['closure'],p['archive_root'],dict(entries=p['original_physical_entries'],bytes=p['original_physical_bytes']),m['source_binding'],m['outside_sha256'])
-    need(m==rebuilt,'manifest-correspondence');need(len(enc(m))<=LIMITS['plan_bytes'],'manifest-size');return m
+    need(m==rebuilt and enc(m)==enc(rebuilt),'manifest-correspondence');need(len(enc(m))<=LIMITS['plan_bytes'],'manifest-size');return m
 
 
 def request(m):validate(m);return dict(schema_version=1,operation=OP,manifest_sha256=digest(m))

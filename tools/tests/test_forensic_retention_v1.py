@@ -55,6 +55,9 @@ class ClosedPort:
 
 class AuditPort:
     """Read the actual pack on the host; no synthetic success receipt."""
+    def preflight(self,manifest,meter=None):
+        F.source(manifest['source_binding'])
+        if meter is not None:meter.check()
     def verify(self, archive, manifest, pin, meter, metadata):
         if any(r['kind'] == 'journal' and r['value'].get('phase') == 'test-worker' for r in metadata.rows()):
             raise Refused('redispatch')
@@ -225,7 +228,7 @@ class Files(unittest.TestCase):
         with self.assertRaises(ValueError): F.authorization(self.manifest,'I approve')
 
     def test_fixed_scope_failure_history_and_strict_caps(self):
-        for defect in ['pair','node','file','bytes','success','proof','raw','deadline','case']:
+        for defect in ['pair','node','file','bytes','success','proof','raw','deadline','case','bool-cap','bool-exit']:
             m=copy.deepcopy(self.manifest)
             if defect=='pair':m['closure']['groups'][0]='new15'
             if defect=='node':m['closure']['entries'].pop()
@@ -236,6 +239,8 @@ class Files(unittest.TestCase):
             if defect=='raw':m['limits']['raw_bytes']=1048576
             if defect=='deadline':m['limits']['duration_ms']+=1
             if defect=='case':m['closure']['entries'][1]['path']=m['closure']['entries'][0]['path'].upper()
+            if defect=='bool-cap':m['limits']['swap_bytes']=False
+            if defect=='bool-exit':m['closure']['original_cli_exit']=True
             with self.subTest(defect=defect),self.assertRaises(ValueError): F.validate(m)
 
     def test_audit_pool_and_deadline_sticky(self):
@@ -259,9 +264,16 @@ class Files(unittest.TestCase):
         self.assertEqual(self.count_originals(),84)
 
     def test_independent_original_byte_and_all_metadata_conservation(self):
+        import tarfile
         self.run_operation()
         retained=ForensicArchive(self.archive,self.metadata,self.fresh_meter(),disposition=self.disposition,review_gate=self.gate,claim=self.lifecycle.claim,owner=self.lifecycle.owner)
-        rows={r['path']:r for r in self.manifest['closure']['entries']}
+        # Read at-rest index bytes with an independent stdlib decoder rather
+        # than projecting the subject's input manifest back into the oracle.
+        with tarfile.open(self.archive_root/self.manifest['pack_name'],'r:') as packed:
+            stream=packed.extractfile('__hsearch_retention_v1__/index.json')
+            raw=stream.read(1048577)
+            self.assertLessEqual(len(raw),1048576)
+            rows={r['path']:r for r in json.loads(raw)['entries']}
         with retained.open() as pack:
             assert_reachable(self.expected,
                 lambda path:{k:rows[path][k] for k in META},
@@ -387,15 +399,16 @@ class Files(unittest.TestCase):
         path=self.archive_root/self.manifest['pack_name']
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
-    def transport(self, pack_sha, *, fail_create=False, corrupt_probe=False):
+    def transport(self, pack_sha, *, fail_create=False, corrupt_probe=False,corrupt_image=False):
         commands=[]
         ids=[]
         def capture(argv,*,timeout,limit):
             self.assertGreater(timeout,0)
             self.assertLessEqual(limit,8192)
             args=argv[3:];commands.append(args)
-            if args[0]=='info':return json.dumps(dict(ID='synthetic-engine',OSType='linux',CgroupVersion='2'))
+            if args[0]=='info':return 'synthetic-engine linux 2\n'
             if args[0]=='context':return 'unix:///owned/synthetic.sock\n'
+            if args[0]=='image':return ('sha256:'+'0'*64) if corrupt_image else self.binding['image_id']
             if args[0]=='ps':return ''
             if args[0]=='create':
                 self.assertIn('--read-only',args)
@@ -410,7 +423,8 @@ class Files(unittest.TestCase):
                     caps=dict(kind='forensic-cgroup-probe-v1',cpu_millis=2000,memory_bytes=4294967296,swap_bytes=0,pids=256,scratch_bytes=2147483648,uid=10001)
                     if corrupt_probe:caps['pids']=257
                     return F.enc(caps).decode()
-                return F.enc(audit(self.archive,self.manifest,pack_sha,self.fresh_meter())).decode()
+                actual_pin=pack_sha or hashlib.sha256((self.archive_root/self.manifest['pack_name']).read_bytes()).hexdigest()
+                return F.enc(audit(self.archive,self.manifest,actual_pin,self.fresh_meter())).decode()
             if args[0]=='inspect':return 'exited 0\n'
             if args[0]=='rm':return args[1]+'\n'
             raise AssertionError('unhandled command')
@@ -421,13 +435,15 @@ class Files(unittest.TestCase):
     def test_production_transport_contract_one_probe_one_worker(self):
         pin=self.stopped_before_worker()
         backend,commands,checks=self.transport(pin)
+        backend.absent(['3'*64])
+        backend.preflight(self.manifest)
         result=backend.verify(self.archive,self.manifest,pin,self.fresh_meter(),self.metadata)
         self.assertEqual(result,audit(self.archive,self.manifest,pin,self.fresh_meter()))
         self.assertEqual(len([c for c in commands if c[0]=='create']),2)
         self.assertEqual(len([c for c in commands if c[0]=='start']),2)
         self.assertTrue(all('-f' not in c and '--force' not in c for c in commands))
         self.assertLessEqual(backend.raw,8192)
-        self.assertEqual(len(checks),4)
+        self.assertEqual(len(checks),6)
         with self.assertRaises(ValueError):backend.verify(self.archive,self.manifest,pin,self.fresh_meter(),self.metadata)
         self.assertEqual(self.count_originals(),84)
 
@@ -439,6 +455,25 @@ class Files(unittest.TestCase):
         self.assertEqual(len([c for c in commands if c[0]=='create']),1)
         self.assertFalse(any(c[0]=='start' for c in commands))
         self.assertEqual(self.count_originals(),84)
+
+    def test_production_preflight_rejects_budget_or_image_before_any_mutation(self):
+        for defect in ['budget','image']:
+            backend,commands,_=self.transport(None,corrupt_image=defect=='image')
+            if defect=='budget':backend.resource_check=lambda _:F.need(False,'budget')
+            self.controller.backend=backend
+            with self.subTest(defect=defect),self.assertRaises(ValueError):self.run_operation()
+            self.assertEqual(self.metadata.rows(),[])
+            self.assertEqual(self.lifecycle.phase,'allocated')
+            self.assertEqual(self.count_originals(),84)
+            self.assertFalse((self.archive_root/self.manifest['pack_name']).exists())
+
+    def test_complete_controller_uses_production_transport_with_syscall_port_mocked(self):
+        backend,commands,_=self.transport(None)
+        self.controller.backend=backend
+        result=self.run_operation()
+        self.assertEqual(result['originals_retired'],84)
+        self.assertEqual(len([c for c in commands if c[0]=='create']),2)
+        self.assertEqual(self.count_originals(),0)
 
     def test_probe_wrong_kernel_cap_prevents_worker(self):
         pin=self.stopped_before_worker()
@@ -530,14 +565,15 @@ class Files(unittest.TestCase):
     def test_canonical_resource_check_uses_existing_readonly_snapshot(self):
         from types import SimpleNamespace
         path=self.root/'registry.json'
-        row=dict(kind=F.OP,task_claim=self.lifecycle.claim,owner_session=self.lifecycle.owner,phase='ready',image_id=self.binding['image_id'],manifest_sha256=F.digest(self.manifest),limits=F.LIMITS)
+        row=dict(kind=F.OP,task_claim=self.lifecycle.claim,owner_session=self.lifecycle.owner,phase='ready',image_id=self.binding['image_id'],manifest_sha256=F.digest(self.manifest),limits=F.LIMITS,engine='synthetic-engine',budget=dict(cpu_millis=2000,memory_bytes=4294967296,pids=256,disk_bytes=2147483648))
         raw=F.enc(dict(schema_version=1,leases={'synthetic':row}));path.write_bytes(raw)
-        check=canonical_resource_check(SimpleNamespace(path=path),task_claim=self.lifecycle.claim,owner=self.lifecycle.owner,namespace='synthetic',image_id=self.binding['image_id'])
+        check=canonical_resource_check(SimpleNamespace(path=path),task_claim=self.lifecycle.claim,owner=self.lifecycle.owner,namespace='synthetic',image_id=self.binding['image_id'],engine_id='synthetic-engine')
         check(self.manifest)
         self.assertEqual(path.read_bytes(),raw)
-        row['owner_session']='foreign'
-        path.write_bytes(F.enc(dict(schema_version=1,leases={'synthetic':row})))
-        with self.assertRaises(ValueError):check(self.manifest)
+        for field,value in [('owner_session','foreign'),('engine','another-engine'),('budget',dict(cpu_millis=1,memory_bytes=4294967296,pids=256,disk_bytes=2147483648))]:
+            changed=dict(row);changed[field]=value
+            path.write_bytes(F.enc(dict(schema_version=1,leases={'synthetic':changed})))
+            with self.subTest(field=field),self.assertRaises(ValueError):check(self.manifest)
 
     def test_cli_unknown_evidence_stays_payload_free(self):
         from tools.forensic_retention_v1 import __main__ as cli
@@ -550,7 +586,7 @@ class Files(unittest.TestCase):
 
     def closed_record(self):
         record=dict(kind='failed-forensic-closed-job-v1',claim=F.CLAIM,owner_session=F.OWNER,groups=list(F.PAIR),phase='closed',
-                    controller=dict(pid=2147483647,identity='dead-original-birth'),container_ids=['3'*64],
+                    controller=dict(pid=2147483647,identity='dead-original-birth'),container_ids=['3'*64],engine_id='synthetic-engine',
                     source_head='fffbe1142717f45d538b2979021719db7f09d302',source_tree='86c6636f934d1648747a5d9d7849c2b776f48740',
                     cli_exit=1,guest_tests=601,host_proof=False,cause='unconfirmed')
         return record
@@ -560,11 +596,14 @@ class Files(unittest.TestCase):
         path=self.root/'closed.json';registry=self.root/'resources.json'
         record=self.closed_record();path.write_bytes(F.enc(record));registry.write_bytes(F.enc(dict(schema_version=1,leases={})))
         ids=[]
-        closed=ClosedJob({'handle_live':lambda _:False},path,F.digest(record),SimpleNamespace(path=registry),SimpleNamespace(absent=lambda x:ids.extend(x)))
+        closed=ClosedJob({'handle_live':lambda _:False},path,F.digest(record),SimpleNamespace(path=registry),SimpleNamespace(engine_id='synthetic-engine',absent=lambda x:ids.extend(x)))
         before=registry.read_bytes()
         self.assertEqual(closed.check(),F.digest(record))
         self.assertEqual(ids,['3'*64])
         self.assertEqual(registry.read_bytes(),before)
+        closed.docker.engine_id='another-engine'
+        with self.assertRaises(ValueError):closed.check()
+        closed.docker.engine_id='synthetic-engine'
         closed.api['handle_live']=lambda _:True
         with self.assertRaises(ValueError):closed.check()
         closed.api['handle_live']=lambda _:False
@@ -578,7 +617,7 @@ class Files(unittest.TestCase):
         registry.write_bytes(F.enc(dict(schema_version=1,leases={})))
         record=self.closed_record();record['controller']=dict(pid=os.getpid(),identity=api['SANDBOX']['owner_identity']())
         path.write_bytes(F.enc(record))
-        closed=ClosedJob(api,path,F.digest(record),SimpleNamespace(path=registry),SimpleNamespace(absent=lambda _:None))
+        closed=ClosedJob(api,path,F.digest(record),SimpleNamespace(path=registry),SimpleNamespace(engine_id='synthetic-engine',absent=lambda _:None))
         with self.assertRaises(ValueError):closed.check()
         record['cli_exit']=0;path.write_bytes(F.enc(record))
         with self.assertRaises(ValueError):closed.check()
@@ -707,7 +746,7 @@ class TaskStoreCompatibility(unittest.TestCase):
             git('init','-q');git('config','core.autocrlf','false');git('config','user.name','Synthetic');git('config','user.email','synthetic@localhost')
             for name in ['tools/task.py','tools/sandbox.py','harness/task-packet.schema.json','docs/plan/tasks.json']:
                 target=repo/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes((ROOT/name).read_bytes())
-            shutil.copytree(ROOT/'tools/forensic_retention_v1',repo/'tools/forensic_retention_v1')
+            shutil.copytree(ROOT/'tools/forensic_retention_v1',repo/'tools/forensic_retention_v1',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
             git('add','.');git('commit','-qm','synthetic loader source')
             api=runpy.run_path(str(repo/'tools/task.py'));store=api['TaskStore'](root/'state',root=repo)
             packet=dict(schema_version=1,task_id='M01.17',goal='loader synthetic',base_revision=git('rev-parse','HEAD'),owner_session=F.OWNER,

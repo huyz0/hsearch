@@ -133,7 +133,10 @@ class Controller:
                                      deadline_ms=admission['deadline_ms']), 'admission-binding')
         need(str(self.archive.root) == manifest['payload_plan']['archive_root'], 'archive-binding')
         self.meter = DurableMeter(admission,self.metadata)
+        need(self.lifecycle.source(manifest['source_binding']['image_id'])==manifest['source_binding'],'source-changed')
         self.closed_job.check()
+        self.backend.preflight(manifest,self.meter)
+        self.meter.check()
         self.lifecycle.begin(manifest, self.metadata.root)
         success = False
         try:
@@ -254,6 +257,8 @@ class Controller:
         need(disposition['metadata_root'] == str(self.metadata.root), 'recovery-metadata-root')
         self.meter = DurableMeter(admission,self.metadata)  # Original deadline/pool, never extended.
         self.closed_job.check()
+        self.backend.preflight(manifest,self.meter)
+        self.meter.check()
         mapping = self.metadata.one('mapping')
         self.pack_identity=mapping['pack_identity']
         need(identity(self.archive.root/manifest['pack_name'])==self.pack_identity,'recovery-pack-identity')

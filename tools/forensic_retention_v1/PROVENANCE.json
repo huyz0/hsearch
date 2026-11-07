@@ -279,7 +279,7 @@
       "sha256": "00c9a98ff67d1470a61e8f48018724ce296ebfa0fff9e612ca45f38a263ece33",
       "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
       "destination": "protocol.py",
-      "integrated_body_sha256": "69b749ab8b484829a00389e46bacf9d126f3938e82ecb4d9499ae76233e076e9",
+      "integrated_body_sha256": "739e8bcda85ebf1d21de1df00902562f9af8ea224c9a981f41b24fabf1831595",
       "body_changed": true
     },
     {
@@ -288,7 +288,7 @@
       "sha256": "0bdcd8da2d73def0232edb1aca7aee4c135fbb449c8431cf8957631cc0217c5d",
       "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
       "destination": "protocol.py",
-      "integrated_body_sha256": "e78eb51e0053530dbfaa925132af17f674c5354a759aa5b6b75ac97acb1819ea",
+      "integrated_body_sha256": "559236b30008c9ee9162ce1cdd9c242fa624f375ade0702e4051e0279580bc24",
       "body_changed": true
     },
     {
@@ -400,8 +400,8 @@
     },
     {
       "path": "tools/forensic_retention_v1/__main__.py",
-      "bytes": 5538,
-      "sha256": "9b7a3853af9ee02fdae840e949aaf531262c701fb57ff9c3b57fdf3b38fd70b8"
+      "bytes": 5568,
+      "sha256": "8742fda80e87f00819e969c1b650c321a1107f177b39f8dabd23c09fc530e0b9"
     },
     {
       "path": "tools/forensic_retention_v1/_bytes.py",
@@ -420,23 +420,23 @@
     },
     {
       "path": "tools/forensic_retention_v1/backend.py",
-      "bytes": 6631,
-      "sha256": "9d975b7e77e1e8ad5800733ae3aa6b419c7050a787a947358d5a6492af602f5e"
+      "bytes": 7308,
+      "sha256": "7b05c5e651d29194937df4ac2b1c7860e81c1c053dddbf227eb4709d7563d943"
     },
     {
       "path": "tools/forensic_retention_v1/controller.py",
-      "bytes": 19396,
-      "sha256": "880794d689ebb30a65786681e0856466f93ff18c59a118b1c8216bc34720bef6"
+      "bytes": 19675,
+      "sha256": "27f00e14aea11c40b91682449644ac0bda09df2b15ceb0a95241423f1dbffd59"
     },
     {
       "path": "tools/forensic_retention_v1/lifecycle.py",
-      "bytes": 10124,
-      "sha256": "8c1c24b4ac6c91688ef505cc7ee66aabfd9936b861181f3436bbe395c1840cc1"
+      "bytes": 10652,
+      "sha256": "9e6551c30bcfff27da4cf93dcd91c412057b280e797f2b4357949a290236b321"
     },
     {
       "path": "tools/forensic_retention_v1/protocol.py",
-      "bytes": 9106,
-      "sha256": "002ea508c893acad2cf878a00ffb88d51b91a3a6b3f699de11b498bf87209ca8"
+      "bytes": 9237,
+      "sha256": "d975b535a556e80f9c643d19ee0a015573b43c9b0e94bf385e9e8c1cf48247f8"
     },
     {
       "path": "tools/forensic_retention_v1/storage.py",
@@ -450,13 +450,13 @@
     },
     {
       "path": "tools/forensic_retention_v1/README.md",
-      "bytes": 10806,
-      "sha256": "263298c92a92d669df808e8d05914a5d921e86645e499acc21f3bc053fc9cba2"
+      "bytes": 11356,
+      "sha256": "1e0497635a7c856abdd3c6731be41bd32122d748dee4c2cd0424293219f79b3e"
     },
     {
       "path": "tools/tests/test_forensic_retention_v1.py",
-      "bytes": 44172,
-      "sha256": "89799a9890d3ea3329eb9c466a0590e72d44cfe33d603b1f7de8f60277ded5cc"
+      "bytes": 46928,
+      "sha256": "f44a4e60e62aa0080521bd9b37b2a9ac56e763d34b2b4118b0680625edc79630"
     }
   ],
   "inventory_scope": "All component Python, README and owned test bytes; PROVENANCE.json itself is bound by the frozen Git tree, avoiding a self-hash cycle."

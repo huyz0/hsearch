@@ -44,6 +44,8 @@ Recovery never extends the original wall/monotonic deadline or restarts a worker
 
 The read-only preparation estimator refuses if `20*pack_bytes + 12*224852 + 8*outside_bytes` exceeds the operation I/O ceiling. That is a bounded workload envelope, not a quota increase. Metadata and source inspection are separately bounded control pools. File buffers are at most8MiB, the pack at most2MiB, and index/JSON inputs at most1MiB. JSON depth is checked before decoding; record serialization stops at its byte bound.
 
+Metadata I/O also has a finite call-graph bound: one entered run/recover path performs at most96 appending snapshots plus32 other control snapshots, each reading at most14417920 bytes, and at most two additional131072-byte durability reaffirmations. This is a separate control-I/O upper bound, not payload-audit credit. Deadline checks refuse further progress after observed expiration; they cannot interrupt an already-entered OS filesystem syscall. A late or uncertain completion remains interrupted and cannot produce a passing terminal receipt.
+
 These are trusted-coordinator interlocks and filesystem identity bookends, not an atomic snapshot against a malicious concurrent host writer. The coordinator must keep source, closed originals and owned metadata quiescent. Unknown observations refuse. No worker/kernel/native success is inferred from injected test ports. Windows directory-sync failures remain failures; positive Windows file-operation tests explicitly substitute that port and do not claim native Windows durability qualification.
 
 ## Entry points and verification

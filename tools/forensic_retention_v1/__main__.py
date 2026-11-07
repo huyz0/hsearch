@@ -33,7 +33,7 @@ def load(config, *, source_root=None):
     registry=api['SANDBOX']['Registry'](resource)
     backend=DockerBackend(api,source_root/'tools/forensic_retention_v1',context=config['docker_context'],
                           engine_id=config['engine_id'],resource_check=canonical_resource_check(registry,
-                          task_claim=config['claim'],owner=config['owner_session'],namespace=config['resource_namespace'],image_id=config['image_id']))
+                          task_claim=config['claim'],owner=config['owner_session'],namespace=config['resource_namespace'],image_id=config['image_id'],engine_id=config['engine_id']))
     closed=ClosedJob(api,config['closed_record'],config['closed_record_sha256'],registry,backend)
     archive=Archive(config['archive_root'])
     metadata=Metadata(config['metadata_root'])
