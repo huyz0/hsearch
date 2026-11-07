@@ -1,5 +1,11 @@
 # Progress and handoff
 
+## 8 November 2026: retention redesign plan integrated
+
+[M01.18's plan artifact is accepted](evidence/m01-18-integrated.md): reviewed source `3c44380` merged normally through [PR26](https://github.com/huyz0/hsearch/pull/26) as `81bae9b` with the same tree, both R2 nonauthor roles clear, the durable gate passed and all seven PR/main jobs successful. The decomposition, frozen history and verbatim eleven-clause bridge are accepted; M01.19/.20/.21 remain unimplemented and require their own qualification. The factual bookkeeping source needs its own final legal same-M18 R3/checks/integration before successor admission.
+
+M01.17 remains frozen at issued3/hard3 with both final reports blocked, including the preserved enumeration disagreement and original-duration failure. No original gate, counter, clause or parent/product prerequisite is removed. M01.08 remains unqualified and the historical ARM cause remains unconfirmed. No live FFF action, resource or runtime acceptance is granted. Earlier proposal checkpoints below remain historical.
+
 ## 7 November 2026: proposed retention redesign after frozen hard3
 
 M01.17 at `c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8` remains unaccepted after both final R3 reports blocked at issued3/hard3. Correctness retains the eager OS-enumeration failure; architecture records fresh-process original-duration reconstruction. Their differing conclusions on the old enumeration key remain unchanged. All original task predicates and parent/product boundaries stay intact.

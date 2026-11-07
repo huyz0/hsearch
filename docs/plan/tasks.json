@@ -933,8 +933,13 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m01-18-integrated.md",
+              "result": "PR26 reviewed plan3c44380 integrated normally as81bae9b with identical tree; both R2 nonauthor roles clear, durable gate passed and all seven PR/main jobs successful. Only decomposition/history/eleven-clause bridge accepted; successors unimplemented, original M17 hard3 and all parent/product gates preserved. This factual bookkeeping source still requires its own final legal same-M18 R3/checks/integration."
+            }
+          ]
         },
         {
           "id": "M01.19",
