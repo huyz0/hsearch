@@ -201,15 +201,14 @@ class Session:
             remaining = self._sample(state, original, sample_from(state['observed']), after)
             return remaining
         except Exception:
-            if state is not None and raw is not None:
-                try:
-                    receipt = self.store.load()
-                    latest, _, _ = state_from(receipt.raw, self.expected_pin)
-                    if receipt.acknowledged is True:
-                        latest['denied'] = True
-                        self._write(receipt.raw, latest)
-                except Exception:
-                    pass  # Integration must reconcile an uncertain CAS; never create a new proof.
+            try:
+                receipt = self.store.load()
+                latest, _, _ = state_from(receipt.raw, self.expected_pin)
+                if receipt.acknowledged is True:
+                    latest['denied'] = True
+                    self._write(receipt.raw, latest)
+            except Exception:
+                pass  # Integration must reconcile an uncertain CAS; never create a new proof.
             self.poisoned = True
             raise
 

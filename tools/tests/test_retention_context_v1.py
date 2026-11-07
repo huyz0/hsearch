@@ -251,6 +251,16 @@ class ContextControls(unittest.TestCase):
         # The integration must retain an uncertain acknowledgment. Do not
         # reinterpret its disappearance as component-proved recovery.
 
+    def test_unknown_clock_failure_retained_before_store_load(self):
+        clock, store, original, session = fixture()
+        class UnknownClock:
+            def sample(self): raise Refused('lost-domain-evidence')
+        with self.assertRaises(Refused):
+            Session(store, UnknownClock(), digest(asdict(original)))
+        self.assertTrue(decode(store.raw)['denied'])
+        with self.assertRaises(Refused):
+            Session(store, clock, digest(asdict(original)))
+
     def test_r3_fresh_process_counterexample_original_end_survives_wall_slack(self):
         with tempfile.TemporaryDirectory(prefix='context-counterexample-') as tmp:
             clock = FixedClock(); store = FileStore(Path(tmp)/'proof.json')

@@ -170,13 +170,25 @@ class CursorPool:
             self.active.append(cursor)
             return cursor
         except Exception:
+            errors = []
             if iterator is not None:
-                iterator.close()
+                try:
+                    iterator.close()
+                except Exception as exc:
+                    errors.append(exc)
             if fd is not None:
-                os.close(fd)
-            self.memory_used -= charge
-            self.fds_used -= 3
+                try:
+                    os.close(fd)
+                except Exception as exc:
+                    errors.append(exc)
+            if not errors:
+                self.memory_used -= charge
+                self.fds_used -= 3
             self.denied = True
+            try:
+                self.session.deny()
+            except Exception:
+                pass
             raise
 
     def close(self):
@@ -261,6 +273,13 @@ class Cursor:
             info = os.fstat(fd)
             need((info.st_dev, info.st_ino) == (entry.device, entry.inode), 'child-identity')
             child = self.pool._open(fd, depth=self.depth+1, cap=cap)
+        except Exception:
+            self.pool.denied = True
+            try:
+                self.pool.session.deny()
+            except Exception:
+                pass
+            raise
         finally:
             if fd is not None:
                 os.close(fd)
