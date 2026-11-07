@@ -869,11 +869,15 @@
             "M01.14"
           ],
           "owner": "harness/integrator",
-          "status": "in_progress",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m01-16-factual-integration.md",
               "result": "New factual integration candidate with both author identities and retained failed PR22 evidence. Its independent final-tree reviews/full applicable checks/normal integration remain pending; original accepted integrations do not qualify this artifact."
+            },
+            {
+              "path": "evidence/m01-16-integrated.md",
+              "result": "Original factual integration reviewed 274d17a/tree c3e8f2a, independent R1 clear and durable gate, normal PR23 merge 2b2fd47; all seven PR run42025032564 and all seven main run42030965812 jobs successful. PR22 failures/authors retained; historical ARM cause unconfirmed; M01.08/product, current M01.18 completion and frozen M02.10 histories unchanged. This follow-up requires its own exact-head R2/checks/integration."
             }
           ]
         },
