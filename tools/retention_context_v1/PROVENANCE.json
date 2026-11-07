@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "task": "M01.19",
+  "author_session": "01a1ab9f-fde6-7952-9877-efb2fce35b9c",
+  "base": "992084caa931fc64b1589350453fde9fa0e3a765",
+  "original_bodies": [
+    "codec.py",
+    "context.py",
+    "native.py",
+    "__init__.py",
+    "../tests/test_retention_context_v1.py"
+  ],
+  "copied_implementation_bodies": [],
+  "copied_reviewer_test_bodies": [],
+  "added_dependencies": [],
+  "license_status": "No hsearch redistribution license selected; no reuse grant inferred. Python stdlib remains under its upstream license; no stdlib bodies vendored.",
+  "contract_inputs": [
+    {
+      "path": "docs/plan/forensic-retention-redesign.md",
+      "sha256": "237434080e2663ad6ca3ee9b34db1eacff2c16a4b4478072c456ec161b136d81"
+    },
+    {
+      "path": "docs/plan/evidence/m01-18-acceptance-bridge.json",
+      "sha256": "8b7e5ec4ed0228093732619a36da3fdaffee835b4b7d7e9e7acd054347a49131"
+    },
+    {
+      "path": "docs/plan/evidence/m01-17-hard3-disposition.json",
+      "sha256": "13722071a42132e86e0337af14358275bc429cefe8567762dc16099e887845c0"
+    }
+  ],
+  "research_author": "01a1ab60-4bff-7752-9544-a9eab0fca10a (proposal memo only; no body copied)",
+  "references": [
+    {
+      "url": "https://docs.python.org/3.11/library/os.html#os.scandir",
+      "use": "FD iterator contract; live filesystem is not a snapshot"
+    },
+    {
+      "url": "https://github.com/python/cpython/blob/v3.11.2/Modules/posixmodule.c",
+      "use": "candidate FD ownership/entry allocation source; deployed correspondence unproved"
+    },
+    {
+      "url": "https://github.com/bminor/glibc/blob/glibc-2.36/sysdeps/unix/sysv/linux/opendir.c",
+      "use": "candidate 32KiB..1MiB native buffer allocation; not native work/latency proof"
+    },
+    {
+      "url": "https://man7.org/linux/man-pages/man7/time_namespaces.7.html",
+      "use": "clock domain virtualizes MONOTONIC/BOOTTIME"
+    },
+    {
+      "url": "https://man7.org/linux/man-pages/man2/clock_gettime.2.html",
+      "use": "elapsed/suspend clock semantics"
+    }
+  ],
+  "qualification": "No deployed DomainAuthority/CursorAuthority included; exact native source/profile proof remains unmet, not waived."
+}
