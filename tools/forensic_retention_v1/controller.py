@@ -13,7 +13,7 @@ from . import _pack as P
 from ._bytes import need, regular
 from ._sync import sync_directory
 from .storage import Archive, Metadata, CheckedWriter, DurableMeter, audit, identity
-from .lifecycle import authority
+from .lifecycle import authority,executing_package
 
 
 def order(manifest):
@@ -30,6 +30,16 @@ class Controller:
         self.sync, self.fault = sync, fault or (lambda _: None)
         self.meter = None
         self.raw_bytes = 0
+        self.guard_source()
+
+    def guard_source(self):
+        lifecycle=self.lifecycle
+        if hasattr(lifecycle,'api'):
+            executing_package(lifecycle.source_root)
+            need(lifecycle.source_root==Path(__file__).resolve().parents[2],
+                 'controller-checkout-mismatch')
+            need(self.backend.source_package==lifecycle.source_root/'tools/forensic_retention_v1',
+                 'worker-checkout-mismatch')
 
     def point(self, phase):
         self.meter.check()
@@ -44,8 +54,9 @@ class Controller:
                 raise
             primary.add_note('forensic-lifecycle-finalization-uncertain')
 
-    def prepare(self, source_binding, preparation, review_gate):
+    def prepare(self, source_binding, preparation, review_gate, *, meter=None):
         """Read-only preparation requires an explicit qualified-source root grant."""
+        self.guard_source()
         F.keys(preparation, 'kind task claim owner_session source_binding archive_identity')
         need(preparation == dict(kind='root-readonly-preparation-v1', task='M01.17',
              claim=self.lifecycle.claim, owner_session=self.lifecycle.owner,
@@ -55,9 +66,10 @@ class Controller:
              review_gate['head']==source_binding['head'] and review_gate['tree']==source_binding['tree'],
              'qualified-preparation-source')
         need(self.lifecycle.source(source_binding['image_id']) == source_binding, 'source-changed')
-        self.closed_job.check()
         now = time.time_ns()//1000000
-        meter = F.Meter(dict(started_ms=now, deadline_ms=now+1200000))
+        meter = meter or F.Meter(dict(started_ms=now, deadline_ms=now+1200000))
+        if hasattr(self.backend,'bind_preparation'):self.backend.bind_preparation(meter)
+        self.closed_job.check()
         rows = self.archive.selected(meter)
         closed = F.closure(rows)
         physical = self.archive.physical(meter)
@@ -125,6 +137,7 @@ class Controller:
         return pin
 
     def run(self, manifest, authorization, admission, disposition, review_gate):
+        self.guard_source()
         F.validate(manifest)
         authority(manifest, authorization, disposition, review_gate,
                   owner=self.lifecycle.owner, claim=self.lifecycle.claim)
@@ -134,12 +147,14 @@ class Controller:
         need(str(self.archive.root) == manifest['payload_plan']['archive_root'], 'archive-binding')
         self.meter = DurableMeter(admission,self.metadata)
         need(self.lifecycle.source(manifest['source_binding']['image_id'])==manifest['source_binding'],'source-changed')
-        self.closed_job.check()
-        self.backend.preflight(manifest,self.meter)
-        self.meter.check()
-        self.lifecycle.begin(manifest, self.metadata.root)
         success = False
+        self.lifecycle.start_admission(manifest,self.metadata.root)
         try:
+            if hasattr(self.backend,'bind_raw'):self.backend.bind_raw(self.lifecycle.raw_budget(self.meter),self.meter)
+            self.closed_job.check()
+            self.backend.preflight(manifest,self.meter)
+            self.meter.check()
+            self.lifecycle.begin(manifest,self.metadata.root)
             self.metadata.append('reservation', dict(manifest=F.digest(manifest), disposition=F.digest(disposition),
                                  archive_identity=self.archive.identity, metadata_identity=self.metadata.identity))
             self.metadata.append('manifest', manifest)
@@ -172,11 +187,48 @@ class Controller:
             self.point('after-audit')
             self.check(manifest, pack=True, source=True)
             result = self.retire(manifest, mapping)
-            self.metadata.append('terminal', result)
+            self.complete(result)
             success = True
             return result
         finally:
-            self.finish(success)
+            if not success:self.finish(False)
+
+    def complete(self,result):
+        # Publication is tentative. It is never an independently accepted
+        # completion proof: the durable commit and finalized lifecycle must
+        # agree, and no late effect may turn expiry into success.
+        self.meter.check()
+        self.metadata.append('terminal',dict(result,completion='tentative'))
+        self.meter.check()
+        self.metadata.append('journal',dict(phase='completion-observed',terminal_sha256=F.digest(result),deadline_ms=self.meter.deadline,acceptance='tentative'))
+        self.meter.check()
+        try:
+            self.lifecycle.finish(True)
+            self.meter.check()
+            result['completion']='observed-before-deadline'
+            result['observed_end_ms']=self.meter.clock()
+            self.meter.check()
+        except BaseException:
+            self.lifecycle.interrupt_completion()
+            raise
+
+    def reaffirm_deletions(self,manifest,mapping):
+        # Missing entries are observations, not acknowledged fsync effects.
+        # Re-sync each surviving affected parent/ancestor, including the root
+        # for a fully absent cohort, before acknowledging a recovered prefix.
+        directories={self.archive.root}
+        for row in order(manifest):
+            parent=(self.archive.root/row['path']).parent
+            while parent!=self.archive.root:
+                if os.path.lexists(parent):
+                    rel=parent.relative_to(self.archive.root).as_posix()
+                    need(identity(parent)==mapping['identities'][rel], 'recovery-parent-identity')
+                    directories.add(parent)
+                parent=parent.parent
+        for directory in sorted(directories,key=lambda p:(-len(p.parts),str(p))):
+            self.meter.check()
+            self.sync(directory)
+            self.meter.check()
 
     def prefix(self, manifest, mapping):
         """Find the exact missing prefix, including unlink-before-ack crashes."""
@@ -217,6 +269,7 @@ class Controller:
         if not existing:
             self.metadata.append('journal', intent)
         prefix = self.prefix(manifest, mapping)
+        if prefix:self.reaffirm_deletions(manifest,mapping)
         self.check(manifest, pack=True)
         for i, row in enumerate(order(manifest)[prefix:], prefix):
             self.meter.check()
@@ -236,6 +289,7 @@ class Controller:
             if (i+1) % 8 == 0 or i == 83:
                 self.metadata.append('journal', dict(phase='retired-prefix', count=i+1, mapping_sha256=F.digest(mapping)))
         need(self.prefix(manifest, mapping) == 84, 'retirement-incomplete')
+        self.reaffirm_deletions(manifest,mapping)
         proof = audit(self.archive, manifest, mapping['pack_sha256'], self.meter)
         self.check(manifest, pack=True, source=True)
         physical = self.archive.physical(self.meter)
@@ -244,11 +298,12 @@ class Controller:
         result = dict(kind='failed-forensic-result-v1', manifest_sha256=F.digest(manifest), mapping_sha256=F.digest(mapping),
                       integrity_sha256=F.digest(proof), originals_retired=84, qualification=False, semantic_export=False,
                       original_cli_exit=1, guest_tests=601, original_host_proof=False, cause='unconfirmed',
-                      audit_bytes=self.meter.used, raw_bytes=self.raw_bytes, physical=physical)
+                      audit_bytes=self.meter.used, raw_bytes=max(self.raw_bytes,getattr(self.backend,'raw',0)), physical=physical)
         need(len(F.enc(result)) <= 16384, 'public-output')
         return result
 
     def recover(self, disposition, review_gate):
+        self.guard_source()
         manifest = self.metadata.one('manifest')
         authorization = self.metadata.one('authorization')
         admission = self.metadata.one('admission')
@@ -256,9 +311,6 @@ class Controller:
                   owner=self.lifecycle.owner, claim=self.lifecycle.claim)
         need(disposition['metadata_root'] == str(self.metadata.root), 'recovery-metadata-root')
         self.meter = DurableMeter(admission,self.metadata)  # Original deadline/pool, never extended.
-        self.closed_job.check()
-        self.backend.preflight(manifest,self.meter)
-        self.meter.check()
         mapping = self.metadata.one('mapping')
         self.pack_identity=mapping['pack_identity']
         need(identity(self.archive.root/manifest['pack_name'])==self.pack_identity,'recovery-pack-identity')
@@ -270,16 +322,20 @@ class Controller:
         reservation = self.metadata.one('reservation')
         need(reservation['metadata_identity'] == self.metadata.identity and
              reservation['archive_identity'] == self.archive.identity, 'recovery-root-identity')
-        need(not any(r['kind'] == 'terminal' for r in self.metadata.rows()), 'operation-already-terminal')
-        self.lifecycle.recover(manifest, self.metadata.root)
+        need(not any(r['kind']=='journal' and r['value'].get('phase')=='completion-observed'
+                     for r in self.metadata.rows()),'operation-completion-needs-inspection')
         success = False
+        self.lifecycle.start_admission(manifest,self.metadata.root,recover=True)
         try:
+            if hasattr(self.backend,'bind_raw'):self.backend.bind_raw(self.lifecycle.raw_budget(self.meter),self.meter)
+            self.closed_job.check();self.backend.preflight(manifest,self.meter);self.meter.check()
+            self.lifecycle.recover(manifest,self.metadata.root)
             result = self.retire(manifest, mapping)
-            self.metadata.append('terminal', result)
+            self.complete(result)
             success = True
             return result
         finally:
-            self.finish(success)
+            if not success:self.finish(False)
 
 
 class ForensicArchive:

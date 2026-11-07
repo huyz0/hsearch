@@ -368,7 +368,11 @@
     "R1_packet": "b92a03691b797c7bf295e7082f71237e31780f675ef5b4c8a07f636a44103803",
     "planned": 2,
     "hard_ceiling": 3,
-    "implementation_review": "not issued by this source artifact"
+    "implementation_review": "R3 not issued by this source artifact; coordinator verification required first",
+    "R2_packet": "bf6b0145418bf244205ecb302a52dc896c0b7e0afb293f0480d85b89da278696",
+    "R2_source": "1101dda0337c225b0befb7d14310ab0acab96ded",
+    "R2_result": "both nonauthor reports blocked; all eight finding keys retained; combined author corrections pending final-tree qualification and independent review",
+    "issued": 2
   },
   "test_support": {
     "handoff_sha256": "82f57a92d10f56b42527a30d96b13170439c24100883f494bf06523d1c4f5370",
@@ -400,8 +404,8 @@
     },
     {
       "path": "tools/forensic_retention_v1/__main__.py",
-      "bytes": 5568,
-      "sha256": "8742fda80e87f00819e969c1b650c321a1107f177b39f8dabd23c09fc530e0b9"
+      "bytes": 6457,
+      "sha256": "bbf6593269191c4650ecc0310028afa9a5bdea9650b37e8c3ab713ebad259637"
     },
     {
       "path": "tools/forensic_retention_v1/_bytes.py",
@@ -420,18 +424,23 @@
     },
     {
       "path": "tools/forensic_retention_v1/backend.py",
-      "bytes": 7308,
-      "sha256": "7b05c5e651d29194937df4ac2b1c7860e81c1c053dddbf227eb4709d7563d943"
+      "bytes": 8430,
+      "sha256": "bca0cabe5216590081a3e593cd8985642200d90d3405eb9f4c767eecdf5ddbc7"
+    },
+    {
+      "path": "tools/forensic_retention_v1/capture.py",
+      "bytes": 2302,
+      "sha256": "2d76ab2dde4a69f0e9ab0712637f2e5846920209e4ec50a69a9aeb96b443bf58"
     },
     {
       "path": "tools/forensic_retention_v1/controller.py",
-      "bytes": 19675,
-      "sha256": "27f00e14aea11c40b91682449644ac0bda09df2b15ceb0a95241423f1dbffd59"
+      "bytes": 22782,
+      "sha256": "a8bc079b2496a4a6641cb67d60927bfceb5959aced34b7e5271dfebdebd70033"
     },
     {
       "path": "tools/forensic_retention_v1/lifecycle.py",
-      "bytes": 10652,
-      "sha256": "9e6551c30bcfff27da4cf93dcd91c412057b280e797f2b4357949a290236b321"
+      "bytes": 14564,
+      "sha256": "083cd72310df6480aea023f18810addeea60d352ca0db5d6024e8c3471833340"
     },
     {
       "path": "tools/forensic_retention_v1/protocol.py",
@@ -450,14 +459,26 @@
     },
     {
       "path": "tools/forensic_retention_v1/README.md",
-      "bytes": 11356,
-      "sha256": "1e0497635a7c856abdd3c6731be41bd32122d748dee4c2cd0424293219f79b3e"
+      "bytes": 12938,
+      "sha256": "5969a6181f65b9cc4cbfe7471c2b4abe319e79a0787e91146878dca2e5711e4c"
     },
     {
       "path": "tools/tests/test_forensic_retention_v1.py",
-      "bytes": 46928,
-      "sha256": "f44a4e60e62aa0080521bd9b37b2a9ac56e763d34b2b4118b0680625edc79630"
+      "bytes": 59591,
+      "sha256": "165933cca9640ff53b7dc92f55e947b18e22dce4e5ec37a4922720e9ff415700"
     }
   ],
-  "inventory_scope": "All component Python, README and owned test bytes; PROVENANCE.json itself is bound by the frozen Git tree, avoiding a self-hash cycle."
+  "inventory_scope": "All component Python, README and owned test bytes; PROVENANCE.json itself is bound by the frozen Git tree, avoiding a self-hash cycle.",
+  "r2_regression_support": {
+    "handoff_sha256": "1498ccfccead64b3c9c87bf7760844979e5d39acb9a2b01b2f6c0dbec53170ab",
+    "author": "01a1ab9f-fde6-7952-9877-efb2fce35b9c",
+    "scope": "Author support only; independently adapted controls, not counted as external qualification; contributor excluded from self-review."
+  },
+  "combined_r2_corrections": [
+    "Bind executing package, admitted task API, controller and worker mount to one clean checkout, including loaded module origins.",
+    "Reaffirm surviving affected parent directories before acknowledging recovered deletion prefixes or completing.",
+    "Stream bounded preparation publication enumeration under the original preparation deadline.",
+    "Reserve combined stdout/stderr reads durably in the existing TaskStore claim before consumption; retain failed/unknown/recovery debt.",
+    "Keep durable completion tentative and require deadline observations after terminal publication and lifecycle finalization before returning success."
+  ]
 }

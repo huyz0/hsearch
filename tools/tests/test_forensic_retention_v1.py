@@ -18,7 +18,8 @@ from tools.forensic_retention_v1 import _pack as P
 from tools.forensic_retention_v1._bytes import Refused
 from tools.forensic_retention_v1.storage import Archive, Metadata, DurableMeter, CheckedWriter, audit, identity, decode
 from tools.forensic_retention_v1.controller import Controller, ForensicArchive, order
-from tools.forensic_retention_v1.lifecycle import TaskLifecycle, ClosedJob, authority, OWNED
+from tools.forensic_retention_v1.lifecycle import TaskLifecycle, ClosedJob, authority, OWNED,driver_digest
+from tools.forensic_retention_v1.capture import RawBudget,bounded_capture
 from tools.forensic_retention_v1.backend import DockerBackend, canonical_resource_check
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,8 +32,18 @@ class SourcePort:
     def __init__(self, binding):
         self.binding = binding
         self.phase = 'allocated'
+        self._raw=0
     def source(self, _image):
         return copy.deepcopy(self.binding)
+    def start_admission(self,manifest,root,*,recover=False):
+        if not recover:self._raw=0
+    def raw_budget(self,meter):
+        if hasattr(self,'_budget'):
+            self._budget.check=meter.check;return self._budget
+        def save(previous,value):
+            F.need(self._raw==previous,'raw-state-raced');self._raw=value
+        self._budget=RawBudget(lambda:self._raw,save,meter.check);return self._budget
+    def interrupt_completion(self):self.phase='interrupted'
     def begin(self, manifest, _root):
         if self.phase != 'allocated':
             raise Refused('busy')
@@ -41,7 +52,7 @@ class SourcePort:
         if self.phase != 'active' or self.binding != manifest['source_binding']:
             raise Refused('source')
     def finish(self, success):
-        self.phase = 'complete' if success else 'interrupted'
+        if self.phase!='allocated':self.phase = 'complete' if success else 'interrupted'
     def recover(self, manifest, _root):
         if self.phase != 'interrupted' or self.binding != manifest['source_binding']:
             raise Refused('recovery')
@@ -121,7 +132,7 @@ class Files(unittest.TestCase):
         # fsync behavior is exercised separately, with no native support claim.
         self.sync = (lambda _:None) if os.name == 'nt' else __import__('tools.forensic_retention_v1._sync',fromlist=['sync_directory']).sync_directory
         self.metadata = Metadata(self.meta_root, sync=self.sync)
-        self.binding = dict(head='a'*40,tree='b'*40,fingerprint='c'*64,driver_fingerprint='d'*64,image_id='sha256:'+'e'*64,clean=True)
+        self.binding = dict(head='a'*40,tree='b'*40,fingerprint='c'*64,driver_fingerprint=driver_digest(ROOT/'tools/forensic_retention_v1'),image_id='sha256:'+'e'*64,clean=True)
         self.lifecycle = SourcePort(self.binding)
         self.expected = snapshot(self.archive_root)
         self.controller = Controller(self.archive, self.metadata, self.lifecycle, ClosedPort(), AuditPort(), sync=self.sync)
@@ -402,7 +413,7 @@ class Files(unittest.TestCase):
     def transport(self, pack_sha, *, fail_create=False, corrupt_probe=False,corrupt_image=False):
         commands=[]
         ids=[]
-        def capture(argv,*,timeout,limit):
+        def dispatch(argv,*,timeout,limit):
             self.assertGreater(timeout,0)
             self.assertLessEqual(limit,8192)
             args=argv[3:];commands.append(args)
@@ -428,8 +439,13 @@ class Files(unittest.TestCase):
             if args[0]=='inspect':return 'exited 0\n'
             if args[0]=='rm':return args[1]+'\n'
             raise AssertionError('unhandled command')
+        def capture(argv,*,timeout,budget):
+            result=dispatch(argv,timeout=timeout,limit=8192-budget.used)
+            for _ in range((len(result.encode())+15)//16+2):budget.reserve()
+            return result
         checks=[]
-        backend=DockerBackend({'SANDBOX':{'bounded_capture':capture}},ROOT/'tools/forensic_retention_v1',context='synthetic',engine_id='synthetic-engine',resource_check=lambda m:checks.append(F.digest(m)))
+        backend=DockerBackend({},ROOT/'tools/forensic_retention_v1',context='synthetic',engine_id='synthetic-engine',resource_check=lambda m:checks.append(F.digest(m)),capture=capture)
+        backend.bind_raw(self.lifecycle.raw_budget(self.fresh_meter()),self.fresh_meter())
         return backend,commands,checks
 
     def test_production_transport_contract_one_probe_one_worker(self):
@@ -673,6 +689,147 @@ class Files(unittest.TestCase):
             (cgroup/'cpu.max').write_bytes(b'1'*129)
             with self.assertRaises(ValueError):worker.probe()
 
+    def interrupt_last_unlink(self,n=84):
+        calls=[0]
+        def fault(phase):
+            if phase=='after-unlink':
+                calls[0]+=1
+                if calls[0]==n:raise OSError('last-effect-unacknowledged')
+        self.controller.fault=fault
+        with self.assertRaises(OSError):self.run_operation()
+        self.assertEqual(self.count_originals(),84-n)
+        self.controller.fault=lambda _:None
+
+    def test_recovered_missing84_reaffirms_actual_archive_directory_sync(self):
+        self.interrupt_last_unlink()
+        observed=[]
+        def sync(path):
+            self.sync(path);observed.append(Path(path))
+        self.controller.sync=sync
+        result=self.controller.recover(self.disposition,self.gate)
+        self.assertEqual(result['originals_retired'],84)
+        self.assertIn(self.archive_root,observed)
+
+    def test_failed_recovery_parent_sync_never_publishes_completion(self):
+        self.interrupt_last_unlink()
+        def sync(path):
+            self.sync(path)
+            if Path(path)==self.archive_root:raise OSError('lost-sync-ack')
+        self.controller.sync=sync
+        with self.assertRaises(OSError):self.controller.recover(self.disposition,self.gate)
+        self.assertEqual(self.lifecycle.phase,'interrupted')
+        self.assertFalse(any(r['kind']=='terminal' for r in self.metadata.rows()))
+
+    def nested_prefix(self,fail=False):
+        self.interrupt_last_unlink(83)
+        required=set()
+        for row in order(self.manifest)[:83]:
+            path=(self.archive_root/row['path']).parent
+            while not path.exists():path=path.parent
+            required.add(path)
+        observed=[]
+        def sync(path):
+            self.sync(path);observed.append(Path(path))
+            if fail and Path(path) in required:raise OSError('parent-ack-lost')
+        def before(phase):
+            if phase=='before-unlink':self.assertTrue(required.issubset(set(observed)))
+        self.controller.sync=sync;self.controller.fault=before
+        if fail:
+            with self.assertRaises(OSError):self.controller.recover(self.disposition,self.gate)
+            self.assertEqual(self.count_originals(),1)
+            self.assertEqual(self.lifecycle.phase,'interrupted')
+        else:self.assertEqual(self.controller.recover(self.disposition,self.gate)['originals_retired'],84)
+
+    def test_nested_prefix83_is_synced_before_further_retirement(self):self.nested_prefix()
+    def test_nested_prefix_sync_failure_blocks_further_retirement(self):self.nested_prefix(fail=True)
+
+    def terminal_expiry(self,recover=False,finalization=False):
+        if recover:self.interrupt_last_unlink()
+        if finalization:
+            finish=self.lifecycle.finish
+            def late(success):
+                finish(success)
+                if success:self.controller.meter.clock=lambda:self.admission['deadline_ms']+1
+            self.lifecycle.finish=late
+        else:
+            def fault(phase):
+                if phase=='metadata-published' and any(r['kind']=='terminal' for r in self.metadata.rows()):
+                    self.controller.meter.clock=lambda:self.admission['deadline_ms']+1
+            self.metadata.fault=fault
+        with self.assertRaises(ValueError):
+            if recover:self.controller.recover(self.disposition,self.gate)
+            else:self.run_operation()
+        self.assertEqual(self.lifecycle.phase,'interrupted')
+        self.assertEqual(self.metadata.one('terminal')['completion'],'tentative')
+
+    def test_run_terminal_expiry_after_real_publication_refuses(self):self.terminal_expiry()
+    def test_recovery_terminal_expiry_after_real_publication_refuses(self):self.terminal_expiry(recover=True)
+    def test_run_lifecycle_late_completion_is_invalidated(self):self.terminal_expiry(finalization=True)
+    def test_recovery_lifecycle_late_completion_is_invalidated(self):self.terminal_expiry(recover=True,finalization=True)
+
+    def test_preparation_iterator_stops_before_third_item_and_checks_deadline(self):
+        from tools.forensic_retention_v1 import __main__ as cli
+        root=self.root/'bounded-pool';root.mkdir();seen=[]
+        original=Path.iterdir
+        def entries(path):
+            if path==root:
+                for i in range(10000):seen.append(i);yield root/('manifest-%d.json'%i)
+            else:yield from original(path)
+        with patch.object(Path,'iterdir',entries),self.assertRaises(ValueError):cli.publish_manifest({},root)
+        self.assertEqual(len(seen),2)
+        clock=[self.admission['started_ms']];meter=F.Meter(self.admission,clock=lambda:clock[0])
+        clock[0]=meter.deadline
+        with patch.object(Path,'iterdir',side_effect=AssertionError('enumerated after expiry')),self.assertRaises(ValueError):cli.publish_manifest({},root,meter=meter)
+
+    def test_mounted_package_tamper_refuses_before_preflight_commands(self):
+        backend,commands,_=self.transport(None)
+        copied=self.root/'different-package';copied.mkdir();(copied/'worker.py').write_text('# changed\n')
+        backend.source_package=copied
+        with self.assertRaises(ValueError):backend.preflight(self.manifest,self.fresh_meter())
+        self.assertEqual(commands,[])
+
+    def test_real_combined_pipes_and_failed_calls_share_one_persisted_cap(self):
+        import sys
+        state=self.root/'raw-reserved';state.write_text('0')
+        def save(previous,value):
+            self.assertEqual(int(state.read_text()),previous);state.write_text(str(value))
+        budget=RawBudget(lambda:int(state.read_text()),save)
+        command=[sys.executable,'-B','-c',"import sys;sys.stderr.write('x'*3000);sys.stdout.write('ok')"]
+        failed=command[:-1]+[command[-1]+';sys.exit(1)']
+        with self.assertRaises(ValueError):bounded_capture(failed,timeout=10,budget=budget)
+        used=budget.used;self.assertGreaterEqual(used,3002)
+        self.assertEqual(bounded_capture(command,timeout=10,budget=budget),'ok')
+        restarted=RawBudget(lambda:int(state.read_text()),save)
+        self.assertGreater(restarted.used,used)
+        with self.assertRaises(ValueError):bounded_capture(command,timeout=10,budget=restarted)
+        self.assertEqual(restarted.used,8192)
+        with self.assertRaises(ValueError):restarted.reserve()
+
+    def test_transport_budget_cannot_rebind_and_preparation_cannot_mutate(self):
+        backend,commands,_=self.transport(None)
+        same=backend.budget
+        backend.bind_raw(same,self.fresh_meter())
+        with self.assertRaises(ValueError):backend.bind_raw(RawBudget(lambda:0,lambda p,v:None),self.fresh_meter())
+        with self.assertRaises(ValueError):backend.bind_preparation(self.fresh_meter())
+        preparation=DockerBackend({},ROOT/'tools/forensic_retention_v1',context='synthetic',engine_id='synthetic-engine',resource_check=lambda _:None,
+                                  capture=lambda *a,**k:commands.append('unexpected'))
+        with self.assertRaises(ValueError):preparation.command(['info'])
+        preparation.bind_preparation(self.fresh_meter())
+        for operation in ['create','start','rm','inspect']:
+            with self.subTest(operation=operation),self.assertRaises(ValueError):preparation.command([operation])
+        self.assertEqual(commands,[])
+
+    def test_pipe_timeout_keeps_raw_debt_for_a_fresh_budget(self):
+        import sys
+        state=[0]
+        def save(previous,value):
+            self.assertEqual(state[0],previous);state[0]=value
+        budget=RawBudget(lambda:state[0],save)
+        script="import sys,time;sys.stderr.write('e'*1000);sys.stderr.flush();sys.stdout.write('ok');sys.stdout.flush();time.sleep(5)"
+        with self.assertRaises(ValueError):bounded_capture([sys.executable,'-B','-c',script],timeout=.5,budget=budget)
+        self.assertGreaterEqual(budget.used,1002)
+        self.assertEqual(RawBudget(lambda:state[0],save).used,budget.used)
+
 
 def _phase_control(phase):
     def control(self):
@@ -702,19 +859,24 @@ class TaskStoreCompatibility(unittest.TestCase):
             (repo/'docs/plan/tasks.json').write_bytes((ROOT/'docs/plan/tasks.json').read_bytes())
             (repo/'tools/forensic_retention_v1').mkdir(parents=True)
             (repo/'tools/forensic_retention_v1/__init__.py').write_text('"""synthetic"""\n')
+            for name in ['tools/task.py','tools/sandbox.py','harness/task-packet.schema.json']:
+                target=repo/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes((ROOT/name).read_bytes())
             git('add','.');git('commit','-qm','synthetic fixture')
             store=api['TaskStore'](root/'state',root=repo)
             packet=dict(schema_version=1,task_id='M01.17',goal='synthetic \u03b1',base_revision=git('rev-parse','HEAD'),owner_session=F.OWNER,
                         owned_paths=OWNED,assumptions=[],acceptance=['synthetic'],negative_cases=['busy refuses'],commands=['check'],
                         output_budget_bytes=16384,expected_evidence=['synthetic'])
             claim=store.claim(packet)
-            lifecycle=TaskLifecycle(api,store,claim,F.OWNER)
+            worktree=Path(store.get(claim,F.OWNER)['worktree'])
+            api=runpy.run_path(str(worktree/'tools/task.py'));store=api['TaskStore'](root/'state',root=worktree)
+            sync=(lambda _:None) if os.name=='nt' else __import__('tools.forensic_retention_v1._sync',fromlist=['sync_directory']).sync_directory
+            lifecycle=TaskLifecycle(api,store,claim,F.OWNER,sync=sync)
             binding=lifecycle.source('sha256:'+'e'*64)
             # Bind a real temporary directory. No actual FFF archive path.
             archive=root/'archive';archive.mkdir();metadata=root/'meta';metadata.mkdir()
             manifest=dict(source_binding=binding,payload_plan=dict(archive_root=str(archive)))
             lifecycle.begin(manifest,metadata)
-            for phase in ['forensic-active','forensic-interrupted','forensic-complete']:
+            for phase in ['forensic-active','forensic-interrupted','forensic-complete','forensic-admitting','forensic-finalized']:
                 with store.edit() as data:
                     data['tasks'][claim]['phase']=phase
                 for action in ['run','resume','cleanup']:
@@ -731,6 +893,25 @@ class TaskStoreCompatibility(unittest.TestCase):
             with self.assertRaises(ValueError):TaskLifecycle(api,store,claim,'foreign-owner')
             for _ in range(4):lifecycle.source('sha256:'+'e'*64)
             with self.assertRaises(ValueError):lifecycle.source('sha256:'+'e'*64)
+            restarted=TaskLifecycle(api,store,claim,F.OWNER,sync=sync)
+            restarted.start_admission(manifest,metadata,recover=True)
+            now=time.time_ns()//1000000;meter=F.Meter(dict(started_ms=now,deadline_ms=now+30000))
+            budget=restarted.raw_budget(meter);before_raw=budget.used;budget.reserve()
+            self.assertEqual(restarted.raw_budget(meter).used,before_raw+16)
+            original_sync=restarted.sync
+            def missing_ack(path):
+                original_sync(path);raise OSError('lost raw-reservation directory-sync acknowledgement')
+            restarted.sync=missing_ack
+            with self.assertRaises(OSError):budget.reserve()
+            self.assertEqual(restarted.raw_budget(meter).used,before_raw+32)
+            restarted.sync=original_sync
+            restarted.finish(False)
+            fresh=TaskLifecycle(api,store,claim,F.OWNER,sync=sync)
+            fresh.start_admission(manifest,metadata,recover=True)
+            self.assertEqual(fresh.raw_budget(meter).used,before_raw+32)
+            fresh.raw_budget(meter).reserve()
+            self.assertEqual(fresh.raw_budget(meter).used,before_raw+48)
+            fresh.finish(False)
             # This disposable fixture uses normal clean Git removal, no force.
             subprocess.check_call(['git','worktree','remove',store.get(claim,F.OWNER)['worktree']],cwd=repo,
                                   stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
@@ -762,11 +943,32 @@ class TaskStoreCompatibility(unittest.TestCase):
                         archive_root=str(archive),metadata_root=str(metadata),closed_record=str(closed),closed_record_sha256=hashlib.sha256(b'{}').hexdigest(),
                         docker_context='synthetic',engine_id='synthetic',resource_namespace='synthetic',image_id='sha256:'+'e'*64,artifact_root=str(artifacts))
             before=(store.path.read_bytes(),store.path.stat().st_mtime_ns,registry.path.read_bytes(),registry.path.stat().st_mtime_ns)
-            controller=cli.load(config,source_root=worktree)
-            self.assertEqual(controller.lifecycle.claim,claim)
-            self.assertEqual(controller.lifecycle.source_root,worktree)
+            with self.assertRaises(ValueError):cli.load(config,source_root=worktree)
+            with self.assertRaises(ValueError):cli.load(config,source_root=repo)
+            config_path=root/'config.json';config_path.write_bytes(F.enc(config))
+            script='import json,pathlib;from tools.forensic_retention_v1.__main__ import load;c=load(json.loads(pathlib.Path('+repr(str(config_path))+').read_text()));print(json.dumps({"claim":c.lifecycle.claim,"root":str(c.lifecycle.source_root),"mount":str(c.backend.source_package)}))'
+            import sys
+            observed=json.loads(subprocess.check_output([sys.executable,'-B','-c',script],cwd=worktree,text=True))
+            self.assertEqual(observed['claim'],claim)
+            self.assertEqual(Path(observed['root']),worktree)
+            self.assertEqual(Path(observed['mount']),worktree/'tools/forensic_retention_v1')
             after=(store.path.read_bytes(),store.path.stat().st_mtime_ns,registry.path.read_bytes(),registry.path.stat().st_mtime_ns)
             self.assertEqual(before,after)
+            # A lexical alias and a cached protocol module from the sibling
+            # checkout both refuse before any registry write.
+            alias_script=script.replace('.read_text()));print', '.read_text()),source_root='+repr(str(worktree/'tools'/'..'))+');print')
+            aliased=subprocess.run([sys.executable,'-B','-c',alias_script],cwd=worktree,capture_output=True,text=True)
+            self.assertNotEqual(aliased.returncode,0)
+            self.assertIn('executing-checkout-mismatch',aliased.stderr)
+            mixed='from tools.forensic_retention_v1 import protocol;protocol.__file__='+repr(str(repo/'tools/forensic_retention_v1/protocol.py'))+';'+script
+            rejected=subprocess.run([sys.executable,'-B','-c',mixed],cwd=worktree,capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertIn('loaded-package-checkout-mismatch',rejected.stderr)
+            worker=worktree/'tools/forensic_retention_v1/worker.py'
+            saved=worker.read_bytes();worker.write_bytes(saved+b'\n# dirty executing source\n')
+            failed=subprocess.run([sys.executable,'-B','-c',script],cwd=worktree,capture_output=True,text=True)
+            self.assertNotEqual(failed.returncode,0)
+            worker.write_bytes(saved)  # Restore only this fabricated fixture for normal Git teardown.
             bad=dict(config);bad['owner_session']='foreign'
             with self.assertRaises(ValueError):cli.load(bad,source_root=worktree)
             subprocess.check_call(['git','worktree','remove',str(worktree)],cwd=repo,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)

@@ -1,6 +1,6 @@
 """Local Docker transport with one probe/worker and bounded raw output.
 
-This module is not invoked by author-local tests. A live invocation still needs
+Author-local tests inject the transport port. A live invocation still needs
 the reviewed source, canonical resource admission and fresh exact84 authority.
 """
 import os
@@ -12,29 +12,50 @@ from ._bytes import need
 from . import protocol as F
 from .storage import decode
 from ._bytes import regular
+from .capture import RawBudget, bounded_capture
+from .lifecycle import driver_digest
 
 
 class DockerBackend:
-    def __init__(self, task_api, source_package, *, context, engine_id, resource_check):
-        self.capture = task_api['SANDBOX']['bounded_capture']
+    def __init__(self, task_api, source_package, *, context, engine_id, resource_check,capture=None):
+        self.capture = capture or bounded_capture
         self.source_package = Path(source_package).absolute()
         need(self.source_package.resolve() == self.source_package, 'backend-source')
         need(type(context) is str and re.fullmatch('[A-Za-z0-9_.-]{1,64}', context), 'docker-context')
         self.prefix = ['docker', '--context', context]
         self.engine_id = engine_id
         self.resource_check = resource_check
-        self.raw = 0
+        self.budget=None
+
+    @property
+    def raw(self):
+        return self.budget.used if self.budget else 0
+
+    def bind_raw(self,budget,meter):
+        if getattr(self,'raw_mode',None)=='operation':need(budget is self.budget,'raw-budget-rebind')
+        self.budget=budget
+        self.meter=meter
+        self.raw_mode='operation'
+
+    def bind_preparation(self,meter):
+        need(self.budget is None,'raw-budget-rebind')
+        state=[0]
+        def save(previous,value):
+            need(state[0]==previous,'raw-state-raced');state[0]=value
+        self.bind_raw(RawBudget(lambda:state[0],save,meter.check),meter)
+        self.raw_mode='preparation'
 
     def command(self, args, meter=None):
+        need(self.budget is not None,'raw-budget-not-bound')
+        if self.raw_mode=='preparation':need(args[0] in {'info','context','ps','image'},'readonly-preparation-command')
         remaining = 8192-self.raw
         need(remaining > 0, 'backend-raw-bound')
         timeout = 30
+        meter = self.meter if meter is None else meter
         if meter is not None:
             meter.check()
             timeout = min(timeout, max(0.001, (meter.deadline-meter.clock())/1000))
-        result = self.capture(self.prefix+args, timeout=timeout, limit=remaining)
-        self.raw += len(result.encode())
-        need(self.raw <= 8192, 'backend-raw-bound')
+        result = self.capture(self.prefix+args, timeout=timeout, budget=self.budget)
         return result
 
     def absent(self, ids):
@@ -51,6 +72,7 @@ class DockerBackend:
         need(endpoint.startswith(('unix://','npipe://')),'backend-remote')
 
     def preflight(self,manifest,meter=None):
+        need(driver_digest(self.source_package)==manifest['source_binding']['driver_fingerprint'],'mounted-source-changed')
         self.resource_check(manifest)
         self.assert_engine(meter)
         expected=manifest['source_binding']['image_id']
@@ -88,6 +110,7 @@ class DockerBackend:
             F.sha(cid)
             metadata.append('journal', dict(phase='created', mode=mode, container_id=cid))
             self.resource_check(manifest)
+            need(driver_digest(self.source_package)==manifest['source_binding']['driver_fingerprint'],'mounted-source-changed')
             if mode=='audit':
                 # One fixed worker performs a complete pack/range audit. Debit
                 # a conservative complete read bound before dispatch.

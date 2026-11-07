@@ -4,13 +4,32 @@ import os
 from pathlib import Path
 import runpy
 import secrets
+import sys
 
 from ._bytes import need, regular
 from . import protocol as F
 from .storage import decode, identity
+from ._sync import sync_directory
+from .capture import RawBudget
 
 OWNED = ['tools/forensic_retention_v1', 'tools/tests/test_forensic_retention_v1.py']
-PHASES = {'forensic-active', 'forensic-interrupted', 'forensic-complete'}
+PHASES = {'forensic-admitting','forensic-active','forensic-interrupted','forensic-finalized','forensic-complete'}
+
+def driver_digest(package):
+    paths=[]
+    for count,p in enumerate(Path(package).iterdir(),1):
+        need(count<=64,'driver-directory-entries')
+        if p.suffix=='.py':
+            need(len(paths)<16 and p.is_file(),'driver-files');paths.append(p)
+    need(paths,'driver-files')
+    return F.digest([{'path':p.name,'sha256':hashlib.sha256(regular(p,1048576)).hexdigest()} for p in sorted(paths)])
+
+def executing_package(root):
+    expected=Path(root)/'tools/forensic_retention_v1'
+    for suffix in ['', '.__main__','._bytes','._pack','._sync','.protocol','.storage','.lifecycle','.backend','.controller','.capture','.worker']:
+        module=sys.modules.get(__package__+suffix)
+        if module is not None:
+            need(Path(module.__file__).resolve().parent==expected,'loaded-package-checkout-mismatch')
 
 
 def load_task_api(source_root):
@@ -20,15 +39,21 @@ def load_task_api(source_root):
 
 
 class TaskLifecycle:
-    def __init__(self, api, store, claim, owner):
+    def __init__(self, api, store, claim, owner, *, sync=sync_directory):
         self.api, self.store, self.claim, self.owner = api, store, claim, owner
         self.source_checks = self.source_bytes = 0
+        self.sync=sync
         record = self.record()
         packet = record['packet']
         need(packet['task_id'] == 'M01.17' and packet['owned_paths'] == OWNED,
              'standalone-task-ownership')
         need(record['namespace'] is None, 'standalone-resource-busy')
         self.source_root = store.inspect_worktree(record)
+        need(Path(api['ROOT']).resolve()==self.source_root and
+             Path(api['SANDBOX']['__file__']).resolve()==self.source_root/'tools/sandbox.py',
+             'task-api-checkout-mismatch')
+        need(Path(type(store).fingerprint.__code__.co_filename).resolve()==self.source_root/'tools/task.py',
+             'executing-task-api-mismatch')
 
     def record(self):
         """Atomic published registry snapshot, without edit()'s rewrite side effect."""
@@ -67,21 +92,55 @@ class TaskLifecycle:
                     fingerprint=measured['digest'], driver_fingerprint=F.digest(driver),
                     clean=measured['clean'], image_id=image_id)
 
-    def begin(self, manifest, metadata_root):
+    def start_admission(self,manifest,metadata_root,*,recover=False):
         need(self.source(manifest['source_binding']['image_id']) == manifest['source_binding'], 'source-changed')
         token = secrets.token_hex(16)
         worker = dict(pid=os.getpid(), identity=self.api['SANDBOX']['owner_identity']())
         need(worker['identity'] not in {None, 'unknown'}, 'controller-birth-unknown')
         with self.store.edit() as data:
             row = data['tasks'][self.claim]
-            need(row['packet']['owner_session'] == self.owner and row['phase'] == 'allocated' and
-                 row['namespace'] is None and row['worker'] is None and 'forensic' not in row,
-                 'standalone-lifecycle-busy')
-            row.update(phase='forensic-active', worker=worker,
-                       forensic=dict(version=1, token=token, manifest=F.digest(manifest),
+            need(row['packet']['owner_session']==self.owner and row['namespace'] is None,'standalone-owner')
+            if recover:
+                need(row['phase'] in {'forensic-active','forensic-interrupted','forensic-admitting'} and
+                     not self.api['handle_live'](row['worker']),'forensic-controller-live-or-unknown')
+                need(row['forensic']['manifest']==F.digest(manifest) and
+                     row['forensic']['metadata_root']==str(Path(metadata_root).absolute()) and
+                     'raw_reserved' in row['forensic'],'recovery-raw-state-unknown')
+                row['forensic']['token']=token
+            else:
+                need(row['phase']=='allocated' and row['worker'] is None and 'forensic' not in row,'standalone-lifecycle-busy')
+                row['forensic']=dict(version=1, token=token, manifest=F.digest(manifest),raw_reserved=0,
                                      metadata_root=str(Path(metadata_root).absolute()),
-                                     archive_identity=identity(manifest['payload_plan']['archive_root'])))
+                                     archive_identity=identity(manifest['payload_plan']['archive_root']))
+            row.update(phase='forensic-admitting',worker=worker)
         self.token = token
+        self.sync(self.store.root)
+
+    def raw_budget(self,meter):
+        if hasattr(self,'_raw_budget'):
+            self._raw_budget.check=meter.check
+            return self._raw_budget
+        def load():
+            row=self.record()
+            need(row['forensic']['token']==self.token,'raw-owner-changed')
+            return row['forensic']['raw_reserved']
+        def save(previous,value):
+            with self.store.edit() as data:
+                row=data['tasks'][self.claim]
+                need(row['phase'] in {'forensic-active','forensic-admitting'} and row['forensic']['token']==self.token,'raw-owner-changed')
+                need(row['forensic']['raw_reserved']==previous,'raw-state-raced')
+                F.integer(value,row['forensic']['raw_reserved'],8192)
+                row['forensic']['raw_reserved']=value
+            self.sync(self.store.root)
+        self._raw_budget=RawBudget(load,save,meter.check)
+        return self._raw_budget
+
+    def begin(self,manifest,metadata_root):
+        if not hasattr(self,'token'):self.start_admission(manifest,metadata_root)
+        with self.store.edit() as data:
+            row=data['tasks'][self.claim]
+            need(row['phase']=='forensic-admitting' and row['forensic']['token']==self.token,'standalone-lifecycle-busy')
+            row['phase']='forensic-active'
 
     def check(self, manifest):
         row = self.record()
@@ -94,16 +153,27 @@ class TaskLifecycle:
     def finish(self, success):
         with self.store.edit() as data:
             row = data['tasks'][self.claim]
-            need(row['phase'] == 'forensic-active' and row['forensic']['token'] == self.token,
+            need(row['phase'] in {'forensic-active','forensic-admitting'} and row['forensic']['token'] == self.token,
                  'standalone-lifecycle-changed')
-            row.update(phase='forensic-complete' if success else 'forensic-interrupted', worker=None)
+            row.update(phase='forensic-finalized' if success else 'forensic-interrupted', worker=None)
+            row['forensic']['completion']='tentative-requires-returned-receipt'
+        self.sync(self.store.root)
+
+    def interrupt_completion(self):
+        with self.store.edit() as data:
+            row=data['tasks'][self.claim]
+            need(row['forensic']['token']==self.token,'standalone-lifecycle-changed')
+            row.update(phase='forensic-interrupted',worker=None)
+            row['forensic']['completion']='uncertain'
+        self.sync(self.store.root)
 
     def recover(self, manifest, metadata_root):
         """Resume only this same immutable operation. Default TaskStore refuses it."""
         need(self.source(manifest['source_binding']['image_id']) == manifest['source_binding'], 'source-changed')
         with self.store.edit() as data:
             row = data['tasks'][self.claim]
-            need(row['phase'] in PHASES-{'forensic-complete'} and
+            own_admission=row['phase']=='forensic-admitting' and row['forensic']['token']==getattr(self,'token',None)
+            need(own_admission or row['phase'] in {'forensic-active','forensic-interrupted'} and
                  not self.api['handle_live'](row['worker']), 'forensic-controller-live-or-unknown')
             need(row['forensic']['manifest'] == F.digest(manifest) and
                  row['forensic']['metadata_root'] == str(Path(metadata_root).absolute()) and
