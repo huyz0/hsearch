@@ -1,5 +1,11 @@
 # Progress and handoff
 
+## Proposed M01.17 standalone failed-forensic unit
+
+M01.17 is planned as a genuine disjoint code/integrity qualification unit for the failed FFF84 pair, with accepted M01.02/03/05/06 prerequisites. It does not depend on completed M01.08, remove any parent acceptance gate, qualify a CLI1 job or authorize a live inventory, pack/map, probe/worker or unlink. Parent M01.08 authors and original review base/history remain preserved. The new unit must retain its own charged plan-admission and implementation review history; no counter-free gate or reset is introduced.
+
+Implementation ownership is proposed only for tools/forensic_retention_v1 and tools/tests/test_forensic_retention_v1.py. Exact-source native controls, both nonauthor roles and required CI/ci-ok remain future acceptance conditions. Qualified-source, root/owner-authorized bounded read-only inventory and dry-run preparation may produce the content-bound manifest before mutation authorization, under closed/dead-writer, source and identity checks. This grants no shared-state write, actual pack/map, probe/worker, unlink or operation authority. Live mutating retention and runtime on FFF84 remain disabled until the concrete manifest/source/review/resource/integrity gates, root disposition and fresh exact84 human permission exist. This planning clarification authorizes no FFF payload read or other live action now.
+
 ## 5 November 2026: qualified facts, pending factual consolidation
 
 M01.15 policy [PR21](https://github.com/huyz0/hsearch/pull/21) merged normally as `fc6b48e` with the reviewed tree and complete seven-job PR/main qualification. [The factual disposition record](evidence/m01-15-incident-disposition.md) closes the composite M01.09 goal operationally; its historical cause remains unconfirmed. M01.08 remains planned and unqualified, with its own frozen corpus and session/usage trials still required. Whole-M01 product dependencies remain.
