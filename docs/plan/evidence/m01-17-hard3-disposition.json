@@ -1,0 +1,1165 @@
+{
+  "schema_version": 1,
+  "status": "Original M01.17 source/gate permanently frozen unaccepted at hard3; this is factual plan evidence, not replacement acceptance",
+  "original_base": "2b2fd47febdbd18dc087457781b6c146d3671f26",
+  "final_head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+  "final_tree": "e7f38411ce53e2c412a8ae92ea607533cb663b59",
+  "final_source_digest": "81bf35379be4ff591d041cc6f5aff7169d54877ed15a1d6cabded6dc095ca39b",
+  "PR": "https://github.com/huyz0/hsearch/pull/25",
+  "rounds_issued": 3,
+  "planned_rounds": 2,
+  "hard_ceiling": 3,
+  "history_sha256": "3aca0d6a6fc16d26bdf3ddc2de18e7afe9ac0d02f0c550ce8620209481d4f9f2",
+  "unchanged_canonical_history": [
+    {
+      "packet": {
+        "schema_version": 1,
+        "task_id": "M01.17",
+        "round": 1,
+        "planned_rounds": 2,
+        "hard_ceiling": 3,
+        "base": "2b2fd47febdbd18dc087457781b6c146d3671f26",
+        "head": "18ba13efa0d3ad48df080c5820595f5fb932c46a",
+        "tree": "e9cf35faeea97f423802c0563761d40680031319",
+        "source_digest": "a96bb49f66e21be135a0b2748e56c5a93a8b3a80c8e16ef32b345abcbc6573d3",
+        "implementer_session": "01a1ad0c-a57c-7462-9adc-44dda960885a",
+        "reviewers": {
+          "architecture_security": "01a1b42a-4c36-7651-8c9d-165f5b27d818",
+          "correctness_tests_claims": "01a1b429-a950-7943-bfe3-210c5545a03b"
+        },
+        "required_roles": [
+          "architecture_security",
+          "correctness_tests_claims"
+        ],
+        "changed_paths": [
+          "docs/plan/PROGRESS.md",
+          "docs/plan/milestones/M01.md",
+          "docs/plan/roadmap.md",
+          "docs/plan/tasks.json"
+        ],
+        "checks": [
+          {
+            "conclusion": "success",
+            "evidence": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ad0c-a57c-7462-9adc-44dda960885a\\m01-17-plan-pr-evidence-v2\\host-ci-docs.json",
+            "head": "18ba13efa0d3ad48df080c5820595f5fb932c46a",
+            "name": "host-ci-docs"
+          },
+          {
+            "conclusion": "success",
+            "evidence": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ad0c-a57c-7462-9adc-44dda960885a\\m01-17-plan-pr-evidence-v2\\ownership-and-provenance.json",
+            "head": "18ba13efa0d3ad48df080c5820595f5fb932c46a",
+            "name": "planning-ownership-preservation"
+          },
+          {
+            "conclusion": "success",
+            "evidence": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ad0c-a57c-7462-9adc-44dda960885a\\m01-17-plan-pr-evidence-v2\\final-source-manifest.json",
+            "head": "18ba13efa0d3ad48df080c5820595f5fb932c46a",
+            "name": "source-clean-bookends"
+          },
+          {
+            "conclusion": "success",
+            "evidence": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ad0c-a57c-7462-9adc-44dda960885a\\m01-17-plan-pr-evidence-v2\\final-diff-check.log",
+            "head": "18ba13efa0d3ad48df080c5820595f5fb932c46a",
+            "name": "git-diff-check"
+          }
+        ],
+        "required_check_names": [
+          "ci-ok",
+          "git-diff-check",
+          "host-ci-docs",
+          "planning-ownership-preservation",
+          "source-clean-bookends"
+        ],
+        "reason": "Genuine M01.17 plan admission R1 only: standalone opaque failed-artifact unit and read-only preparation boundary; no implementation or live retention qualification or mutation authority.",
+        "previous_findings": [],
+        "packet_payload_bytes": 2204,
+        "estimated_tokens_bytes_div4": 551,
+        "token_count_is_estimate": true
+      },
+      "sha256": "b92a03691b797c7bf295e7082f71237e31780f675ef5b4c8a07f636a44103803",
+      "verdicts": {
+        "correctness_tests_claims": {
+          "packet_sha256": "b92a03691b797c7bf295e7082f71237e31780f675ef5b4c8a07f636a44103803",
+          "head": "18ba13efa0d3ad48df080c5820595f5fb932c46a",
+          "tree": "e9cf35faeea97f423802c0563761d40680031319",
+          "schema_version": 1,
+          "source_digest": "a96bb49f66e21be135a0b2748e56c5a93a8b3a80c8e16ef32b345abcbc6573d3",
+          "role": "correctness_tests_claims",
+          "reviewer_session": "01a1b429-a950-7943-bfe3-210c5545a03b",
+          "conclusion": "clear",
+          "basis": "M01.17 R1 PLAN ADMISSION ONLY. Inspected every changed line in PROGRESS.md, milestones/M01.md, roadmap.md and tasks.json against original base 2b2fd47febdbd18dc087457781b6c146d3671f26, repository development/API/engineering/review instructions, counted packet, author ownership/check evidence and live PR24 metadata/body. Independently verified packet canonical hash and byte size, actual assigned session, exact head/tree and clean 244-file source digest. Programmatically proved all 131 existing task entries and the entire remaining ledger equal the base after removal of the new planned task. All four declared prerequisites are done; rendered milestone/roadmap are fresh and M01 remains incomplete. Ran plan check (132 tasks,369 links), 16 negative controls, API-contract check and diff whitespace check successfully. The task admits disjoint standalone source/integrity work, requires explicit incoming-parent closure and default TaskStore interruption compatibility, retains both distinct nonauthor roles/native x86_64 and ARM64/full exact-head CI, preserves ordinary 4096/64MiB,42 reserve,raw8KiB/public16KiB and all parent/current-native/older229/new15 histories, and does not qualify M01.08 or failed CLI1 bytes. Read-only preparation is conditioned on qualified source, root/owner permission and closed/dead-writer/source/identity checks; the current plan grants no FFF payload read, shared write, pack/map, probe/worker, unlink or operation authority. Future mutation requires concrete manifest/source/review/resource/integrity gates, root disposition and fresh exact84 human authorization. Packet R1/planned2/hard3 and original-base continuity match PR assertions. Considered substitutions of older229 authorization, successful-job proof from failed bytes, quota relaxation, parent admission bypass and lifecycle cleanup interference; the stated acceptance conditions prohibit them and implementation must demonstrate those conditions in later counted review. Author Windows docs log shows326 tests/57 skips and supplies no native qualification; hosted full CI/ci-ok was pending in the supplied observation and remains required for integration. No implementation/native/live-operation or final gate acceptance is given. Detailed independent measurements: review-evidence.json beside this verdict.",
+          "findings": [],
+          "resolutions": []
+        },
+        "architecture_security": {
+          "schema_version": 1,
+          "packet_sha256": "b92a03691b797c7bf295e7082f71237e31780f675ef5b4c8a07f636a44103803",
+          "head": "18ba13efa0d3ad48df080c5820595f5fb932c46a",
+          "tree": "e9cf35faeea97f423802c0563761d40680031319",
+          "source_digest": "a96bb49f66e21be135a0b2748e56c5a93a8b3a80c8e16ef32b345abcbc6573d3",
+          "role": "architecture_security",
+          "reviewer_session": "01a1b42a-4c36-7651-8c9d-165f5b27d818",
+          "conclusion": "clear",
+          "basis": "Independent architecture/security plan-admission R1 review only. Verified canonical packet SHA-256, exact detached head/tree, clean read-only source_fingerprint matching the packet digest, and all 244 source-manifest files. Reviewed the complete four-file original-base diff, M01.17 ledger/generated scope, governing review/engineering/API/security/architecture instructions, accepted task-runner contract and TaskStore.claim/run/resume/cleanup implementation. Independently compared all 131 existing ledger task entries unchanged and verified the four declared task prerequisites are done. The new task owns only a disjoint implementation/test boundary, requires explicit pinned incoming primitive provenance and independent closure review, and does not qualify or alter M01.08. TaskStore currently has no forensic lifecycle support; its phase guards permit a future isolated fail-closed lifecycle, while the new plan expressly requires negative proof against default run/resume/cleanup interference and forbids parent adapter edits. This is a future implementation gate, not a claim of compatibility. Examined integrity-before-unlink, byte/metadata reachability, interruptions, aliases, finite allocation/I/O/node/read/output/deadline proof obligations, normal 4096-entry/64MiB caps, 42-node reserve and raw8KiB/public16KiB ceilings. Read-only manifest preparation requires qualified source, root/owner authorization and closed/dead-writer identity; this plan grants no payload read or operation now. Actual pack/map/unlink/runtime requires concrete reviewed manifest/resource/integrity gates, root disposition and fresh exact84 human authorization. Earlier229 authority, newer15 artifacts, failed FFF/CLI1 histories, frozen parent source and full51/oracle/trial/native/coverage/CI/product acceptance remain separate and unchanged. No source imports or operational code exist in this diff. Re-ran API contract check, plan/schema/DAG/link/generated freshness check and original-base diff whitespace check successfully. Verified author Windows-docs receipt/log hash; its 57 platform skips provide no native qualification. Hosted exact-head ci-ok remains a coordinator final-gate obligation; no hosted green claim or implementation/live-retention acceptance is made. No prior findings to resolve; no blocking plan-admission findings.",
+          "findings": [],
+          "resolutions": []
+        }
+      },
+      "verdict_sha256": {
+        "correctness_tests_claims": "a51fb8e39859978f917685441daca774419ccf980c019f790906e306e99554b7",
+        "architecture_security": "c2418445b0b765e56a2cdc4288694e8034af5b9df4b0a87a1614564594664769"
+      }
+    },
+    {
+      "packet": {
+        "schema_version": 1,
+        "task_id": "M01.17",
+        "round": 2,
+        "planned_rounds": 2,
+        "hard_ceiling": 3,
+        "base": "2b2fd47febdbd18dc087457781b6c146d3671f26",
+        "head": "1101dda0337c225b0befb7d14310ab0acab96ded",
+        "tree": "cb7791047db00bdf4f4a824bc7bc8bd6ef31be88",
+        "source_digest": "e48b36e01facb43e8f5814b1c5141900d387aa5e70dc7832a36012bc18f31709",
+        "implementer_session": "01a1ad0c-a57c-7462-9adc-44dda960885a",
+        "reviewers": {
+          "correctness_tests_claims": "01a1b429-a950-7943-bfe3-210c5545a03b",
+          "architecture_security": "01a1b42a-4c36-7651-8c9d-165f5b27d818"
+        },
+        "required_roles": [
+          "architecture_security",
+          "correctness_tests_claims"
+        ],
+        "changed_paths": [
+          "docs/plan/PROGRESS.md",
+          "docs/plan/milestones/M01.md",
+          "docs/plan/roadmap.md",
+          "docs/plan/tasks.json",
+          "tools/forensic_retention_v1/PROVENANCE.json",
+          "tools/forensic_retention_v1/README.md",
+          "tools/forensic_retention_v1/__init__.py",
+          "tools/forensic_retention_v1/__main__.py",
+          "tools/forensic_retention_v1/_bytes.py",
+          "tools/forensic_retention_v1/_pack.py",
+          "tools/forensic_retention_v1/_sync.py",
+          "tools/forensic_retention_v1/backend.py",
+          "tools/forensic_retention_v1/controller.py",
+          "tools/forensic_retention_v1/lifecycle.py",
+          "tools/forensic_retention_v1/protocol.py",
+          "tools/forensic_retention_v1/storage.py",
+          "tools/forensic_retention_v1/worker.py",
+          "tools/tests/test_forensic_retention_v1.py"
+        ],
+        "checks": [
+          {
+            "name": "host-ci-docs",
+            "head": "1101dda0337c225b0befb7d14310ab0acab96ded",
+            "conclusion": "success",
+            "evidence": "C:/Users/Huy/.codex/visualizations/2026/11/05/01a1ad0c-a57c-7462-9adc-44dda960885a/m01-17-source-qualification-v2/frozen-inherited-docs.stderr.log"
+          },
+          {
+            "name": "planning-ownership-preservation",
+            "head": "1101dda0337c225b0befb7d14310ab0acab96ded",
+            "conclusion": "success",
+            "evidence": "C:/Users/Huy/.codex/visualizations/2026/11/05/01a1ad0c-a57c-7462-9adc-44dda960885a/m01-17-review-r2-issued-v1/planning-ownership-preservation.json"
+          },
+          {
+            "name": "source-clean-bookends",
+            "head": "1101dda0337c225b0befb7d14310ab0acab96ded",
+            "conclusion": "success",
+            "evidence": "C:/Users/Huy/.codex/visualizations/2026/11/05/01a1ad0c-a57c-7462-9adc-44dda960885a/m01-17-source-qualification-v2/source-proof-after-checks.json"
+          },
+          {
+            "name": "git-diff-check",
+            "head": "1101dda0337c225b0befb7d14310ab0acab96ded",
+            "conclusion": "success",
+            "evidence": "C:/Users/Huy/.codex/visualizations/2026/11/05/01a1ad0c-a57c-7462-9adc-44dda960885a/m01-17-review-r2-issued-v1/git-diff-check.log"
+          }
+        ],
+        "required_check_names": [
+          "ci-ok",
+          "git-diff-check",
+          "host-ci-docs",
+          "planning-ownership-preservation",
+          "source-clean-bookends"
+        ],
+        "reason": "Implementation follow-up after counted plan R1; retain original base and all issued history. Review full original-base change including admission and explicit incoming primitive closure at1101dda. Actual local53/0 subject controls,379/57 Windows inherited checks, API/plan/diff/source bookends passed; dossier ../m01-17-source-qualification-v2/SOURCE-HANDOFF.json and coverage-and-qualification-limitations.json. Aggregate Python1252/1335 does not claim all-file floors: _pack176/210 and _sync4/23. Native both-architecture source receipts, operation-specific Docker/kernel qualification and hosted run42345110249/ci-ok remain pending. No implementation acceptance, live FFF action, allowance, or formal GitHub approval. All authors remain excluded from own review.",
+        "previous_findings": [],
+        "packet_payload_bytes": 3358,
+        "estimated_tokens_bytes_div4": 840,
+        "token_count_is_estimate": true
+      },
+      "sha256": "bf6b0145418bf244205ecb302a52dc896c0b7e0afb293f0480d85b89da278696",
+      "verdicts": {
+        "correctness_tests_claims": {
+          "schema_version": 1,
+          "packet_sha256": "bf6b0145418bf244205ecb302a52dc896c0b7e0afb293f0480d85b89da278696",
+          "head": "1101dda0337c225b0befb7d14310ab0acab96ded",
+          "tree": "cb7791047db00bdf4f4a824bc7bc8bd6ef31be88",
+          "source_digest": "e48b36e01facb43e8f5814b1c5141900d387aa5e70dc7832a36012bc18f31709",
+          "role": "correctness_tests_claims",
+          "reviewer_session": "01a1b429-a950-7943-bfe3-210c5545a03b",
+          "conclusion": "blocked",
+          "basis": "Actual counted M01.17 implementation R2, original base2b2fd47febdbd18dc087457781b6c146d3671f26, round2/planned2/hard3; R1 plan-only verdict does not qualify implementation. Inspected all18 original-base changed paths, every Python component and test, README bounds and authority statements, incoming PROVENANCE definitions and adaptations, actual PR25 metadata/body, packet and handoffs, author raw subject/inherited logs and stdlib trace measurement script/JSON. Independently verified canonical packet hash/size, assigned actual session, exact head/tree, clean258-file source fingerprint, all13 declared provenance inventory files and all131 pre-existing ledger entries plus remaining ledger preservation. Ran plan check132tasks/369links,16 negative controls, API check and diff whitespace check successfully. Ran all53 subject controls:52 without errors and one synthetic hardlink denied by sandbox; that exact hardlink control passed on a focused unsandboxed rerun. Initial default-TEMP attempt failed sandbox filesystem setup and supplied no subject evidence. Test Windows directory-sync substitutions and mocked Docker commands do not establish native/backend/kernel qualification. Derived four additional independent counterexamples on fresh disposable archives/Git/TaskStores and local Python pipes only, retained in repro.py/counterexamples.json/raw-repro.py/raw-accounting-repro.json. These demonstrate source/gate mismatch, missing recovery durability, unbounded preparation enumeration and raw-output underaccounting. Findings are implementation blockers regardless of eventual CI outcome. Raw trace1252/1335 is aggregate only; _pack176/210 and _sync4/23 do not prove per-file floors, and Rust coverage cannot substitute for both sandbox architectures executing the53 Python controls. Supplied hosted run42345110249/ci-ok and operation-specific Docker/kernel evidence remain pending/unobserved; no acceptance is inferred. Referenced coverage-and-qualification-limitations.json is absent from the supplied source-qualification-v2 directory; the raw measurement and SOURCE-HANDOFF still expose qualification limits. Preserved source419 parent/history/issued0, older229/new15/M02.10 boundaries; no actualFFFpayload or global state inspected or mutated, no realDocker/backend, newallowance, source edits, report-store writes, formal approval, dispatch or messaging. Detailed measurements and test limitation are in review-evidence.json beside this verdict.",
+          "findings": [
+            {
+              "id": "CTC-R2-001",
+              "priority": "P1",
+              "file": "tools/forensic_retention_v1/__main__.py",
+              "line": 34,
+              "reproduction": "Run repro.py beside this verdict. It adapts the existing disposable real-TaskStore loader fixture: keep the registered task worktree pristine, change __init__.py only in the sibling caller repo, and call load(config,source_root=repo). Load succeeds, lifecycle.source reports clean=True for the registered worktree, but backend.source_package points at the modified sibling. counterexamples.json wrong_source_mount records both roots and differing contents. No Docker or actual FFF data is used.",
+              "expected": "Reject invocation from a different or dirty executable checkout, and bind the executing host package/task API and Docker-mounted worker package to the same inspected task worktree and qualified source. Source equality must be enforced before preparation or mutation.",
+              "observed": "TaskLifecycle fingerprints its registered worktree while DockerBackend mounts source_root from the caller. There is no equality/content check between those roots. Starting the CLI from a stale or dirty sibling checkout can therefore use a qualified task source/gate while running and mounting different, unreviewed code."
+            },
+            {
+              "id": "CTC-R2-002",
+              "priority": "P2",
+              "file": "tools/forensic_retention_v1/controller.py",
+              "line": 223,
+              "reproduction": "Run repro.py. On a fabricated 84-node archive, inject a sync-port failure immediately before archive-root directory fsync after the last rmdir. The first run leaves zero originals and an interrupted lifecycle. Recover with a sync spy. Recovery returns originals_retired=84 and marks complete with no archive-directory sync calls at all. See counterexamples.json unsynced_final_unlink. This is a call-order/fault-port proof, not a claim of an observed kernel crash.",
+              "expected": "Before acknowledging a recovered missing prefix or publishing terminal success, re-establish durability of the surviving parents affected by possibly unacknowledged unlink/rmdir effects, including the archive root when all84 originals are already absent. Preserve interruption on a failed reaffirmation.",
+              "observed": "prefix() treats every already-missing entry as retired, and retire() syncs parents only inside the remaining-entry loop. A failure between the final rmdir and its parent fsync leaves prefix84, so recovery skips every sync and publishes success. A subsequent crash may restore entries whose removal was never durably acknowledged, contradicting terminal accounting and the advertised unlink/sync recovery contract."
+            },
+            {
+              "id": "CTC-R2-003",
+              "priority": "P2",
+              "file": "tools/forensic_retention_v1/__main__.py",
+              "line": 48,
+              "reproduction": "Run repro.py. Its fabricated artifact-root iterator yields10000 names, with a counter on enumeration. publish_manifest consumes all10000 before raising manifest-artifact-slots for its two-slot pool. See counterexamples.json unbounded_preparation_enumeration. The directory contains no actual retained data.",
+              "expected": "Use bounded streaming directory enumeration and refuse as soon as the two-slot publication precondition is exceeded, with finite allocations/work and a relevant deadline. Do not build a full list before checking its size.",
+              "observed": "list(root.iterdir()) materializes an arbitrarily large caller-selected directory before checking len(paths)<2. The read-only preparation path therefore has unbounded allocation/enumeration despite the declared two-slot pool and task requirement for complete bounded-allocation/I/O proofs."
+            },
+            {
+              "id": "CTC-R2-004",
+              "priority": "P2",
+              "file": "tools/forensic_retention_v1/backend.py",
+              "line": 36,
+              "reproduction": "Run raw-repro.py beside this verdict. It uses the actual tools.sandbox.bounded_capture with three fresh local Python subprocesses instead of Docker; each writes4000 synthetic stderr bytes and2 stdout bytes. All three DockerBackend.command calls succeed. raw-accounting-repro.json records12006 aggregate pipe bytes but backend.raw=6, and successively supplied limits8192,8190,8188.",
+              "expected": "Charge both captured stdout and stderr against one aggregate8192-byte operation allowance before admitting another transport command, including failures and recovery. Use a component-local adapter or an explicitly admitted transport contract change without weakening shared controls.",
+              "observed": "bounded_capture checks each command's combined pipes but returns stdout only. DockerBackend counts len(result.encode()), so successful stderr is dropped from aggregate accounting. Multiple commands exceed the operation raw-output cap while the public result reports a much smaller raw count. The counter is also only process-local and resets when a fresh recovery controller/backend is loaded."
+            }
+          ],
+          "resolutions": []
+        },
+        "architecture_security": {
+          "schema_version": 1,
+          "packet_sha256": "bf6b0145418bf244205ecb302a52dc896c0b7e0afb293f0480d85b89da278696",
+          "head": "1101dda0337c225b0befb7d14310ab0acab96ded",
+          "tree": "cb7791047db00bdf4f4a824bc7bc8bd6ef31be88",
+          "source_digest": "e48b36e01facb43e8f5814b1c5141900d387aa5e70dc7832a36012bc18f31709",
+          "role": "architecture_security",
+          "reviewer_session": "01a1b42a-4c36-7651-8c9d-165f5b27d818",
+          "conclusion": "blocked",
+          "basis": "Independent architecture_security IMPLEMENTATION R2 review, original base retained, no prior blockers to resolve. Reviewed all18 original-base changed paths and the complete package/control/test closure, accepted TaskStore claim/run/resume/cleanup, sandbox Registry and bounded_capture, README admission/resource/durability/bounds claims, and PROVENANCE. Independently verified canonical packet hash, exact clean258-file source_fingerprint, head/tree/digest; all46 sealed author dossier artifacts; all13 integrated provenance inventory files and38 extracted definition body hashes. Re-ran API contract, plan/DAG/schema/local-link/generated freshness and original-base diff checks successfully. Inspected actual subject receipts and Python trace measurements: author53/0 success;1252/1335 aggregate, _pack176/210 and _sync4/23 are not all-file/native qualification. Reviewer subject rerun with short owned temp path ran53 with0failures/0skips and1environmental PermissionError at os.link, not a full passing reviewer run; earlier attempts hit sandbox temp/path-length limits. Four independent disposable counterexamples all completed and demonstrate blocking source-binding, aggregate diagnostic, recovered-unlink durability and terminal deadline defects. No actual FFF payload read/hash/inventory/pack/map/unlink, Docker/backend/native job, new allowance, live global TaskStore/resource instance, shared source edit, review-state mutation or formal GitHub approval performed. Current native both-architecture subject receipts, protected exact-head ci-ok and applicable operation-specific Docker/kernel/hardware evidence were not independently observed passing and remain required; mocked commands and stdlib trace do not substitute. M01.08 original source/history/issued0 and all full51/oracle/trial/native/coverage/CI/product gates, older229 authority and new15 remain separate. This verdict blocks source acceptance; it grants no live operation authority.",
+          "findings": [
+            {
+              "id": "AS-R2-01",
+              "priority": "P2",
+              "file": "tools/forensic_retention_v1/__main__.py",
+              "line": 34,
+              "reproduction": "Run python -B C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\reproduce.py from the isolated exact-head review worktree; inspect C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\counterexamples.json. All cases use fabricated disposable archives, fake Docker commands or a fresh temporary Git/TaskStore; no live FFF assets/resources are accessed. The mounted_source_mismatch case creates a real M01.17 claim in a temporary repository, changes only the integration checkout worker, and calls load(config, source_root=integration_repo).",
+              "expected": "Refuse before preparation or execution unless the executing controller package and Docker-mounted worker are the same immutable source bound by TaskLifecycle.source and the review gate. At minimum enforce that the launcher checkout is the admitted worktree; bind and recheck the mounted package rather than trusting an unrelated source_root.",
+              "observed": "load accepts. lifecycle.source measures the clean claimed worktree, while DockerBackend.source_package points at the changed integration checkout. The admitted source stays clean and mounted_worker_differs is true. The source fingerprint/driver binding therefore does not cover the code actually mounted or the package running the controller."
+            },
+            {
+              "id": "AS-R2-02",
+              "priority": "P2",
+              "file": "tools/forensic_retention_v1/backend.py",
+              "line": 36,
+              "reproduction": "Run python -B C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\reproduce.py from the isolated exact-head review worktree; inspect C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\counterexamples.json. All cases use fabricated disposable archives, fake Docker commands or a fresh temporary Git/TaskStore; no live FFF assets/resources are accessed. The stderr_budget case calls the real accepted bounded_capture through DockerBackend.command with a fake Popen providing one stdout byte and 5000 stderr bytes per command, twice.",
+              "expected": "Charge every byte captured from both stdout and stderr against the shared 8192-byte transport pool across all commands, including failed commands, and refuse once the aggregate is exhausted. Preserve the accepted shared primitive or add an owned bounded transport with an explicit combined-byte receipt.",
+              "observed": "Both calls succeed after 10002 captured bytes, but backend.raw is 2 because bounded_capture returns stdout only and command charges len(result.encode()). Per-command pipe limits do not enforce the declared aggregate raw8KiB ceiling; controller aggregate-raw inherits the undercount."
+            },
+            {
+              "id": "AS-R2-03",
+              "priority": "P2",
+              "file": "tools/forensic_retention_v1/controller.py",
+              "line": 219,
+              "reproduction": "Run python -B C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\reproduce.py from the isolated exact-head review worktree; inspect C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\counterexamples.json. All cases use fabricated disposable archives, fake Docker commands or a fresh temporary Git/TaskStore; no live FFF assets/resources are accessed. The unsynced_final_unlink case interrupts at the 84th after-unlink hook, before sync(path.parent), then recovers the same immutable operation with all originals observed absent.",
+              "expected": "Recovery must re-establish durability for observed-but-unacknowledged deletions before recording complete accounting. Re-sync the surviving affected parent directories, including the archive root after the final directory removal, and fail closed on an uncertain sync.",
+              "observed": "prefix returns 84, so the deletion/sync loop is skipped entirely. Recovery returns originals_retired=84 and forensic-complete with zero archive directory-sync calls. Reaffirming map/audit syncs the separate metadata directory, not the unsynced original parent. A crash after this success may resurrect an unpersisted directory deletion and invalidate the terminal physical accounting."
+            },
+            {
+              "id": "AS-R2-04",
+              "priority": "P2",
+              "file": "tools/forensic_retention_v1/controller.py",
+              "line": 175,
+              "reproduction": "Run python -B C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\reproduce.py from the isolated exact-head review worktree; inspect C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\counterexamples.json. All cases use fabricated disposable archives, fake Docker commands or a fresh temporary Git/TaskStore; no live FFF assets/resources are accessed. The terminal_after_deadline case advances the meter clock beyond its original deadline in the metadata-published fault port for the terminal record, representing terminal I/O completing after expiry.",
+              "expected": "Observe the original deadline after terminal publication and lifecycle finalization and refuse a successful return if it expired during those effects. Preserve an interrupted/uncertain disposition without a passing terminal receipt; apply the same rule to run and recover.",
+              "observed": "run returns success and marks the lifecycle complete even though meter.check immediately raises expired-or-sticky. There is no meter check after metadata.append(terminal) before success=True; recover repeats the same pattern at lines278-280. This contradicts the documented rule that late OS completion remains interrupted and cannot produce a passing terminal receipt."
+            }
+          ],
+          "resolutions": []
+        }
+      },
+      "verdict_sha256": {
+        "correctness_tests_claims": "3028b900718a05580052457dd0bc5a526970af3ba5cfb2d7b78c77db8aa8ec69",
+        "architecture_security": "6f5b310bd136a75de882fcea21e055f54f130432c86cd9e73351a8100307e994"
+      }
+    },
+    {
+      "packet": {
+        "schema_version": 1,
+        "task_id": "M01.17",
+        "round": 3,
+        "planned_rounds": 2,
+        "hard_ceiling": 3,
+        "base": "2b2fd47febdbd18dc087457781b6c146d3671f26",
+        "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+        "tree": "e7f38411ce53e2c412a8ae92ea607533cb663b59",
+        "source_digest": "81bf35379be4ff591d041cc6f5aff7169d54877ed15a1d6cabded6dc095ca39b",
+        "implementer_session": "01a1ad0c-a57c-7462-9adc-44dda960885a",
+        "reviewers": {
+          "correctness_tests_claims": "01a1b429-a950-7943-bfe3-210c5545a03b",
+          "architecture_security": "01a1b42a-4c36-7651-8c9d-165f5b27d818"
+        },
+        "required_roles": [
+          "architecture_security",
+          "correctness_tests_claims"
+        ],
+        "changed_paths": [
+          "docs/plan/PROGRESS.md",
+          "docs/plan/milestones/M01.md",
+          "docs/plan/roadmap.md",
+          "docs/plan/tasks.json",
+          "tools/forensic_retention_v1/PROVENANCE.json",
+          "tools/forensic_retention_v1/README.md",
+          "tools/forensic_retention_v1/__init__.py",
+          "tools/forensic_retention_v1/__main__.py",
+          "tools/forensic_retention_v1/_bytes.py",
+          "tools/forensic_retention_v1/_pack.py",
+          "tools/forensic_retention_v1/_sync.py",
+          "tools/forensic_retention_v1/backend.py",
+          "tools/forensic_retention_v1/capture.py",
+          "tools/forensic_retention_v1/controller.py",
+          "tools/forensic_retention_v1/lifecycle.py",
+          "tools/forensic_retention_v1/protocol.py",
+          "tools/forensic_retention_v1/storage.py",
+          "tools/forensic_retention_v1/worker.py",
+          "tools/tests/test_forensic_retention_v1.py"
+        ],
+        "checks": [
+          {
+            "name": "ci-ok",
+            "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+            "conclusion": "success",
+            "evidence": "C:/Users/Huy/.codex/visualizations/2026/11/05/01a1ad0c-a57c-7462-9adc-44dda960885a/m01-17-review-r3-issued-v1/ci-ok.json"
+          },
+          {
+            "name": "git-diff-check",
+            "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+            "conclusion": "success",
+            "evidence": "C:/Users/Huy/.codex/visualizations/2026/11/05/01a1ad0c-a57c-7462-9adc-44dda960885a/m01-17-review-r3-issued-v1/git-diff-check.log"
+          },
+          {
+            "name": "host-ci-docs",
+            "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+            "conclusion": "success",
+            "evidence": "C:/Users/Huy/.codex/visualizations/2026/11/05/01a1ad0c-a57c-7462-9adc-44dda960885a/m01-17-review-r3-issued-v1/host-ci-docs.json"
+          },
+          {
+            "name": "planning-ownership-preservation",
+            "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+            "conclusion": "success",
+            "evidence": "C:/Users/Huy/.codex/visualizations/2026/11/05/01a1ad0c-a57c-7462-9adc-44dda960885a/m01-17-review-r3-issued-v1/planning-ownership-preservation.json"
+          },
+          {
+            "name": "source-clean-bookends",
+            "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+            "conclusion": "success",
+            "evidence": "C:/Users/Huy/.codex/visualizations/2026/11/05/01a1ad0c-a57c-7462-9adc-44dda960885a/m01-17-review-r3-issued-v1/source-clean-bookends.json"
+          }
+        ],
+        "required_check_names": [
+          "ci-ok",
+          "git-diff-check",
+          "host-ci-docs",
+          "planning-ownership-preservation",
+          "source-clean-bookends"
+        ],
+        "reason": "LAST counted R3, explicitly approved by the human Yes approve for this exact c0a0050 and the existing two reviewers; approval receipt m01-17-r3-human-approval-v1.json. Preserve earlier automatic rejection, original base, both prior packets/reports and all eight R2 finding keys. Review combined correction without source edits: admitted executing-checkout binding, recovered-parent durability, finite preparation publication, durable combined-pipe accounting across failures/recovery, and tentative deadline-checked completion. All five retained named exact-head checks refreshed in checks.json. Run42349541324 all7 success including ci-ok128339939483; both actual sandbox architectures ran same66 subject IDs allok within392 tests/zero skips. Native Rust coverage receipts retained separately; changed Rust lines N/A. Local threaded Python1415/1540=91.88%, no exclusions, child processes untraced and per-file gaps remain. See r2-author-correction-map.json for author evidence only and qualification-addendum.json for current limits. Both eligible roles must independently assess every prior blocker; no author resolution is an approval. No fourth round/reset/waiver, gate/merge/formal GitHub approval, live operation Docker/kernel proof, new resources or FFF action.",
+        "previous_findings": [
+          {
+            "review_key": "2:correctness_tests_claims:CTC-R2-001",
+            "id": "CTC-R2-001",
+            "priority": "P1",
+            "file": "tools/forensic_retention_v1/__main__.py",
+            "line": 34,
+            "reproduction": "Run repro.py beside this verdict. It adapts the existing disposable real-TaskStore loader fixture: keep the registered task worktree pristine, change __init__.py only in the sibling caller repo, and call load(config,source_root=repo). Load succeeds, lifecycle.source reports clean=True for the registered worktree, but backend.source_package points at the modified sibling. counterexamples.json wrong_source_mount records both roots and differing contents. No Docker or actual FFF data is used.",
+            "expected": "Reject invocation from a different or dirty executable checkout, and bind the executing host package/task API and Docker-mounted worker package to the same inspected task worktree and qualified source. Source equality must be enforced before preparation or mutation.",
+            "observed": "TaskLifecycle fingerprints its registered worktree while DockerBackend mounts source_root from the caller. There is no equality/content check between those roots. Starting the CLI from a stale or dirty sibling checkout can therefore use a qualified task source/gate while running and mounting different, unreviewed code."
+          },
+          {
+            "review_key": "2:correctness_tests_claims:CTC-R2-002",
+            "id": "CTC-R2-002",
+            "priority": "P2",
+            "file": "tools/forensic_retention_v1/controller.py",
+            "line": 223,
+            "reproduction": "Run repro.py. On a fabricated 84-node archive, inject a sync-port failure immediately before archive-root directory fsync after the last rmdir. The first run leaves zero originals and an interrupted lifecycle. Recover with a sync spy. Recovery returns originals_retired=84 and marks complete with no archive-directory sync calls at all. See counterexamples.json unsynced_final_unlink. This is a call-order/fault-port proof, not a claim of an observed kernel crash.",
+            "expected": "Before acknowledging a recovered missing prefix or publishing terminal success, re-establish durability of the surviving parents affected by possibly unacknowledged unlink/rmdir effects, including the archive root when all84 originals are already absent. Preserve interruption on a failed reaffirmation.",
+            "observed": "prefix() treats every already-missing entry as retired, and retire() syncs parents only inside the remaining-entry loop. A failure between the final rmdir and its parent fsync leaves prefix84, so recovery skips every sync and publishes success. A subsequent crash may restore entries whose removal was never durably acknowledged, contradicting terminal accounting and the advertised unlink/sync recovery contract."
+          },
+          {
+            "review_key": "2:correctness_tests_claims:CTC-R2-003",
+            "id": "CTC-R2-003",
+            "priority": "P2",
+            "file": "tools/forensic_retention_v1/__main__.py",
+            "line": 48,
+            "reproduction": "Run repro.py. Its fabricated artifact-root iterator yields10000 names, with a counter on enumeration. publish_manifest consumes all10000 before raising manifest-artifact-slots for its two-slot pool. See counterexamples.json unbounded_preparation_enumeration. The directory contains no actual retained data.",
+            "expected": "Use bounded streaming directory enumeration and refuse as soon as the two-slot publication precondition is exceeded, with finite allocations/work and a relevant deadline. Do not build a full list before checking its size.",
+            "observed": "list(root.iterdir()) materializes an arbitrarily large caller-selected directory before checking len(paths)<2. The read-only preparation path therefore has unbounded allocation/enumeration despite the declared two-slot pool and task requirement for complete bounded-allocation/I/O proofs."
+          },
+          {
+            "review_key": "2:correctness_tests_claims:CTC-R2-004",
+            "id": "CTC-R2-004",
+            "priority": "P2",
+            "file": "tools/forensic_retention_v1/backend.py",
+            "line": 36,
+            "reproduction": "Run raw-repro.py beside this verdict. It uses the actual tools.sandbox.bounded_capture with three fresh local Python subprocesses instead of Docker; each writes4000 synthetic stderr bytes and2 stdout bytes. All three DockerBackend.command calls succeed. raw-accounting-repro.json records12006 aggregate pipe bytes but backend.raw=6, and successively supplied limits8192,8190,8188.",
+            "expected": "Charge both captured stdout and stderr against one aggregate8192-byte operation allowance before admitting another transport command, including failures and recovery. Use a component-local adapter or an explicitly admitted transport contract change without weakening shared controls.",
+            "observed": "bounded_capture checks each command's combined pipes but returns stdout only. DockerBackend counts len(result.encode()), so successful stderr is dropped from aggregate accounting. Multiple commands exceed the operation raw-output cap while the public result reports a much smaller raw count. The counter is also only process-local and resets when a fresh recovery controller/backend is loaded."
+          },
+          {
+            "review_key": "2:architecture_security:AS-R2-01",
+            "id": "AS-R2-01",
+            "priority": "P2",
+            "file": "tools/forensic_retention_v1/__main__.py",
+            "line": 34,
+            "reproduction": "Run python -B C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\reproduce.py from the isolated exact-head review worktree; inspect C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\counterexamples.json. All cases use fabricated disposable archives, fake Docker commands or a fresh temporary Git/TaskStore; no live FFF assets/resources are accessed. The mounted_source_mismatch case creates a real M01.17 claim in a temporary repository, changes only the integration checkout worker, and calls load(config, source_root=integration_repo).",
+            "expected": "Refuse before preparation or execution unless the executing controller package and Docker-mounted worker are the same immutable source bound by TaskLifecycle.source and the review gate. At minimum enforce that the launcher checkout is the admitted worktree; bind and recheck the mounted package rather than trusting an unrelated source_root.",
+            "observed": "load accepts. lifecycle.source measures the clean claimed worktree, while DockerBackend.source_package points at the changed integration checkout. The admitted source stays clean and mounted_worker_differs is true. The source fingerprint/driver binding therefore does not cover the code actually mounted or the package running the controller."
+          },
+          {
+            "review_key": "2:architecture_security:AS-R2-02",
+            "id": "AS-R2-02",
+            "priority": "P2",
+            "file": "tools/forensic_retention_v1/backend.py",
+            "line": 36,
+            "reproduction": "Run python -B C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\reproduce.py from the isolated exact-head review worktree; inspect C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\counterexamples.json. All cases use fabricated disposable archives, fake Docker commands or a fresh temporary Git/TaskStore; no live FFF assets/resources are accessed. The stderr_budget case calls the real accepted bounded_capture through DockerBackend.command with a fake Popen providing one stdout byte and 5000 stderr bytes per command, twice.",
+            "expected": "Charge every byte captured from both stdout and stderr against the shared 8192-byte transport pool across all commands, including failed commands, and refuse once the aggregate is exhausted. Preserve the accepted shared primitive or add an owned bounded transport with an explicit combined-byte receipt.",
+            "observed": "Both calls succeed after 10002 captured bytes, but backend.raw is 2 because bounded_capture returns stdout only and command charges len(result.encode()). Per-command pipe limits do not enforce the declared aggregate raw8KiB ceiling; controller aggregate-raw inherits the undercount."
+          },
+          {
+            "review_key": "2:architecture_security:AS-R2-03",
+            "id": "AS-R2-03",
+            "priority": "P2",
+            "file": "tools/forensic_retention_v1/controller.py",
+            "line": 219,
+            "reproduction": "Run python -B C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\reproduce.py from the isolated exact-head review worktree; inspect C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\counterexamples.json. All cases use fabricated disposable archives, fake Docker commands or a fresh temporary Git/TaskStore; no live FFF assets/resources are accessed. The unsynced_final_unlink case interrupts at the 84th after-unlink hook, before sync(path.parent), then recovers the same immutable operation with all originals observed absent.",
+            "expected": "Recovery must re-establish durability for observed-but-unacknowledged deletions before recording complete accounting. Re-sync the surviving affected parent directories, including the archive root after the final directory removal, and fail closed on an uncertain sync.",
+            "observed": "prefix returns 84, so the deletion/sync loop is skipped entirely. Recovery returns originals_retired=84 and forensic-complete with zero archive directory-sync calls. Reaffirming map/audit syncs the separate metadata directory, not the unsynced original parent. A crash after this success may resurrect an unpersisted directory deletion and invalidate the terminal physical accounting."
+          },
+          {
+            "review_key": "2:architecture_security:AS-R2-04",
+            "id": "AS-R2-04",
+            "priority": "P2",
+            "file": "tools/forensic_retention_v1/controller.py",
+            "line": 175,
+            "reproduction": "Run python -B C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\reproduce.py from the isolated exact-head review worktree; inspect C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r2-architecture-security\\counterexamples.json. All cases use fabricated disposable archives, fake Docker commands or a fresh temporary Git/TaskStore; no live FFF assets/resources are accessed. The terminal_after_deadline case advances the meter clock beyond its original deadline in the metadata-published fault port for the terminal record, representing terminal I/O completing after expiry.",
+            "expected": "Observe the original deadline after terminal publication and lifecycle finalization and refuse a successful return if it expired during those effects. Preserve an interrupted/uncertain disposition without a passing terminal receipt; apply the same rule to run and recover.",
+            "observed": "run returns success and marks the lifecycle complete even though meter.check immediately raises expired-or-sticky. There is no meter check after metadata.append(terminal) before success=True; recover repeats the same pattern at lines278-280. This contradicts the documented rule that late OS completion remains interrupted and cannot produce a passing terminal receipt."
+          }
+        ],
+        "packet_payload_bytes": 15060,
+        "estimated_tokens_bytes_div4": 3765,
+        "token_count_is_estimate": true
+      },
+      "sha256": "4500f4722d352580e2f76628d21d97007b06cf4dcc370a43333f5103010ca7f3",
+      "verdicts": {
+        "correctness_tests_claims": {
+          "schema_version": 1,
+          "packet_sha256": "4500f4722d352580e2f76628d21d97007b06cf4dcc370a43333f5103010ca7f3",
+          "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+          "tree": "e7f38411ce53e2c412a8ae92ea607533cb663b59",
+          "source_digest": "81bf35379be4ff591d041cc6f5aff7169d54877ed15a1d6cabded6dc095ca39b",
+          "role": "correctness_tests_claims",
+          "reviewer_session": "01a1b429-a950-7943-bfe3-210c5545a03b",
+          "conclusion": "blocked",
+          "basis": "LAST counted M01.17 R3, issued3/planned2/hard3, originalbase2b2fd47 preserved. Verified canonical bare-packet hash/size, assigned actual session, exact head/tree and clean259-file source digest, all14 provenance inventory files, original131task and remaining ledger preservation. Reviewed full19path originalbase tree including incoming primitive closure;8path R2delta/newcapture,66control bodies, README/PROVENANCE, all8 prior finding keys, author correction map as proposal, checks/qualificationaddendum/historical limitations and committed acceptance/coverage/review policies. Independently ran all66subject controls/0skips in70.804s on fresh fabricated fixtures; no actualFFF or realDocker/backend/resources. Plan132tasks/369links/generatedfreshness,16negativecontrols,API and whitespace checks pass. Inspected and parsed exacthead run42349541324 receipts: all7jobs success includingci-ok128339939483; bothnative sandbox receipts contain same66subject IDs allok within392tests/zero requiredskips. Python1415/1540threadedtrace remains diagnostic, childprocesses untraced and perfilegaps visible; policy provides no invented Python numericalfloor, and Rustcoverage is separate with changedRustlinesN/A. Physicalpersistence, operation-specific liveDocker/kernel and actualFFFoperation authority remain unobserved/unaccepted. Seven prior blocking keys are addressed by source/API/mount guards, recovered-parent durability reaffirmation, durable bothpipe reservations and tentative/deadline-checked completion, with concrete per-key evidence below. CTC-R2-003 remains blocking: a lower-level realdirectory counterexample proves eager Path.iterdir allocation/enumeration before caller slot/deadline checks, despite the new stubbed-generator test passing. This is the same unresolved required bounded-allocation gate, not a new budget objection. Upstream officialPython3.11 source corroborates os.listdir materialization; local actualPython3.13 implementation/counts are captured. Exactsource unchanged at finalbookend; no source edits, sharedstate/review-store mutation, actualFFFread/hash/pack/map/unlink, globalTaskStore, Docker launch, allowance, approval/merge or dispatch. PR25 still has older R3unissued/CIpending prose; sealed exacthead issuance/addendum supersede those status claims, not the remaining source defect. Hard3 requires split/redesign for this unresolved blocker; no fourth round/reset/pass by budget. Evidence: own review-evidence.json, subject-tests.log, enumeration-repro.py and enumeration-counterexample.json.",
+          "findings": [
+            {
+              "id": "CTC-R2-003",
+              "priority": "P2",
+              "file": "tools/forensic_retention_v1/__main__.py",
+              "line": 59,
+              "reproduction": "Run python -B enumeration-repro.py beside this verdict from the exactc0a0050 checkout. It creates1000 real disposable manifest files, wraps only os.scandir to count underlying entries, and leaves actual Path.iterdir unmodified. publish_manifest refuses manifest-artifact-slots only after consuming all1000; meter checkpoints see[0,1000,1000]. enumeration-counterexample.json includes the actual stdlib implementation. OfficialPython3.11 pathlib uses os.listdir(self), also materializing all names before yielding (https://github.com/python/cpython/blob/v3.11.14/Lib/pathlib.py,blobecb1e8a40d8cf02e7df4723c1db6ab3481470e86); dev/Dockerfile declaresPython3.11. No actualFFFdata or backend used.",
+              "expected": "Enforce the two-slot bound and deadline during genuinely streaming OS directory enumeration, before collecting arbitrary names. Use an explicit bounded scandir iterator or equivalent; test the real enumeration boundary rather than replacing Path.iterdir with a lazy generator. Preserve the same finite guarantees for incoming enumeration helpers.",
+              "observed": "The R3 loop removed list() but root.iterdir() eagerly collects directory names inside pathlib before its first yield. Caller meter/slot checks therefore run after unbounded enumeration/allocation. test_preparation_iterator_stops_before_third_item_and_checks_deadline stubs away that eager implementation, so its passing count2 does not resolve the original bounded-work defect. The same Path.iterdir dependence remains in incoming list_bounded/driver enumeration. CTC-R2-003 remains unresolved at hard3."
+            }
+          ],
+          "resolutions": [
+            {
+              "review_key": "2:correctness_tests_claims:CTC-R2-001",
+              "evidence": "Addressed at c0a0050. Inspected __main__.load equality with the actual executing root, executing_package module-origin checks, TaskLifecycle task/sandbox/fingerprint code-origin checks, Controller.guard_source, and mounted driver hashes before preflight/start. Independently ran all66 controls successfully, including the genuine temporary Git/TaskStore loader child and sibling/alias/dirty/mixed-module refusal cases and mounted-package tamper control. These now refuse the R2 mismatched-checkout path rather than fingerprinting one checkout and mounting another. Evidence: tools/tests/test_forensic_retention_v1.py test_real_coordinator_loader_binds_existing_canonical_state_without_rewrite and test_mounted_package_tamper_refuses_before_preflight_commands; own subject-tests.log and review-evidence.json."
+            },
+            {
+              "review_key": "2:correctness_tests_claims:CTC-R2-002",
+              "evidence": "Addressed at c0a0050. Controller.retire calls reaffirm_deletions for any observed missing prefix and again before final accounting; that function verifies surviving ancestor identities and syncs deepest surviving parents plus the archive root, with deadline checks around sync. Independently ran test_recovered_missing84_reaffirms_actual_archive_directory_sync, test_failed_recovery_parent_sync_never_publishes_completion, test_nested_prefix83_is_synced_before_further_retirement and test_nested_prefix_sync_failure_blocks_further_retirement in the successful66-control run. They exercise all84 absent and prefix83, actual synthetic sync calls where supported, lost acknowledgements and failure-before-further-unlink. This establishes corrected call ordering and failure disposition, not physical power-loss persistence. Evidence: own subject-tests.log and exact source Controller.reaffirm_deletions/retire."
+            },
+            {
+              "review_key": "2:correctness_tests_claims:CTC-R2-003",
+              "evidence": "UNRESOLVED at c0a0050. Removing the explicit list() did not make Path.iterdir streaming: the actual host Python3.13 implementation collects [entry.path for entry in os.scandir(...)] before yielding; official Python3.11 Lib/pathlib.py iterates over an already-materialized os.listdir(self) list, relevant to dev/Dockerfile Python3.11. Own enumeration-repro.py instruments os.scandir while leaving Path.iterdir intact over1000 real disposable files. All1000 entries are consumed between meter checks0 and1000 before the second yielded item raises manifest-artifact-slots. enumeration-counterexample.json retains counts and the inspected stdlib body. The added author test patches Path.iterdir with a generator, bypassing this allocation/enumeration, so it cannot close the reported bounded-work defect. A genuinely streaming bounded OS enumeration is still required; no pass or reset at hard3."
+            },
+            {
+              "review_key": "2:correctness_tests_claims:CTC-R2-004",
+              "evidence": "Addressed at c0a0050 for the reported both-pipe and recovery undercount. Inspected new owned capture.bounded_capture and RawBudget: both unbuffered pipes reserve at most16 bytes through a shared locked durable CAS before read/EOF, and failed/timeout calls retain debt. TaskLifecycle stores raw_reserved in the same claim and strictly syncs its registry directory; fresh admission/recovery preserves the value, and operation budget rebinding refuses. Independently ran the66-control suite including real combined-pipe failed/success/exhaustion subprocesses, timeout debt, anti-rebind/preparation guards and genuine disposable TaskStore lost-sync-ack/fresh-lifecycle controls. Conservatively lost unused reservations and exact-cap EOF refusal are explicit. Evidence: capture.py, TaskLifecycle.start_admission/raw_budget, backend.bind_raw/command and subject-tests.log; no actual Docker/kernel or global state used."
+            },
+            {
+              "review_key": "2:architecture_security:AS-R2-01",
+              "evidence": "Addressed at c0a0050. Inspected __main__.load equality with the actual executing root, executing_package module-origin checks, TaskLifecycle task/sandbox/fingerprint code-origin checks, Controller.guard_source, and mounted driver hashes before preflight/start. Independently ran all66 controls successfully, including the genuine temporary Git/TaskStore loader child and sibling/alias/dirty/mixed-module refusal cases and mounted-package tamper control. These now refuse the R2 mismatched-checkout path rather than fingerprinting one checkout and mounting another. Evidence: tools/tests/test_forensic_retention_v1.py test_real_coordinator_loader_binds_existing_canonical_state_without_rewrite and test_mounted_package_tamper_refuses_before_preflight_commands; own subject-tests.log and review-evidence.json."
+            },
+            {
+              "review_key": "2:architecture_security:AS-R2-02",
+              "evidence": "Addressed at c0a0050 for the reported both-pipe and recovery undercount. Inspected new owned capture.bounded_capture and RawBudget: both unbuffered pipes reserve at most16 bytes through a shared locked durable CAS before read/EOF, and failed/timeout calls retain debt. TaskLifecycle stores raw_reserved in the same claim and strictly syncs its registry directory; fresh admission/recovery preserves the value, and operation budget rebinding refuses. Independently ran the66-control suite including real combined-pipe failed/success/exhaustion subprocesses, timeout debt, anti-rebind/preparation guards and genuine disposable TaskStore lost-sync-ack/fresh-lifecycle controls. Conservatively lost unused reservations and exact-cap EOF refusal are explicit. Evidence: capture.py, TaskLifecycle.start_admission/raw_budget, backend.bind_raw/command and subject-tests.log; no actual Docker/kernel or global state used."
+            },
+            {
+              "review_key": "2:architecture_security:AS-R2-03",
+              "evidence": "Addressed at c0a0050. Controller.retire calls reaffirm_deletions for any observed missing prefix and again before final accounting; that function verifies surviving ancestor identities and syncs deepest surviving parents plus the archive root, with deadline checks around sync. Independently ran test_recovered_missing84_reaffirms_actual_archive_directory_sync, test_failed_recovery_parent_sync_never_publishes_completion, test_nested_prefix83_is_synced_before_further_retirement and test_nested_prefix_sync_failure_blocks_further_retirement in the successful66-control run. They exercise all84 absent and prefix83, actual synthetic sync calls where supported, lost acknowledgements and failure-before-further-unlink. This establishes corrected call ordering and failure disposition, not physical power-loss persistence. Evidence: own subject-tests.log and exact source Controller.reaffirm_deletions/retire."
+            },
+            {
+              "review_key": "2:architecture_security:AS-R2-04",
+              "evidence": "Addressed at c0a0050. Controller.complete publishes only tentative terminal/observation records, checks the original meter after each publication and after lifecycle.finish, and invalidates late finalization through interrupt_completion. Run and recover share this path; unsuccessful paths attempt interruption and cannot return success. Independently ran test_run_terminal_expiry_after_real_publication_refuses, test_recovery_terminal_expiry_after_real_publication_refuses, test_run_lifecycle_late_completion_is_invalidated and test_recovery_lifecycle_late_completion_is_invalidated in the successful66-control suite. Each advances the original deadline at the relevant actual publication/finalization port and asserts refusal/interruption plus tentative terminal evidence. This does not assert physical persistence or an accepted standalone durable completion receipt. Evidence: Controller.complete, TaskLifecycle.finish/interrupt_completion and own subject-tests.log."
+            }
+          ]
+        },
+        "architecture_security": {
+          "schema_version": 1,
+          "packet_sha256": "4500f4722d352580e2f76628d21d97007b06cf4dcc370a43333f5103010ca7f3",
+          "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+          "tree": "e7f38411ce53e2c412a8ae92ea607533cb663b59",
+          "source_digest": "81bf35379be4ff591d041cc6f5aff7169d54877ed15a1d6cabded6dc095ca39b",
+          "role": "architecture_security",
+          "reviewer_session": "01a1b42a-4c36-7651-8c9d-165f5b27d818",
+          "conclusion": "blocked",
+          "basis": "Final counted architecture_security R3, issued3/planned2/hard3, original base/history retained. Independently verified canonical bare packet SHA, clean exact head/tree/source digest before and after review; inspected the full19-path original-base scope and all incoming/current primitive bodies, authority/approval/owner/source/image/engine/closed-writer/alias checks, accepted TaskStore phases and canonical resource admission, opaque pack/member conservation, durable map/audit ordering and failure-state recovery. Verified all36 sealed R3 artifacts, combined source handoff hash,14 integrated provenance inventory hashes and38 extracted definition body hashes, and all131 original ledger entries unchanged. Reviewed author correction map as a proposal and independently assessed all eight prior keys with explicit resolutions. Reviewed CAS/raw reservation concurrency/durability, fresh object accounting, recovery parent syncs, bounded publication and tentative completion. Re-ran API contract, plan/schema/DAG/link/generated freshness and original-base diff checks successfully;65 reviewer-selected controls passed with0errors/0failures/0skips, explicitly excluding one known Windows sandbox hardlink-permission test. Independently checked the supplied exact-head CI receipts: all7 jobs completed/success, including protected ci-ok; native aarch64/x86_64 receipts contain matching66 Python subject IDs allok within392 tests/zero skips. Rust dev/release coverage is separate with changed Rust lines N/A; local threaded Python1415/1540 diagnostics exclude child tracing and retain __main__/_pack/_sync per-file gaps, with no invented Python-floor acceptance. A separate fresh-controller simulated-clock counterexample proves new blocking AS-R3-01 despite those passing controls. No source edits, shared-state/review-store writes, live FFF reads/inventory/hash/pack/map/unlink, real local Docker/backend/resource campaign, new allowance, message dispatch, merge or formal GitHub approval occurred. Source-only synthetic evidence does not claim physical power-loss persistence or operation-specific real Docker/kernel qualification. Parent419/full51/oracle/trial/native/coverage/CI/product gates, older229/new15 and all original failed histories remain separate and unchanged. R3 is blocked by the original-duration recovery defect; the hard ceiling requires disposition/split/redesign, not a fourth packet, reset or budget pass.",
+          "findings": [
+            {
+              "id": "AS-R3-01",
+              "priority": "P2",
+              "file": "tools/forensic_retention_v1/protocol.py",
+              "line": 105,
+              "reproduction": "From this exact-head review worktree, run python -B C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\07\\01a1b42a-4c36-7651-8c9d-165f5b27d818\\m01-17-r3-architecture-security\\reproduce_monotonic.py. It uses the checked-in fabricated84-node fixture and real archive/metadata I/O, lifecycle/backend test ports, and a patched monotonic clock only. Interrupt after11 unlinks, advance simulated monotonic time beyond the original operation end while wall time remains before its pinned deadline (a wall-clock rollback scenario), and construct a fresh Controller to recover using the same persisted admission. No actual host clock changes, FFF data, Docker or live resources are used. See monotonic-recovery-counterexample.json.",
+              "expected": "Persist and enforce the original monotonic duration bound across fresh recovery, with an appropriate boot/clock identity or fail-closed rule when continuity cannot be proved. Passing the same wall-clock deadline is insufficient after wall-clock rollback. Once the original monotonic deadline expires, no fresh recovery may retire further originals or return success under that admission.",
+              "observed": "Meter.__init__ computes a new end as current_monotonic + (wall_deadline - current_wall_time) for every new DurableMeter. Controller.recover line313 constructs that new meter from an admission containing only wall-clock timestamps. The reproduction observes original end1299.952 and current monotonic1300.952: the old meter correctly refuses, yet a fresh recovery chooses end2499.808, retires the remaining73 originals and returns completion=observed-before-deadline under the same admission. This extends the declared original20-minute duration and contradicts the README recovery monotonic-deadline promise. Existing reverse-wall-clock tests cover one sticky meter, not this fresh recovery case."
+            }
+          ],
+          "resolutions": [
+            {
+              "review_key": "2:correctness_tests_claims:CTC-R2-001",
+              "evidence": "Exact R3 head c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8. Independently inspected the correction and reran its controls in selected-suite.log (65 controls passed, zero skips; the known local hardlink-denied test was explicitly excluded). Both supplied native architecture receipts independently checked: identical66 subject IDs all ok within392 tests, with zero skips. Resolved the sibling/dirty source defect: __main__.load enforces executing_root/source_root equality, executing_package validates cached module origins, TaskLifecycle requires the task API to originate in the admitted worktree, Controller.guard_source binds controller and mounted package, and backend preflight/start compare driver_digest. Real disposable-TaskStore loader control rejects sibling, lexical alias, dirty and mixed-module origins, while its fresh child launched in the admitted worktree succeeds; mounted-package tamper control refuses before transport commands."
+            },
+            {
+              "review_key": "2:correctness_tests_claims:CTC-R2-002",
+              "evidence": "Exact R3 head c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8. Independently inspected the correction and reran its controls in selected-suite.log (65 controls passed, zero skips; the known local hardlink-denied test was explicitly excluded). Both supplied native architecture receipts independently checked: identical66 subject IDs all ok within392 tests, with zero skips. Resolved missing-prefix durability: Controller.retire calls reaffirm_deletions when a prefix is absent and again before final accounting. It verifies surviving ancestor identities, syncs them deepest-first and includes the archive root. Tests for all84 missing, failed root sync, nested prefix83 and failed nested-parent sync passed; they demonstrate the required sync call ordering and refusal on lost acknowledgement, not physical power-loss persistence."
+            },
+            {
+              "review_key": "2:correctness_tests_claims:CTC-R2-003",
+              "evidence": "Exact R3 head c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8. Independently inspected the correction and reran its controls in selected-suite.log (65 controls passed, zero skips; the known local hardlink-denied test was explicitly excluded). Both supplied native architecture receipts independently checked: identical66 subject IDs all ok within392 tests, with zero skips. Resolved unbounded publication enumeration: publish_manifest iterates at most two yielded paths and refuses the second existing entry before requesting a third. It checks the same preparation meter during enumeration and after write/file+directory fsync. The iterator control counted exactly two yields from a10000-entry generator and refused already-expired publication before enumeration; private-slot/byte tests passed."
+            },
+            {
+              "review_key": "2:correctness_tests_claims:CTC-R2-004",
+              "evidence": "Exact R3 head c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8. Independently inspected the correction and reran its controls in selected-suite.log (65 controls passed, zero skips; the known local hardlink-denied test was explicitly excluded). Both supplied native architecture receipts independently checked: identical66 subject IDs all ok within392 tests, with zero skips. Resolved combined-pipe and recovery undercount: capture.bounded_capture uses unbuffered pipes with RawBudget.reserve before every at-most16-byte read/EOF probe. TaskLifecycle.raw_budget persists CAS high-water updates in the original claim and directory-syncs them before reads. Successful stderr, failed commands, timeout and lost-ack debt remain charged. Real subprocess mixed-pipe, exhaustion, timeout, preparation-command restriction/rebind tests and fresh real-TaskStore lost-ack/reload controls passed. Different RawBudget instances cannot silently overwrite debt because save checks the prior value under the accepted registry lock."
+            },
+            {
+              "review_key": "2:architecture_security:AS-R2-01",
+              "evidence": "Exact R3 head c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8. Independently inspected the correction and reran its controls in selected-suite.log (65 controls passed, zero skips; the known local hardlink-denied test was explicitly excluded). Both supplied native architecture receipts independently checked: identical66 subject IDs all ok within392 tests, with zero skips. Resolved the wrong mounted package reproduction. __main__.load, lifecycle.executing_package/TaskLifecycle.__init__, Controller.guard_source and DockerBackend.preflight/verify enforce the executing/admitted/mounted root and content binding. The real loader child positive and sibling/alias/dirty/mixed-origin negatives, plus test_mounted_package_tamper_refuses_before_preflight_commands, passed. No worker from an unmeasured sibling is accepted by the corrected path."
+            },
+            {
+              "review_key": "2:architecture_security:AS-R2-02",
+              "evidence": "Exact R3 head c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8. Independently inspected the correction and reran its controls in selected-suite.log (65 controls passed, zero skips; the known local hardlink-denied test was explicitly excluded). Both supplied native architecture receipts independently checked: identical66 subject IDs all ok within392 tests, with zero skips. Resolved stdout-only aggregate accounting with the owned capture.py adapter: both streams reserve from one8192-byte pool before reads, including EOF probes and failed commands. The original claim retains raw_reserved across fresh lifecycle recovery with CAS+directory sync; bind_raw refuses an operation budget replacement. Real mixed-pipe/failure/timeout controls and fresh real-TaskStore debt recovery passed. No shared sandbox primitive was weakened."
+            },
+            {
+              "review_key": "2:architecture_security:AS-R2-03",
+              "evidence": "Exact R3 head c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8. Independently inspected the correction and reran its controls in selected-suite.log (65 controls passed, zero skips; the known local hardlink-denied test was explicitly excluded). Both supplied native architecture receipts independently checked: identical66 subject IDs all ok within392 tests, with zero skips. Resolved unsynced final unlink: reaffirm_deletions includes the surviving archive root even with prefix84, and retire invokes it before further retirement/completion. test_recovered_missing84_reaffirms_actual_archive_directory_sync and test_failed_recovery_parent_sync_never_publishes_completion passed, as did nested-prefix success/failure controls. Directory sync failure leaves interruption and no terminal publication."
+            },
+            {
+              "review_key": "2:architecture_security:AS-R2-04",
+              "evidence": "Exact R3 head c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8. Independently inspected the correction and reran its controls in selected-suite.log (65 controls passed, zero skips; the known local hardlink-denied test was explicitly excluded). Both supplied native architecture receipts independently checked: identical66 subject IDs all ok within392 tests, with zero skips. Resolved the specific terminal-publication expiry defect: Controller.complete publishes only tentative terminal/observation evidence, checks the existing meter after both publications and lifecycle finalization, and interrupts uncertain completion. Run/recover terminal-expiry and lifecycle-late controls all passed and retain tentative records without a successful return. A separate new finding AS-R3-01 covers rebuilding that meter across recovery; these corrected terminal checks do not cure that distinct original-duration reset."
+            }
+          ]
+        }
+      },
+      "verdict_sha256": {
+        "correctness_tests_claims": "abc9f2973c6b5159224c1cd860190391c8cb75b34d5e1dcbef514553c94a04ce",
+        "architecture_security": "95f348166e400ceead9314efc597e8c2a9fb9da2c5f23c5ccb7414c3be8d99ad"
+      }
+    }
+  ],
+  "raw_report_hashes": [
+    {
+      "round": 1,
+      "role": "correctness_tests_claims",
+      "raw_sha256": "cb044faf0b3c4eedc7c4717e8044c9219b37a46b48f57e377fda5d05c308bcf9",
+      "canonical_recorded_sha256": "a51fb8e39859978f917685441daca774419ccf980c019f790906e306e99554b7"
+    },
+    {
+      "round": 1,
+      "role": "architecture_security",
+      "raw_sha256": "7327def899c448353aaa9fb79d2f8c724ffa5361f77bed61ef35ec0823cf8656",
+      "canonical_recorded_sha256": "c2418445b0b765e56a2cdc4288694e8034af5b9df4b0a87a1614564594664769"
+    },
+    {
+      "round": 2,
+      "role": "correctness_tests_claims",
+      "raw_sha256": "b7402d3cd070974bd0542667d45545bb0a89a3985ed663a7d339df78e53b6ae1",
+      "canonical_recorded_sha256": "3028b900718a05580052457dd0bc5a526970af3ba5cfb2d7b78c77db8aa8ec69"
+    },
+    {
+      "round": 2,
+      "role": "architecture_security",
+      "raw_sha256": "99cafd7d61f39240c98132797ef595bd35808fd9ceeab6e98449877e702a6e57",
+      "canonical_recorded_sha256": "6f5b310bd136a75de882fcea21e055f54f130432c86cd9e73351a8100307e994"
+    },
+    {
+      "round": 3,
+      "role": "correctness_tests_claims",
+      "raw_sha256": "01cee0fd29c0510a2b06b8669c4d1407b408497e1cb18bcf64292006ee3c373e",
+      "canonical_recorded_sha256": "abc9f2973c6b5159224c1cd860190391c8cb75b34d5e1dcbef514553c94a04ce"
+    },
+    {
+      "round": 3,
+      "role": "architecture_security",
+      "raw_sha256": "4ff9cdeb674a8f9cdd1d131dc2ce1eeb4515bbbe856714f183c5b985f882cbd9",
+      "canonical_recorded_sha256": "95f348166e400ceead9314efc597e8c2a9fb9da2c5f23c5ccb7414c3be8d99ad"
+    }
+  ],
+  "enumeration_counterexample": {
+    "underlying_entries": 1000,
+    "meter_checks": [
+      0,
+      1000,
+      1000
+    ],
+    "refusal": "manifest-artifact-slots",
+    "stdlib_Path_iterdir": "    def iterdir(self):\n        \"\"\"Yield path objects of the directory contents.\n\n        The children are yielded in arbitrary order, and the\n        special entries '.' and '..' are not included.\n        \"\"\"\n        root_dir = str(self)\n        with os.scandir(root_dir) as scandir_it:\n            paths = [entry.path for entry in scandir_it]\n        if root_dir == '.':\n            paths = map(self._remove_leading_dot, paths)\n        return map(self._from_parsed_string, paths)\n",
+    "meaning": "Actual os.scandir consumed all1000 real entries between the first and second deadline checks; publication only then refused its two-slot cap. No Path.iterdir stub and no actualFFFdata."
+  },
+  "recovery_counterexample": {
+    "original_monotonic_end": 1299.952,
+    "recovery_monotonic_now": 1300.952,
+    "fresh_monotonic_end": 2499.808,
+    "old_meter_expired": true,
+    "fresh_returned_success": true,
+    "completion": "observed-before-deadline",
+    "original_wall_deadline": 1794040918207,
+    "same_original_admission": true,
+    "originals_remaining": 0
+  },
+  "disagreement": "R3 correctness retains CTC-R2-003 unresolved at the real OS boundary. R3 architecture independently calls that old key resolved using yielded-path controls. Both original reports are retained without rewriting; both remain blocked and the real counterexample is an acceptance obligation.",
+  "counterexample_execution_by_this_plan": false,
+  "passing_check_limits": {
+    "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+    "run": 42349541324,
+    "all7_success": true,
+    "ci_ok": 128339939483,
+    "both_sandbox_subject_ids": 66,
+    "both_sandbox_total_tests": 392,
+    "both_sandbox_skips": 0,
+    "local_threaded_python": {
+      "covered": 1415,
+      "coverable": 1540,
+      "child_processes_untraced": true,
+      "per_file_gaps": [
+        "__main__",
+        "_pack",
+        "_sync"
+      ]
+    },
+    "scope": "Observed source/synthetic qualification only; not semantic acceptance, physical power-loss proof or actual operation transport/kernel proof."
+  },
+  "incoming_code_provenance": {
+    "schema_version": 1,
+    "status": "incoming unqualified author code; requires complete final-source qualification",
+    "prototype_handoff_sha256": "99f1dd8f930d836de309d5bb5b17a79974b70001951378e9c67ca3bc70a29d76",
+    "prototype_author": "01a1ab9f-fde6-7952-9877-efb2fce35b9c",
+    "implementer": "01a1ad0c-a57c-7462-9adc-44dda960885a",
+    "inherited_authors": [
+      "01a1ab64-5beb-7431-b3f9-bea4a729c0d6",
+      "01a1ab64-1401-7740-9cd1-5320979e293b",
+      "01a1aca2-3b0e-7503-9b7c-a9a44b91aeb9"
+    ],
+    "author_inventory_limit": "Researcher and all other contributors remain excluded from self-review; this list does not certify exhaustiveness.",
+    "parent_head": "4199068d1665dbce9f47df66d0b6d422ba16de40",
+    "extracted_definitions": [
+      {
+        "source": "deps/sealed_operation.py",
+        "definition": "Refused",
+        "sha256": "34a0fb783aaf68f413ee1f1dea44203963c4f7b8ebd84cb85ac9585e4ddc0fd9",
+        "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+        "destination": "_bytes.py",
+        "integrated_body_sha256": "34a0fb783aaf68f413ee1f1dea44203963c4f7b8ebd84cb85ac9585e4ddc0fd9",
+        "body_changed": false
+      },
+      {
+        "source": "deps/sealed_operation.py",
+        "definition": "need",
+        "sha256": "50e9e65e6aafdea66476d16a887ff725517b979a13484a810e5d07e941868b9c",
+        "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+        "destination": "_bytes.py",
+        "integrated_body_sha256": "50e9e65e6aafdea66476d16a887ff725517b979a13484a810e5d07e941868b9c",
+        "body_changed": false
+      },
+      {
+        "source": "deps/sealed_operation.py",
+        "definition": "keys",
+        "sha256": "e9e2acabb9fac1ae27a20bd4d40e2e764f2e01443921afe80298db2ba8cad210",
+        "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+        "destination": "_bytes.py",
+        "integrated_body_sha256": "e9e2acabb9fac1ae27a20bd4d40e2e764f2e01443921afe80298db2ba8cad210",
+        "body_changed": false
+      },
+      {
+        "source": "deps/sealed_operation.py",
+        "definition": "sha",
+        "sha256": "578dfeddac96290c66ef1d843fd805406a1d57251fe83cc0536905b4c8f08213",
+        "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+        "destination": "_bytes.py",
+        "integrated_body_sha256": "578dfeddac96290c66ef1d843fd805406a1d57251fe83cc0536905b4c8f08213",
+        "body_changed": false
+      },
+      {
+        "source": "deps/sealed_operation.py",
+        "definition": "sid",
+        "sha256": "832019d5aeacc186ec62cb67c3f93bb940dc91e95ad42f987eb0454502c65a78",
+        "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+        "destination": "_bytes.py",
+        "integrated_body_sha256": "832019d5aeacc186ec62cb67c3f93bb940dc91e95ad42f987eb0454502c65a78",
+        "body_changed": false
+      },
+      {
+        "source": "deps/sealed_operation.py",
+        "definition": "integer",
+        "sha256": "093e25418c5669850ab87d03598e02e6185c1d9e0624dbe9af772c2c2f22f128",
+        "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+        "destination": "_bytes.py",
+        "integrated_body_sha256": "093e25418c5669850ab87d03598e02e6185c1d9e0624dbe9af772c2c2f22f128",
+        "body_changed": false
+      },
+      {
+        "source": "deps/sealed_operation.py",
+        "definition": "encoded",
+        "sha256": "064d94b774ddf35b46ffec56d0d808aa1ad79e948a342e4fd6aa6cb49cd301c0",
+        "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+        "destination": "_bytes.py",
+        "integrated_body_sha256": "064d94b774ddf35b46ffec56d0d808aa1ad79e948a342e4fd6aa6cb49cd301c0",
+        "body_changed": false
+      },
+      {
+        "source": "deps/sealed_operation.py",
+        "definition": "digest",
+        "sha256": "4a435e3d31281672ea620f80b4d1f547182ef6e909be47d666072a009233b46b",
+        "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+        "destination": "_bytes.py",
+        "integrated_body_sha256": "4a435e3d31281672ea620f80b4d1f547182ef6e909be47d666072a009233b46b",
+        "body_changed": false
+      },
+      {
+        "source": "deps/sealed_operation.py",
+        "definition": "regular",
+        "sha256": "51dcfad5734faedc96c568b73831a38cc826f1b81badc7552b1b65122953db9b",
+        "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+        "destination": "_bytes.py",
+        "integrated_body_sha256": "51dcfad5734faedc96c568b73831a38cc826f1b81badc7552b1b65122953db9b",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "bounded",
+        "sha256": "e841389c2d2f235e962b4ba54cb5e27f3ab38c0a9c486ba39b25e04d80325e3c",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "e841389c2d2f235e962b4ba54cb5e27f3ab38c0a9c486ba39b25e04d80325e3c",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "logical",
+        "sha256": "76e5255fe53e41ae37726861ee63b12308bd43a34661c621d1d1fe6d500f0ebf",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "76e5255fe53e41ae37726861ee63b12308bd43a34661c621d1d1fe6d500f0ebf",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "metadata",
+        "sha256": "e1771432d645a89185cc385164a72edba91c61a1bd949aec680d7db7c53a272a",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "e1771432d645a89185cc385164a72edba91c61a1bd949aec680d7db7c53a272a",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "scan",
+        "sha256": "bfe724dd66a9d319b325f1400d389fe1da096a36c5c786af7fdfda0ecd975197",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "bfe724dd66a9d319b325f1400d389fe1da096a36c5c786af7fdfda0ecd975197",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "list_bounded",
+        "sha256": "2e6df09592748e26400a8d440a3de0d7a1904c134a5eb1008ce248d6e22d74c2",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "2e6df09592748e26400a8d440a3de0d7a1904c134a5eb1008ce248d6e22d74c2",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "header",
+        "sha256": "fb15466421543c5cbf7b3b83186c3031a355185be7cbb5c66cad58f34e6b651c",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "fb15466421543c5cbf7b3b83186c3031a355185be7cbb5c66cad58f34e6b651c",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "align",
+        "sha256": "44b6a170e695cc9878aa0337804c8ff99d49f61bd34c510ea421b56388af85f6",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "44b6a170e695cc9878aa0337804c8ff99d49f61bd34c510ea421b56388af85f6",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "validate_plan",
+        "sha256": "94fb13fea75f6992fe934c6eb24cd476357f434f2e7249d31eb5bd73e58d054c",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "94fb13fea75f6992fe934c6eb24cd476357f434f2e7249d31eb5bd73e58d054c",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "AuditBudget",
+        "sha256": "86a5b5051c0c7d4e6cb03b577eba617a9b474f8a412fe2953fafb9850a888bbb",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "86a5b5051c0c7d4e6cb03b577eba617a9b474f8a412fe2953fafb9850a888bbb",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "RetainedMemberView",
+        "sha256": "5e78fd061b40f6e23aef7e95704387ee70ae2fba9b5ae36f190edf01a634cae4",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "5e78fd061b40f6e23aef7e95704387ee70ae2fba9b5ae36f190edf01a634cae4",
+        "body_changed": false
+      },
+      {
+        "source": "deps/retention_pack.py",
+        "definition": "VerifiedPack",
+        "sha256": "ecc5e45fd353d854ace6c59d9a8af9ce5581a1a46cb3a14763728c61105f01a4",
+        "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+        "destination": "_pack.py",
+        "integrated_body_sha256": "ecc5e45fd353d854ace6c59d9a8af9ce5581a1a46cb3a14763728c61105f01a4",
+        "body_changed": false
+      },
+      {
+        "source": "deps/directory_sync.py",
+        "definition": "sync_directory",
+        "sha256": "0dab442f78bea833d8f4df0474abe21e3fada0f29c05630a2b1363788935e703",
+        "original_file_sha256": "ded4a8f0a1c584f5589c536ea9f8379287384d1e0cac356bfc2255412810afc2",
+        "destination": "_sync.py",
+        "integrated_body_sha256": "692c9676611548349b1b7c34b45276c7d13772877d7c53cad09528b2d9001ecb",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "enc",
+        "sha256": "cdac8935da06f3e1b70d223d581a69848f82ef4d8bb866ccc81e343f751056d8",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "9bb1aba5781bf7fcd0914adc94ddab2143d8d085c9935ad5af8d176b07c93062",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "digest",
+        "sha256": "cd201b808d2b3879f6d3e83e3662b2304f838b9ad5b7c16aacba0a0ae4cc9f1a",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "0fb5773c944ae945a8a54b8afa39d8be8544adcdcc1f517430f13e38a6d7b4cd",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "sha",
+        "sha256": "f9b071abb3538be7339e409f9c8fb6745d0cf4c8c85dab91c9525df618973e1a",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "5bcda7df306aba00d27df7486b9d95fc3e30ac05f26ec46da40561e9581e7ca2",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "integer",
+        "sha256": "c79537e43157a84d124726d64849c6c0639348f3a3802bbb302574010507fd3e",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "fd30ba825623c0ff496fe591a554690ce5c6a21015cf26b149407c1985b18936",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "keys",
+        "sha256": "801530653d7de1dfaf59575a55bbb3acddd489dc208ed8ea042acbadeac6329f",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "21f8ada928071575ed987adb80c4eaa848b9f6b39d5d5126c32b2ef339fbf498",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "source",
+        "sha256": "4df6292864eab6d8714ab8d7906c9ad1cd30a5a7647557b4d1dd8de468345f61",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "edf1a22b8db8f7bc40e652db5d76e90fab18b938766cdf4243c250597e663028",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "audit_cost_bound",
+        "sha256": "935fef570fd1fd75be8238493970104df7eb1131b4b04b10f8b20f289ad2baad",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "dee99e90094d0b2e9dc4f1b9aa69787001e94b56a4ee1c53e6bce09a338c99de",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "closure",
+        "sha256": "e7d779005f9c22710540835881c59f16c9839e1f54f395c1e88fa48d9ea0c95c",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "13b5b08d9a3caf1caccfaff7b10a9caebaaf89e6db7a033c7f5d4619fefaa9c5",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "manifest",
+        "sha256": "00c9a98ff67d1470a61e8f48018724ce296ebfa0fff9e612ca45f38a263ece33",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "739e8bcda85ebf1d21de1df00902562f9af8ea224c9a981f41b24fabf1831595",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "validate",
+        "sha256": "0bdcd8da2d73def0232edb1aca7aee4c135fbb449c8431cf8957631cc0217c5d",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "559236b30008c9ee9162ce1cdd9c242fa624f375ade0702e4051e0279580bc24",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "request",
+        "sha256": "17ffe466114852f73b5c3cd3e9239dde9f0b3e4f2f7df61a96409cf0e2b6bde1",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "ee825c6d8777af34d66f434dbb563507013b6f91ac261b4f8f1abf4b4857d300",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "authorization",
+        "sha256": "bf99e119d585f6cfc3e303e048108a2362eb24a300ff05ea2d1dd69cd5ce679a",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "846f779c9d3e5a57efc51b3612c8409283c3979cc5b21f965005ab60df004b6c",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "admission",
+        "sha256": "553018faa39824d5af94d073ee11618ee1b49fadb07afa5186c878f98d98807a",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "ce26bbd0c22f33ffec32d6c284637fd37922d5f49fc886ba17868eeb2a38f2b3",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "Meter",
+        "sha256": "c4d10e76d9153cffae5a250eca1ff5cdfc5e19b16f0ce4552835101ddcd2c77d",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "92ef1772a76e84831484d9d03106f227765d668fd9b6b04e8fb3033463512966",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "audit_for",
+        "sha256": "74b506176f8fdfd4646e22e292e19c99e26868b877f2b904898d46d11dac1b62",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "8710a6dd3eea33d113f157583e58d39fa80b199282dfb68d7d09078aeb00c1fd",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "composite",
+        "sha256": "519540b02afdb6b4aba62b569193320079335eccfef4b2c45a71827b85300461",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "e469a4c3a18110687ebaa01546f4c6193be007ee6a58e5a5ecdedf0fd38a5d28",
+        "body_changed": true
+      },
+      {
+        "source": "failed_forensic_retention_v1.py",
+        "definition": "semantic_reader",
+        "sha256": "ea65716c6641424bd948384c80740a6e970a5d3163ff2d4c7a96cc9e0dc3c712",
+        "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+        "destination": "protocol.py",
+        "integrated_body_sha256": "aa45c66171022a94f1df68dc4a33e68ce50b93443e1eb6f0eb6dffea4eb80cfd",
+        "body_changed": true
+      }
+    ],
+    "retained_failure": "External attempt02 IndentationError, no tests run. Original controller-source-failed-attempt02.py.txt and source-check-attempt02-failure.log remain at the immutable prototype location; not repaired or relabeled.",
+    "excluded": [
+      "prototype FakeStore/FakeDocker/FakeLifecycle/SyntheticArchive",
+      "semantic evaluators, parent controllers, original author admission",
+      "retirement-blocked prototype Controller"
+    ],
+    "import_closure": "Only Python stdlib and same-package extracted primitives. TaskStore adapter loads current same-checkout tools/task.py explicitly; no parent admission override.",
+    "research_design_author": "01a1ab4c-4786-7472-bdb7-59c35c310347",
+    "review_history": {
+      "original_base": "2b2fd47febdbd18dc087457781b6c146d3671f26",
+      "R1_packet": "b92a03691b797c7bf295e7082f71237e31780f675ef5b4c8a07f636a44103803",
+      "planned": 2,
+      "hard_ceiling": 3,
+      "implementation_review": "R3 not issued by this source artifact; coordinator verification required first",
+      "R2_packet": "bf6b0145418bf244205ecb302a52dc896c0b7e0afb293f0480d85b89da278696",
+      "R2_source": "1101dda0337c225b0befb7d14310ab0acab96ded",
+      "R2_result": "both nonauthor reports blocked; all eight finding keys retained; combined author corrections pending final-tree qualification and independent review",
+      "issued": 2
+    },
+    "test_support": {
+      "handoff_sha256": "82f57a92d10f56b42527a30d96b13170439c24100883f494bf06523d1c4f5370",
+      "source": "forensic_fault_oracles.py",
+      "source_sha256": "08fc8f5ac6c11d1c5f19114d5777c5e04109d9dd21263c74a101ed7f6efe0334",
+      "definitions": [
+        {
+          "name": "snapshot",
+          "sha256": "c645537e61683fb20e803bb0e4ae796d42d94bee5fe4436a4fea5dc66e373890"
+        },
+        {
+          "name": "assert_reachable",
+          "sha256": "6f768fc207851467fb136fd089599130018972127c74572b6e0253420455b396"
+        }
+      ],
+      "status": "Author-supplied independent byte/metadata oracle; subject qualification is separate."
+    },
+    "local_adaptations": [
+      "Same-package imports replace external prototype runpy loader; only explicit primitive definition closure is imported.",
+      "Protocol adds complete parent-directory closure, sticky deadline refusal, complete-operation I/O estimate and explicit M01.17 versioned component admission.",
+      "Controller, actual filesystem/metadata store, genuine TaskStore lifecycle, production Docker transport, fixed worker and coordinator loader are new implementation; prototype fake controllers/stores/backends are not imported.",
+      "Author-local oracle definitions are embedded in the single owned test file; external self-controls are not counted as subject qualification."
+    ],
+    "integrated_source_inventory": [
+      {
+        "path": "tools/forensic_retention_v1/__init__.py",
+        "bytes": 81,
+        "sha256": "f14bdddaa973f1371de4286dede623fdd318aaddcd269a91a9300a3113fcb5ec"
+      },
+      {
+        "path": "tools/forensic_retention_v1/__main__.py",
+        "bytes": 6457,
+        "sha256": "bbf6593269191c4650ecc0310028afa9a5bdea9650b37e8c3ab713ebad259637"
+      },
+      {
+        "path": "tools/forensic_retention_v1/_bytes.py",
+        "bytes": 2481,
+        "sha256": "67ae6465ed4ee78ad99881b98b763f5de7bd9920bf337173aeb0cee1e6670df5"
+      },
+      {
+        "path": "tools/forensic_retention_v1/_pack.py",
+        "bytes": 15405,
+        "sha256": "ea4d0914fca2fde81524b2ff596ad093df418cb26311e31922543702d71c6f6f"
+      },
+      {
+        "path": "tools/forensic_retention_v1/_sync.py",
+        "bytes": 1512,
+        "sha256": "d406dade98d157fb3c4989709d26bea40777ed25e2199e4866c688075630959c"
+      },
+      {
+        "path": "tools/forensic_retention_v1/backend.py",
+        "bytes": 8430,
+        "sha256": "bca0cabe5216590081a3e593cd8985642200d90d3405eb9f4c767eecdf5ddbc7"
+      },
+      {
+        "path": "tools/forensic_retention_v1/capture.py",
+        "bytes": 2302,
+        "sha256": "2d76ab2dde4a69f0e9ab0712637f2e5846920209e4ec50a69a9aeb96b443bf58"
+      },
+      {
+        "path": "tools/forensic_retention_v1/controller.py",
+        "bytes": 22782,
+        "sha256": "a8bc079b2496a4a6641cb67d60927bfceb5959aced34b7e5271dfebdebd70033"
+      },
+      {
+        "path": "tools/forensic_retention_v1/lifecycle.py",
+        "bytes": 14564,
+        "sha256": "083cd72310df6480aea023f18810addeea60d352ca0db5d6024e8c3471833340"
+      },
+      {
+        "path": "tools/forensic_retention_v1/protocol.py",
+        "bytes": 9237,
+        "sha256": "d975b535a556e80f9c643d19ee0a015573b43c9b0e94bf385e9e8c1cf48247f8"
+      },
+      {
+        "path": "tools/forensic_retention_v1/storage.py",
+        "bytes": 12765,
+        "sha256": "aa529f75fdcc4cce2711db19f0f8f28283a861549ddf124d1a85b8d8973a5941"
+      },
+      {
+        "path": "tools/forensic_retention_v1/worker.py",
+        "bytes": 2261,
+        "sha256": "bf95a7db43121a64c72e45f044c8e0e7d6461a1c7860a3da15746f26a4708030"
+      },
+      {
+        "path": "tools/forensic_retention_v1/README.md",
+        "bytes": 12938,
+        "sha256": "5969a6181f65b9cc4cbfe7471c2b4abe319e79a0787e91146878dca2e5711e4c"
+      },
+      {
+        "path": "tools/tests/test_forensic_retention_v1.py",
+        "bytes": 59591,
+        "sha256": "165933cca9640ff53b7dc92f55e947b18e22dce4e5ec37a4922720e9ff415700"
+      }
+    ],
+    "inventory_scope": "All component Python, README and owned test bytes; PROVENANCE.json itself is bound by the frozen Git tree, avoiding a self-hash cycle.",
+    "r2_regression_support": {
+      "handoff_sha256": "1498ccfccead64b3c9c87bf7760844979e5d39acb9a2b01b2f6c0dbec53170ab",
+      "author": "01a1ab9f-fde6-7952-9877-efb2fce35b9c",
+      "scope": "Author support only; independently adapted controls, not counted as external qualification; contributor excluded from self-review."
+    },
+    "combined_r2_corrections": [
+      "Bind executing package, admitted task API, controller and worker mount to one clean checkout, including loaded module origins.",
+      "Reaffirm surviving affected parent directories before acknowledging recovered deletion prefixes or completing.",
+      "Stream bounded preparation publication enumeration under the original preparation deadline.",
+      "Reserve combined stdout/stderr reads durably in the existing TaskStore claim before consumption; retain failed/unknown/recovery debt.",
+      "Keep durable completion tentative and require deadline observations after terminal publication and lifecycle finalization before returning success."
+    ]
+  },
+  "research_memo_sha256": "f3db3acaf7b62a185ecac3606f43c05d2f20d7aec3307a5a6e2a197a97ce8791",
+  "preservation": {
+    "source_and_claims": "M01.08 and M01.17 remain frozen and resource-unallocated as before; no stored packets, reports, counters or resources modified.",
+    "parent_head": "4199068d1665dbce9f47df66d0b6d422ba16de40",
+    "parent_tree": "f106070b3ec964df854affd3b24e4f19307741ab",
+    "parent_issued": 0,
+    "whole_M01_M08_product_edges_unchanged": true,
+    "older229_PAIRS_AUTH_new15_M02_10_unchanged": true,
+    "historical_ARM_cause": "unconfirmed; operational disposition is separate"
+  },
+  "future_composite_rule": "Only actually accepted distinct M01.18/19/20/21 and the exact unchanged original predicates can support composite disposition; never original gate clearance/R4/reset or a renamed repair."
+}
