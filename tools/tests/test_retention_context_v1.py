@@ -143,6 +143,8 @@ class CodecControls(unittest.TestCase):
         self.assertEqual(len(encode('x'*(1048576-2))), 1048576)
         with self.assertRaises(Refused):
             encode('x'*1048576)
+        with self.assertRaisesRegex(Refused, 'aggregate-string-bound'):
+            encode(['x'*524288]*3)
 
     def test_strict_decode(self):
         for raw in [b'', b'{"x":1,"x":2}', b'{ "x":1}', b'NaN', b'1.0', b'\xff',

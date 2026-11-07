@@ -33,9 +33,10 @@ def pin(value):
 
 def bounded(value):
     nodes = 0
+    string_characters = 0
 
     def walk(item, depth):
-        nonlocal nodes
+        nonlocal nodes, string_characters
         nodes += 1
         need(nodes <= MAX_NODES and depth <= MAX_DEPTH, 'object-bound')
         if type(item) is dict:
@@ -47,6 +48,11 @@ def bounded(value):
             for child in item:
                 walk(child, depth+1)
         elif type(item) is str:
+            # Every canonical string contributes at least its character count
+            # in UTF-8 bytes. Refuse aggregate oversized graphs before scanning
+            # each character or asking the encoder to allocate their output.
+            string_characters += len(item)
+            need(string_characters <= MAX_BYTES, 'aggregate-string-bound')
             need(len(item) <= MAX_BYTES and not any(0xD800 <= ord(c) <= 0xDFFF for c in item), 'string-bound')
         elif type(item) is int:
             integer(item, -(2**63))
