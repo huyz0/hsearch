@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tools.retention_context_v1 import (
     CursorPool, CursorProof, Domain, LinuxClock, Original, Receipt, Refused,
@@ -83,6 +83,26 @@ class DiagnosticAuthority:
         if directory:
             return CursorProof(P, 'e'*64, 255, 8192, 1114112, 24, 24)
         return Domain(facts['boot'], facts['namespace'], P, 'f'*64)
+
+
+class InventoryClock:
+    """Test-only ticks for inventory/accounting, with live domain verification.
+
+    This clock does not qualify Linux clock stability. Every fixture owns one
+    instance shared by its original context, session and discovery pools.
+    """
+    def __init__(self, authority):
+        self.authority = authority
+        self.tick = 0
+
+    def bind(self, operation, source, request):
+        if hasattr(self.authority, 'bind'):
+            self.authority.bind(operation, source, request)
+
+    def sample(self):
+        domain = self.authority.verify(observe_host())
+        self.tick += 1
+        return Sample(self.tick, self.tick, self.tick, domain)
 
 
 class PortableRealTestClock:
@@ -306,7 +326,7 @@ def component_admission_fixture(build=None):
                             (mount,), '2'*64)
 
 
-def observed_cursor_fixture(case):
+def observed_cursor_fixture(case, *, inventory_clock=False):
     # Qualified CI uses the production authority for real cursor controls.
     # Out-of-profile developer hosts retain explicitly diagnostic tests.
     facts = observe_host() if sys.platform == 'linux' else None
@@ -314,10 +334,76 @@ def observed_cursor_fixture(case):
         guardian, authority = LinuxHostProfile.start_guardian(P, P, P, P, admission=component_admission_fixture())
         case.addCleanup(guardian.close)
         clock = LinuxClock(authority)
+        if inventory_clock:
+            # These positives qualify FD inventory/accounting, not real clocks.
+            # Retain the production authority's domain/profile and bind checks.
+            clock = InventoryClock(authority)
         original = Original.begin(P, P, P, clock, 1200000000000)
         session = Session.publish(original, MemoryStore(), clock)
         return session, authority
+    if inventory_clock:
+        authority = DiagnosticAuthority()
+        return fixture(clock=InventoryClock(authority), duration=1200000000000)[3], authority
     return fixture(duration=1200000000000)[3], DiagnosticAuthority()
+
+
+class InventoryClockControls(unittest.TestCase):
+    def test_one_clock_is_shared_by_original_session_and_pools(self):
+        authority = Mock()
+        authority.verify.return_value = DOMAIN
+        with patch(__name__+'.observe_host', return_value={'synthetic': True}):
+            clock = InventoryClock(authority)
+            _, store, original, session = fixture(clock=clock)
+            self.assertIs(session.clock, clock)
+            ports = [CursorPool(session, DiagnosticAuthority(), 67108864, 96, scope=scope)
+                     for scope in ('archive', 'source')]
+            session.reserve(raw_bytes=16, audit_bytes=100, rescans=1)
+            for port in ports:
+                self.assertIs(port.session.clock, clock)
+                port.session.check()
+                port.close()
+            self.assertEqual(original_from_raw(store.raw), asdict(original))
+            self.assertEqual(session.credits(), dict(raw_bytes=16, raw_reservations=1,
+                                                    audit_bytes=100, rescans=1))
+            self.assertGreater(clock.tick, original.start.monotonic_ns)
+            self.assertEqual(clock.sample().domain, DOMAIN)
+            authority.bind.assert_any_call(P, '1'*64, '2'*64)
+
+    def test_inventory_domain_refusal_remains_sticky_for_fresh_handle(self):
+        authority = Mock()
+        authority.verify.return_value = DOMAIN
+        with patch(__name__+'.observe_host', return_value={'synthetic': True}):
+            clock = InventoryClock(authority)
+            _, store, original, session = fixture(clock=clock)
+            authority.verify.return_value = replace(DOMAIN, boot='0'*64)
+            with self.assertRaisesRegex(Refused, 'clock-domain'):
+                session.check()
+            self.assertTrue(session.poisoned)
+            self.assertTrue(decode(store.raw)['denied'])
+            authority.verify.return_value = DOMAIN
+            with self.assertRaisesRegex(Refused, 'terminal-denial'):
+                Session(store, clock, digest(asdict(original)))
+            self.assertEqual(original_from_raw(store.raw), asdict(original))
+
+    def test_default_real_clock_path_and_explicit_inventory_mode(self):
+        guardian, authority = Mock(), Mock()
+        authority.verify.return_value = DOMAIN
+        live_clock = FixedClock()
+        facts = dict(python='3.11.2 fixture', libc='glibc 2.36')
+        with (patch.object(sys, 'platform', 'linux'),
+              patch(__name__+'.observe_host', return_value=facts),
+              patch(__name__+'.component_admission_fixture', return_value=object()),
+              patch.object(LinuxHostProfile, 'start_guardian', return_value=(guardian, authority)),
+              patch(__name__+'.LinuxClock', return_value=live_clock) as live):
+            session, returned_authority = observed_cursor_fixture(self)
+            live.assert_called_once_with(authority)
+            self.assertIs(session.clock, live_clock)
+            self.assertIs(returned_authority, authority)
+            controlled, returned_authority = observed_cursor_fixture(self, inventory_clock=True)
+            self.assertIsInstance(controlled.clock, InventoryClock)
+            self.assertIs(controlled.clock.authority, authority)
+            self.assertIs(returned_authority, authority)
+            authority.bind.assert_any_call(P, P, P)
 
 
 def close_pool_fixture(case, pool):
@@ -1243,7 +1329,7 @@ class DiscoveryScopeControls(unittest.TestCase):
         if sys.platform != 'linux':
             with self.assertRaises(Refused): observe_host()
             return
-        session, authority = observed_cursor_fixture(self)
+        session, authority = observed_cursor_fixture(self, inventory_clock=True)
         pool = CursorPool(session, authority, 4294967296, 96)
         with tempfile.TemporaryDirectory(prefix='archive-rescan-scope-') as tmp:
             for i in range(2050):(Path(tmp)/str(i)).touch()
@@ -1263,7 +1349,7 @@ class DiscoveryScopeControls(unittest.TestCase):
         if sys.platform != 'linux':
             with self.assertRaises(Refused): observe_host()
             return
-        session, authority = observed_cursor_fixture(self)
+        session, authority = observed_cursor_fixture(self, inventory_clock=True)
         pool = CursorPool(session, authority, 4294967296, 96, scope='source')
         with tempfile.TemporaryDirectory(prefix='source-10000-') as tmp:
             for i in range(10000):(Path(tmp)/str(i)).touch()

@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "task": "M01.20",
+  "status": "SOURCE CANDIDATE; HOST controls only; no native/component/task/operation acceptance",
+  "author_session": "01a1ab9f-fde6-7952-9877-efb2fce35b9c",
+  "claim": "m01-20-5549217526f4",
+  "base": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+  "owned_paths": [
+    "tools/opaque_retention_image_v1",
+    "tools/tests/test_opaque_retention_image_v1.py"
+  ],
+  "copied_complete_implementation_bodies": [],
+  "copied_review_test_bodies": [],
+  "added_dependencies": [],
+  "accepted_direct_imports": [
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/codec.py",
+      "bytes": 3793,
+      "sha256": "f7bb268bb7db338877d1ff0ba0f771efabe7ab63b797152a4192adeb724c13e9",
+      "definitions": [
+        {
+          "name": "Refused",
+          "line": 10,
+          "body_sha256": "aaffb1d535f381fd087af77c4b42cfde932e56c9061f8a1157997882e5b72aba"
+        },
+        {
+          "name": "need",
+          "line": 14,
+          "body_sha256": "3223c13ae890e089aafd503c97a1dba4044645024ebd0ea81effd31022bc4a58"
+        },
+        {
+          "name": "integer",
+          "line": 19,
+          "body_sha256": "71650ba2013360234dc44360e6350c2e872e8295cf017a05a76f9cba08d995d1"
+        },
+        {
+          "name": "fields",
+          "line": 24,
+          "body_sha256": "74c767cf47f83b120cd1d8e54e374228163e8f34120ee13adc820b83c45e2dd8"
+        },
+        {
+          "name": "pin",
+          "line": 28,
+          "body_sha256": "15adb9aba3abbc1fc12be6774f29e6beff7e2de7e4716861ab52ab987ec01d3c"
+        },
+        {
+          "name": "encode",
+          "line": 64,
+          "body_sha256": "d25355e4cb381f4cd53adf2dba657fae94a40d412ddbd08ed64f21d0d2e8fdc9"
+        },
+        {
+          "name": "decode",
+          "line": 75,
+          "body_sha256": "c2dfe1b6e886697d5b448e9ff102f87df07863896de8cdf29caceaf822f86310"
+        },
+        {
+          "name": "digest",
+          "line": 120,
+          "body_sha256": "a725c1d7a71fc500407806c05cf42833597e08ce8957453070082a04feb13558"
+        }
+      ],
+      "adaptation": "Direct import; source unchanged"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/context.py",
+      "bytes": 9241,
+      "sha256": "7a6e382c408081542666059321db10303a41c70bc167901be5e92f96a8fe7d5e",
+      "definitions": [
+        {
+          "name": "Original",
+          "line": 43,
+          "body_sha256": "1fff4bb373785a7bd235437c955abf6f89bdc165daf0f1c961dfc63e31c3b892"
+        },
+        {
+          "name": "Session",
+          "line": 132,
+          "body_sha256": "16aa039ca306e07b18c6eda1ba2a28fae1170b6ace0a01be6509887f4d52e702"
+        }
+      ],
+      "adaptation": "Direct import; source unchanged"
+    }
+  ],
+  "accepted_package_import_closure": [
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/PROVENANCE.json",
+      "bytes": 5090,
+      "sha256": "0ecfd53b6a63d0d003e27336b8f21a6ab4e4b1a3afc2d03a92d9a7e21fc09649"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/README.md",
+      "bytes": 13913,
+      "sha256": "8f56ee61d88445574f0e94b18503c1f901a8ae3b6f523c00a1a8eb8c89b97858"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/__init__.py",
+      "bytes": 768,
+      "sha256": "feb0b48a60d362994e1f72ff7de9e7c59fddfc75128a9b57b89577d54dda0dc6"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/codec.py",
+      "bytes": 3793,
+      "sha256": "f7bb268bb7db338877d1ff0ba0f771efabe7ab63b797152a4192adeb724c13e9"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/context.py",
+      "bytes": 9241,
+      "sha256": "7a6e382c408081542666059321db10303a41c70bc167901be5e92f96a8fe7d5e"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/guardian.py",
+      "bytes": 9192,
+      "sha256": "7fe574f518e3fa4b96082c6981ce289c71b1a1d9011a4ec9ebcb9a09ab48f7f5"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/native.py",
+      "bytes": 17411,
+      "sha256": "b051d30b8e9941ac06c7314e1c43e9789c475b5b43d80fa0f6ebb4da433b1690"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "tools/retention_context_v1/profile.py",
+      "bytes": 9441,
+      "sha256": "948efcf6db6d534a73047ae2c6974f895691a8b687dd03f01f90d466d8e07b73"
+    }
+  ],
+  "source_derived_incoming_definitions": [
+    {
+      "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+      "path": "tools/forensic_retention_v1/_pack.py",
+      "bytes": 15405,
+      "sha256": "ea4d0914fca2fde81524b2ff596ad093df418cb26311e31922543702d71c6f6f",
+      "definitions": [
+        {
+          "name": "logical",
+          "line": 26,
+          "body_sha256": "76e5255fe53e41ae37726861ee63b12308bd43a34661c621d1d1fe6d500f0ebf"
+        },
+        {
+          "name": "metadata",
+          "line": 35,
+          "body_sha256": "e1771432d645a89185cc385164a72edba91c61a1bd949aec680d7db7c53a272a"
+        },
+        {
+          "name": "header",
+          "line": 73,
+          "body_sha256": "fb15466421543c5cbf7b3b83186c3031a355185be7cbb5c66cad58f34e6b651c"
+        },
+        {
+          "name": "align",
+          "line": 81,
+          "body_sha256": "44b6a170e695cc9878aa0337804c8ff99d49f61bd34c510ea421b56388af85f6"
+        },
+        {
+          "name": "RetainedMemberView",
+          "line": 135,
+          "body_sha256": "5e78fd061b40f6e23aef7e95704387ee70ae2fba9b5ae36f190edf01a634cae4"
+        },
+        {
+          "name": "VerifiedPack",
+          "line": 166,
+          "body_sha256": "ecc5e45fd353d854ace6c59d9a8af9ce5581a1a46cb3a14763728c61105f01a4"
+        }
+      ],
+      "destinations": [
+        "logical",
+        "Entry",
+        "header",
+        "align",
+        "Operation._verify",
+        "View"
+      ],
+      "adaptation": "Rewritten through admitted ports and M19 original Session. USTAR/schema/path and complete-byte verification concepts retained; no source-file traversal, local meter, parser/controller import or copied full class body.",
+      "acceptance": "Frozen M17 source is unaccepted at hard3; every derived incoming definition remains subject to full new-source independent review"
+    },
+    {
+      "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+      "path": "tools/forensic_retention_v1/protocol.py",
+      "bytes": 9237,
+      "sha256": "d975b535a556e80f9c643d19ee0a015573b43c9b0e94bf385e9e8c1cf48247f8",
+      "definitions": [
+        {
+          "name": "closure",
+          "line": 43,
+          "body_sha256": "13b5b08d9a3caf1caccfaff7b10a9caebaaf89e6db7a033c7f5d4619fefaa9c5"
+        },
+        {
+          "name": "composite",
+          "line": 125,
+          "body_sha256": "e469a4c3a18110687ebaa01546f4c6193be007ee6a58e5a5ecdedf0fd38a5d28"
+        }
+      ],
+      "destinations": [
+        "HISTORY",
+        "plan",
+        "composite"
+      ],
+      "adaptation": "Exact public failed-history facts, selected scope/metadata and composite-accounting formula retained. New canonical versioned component format; no old manifest/approval/admission/controller or clock code imported.",
+      "acceptance": "Frozen M17 source is unaccepted at hard3; every derived incoming definition remains subject to full new-source independent review"
+    }
+  ],
+  "frozen_provenance_record": {
+    "head": "c0a0050c600c55c0c3825aa23bb4cc6c9edd19f8",
+    "path": "tools/forensic_retention_v1/PROVENANCE.json",
+    "bytes": 23620,
+    "sha256": "ca966fc56b40d04b9016377aa8fcdf20a1a0f6b3682ac843aa28af6e99a9bbcd"
+  },
+  "contract_inputs": [
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "docs/plan/tasks.json",
+      "bytes": 196696,
+      "sha256": "95bcaddea4a9fda73f4af1be8257b2db9aaebd765768c90e458072ef96b39cdb"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "docs/plan/forensic-retention-redesign.md",
+      "bytes": 24108,
+      "sha256": "237434080e2663ad6ca3ee9b34db1eacff2c16a4b4478072c456ec161b136d81"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "docs/plan/evidence/m01-18-acceptance-bridge.json",
+      "bytes": 26826,
+      "sha256": "8b7e5ec4ed0228093732619a36da3fdaffee835b4b7d7e9e7acd054347a49131"
+    },
+    {
+      "head": "5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123",
+      "path": "docs/plan/retention-context-native-contract.md",
+      "bytes": 10966,
+      "sha256": "b341cfeda4ef6b787c9941869c848e4f47c02075b5f284d9be92a4b96637b06a"
+    }
+  ],
+  "all_known_contributors_excluded_from_own_review": [
+    "01a1ab9f-fde6-7952-9877-efb2fce35b9c",
+    "01a1ad0c-a57c-7462-9adc-44dda960885a",
+    "01a1ab64-5beb-7431-b3f9-bea4a729c0d6",
+    "01a1ab64-1401-7740-9cd1-5320979e293b",
+    "01a1aca2-3b0e-7503-9b7c-a9a44b91aeb9",
+    "01a1ab4c-4786-7472-bdb7-59c35c310347",
+    "01a1ab60-4bff-7752-9544-a9eab0fca10a"
+  ],
+  "author_inventory_limit": "Retain these inherited contributors and any additional incoming contributors. This list is not independent approval or a certification of exhaustiveness.",
+  "standard_library_imports": {
+    "production": [
+      "dataclasses",
+      "hashlib",
+      "pathlib.PurePosixPath",
+      "tarfile",
+      "threading",
+      "unicodedata",
+      "typing.Protocol"
+    ],
+    "test_only": [
+      "ast",
+      "copy",
+      "io",
+      "json",
+      "pathlib",
+      "sys",
+      "unittest"
+    ],
+    "source": "Python standard library; no vendored library bodies or new dependency/toolchain pins. Existing repository runtime/toolchain policy remains authoritative."
+  },
+  "license_status": "No hsearch redistribution license selected; public visibility is not a reuse grant. Existing repository definitions are retained internal project work with provenance, not a new external grant. Python stdlib remains under its upstream license; no stdlib body is vendored.",
+  "preserved": "M17 blocked gate/reports/counters and eleven clauses; M08 source/history/ownership/trial gates; engine publication hold; shared caps and original credits.",
+  "unqualified": "Native x64/ARM, real port/host boundaries, actual FFF conservation, physical durability, full operation graph, production coverage, two final independent roles, CI/protected integration and parent/product acceptance."
+}
