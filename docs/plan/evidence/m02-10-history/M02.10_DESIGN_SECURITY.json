@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "task_id": "M02.10",
+  "kind": "independent pre-implementation design precheck",
+  "role": "architecture_security",
+  "reviewer_session": "/root/sandbox_security_review",
+  "overall_round": 1,
+  "formal_issued": 0,
+  "maximum_formal_rounds": 2,
+  "hard_overall_ceiling": 3,
+  "proposal_sha256": "49ce2032d8257b7270850ec7d01ee99824e755488feacd1f8356381cd30e7556",
+  "base": "f9d15ccb1ecffe369ef2da05c9fc59d11b3ff597",
+  "tree": "04dad82d441a23361e9f8287f5c74fefd642eb22",
+  "source_digest": "9f562dbfe3c0dd0fa154990917fd84334262482097a1b7d2ff803569d95f7606",
+  "public_review_base": "b19074d3022694b6180f115c875f9883c1ac9425",
+  "conclusion": "No new blocking design defect found within stated research scope. V2 source/license inventory independently checked; concrete implementation constraints, final graph equivalence and exact native build-tool qualification remain. Not implementation clearance.",
+  "blocking_findings": [],
+  "implementation_constraints": [
+    {
+      "id": "M210-SEC-C01-PERSISTENCE-ORDER",
+      "kind": "implementation constraint",
+      "priority": "P3",
+      "proposal_lines": [
+        9,
+        10,
+        36,
+        38,
+        40
+      ],
+      "requirement": "Freeze an explicit per-candidate persistence/apply/recovery trace rather than treating append readability, persisted acknowledgement and applied progress as one state. Keep each node IO-failed until explicit restart; reject malformed/truncated persisted state without fresh-cluster fallback.",
+      "evidence": "OpenRaft storage/v2.rs43-48,74-79,108-129,162-201,226-255 require serialized vote/log IO, readable append at return, persistence before successful callback, and last-applied/membership snapshot state. raw_node.rs197-225,645-710 separates persisted messages, advance, advance_append and advance_apply; advance already calls advance_apply_to. LightReady.commit_index249-254 explicitly need not be stored durably.",
+      "counterexample": "A Ready contains committed entry1; the adapter persists it and calls advance before actual application. The library applied index becomes1 while the application is still0. Checking only library progress could falsely accept this. Similarly a callback-success marker before file sync is not persistence.",
+      "alternative": "Either apply/persist Ready committed entries before advance, or use advance_append after persistence then apply Ready+LightReady committed entries in order and advance_apply_to the actual applied index. Persist a recoverable consistent state/applied-ID/membership tuple (or a valid snapshot+replay cut); use independent trace/file evidence and separate corruption/error controls. Conservative extra syncs are allowed but must be counted as adapter policy, not mandatory candidate cost.",
+      "status": "Normative source constraints recognized; no native adapter exists and no violation observed."
+    },
+    {
+      "id": "M210-SEC-C02-COMPARISON-DOMAINS",
+      "kind": "accounting clarification before fixture freeze",
+      "priority": "P3",
+      "proposal_lines": [
+        24,
+        26,
+        28,
+        30,
+        32,
+        48
+      ],
+      "requirement": "Declare the mapping from16 streams/four tenants/two policy classes to compatible batching lanes, physical quorum clusters, entries, files and modeled encrypted segments. Keep those denominators separate. Every batch must contain one compatible tenant/key class even if a physical research cluster serializes distinct classes.",
+      "evidence": "Proposal says compatible grouping but also one three-voter cluster per workload. Architecture logical identities and security.md journal/packing rules distinguish authority/policy domains from physical replication and require separate per-voter segment identities when application log encryption is modeled.",
+      "counterexample": "Two tenant/key classes can use one physical cluster, but that alone does not allow one shared DEK/segment policy. Under a per-voter application-encrypted model, three physical voter files with a single mixed-policy segment cannot be charged as three compatible wrapping units instead of six separate policy/voter segments. These are conditional modeled counts; actual KMS remains0.",
+      "alternative": "Freeze independent compatible batch/segment ledgers on a shared physical cluster and explicitly report pooling effects, or run separate per-class physical-cluster cases. If policies are not instantiated, omit modeled KMS savings and do not claim equivalent commit-domain or isolation costs. Bind root/page cadence and orphan/retry accounting to the declared lane/cluster mapping.",
+      "coordinator_clarification": "Parent states batches will each contain one tenant/key class in one physical research cluster, no mixed-key batch or hsearch-domain/isolation acceptance. This clarification is not present in the frozen proposal and is not treated as implemented/fixed.",
+      "status": "Retain for concrete revised fixture/envelope and final source review; no observed mixed-tenant implementation."
+    },
+    {
+      "id": "M210-SEC-C03-CONTROLLER-CREDENTIALS",
+      "kind": "isolation and bounded evidence constraint",
+      "priority": "P3",
+      "proposal_lines": [
+        12,
+        16,
+        18,
+        20,
+        38,
+        44,
+        50
+      ],
+      "requirement": "Instantiate the existing host-owned controller/immutable-image/source rules for the new worker: independently admitted broker reservations, acknowledged exact CID before start, exact ownership on cleanup, retained uncertain outcomes, nonroot/no-swap/caps, bounded process group/deadline/output and actual aggregate scratch/free-space monitoring including caches and retained artifacts. No global policy weakening.",
+      "evidence": "Proposal explicitly adopts existing registry/source/resource controls, uses a dedicated private-network object worker and leaves upstream candidate code absent. Its scalar queue/message caps are logical-work limits, not a complete physical allocation/RSS bound.",
+      "counterexample": "An SDK error can include a signed Authorization header or credential-bearing request; a1MiB truncation does not redact its first bytes. A worker limited only on /target can also write an unmonitored mounted result/cache volume. Neither is excluded just by public fixture payloads.",
+      "alternative": "Mount only necessary public CA material and fixture access credentials read-only; never mount CA signing/server private keys or host/Docker sockets. Redact at the producer and allowlist method/public path class/status/byte counters, excluding signed headers/credentials. Preserve TLS verification/negative controls. Freeze raw artifact schema/count/byte quotas and sample every writable mount plus root before allocation/admission and throughout execution; keep build workers credential-free.",
+      "status": "Required implementation proof, not evidence of a present leak or resource escape."
+    },
+    {
+      "id": "M210-SEC-C04-TIMERS-AGGREGATE-BUDGET",
+      "kind": "measurement oracle constraint",
+      "priority": "P3",
+      "proposal_lines": [
+        24,
+        26,
+        28,
+        38,
+        48,
+        50
+      ],
+      "requirement": "Define first-dirty timer, zero-wait behavior, byte-trigger and final-drain semantics in the independent oracle, and make per-history versus total multi-group budgets explicit. Include retries/heartbeats/snapshot/membership and shutdown attempts in a single bounded ledger.",
+      "evidence": "The frozen144 object cases and18 quorum cases/candidate arithmetic is consistent.16 queues x32 entries is512 logical entries/512KiB payload, excluding encoding/copies.16 groups x4096 attempts is65,536 total attempts; applying each16MiB-history cap permits256MiB serialized traffic before copies. Neither is a measured RSS limit.",
+      "counterexample": "An event arrives490ms into a500ms offer window with250ms maximum wait. Flushing merely because the window ended gives10ms wait rather than the natural deadline740ms/250ms wait. A claimed general batching-latency gain would be a boundary artifact unless labeled and separately compared.",
+      "alternative": "Drain to the actual timer/byte deadline or label shutdown flushes as a distinct result; record planned versus actual offered/enqueued/sent/committed/applied times, admission and unresolved outcomes. Bound the complete history (not each attempt separately) to15s and the whole command to1200s. Freeze total1/4/16-group message/byte/retained-output quotas and report whole-process RSS/background work without extrapolating million-index capacity.",
+      "status": "Before-execution oracle/budget detail; no latency/resource result observed."
+    }
+  ],
+  "unresolved_prerequisites": [
+    {
+      "id": "M210-SEC-G01-DEPENDENCY-PREFLIGHT",
+      "status": "V2 prospective source/license inventory independently verified; actual final workspace graph/lock equivalence remains to qualify",
+      "evidence": "Strict M02.10_DEPENDENCY_PREFLIGHT_RAW.log stops at fxhash missing a bundled root license; raw SHA f7dd324f94c031ca95199da06c3fdce050d2e75db087d15703ad20bb3250755f; follow-up V2 SHA b659ce0eb0eb3ccad03018480e632a171d909600fd0e5a485fa621a90385132c and license artifact e468de4d78819e2e04ca4692cea9778ee707144a372cd2b23fd104849312354d:136 packages/91 decoded blobs/273 references verified against manifest/lock and hashes/Git IDs. Exact nonstandard registry source/header records match captured upstream source, with initial raw failure retained.",
+      "required": "Preserve initial failure; bind eventual imported workspace graph/lock to the reviewed prospective graph and audit any additional/unified dependency source/features/licenses before compilation. V2 is source/license inventory only, not redistribution/legal, build-tool or runtime clearance.",
+      "initial_status": "UNRESOLVED / blocks imports and builds"
+    },
+    {
+      "id": "M210-SEC-G02-NATIVE-CODEGEN",
+      "status": "UNQUALIFIED / before build",
+      "evidence": "Additional captured protobuf-build source get_protoc uses PROTOC, PATH version probing or an architecture-specific bundled native executable; src/protobuf_impl.rs captured Git blob63a9ee71bd70c0917dd2f5adfd905ce2bc8a6fa4. V2 additionally records exact x86_64/ARM ELF Git blob/SHA/size/machine receipts matching expected source input metadata, with executed=false. Reviewer did not rehash raw ELF bytes.",
+      "required": "Explicitly select and hash/target/version-check the source-inventoried PROTOC before Cargo compile; bind its environment/path and generated-cache identity per architecture, refuse ambient PATH/PROTOC substitution and stale generated outputs. No native tool, ABI or distribution-license bundle qualification is inferred from receipt metadata."
+    }
+  ],
+  "sound_boundaries": [
+    "Local candidate embedding and matched offered traces only; no selection of hsearch authority, persisted formats, independent failure domains, cloud TCO or a consensus invention.",
+    "Serialized local transport counts application payload bytes, not TCP/TLS/cross-zone traffic; request/response body counts likewise exclude network framing. Actual KMS0 and separately labeled models remain distinct.",
+    "Success with suppressed client reply remains unknown until same-identity resolution; cancellation/timeout never grants rollback or new-identity retry.",
+    "Graceful file reopen and actual sync calls do not establish SIGKILL/power-loss durability or native MemStorage persistence. Membership/snapshot branches and failures cannot be skipped.",
+    "Finite1/4/16 physical group observations cannot prove O(total-index) behavior, exact per-group allocation or million-index capacity. Fields and queue payload caps are not process RSS caps.",
+    "Full ordinary suites, both native architectures/profiles, three additional strict repetitions/profile/architecture, all M02.09 engine controls and unchanged90% production floors remain required. Testkit dev placement cannot remove binary inventory or production dependency proof.",
+    "Original whole-M01/M02.04/product gates, M01.09 cause UNCONFIRMED/M01.08 open and old review histories stay unchanged."
+  ],
+  "independent_evidence": {
+    "checks": "M02.10_DESIGN_SECURITY_CHECKS.json",
+    "checks_sha256": "35f92636df39e0e044060551d8df8c41c7fa5c76a323509df537dc012d6c4215",
+    "executable": "M02.10_DESIGN_SECURITY_CHECKS.py",
+    "immutable_source_records": 19,
+    "source_bookends_equal": true,
+    "native": "NOT_RUN",
+    "examples": "Source-contract and arithmetic counterexamples only, not observed behavior of nonexistent adapters.",
+    "preflight_followup": "M02.10_DESIGN_SECURITY_PREFLIGHT_CHECKS.py/.json",
+    "preflight_followup_sha256": "635c40227770b64349116d96940135afa5b255b46f837b2807e8bc4521a8da4a"
+  },
+  "limitations": "No source or review/task store edits, imports, Cargo/native/workspace selftest, resource/credential inspection, denied-path retries or GitHub approval. No final implementation packet/verdict or acceptance. Verified19 captured API/root-license blobs and now136 prospective lock packages/91 retained source-license blobs; actual final imported workspace graph and native build-tool execution remain unqualified. No legal or release redistribution opinion. Initial pre-V2 report retained byte-for-byte under before_v2 filenames."
+}

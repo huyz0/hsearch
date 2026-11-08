@@ -1,0 +1,191 @@
+{
+  "artifact_kind": "legacy-findings-and-resolution-status-index",
+  "not_a_review_verdict": true,
+  "status_semantics": "Historical reviewer statements only; null new_final_source_resolution requires actual later source-bound reviewer evidence, not an implementation claim.",
+  "keys": [
+    {
+      "legacy_key": "design-overall1:correctness_tests_claims:CAS_SCHEDULE_AND_ETAG_LINEAGE_AMBIGUOUS",
+      "key_kind": "External design-precheck namespace, not fabricated formal review_key",
+      "role": "correctness_tests_claims",
+      "priority": "P2",
+      "status": "substantively_repaired_per_original_R2_correctness_basis_not_new_source_acceptance",
+      "report_ref": "M02.10_DESIGN_CORRECTNESS.json",
+      "json_pointer": "/findings/0",
+      "R2_resolution_ref": {
+        "report_ref": "M02.10_R2_CORRECTNESS.json",
+        "json_pointer": "/basis",
+        "text_anchor": "Prior design CAS P2 remains substantively repaired"
+      },
+      "new_final_source_resolution": null
+    },
+    {
+      "legacy_key": "1:correctness_tests_claims:OBJECT_RAW_EXECUTION_PROVENANCE_UNCHECKED",
+      "source_packet": "96c998c90fb37f4922729623bac59782ae4741a3927bfdc9b76c422184ff6b07",
+      "role": "correctness_tests_claims",
+      "priority": "P2",
+      "location": {
+        "file": "verify_m02_durability_public.py",
+        "line": 143
+      },
+      "status": "reported_resolved_at_original_R2_not_final_new_source_acceptance",
+      "R2_resolution_refs": [
+        {
+          "report_ref": "M02.10_R2_CORRECTNESS.json",
+          "json_pointer": "/resolutions/0"
+        },
+        {
+          "report_ref": "M02.10_R2_SECURITY.json",
+          "json_pointer": "/resolutions/0"
+        }
+      ],
+      "new_final_source_resolution": null
+    },
+    {
+      "legacy_key": "1:correctness_tests_claims:MATCHED_ORACLE_ACCEPTS_UNCOMMITTED_APPLICATION",
+      "source_packet": "96c998c90fb37f4922729623bac59782ae4741a3927bfdc9b76c422184ff6b07",
+      "role": "correctness_tests_claims",
+      "priority": "P2",
+      "location": {
+        "file": "crates/testkit/research/native_failure_verify.py",
+        "line": 165
+      },
+      "status": "partially_resolved_still_blocking",
+      "R2_resolution_refs": [
+        {
+          "report_ref": "M02.10_R2_CORRECTNESS.json",
+          "json_pointer": "/resolutions/1"
+        },
+        {
+          "report_ref": "M02.10_R2_SECURITY.json",
+          "json_pointer": "/resolutions/1"
+        }
+      ],
+      "new_final_source_resolution": null
+    },
+    {
+      "legacy_key": "1:architecture_security:SEC01_EXITED_LEADER_GROUP_NOT_REAPED",
+      "source_packet": "96c998c90fb37f4922729623bac59782ae4741a3927bfdc9b76c422184ff6b07",
+      "role": "architecture_security",
+      "priority": "P2",
+      "location": {
+        "file": "crates/testkit/research/native_tools.py",
+        "line": 79
+      },
+      "status": "reported_resolved_at_original_R2_not_final_new_source_acceptance",
+      "R2_resolution_refs": [
+        {
+          "report_ref": "M02.10_R2_CORRECTNESS.json",
+          "json_pointer": "/resolutions/2"
+        },
+        {
+          "report_ref": "M02.10_R2_SECURITY.json",
+          "json_pointer": "/resolutions/2"
+        }
+      ],
+      "new_final_source_resolution": null
+    },
+    {
+      "legacy_key": "1:architecture_security:SEC02_HOST_COPY_QUOTA_CHECKED_AFTER_ALLOCATION",
+      "source_packet": "96c998c90fb37f4922729623bac59782ae4741a3927bfdc9b76c422184ff6b07",
+      "role": "architecture_security",
+      "priority": "P2",
+      "location": {
+        "file": "crates/testkit/research/native_controller.py",
+        "line": 123
+      },
+      "status": "reported_resolved_at_original_R2_not_final_new_source_acceptance",
+      "R2_resolution_refs": [
+        {
+          "report_ref": "M02.10_R2_CORRECTNESS.json",
+          "json_pointer": "/resolutions/3"
+        },
+        {
+          "report_ref": "M02.10_R2_SECURITY.json",
+          "json_pointer": "/resolutions/3"
+        }
+      ],
+      "new_final_source_resolution": null
+    },
+    {
+      "legacy_key": "1:architecture_security:SEC03_SNAPSHOT_OVERWRITES_APPLIED_MEMBERSHIP",
+      "source_packet": "96c998c90fb37f4922729623bac59782ae4741a3927bfdc9b76c422184ff6b07",
+      "role": "architecture_security",
+      "priority": "P2",
+      "location": {
+        "file": "crates/testkit/tests/durability/raft_rs.rs",
+        "line": 298
+      },
+      "status": "reported_resolved_at_original_R2_not_final_new_source_acceptance",
+      "R2_resolution_refs": [
+        {
+          "report_ref": "M02.10_R2_CORRECTNESS.json",
+          "json_pointer": "/resolutions/4"
+        },
+        {
+          "report_ref": "M02.10_R2_SECURITY.json",
+          "json_pointer": "/resolutions/4"
+        }
+      ],
+      "new_final_source_resolution": null
+    },
+    {
+      "legacy_key": "2:correctness_tests_claims:DURABLE_QUORUM_CAN_REUSE_UNRELATED_LOG_SYNC",
+      "source_packet": "b77a80c51fd00ae5c6ca0fbd3a80cf73158d8f3d66e564369d355d72c087cbc9",
+      "role": "correctness_tests_claims",
+      "priority": "P2",
+      "location": {
+        "file": "crates/testkit/research/native_commit_verify.py",
+        "line": 226
+      },
+      "status": "unresolved_blocking_at_frozen_hard3",
+      "report_ref": "M02.10_R2_CORRECTNESS.json",
+      "json_pointer": "/findings/0",
+      "new_final_source_resolution": null
+    },
+    {
+      "legacy_key": "2:architecture_security:SEC04_DURABLE_QUORUM_ACCEPTS_UNRELATED_SYNC",
+      "source_packet": "b77a80c51fd00ae5c6ca0fbd3a80cf73158d8f3d66e564369d355d72c087cbc9",
+      "role": "architecture_security",
+      "priority": "P2",
+      "location": {
+        "file": "crates/testkit/research/native_commit_verify.py",
+        "line": 223
+      },
+      "status": "unresolved_blocking_at_frozen_hard3",
+      "report_ref": "M02.10_R2_SECURITY.json",
+      "json_pointer": "/findings/0",
+      "new_final_source_resolution": null
+    }
+  ],
+  "design_constraints": [
+    {
+      "id": "M210-SEC-C01-PERSISTENCE-ORDER",
+      "priority": "P3",
+      "source_ref": "M02.10_DESIGN_SECURITY.json",
+      "json_pointer": "/implementation_constraints/0",
+      "status": "carry_forward_implementation_constraint_not_a_formal_blocking_finding"
+    },
+    {
+      "id": "M210-SEC-C02-COMPARISON-DOMAINS",
+      "priority": "P3",
+      "source_ref": "M02.10_DESIGN_SECURITY.json",
+      "json_pointer": "/implementation_constraints/1",
+      "status": "carry_forward_implementation_constraint_not_a_formal_blocking_finding"
+    },
+    {
+      "id": "M210-SEC-C03-CONTROLLER-CREDENTIALS",
+      "priority": "P3",
+      "source_ref": "M02.10_DESIGN_SECURITY.json",
+      "json_pointer": "/implementation_constraints/2",
+      "status": "carry_forward_implementation_constraint_not_a_formal_blocking_finding"
+    },
+    {
+      "id": "M210-SEC-C04-TIMERS-AGGREGATE-BUDGET",
+      "priority": "P3",
+      "source_ref": "M02.10_DESIGN_SECURITY.json",
+      "json_pointer": "/implementation_constraints/3",
+      "status": "carry_forward_implementation_constraint_not_a_formal_blocking_finding"
+    }
+  ],
+  "future_sidecar_requirement": "For every key, each future independent role supplies explicit final-head/tree/source-digest resolution or continued blocker and concrete evidence, with immutable linkage to this sidecar hash. Normal tool resolutions validates only current in-registry review_keys; do not insert legacy keys as fake current-registry history."
+}

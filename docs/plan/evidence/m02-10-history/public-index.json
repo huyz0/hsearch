@@ -1,0 +1,261 @@
+{
+  "artifact_kind": "M02.10 external-history bridge index",
+  "not_a_review_verdict": true,
+  "authority_scope": "Coauthor metadata support only. No admission, implementation, execution, new packet, store mutation or integration.",
+  "public_contract_snapshot": "992084caa931fc64b1589350453fde9fa0e3a765",
+  "legacy_repository": {
+    "id": "9811fdfde55b1cc26316",
+    "common_dir": "D:\\codex\\2026-11-01\\task\\hsearch\\.git"
+  },
+  "registry": {
+    "path": "D:\\codex\\2026-11-01\\task\\M01.05-review-protocol\\repositories\\9811fdfde55b1cc26316\\reviews.json",
+    "bytes": 700440,
+    "sha256": "600f9bff3502b959ec60504623715058d50b577dffb2d7b53911315ed9c52814"
+  },
+  "registry_read_scope": "Bounded direct JSON read and full-file SHA256; selected only tasks.M02.10 for interpretation, no status/edit invocation or unrelated task analysis. Registry hash records observed bytes; this memo does not freeze or mutate the shared file.",
+  "registry_discovery": {
+    "M02.10_BEGIN_R1.py": 24,
+    "M02.10_ISSUE_ROUND2.py": 51
+  },
+  "identity_protocol": "Original tools/review.py109-125 and tools/task.py243-250 derive state-root/repositories/<hash of resolved Git common-dir>/reviews.json.",
+  "claim": {
+    "id": "m02-10-c02574068480",
+    "owner": "/root",
+    "claim_base": "f9d15ccb1ecffe369ef2da05c9fc59d11b3ff597",
+    "public_review_base": "b19074d3022694b6180f115c875f9883c1ac9425",
+    "frozen_namespace": "hsearch-m02-10-4af36bc9de45"
+  },
+  "recorded_implementers": [
+    "/root"
+  ],
+  "all_authors_limit": "Registry implementer union is exactly /root. This proves recorded identities, not that no unrecorded contributor existed. Preserve excluded-author identities and add every actual new author/coauthor, including this metadata investigator, before assigning nonauthor reviewers. Do not impersonate legacy /root in another session.",
+  "precheck": {
+    "overall_round": 1,
+    "formal_issued": 0,
+    "proposal_sha256": "49ce2032d8257b7270850ec7d01ee99824e755488feacd1f8356381cd30e7556",
+    "roles": [
+      "correctness_tests_claims",
+      "architecture_security"
+    ],
+    "reports": {
+      "correctness_tests_claims": {
+        "ref": "M02.10_DESIGN_CORRECTNESS.json",
+        "reviewer_session": "/root/publication_review",
+        "conclusion": "changes_required"
+      },
+      "architecture_security": {
+        "ref": "M02.10_DESIGN_SECURITY.json",
+        "reviewer_session": "/root/sandbox_security_review",
+        "conclusion": "No new blocking design defect; implementation constraints remain"
+      }
+    },
+    "old_maximum_formal": 2,
+    "old_maximum_overall": 3
+  },
+  "formal_history": [
+    {
+      "overall_round": 2,
+      "original_formal_round": 1,
+      "packet_sha256": "96c998c90fb37f4922729623bac59782ae4741a3927bfdc9b76c422184ff6b07",
+      "head": "375cc084e27e07846041bd9f8cf8126ab5ac2b65",
+      "tree": "db886ef75560f2e2cf7271f1b02ecff0170be527",
+      "source_digest": "d42af5cf1dbb38d3a7be6ac34f854062a8a0a8661b19c03c9e7e083d91f45794",
+      "base": "b19074d3022694b6180f115c875f9883c1ac9425",
+      "implementer_session": "/root",
+      "reviewers": {
+        "correctness_tests_claims": "/root/publication_review",
+        "architecture_security": "/root/sandbox_security_review"
+      },
+      "required_roles": [
+        "architecture_security",
+        "correctness_tests_claims"
+      ],
+      "required_check_names": [
+        "ci-ok",
+        "local-linux",
+        "native-oracles",
+        "production-coverage",
+        "publication-provenance",
+        "resource-provenance",
+        "schema-static"
+      ],
+      "recorded_verdicts": {
+        "correctness_tests_claims": {
+          "canonical_sha256": "541c95005e58136e2bf7624dbd1b1ebcc50e796688c7ba019e71597cbf53cc29",
+          "conclusion": "blocked"
+        },
+        "architecture_security": {
+          "canonical_sha256": "97d0454c5fa58741e524e7b8e48bdae649e5cdc4653bef9c6512b60ee96e1d79",
+          "conclusion": "blocked"
+        }
+      },
+      "receipt_refs": [
+        "M02.10_ROUND1_PACKET.json",
+        "M02.10_R1_RECORDED_STATUS.json"
+      ]
+    },
+    {
+      "overall_round": 3,
+      "original_formal_round": 2,
+      "packet_sha256": "b77a80c51fd00ae5c6ca0fbd3a80cf73158d8f3d66e564369d355d72c087cbc9",
+      "head": "adb96aa5a7ef2f3f499366ccee49867b3be995df",
+      "tree": "8c817e83962eb79e2eda516c63cbfb805ed3aa95",
+      "source_digest": "190bb3b87b264bc1027bf611d179d2e8ea9096c66cb59acd120a47c1e8ea3c76",
+      "base": "b19074d3022694b6180f115c875f9883c1ac9425",
+      "implementer_session": "/root",
+      "reviewers": {
+        "correctness_tests_claims": "/root/publication_review",
+        "architecture_security": "/root/sandbox_security_review"
+      },
+      "required_roles": [
+        "architecture_security",
+        "correctness_tests_claims"
+      ],
+      "required_check_names": [
+        "ci-ok",
+        "local-linux",
+        "native-oracles",
+        "production-coverage",
+        "publication-provenance",
+        "resource-provenance",
+        "schema-static"
+      ],
+      "recorded_verdicts": {
+        "correctness_tests_claims": {
+          "canonical_sha256": "da0e88581efd2b8f927301c7aaedf790ed010d04f89b228fbd52009f14354f33",
+          "conclusion": "blocked"
+        },
+        "architecture_security": {
+          "canonical_sha256": "7913cfe645fdb7276c053120f4bc14de275c4c150514adaf05111b23e0450cd4",
+          "conclusion": "blocked"
+        }
+      },
+      "receipt_refs": [
+        "M02.10_ROUND2_PACKET.json",
+        "M02.10_R2_RECORDED_STATUS.json"
+      ]
+    }
+  ],
+  "frozen_disposition": "Historical BLOCKED at overall3, formal2, retained without reclassification. Four original formal scenarios reported resolved; broad no-uncommitted-application key partially unresolved; both final residual keys unresolved.",
+  "prospective_decision": {
+    "path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab4c-4786-7472-bdb7-59c35c310347\\m02-10-prospective-continuation-disposition-20261108.json",
+    "bytes": 3157,
+    "sha256": "a73267bb731fe52c991601d1490cd781570e68736cced61f66f8d9cd67107b59"
+  },
+  "prospective_mapping": {
+    "old_overall": 3,
+    "old_formal": 2,
+    "new_current_repository_formal_if_empty": 1,
+    "actual_cumulative_overall": 4,
+    "actual_cumulative_formal_including_legacy": 3,
+    "maximum_overall": 4,
+    "if_blocked": "stop/split or redesign",
+    "condition": "Policy independently reviewed/checked/integrated first; full original acceptance unchanged. Current empty-entry fact is coordinator-reported, not reread here."
+  },
+  "finding_sidecar": {
+    "path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab60-4bff-7752-9544-a9eab0fca10a\\m02-10-external-history-bridge\\legacy-findings.json",
+    "bytes": 7624,
+    "sha256": "618e81556a805c81ce7dd3d5c87040d5c0c7958c3bcfa009a95a39243213ad55"
+  },
+  "retained_file_refs": {
+    "M02.10_BEGIN_DESIGN_REVIEW.py": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_BEGIN_DESIGN_REVIEW.py",
+      "bytes": 1917,
+      "sha256": "4bc4c0b2e7932a07e09774063503fb19c3bd365710bbbaf3bea0ba0f82cfc4a0"
+    },
+    "M02.10_DESIGN_PRECHECK.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_PRECHECK.json",
+      "bytes": 1240,
+      "sha256": "0359e35bc7a3c75b25c7a285d861c9ebfd3185b0a4cfab1696f8c7ad3207469e"
+    },
+    "M02.10_DESIGN_PROPOSAL.md": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_PROPOSAL.md",
+      "bytes": 12385,
+      "sha256": "49ce2032d8257b7270850ec7d01ee99824e755488feacd1f8356381cd30e7556"
+    },
+    "M02.10_DESIGN_CORRECTNESS.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_CORRECTNESS.json",
+      "bytes": 4883,
+      "sha256": "6a2285b816a1718a907049dbd5122b46f4e7b952141ccac680eaf173a1fd3545"
+    },
+    "M02.10_DESIGN_SECURITY.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_SECURITY.json",
+      "bytes": 13391,
+      "sha256": "1e88d8626b16e349753b0df5474aaf4d42319b5c257a3155a760497e056e463f"
+    },
+    "M02.10_BEGIN_R1.py": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_BEGIN_R1.py",
+      "bytes": 8945,
+      "sha256": "0aa846d4956000001f9beb27da992a2e8b850ab63fff64a25131e9ad73b9425e"
+    },
+    "M02.10_ISSUE_ROUND2.py": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_ISSUE_ROUND2.py",
+      "bytes": 8214,
+      "sha256": "3df0612a32f8188471474adb7f454359ef835bb04043ad9cf06afbccd3884203"
+    },
+    "M02.10_ROUND1_PACKET.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_ROUND1_PACKET.json",
+      "bytes": 10230,
+      "sha256": "74b005d68ea46efab4d4dd9c554c908282a8ded80617b82d07d345ed099f17f3"
+    },
+    "M02.10_R1_RECORDED_STATUS.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_R1_RECORDED_STATUS.json",
+      "bytes": 10632,
+      "sha256": "ace4b81d4e65df01dcb5244d25bc07cec5c42e1b8c2a33bc3f47287149e58deb"
+    },
+    "M02.10_R1_CORRECTNESS.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_R1_CORRECTNESS.json",
+      "bytes": 8058,
+      "sha256": "1b2026ec7fad51a16389b1ffd8d6d15e4014da970157fe21c79ad291bffcb96e"
+    },
+    "M02.10_R1_SECURITY.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_R1_SECURITY.json",
+      "bytes": 9840,
+      "sha256": "05a9aae6ed7c28c31ebe0b38d714582bec39b7659ac03364e11ae4fc4bd5baaa"
+    },
+    "M02.10_ROUND2_PACKET.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_ROUND2_PACKET.json",
+      "bytes": 17434,
+      "sha256": "457aca9292cca381652673eab543d8f074316b568d6abbfb7ee0e4681f1366bd"
+    },
+    "M02.10_R2_RECORDED_STATUS.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_R2_RECORDED_STATUS.json",
+      "bytes": 17836,
+      "sha256": "5c9eef025297672ad3033b0f20d3e189844eecf36440005a068a4dce1f146c4b"
+    },
+    "M02.10_R2_CORRECTNESS.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_R2_CORRECTNESS.json",
+      "bytes": 11128,
+      "sha256": "e787d0c6c1ace1a5758d171da43ac896a506e566426a3c027775361fb3fb6328"
+    },
+    "M02.10_R2_SECURITY.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_R2_SECURITY.json",
+      "bytes": 8467,
+      "sha256": "05bd30f38696b19736b041aab17378e948aae02bd814d2802e7ffc1e224073af"
+    },
+    "M02.10_WORK_STATE.json": {
+      "path": "D:\\codex\\2026-11-01\\task\\M02.10_WORK_STATE.json",
+      "bytes": 28749,
+      "sha256": "c88381bbfaf9b9e783f554a1580b0b05942206faf187b5ce1a3ae3cda057735e"
+    },
+    "hard3_disposition": {
+      "path": "D:\\codex\\2026-11-01\\task\\delivery-task-state\\9811fdfde55b1cc26316\\evidence\\m02-10-c02574068480\\eadf719fd349a19e43aad24af743c9f38e218da03b6adc4463cb4864fd42f273.json",
+      "bytes": 875,
+      "sha256": "eadf719fd349a19e43aad24af743c9f38e218da03b6adc4463cb4864fd42f273"
+    }
+  },
+  "observed_metadata_checks": [
+    "Registry packets exactly equal both packet wrappers and recorded-status packet objects.",
+    "Registry reports exactly equal all four retained R1/R2 report objects.",
+    "All two packet and four report canonical SHA256 values recomputed with sorted compact JSON and match registry.",
+    "Raw-byte file hashes measured separately; do not confuse with canonical packet/report hashes.",
+    "Precheck reports and issuance scripts corroborate external overall1 plus two formal rounds, not an unused overall round."
+  ],
+  "provenance_limits": [
+    "No independent authentication of legacy session identities beyond retained protocol records.",
+    "Historical code/test/native/replay results were read as reported metadata, not rerun or requalified.",
+    "No public availability guarantee for private retained files; approved publication must package an allowlisted bounded projection if needed.",
+    "Current registry and eventual new comparison base/source are not inspected or selected here.",
+    "No migration is attempted; old registry repository field/packets must never be rewritten under a new repository identity."
+  ]
+}

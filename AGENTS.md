@@ -16,6 +16,8 @@ Start with `docs/plan/development.md` for current executable commands. `cargo xt
 - Product tasks need >=90% aggregate/per-crate/changed-line production line coverage and independent review of the final tree. Zero coverable lines means not applicable, not 100%. Do not lower tests, omit a required matrix, or mark unrun provider/hardware tests passed.
 - Run deterministic checks before independent semantic review. Bind findings to exact code and evidence; empty findings are valid. Plan at most two rounds, with a hard ceiling of three per task. Unresolved blockers at the ceiling require split/redesign, never a pass by budget. Formal approving GitHub reviews as the user require specific authorization.
 
+M02.10 alone has the prospective same-task completion exception in [M02.10 continuation](docs/plan/m02-10-continuation.md): one additional candidate checkpoint, actual overall4/cumulative formal3/max4, after independently reviewed policy integration. All original BLOCKED history is retained; if this checkpoint remains blocked or incomplete, stop/split or redesign. This is not a global ceiling change or a fourth packet in any historical frozen gate.
+
 Use bounded source navigation and linked task context. Keep progress concise and separate measurements, proposals and unverified work. Runtime instructions and status claims must match observed implementation.
 
 Run `python tools/api_contract.py check`; regenerate the matrix with `python tools/api_contract.py render`. Design gates and examples are not observed runtime evidence. Normal reviewed/check-passing public pushes and protected merges are authorized; release/deployment authorization is separate.

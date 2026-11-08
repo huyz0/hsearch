@@ -1,0 +1,112 @@
+{
+  "artifact_kind": "DRAFT TEMPLATE ONLY, NOT A REPORT OR RESOLUTION",
+  "task_id": "M02.10",
+  "role": null,
+  "reviewer_session": null,
+  "packet_sha256": null,
+  "head": null,
+  "tree": null,
+  "source_digest": null,
+  "history_index_sha256": "6889f02b04ac3f648d21e4e40b6142222d032eacd8845a9bb4a5a19caada2ee3",
+  "legacy_findings_sha256": "618e81556a805c81ce7dd3d5c87040d5c0c7958c3bcfa009a95a39243213ad55",
+  "counter_disclosure": {
+    "legacy_design_precheck": 1,
+    "legacy_formal_packets": 2,
+    "historical_overall": 3,
+    "current_repository_formal": 1,
+    "cumulative_formal": 3,
+    "actual_candidate_overall": 4,
+    "maximum_candidate_overall": 4
+  },
+  "authors_and_independence_evidence": null,
+  "comparison_scope_and_evidence": null,
+  "keys": [
+    {
+      "legacy_key": "design-overall1:correctness_tests_claims:CAS_SCHEDULE_AND_ETAG_LINEAGE_AMBIGUOUS",
+      "decision": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "reason": null
+    },
+    {
+      "legacy_key": "1:correctness_tests_claims:OBJECT_RAW_EXECUTION_PROVENANCE_UNCHECKED",
+      "decision": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "reason": null
+    },
+    {
+      "legacy_key": "1:correctness_tests_claims:MATCHED_ORACLE_ACCEPTS_UNCOMMITTED_APPLICATION",
+      "decision": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "reason": null
+    },
+    {
+      "legacy_key": "1:architecture_security:SEC01_EXITED_LEADER_GROUP_NOT_REAPED",
+      "decision": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "reason": null
+    },
+    {
+      "legacy_key": "1:architecture_security:SEC02_HOST_COPY_QUOTA_CHECKED_AFTER_ALLOCATION",
+      "decision": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "reason": null
+    },
+    {
+      "legacy_key": "1:architecture_security:SEC03_SNAPSHOT_OVERWRITES_APPLIED_MEMBERSHIP",
+      "decision": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "reason": null
+    },
+    {
+      "legacy_key": "2:correctness_tests_claims:DURABLE_QUORUM_CAN_REUSE_UNRELATED_LOG_SYNC",
+      "decision": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "reason": null
+    },
+    {
+      "legacy_key": "2:architecture_security:SEC04_DURABLE_QUORUM_ACCEPTS_UNRELATED_SYNC",
+      "decision": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "reason": null
+    }
+  ],
+  "design_constraints": [
+    {
+      "id": "M210-SEC-C01-PERSISTENCE-ORDER",
+      "assessment": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "remaining_advisory_or_blocker": null
+    },
+    {
+      "id": "M210-SEC-C02-COMPARISON-DOMAINS",
+      "assessment": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "remaining_advisory_or_blocker": null
+    },
+    {
+      "id": "M210-SEC-C03-CONTROLLER-CREDENTIALS",
+      "assessment": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "remaining_advisory_or_blocker": null
+    },
+    {
+      "id": "M210-SEC-C04-TIMERS-AGGREGATE-BUDGET",
+      "assessment": null,
+      "final_source_coordinates": [],
+      "exact_evidence_refs": [],
+      "remaining_advisory_or_blocker": null
+    }
+  ],
+  "conclusion": null
+}
