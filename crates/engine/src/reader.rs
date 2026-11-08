@@ -69,11 +69,27 @@ pub struct SearchResult {
     /// Exact count. The physical scope cap is below the native total-hit threshold.
     pub total: u64,
 }
+// This owning wrapper keeps the teardown observer inside the same field as
+// the native reader, so a reservation-first regression cannot precede it unseen.
+pub(crate) struct NativeReader {
+    #[cfg(test)]
+    _before_drop: Option<tests::BeforeReaderDrop>,
+    reader: DirectoryReader,
+}
+impl std::ops::Deref for NativeReader {
+    type Target = DirectoryReader;
+    fn deref(&self) -> &DirectoryReader {
+        &self.reader
+    }
+}
+
 /// A frozen native NRT or committed reader, independent of later writer changes.
 pub struct Snapshot {
-    _reservation: Reservation,
-    pub(crate) reader: DirectoryReader,
+    pub(crate) reader: NativeReader,
     pub(crate) schema: Schema,
+    // Fields drop in declaration order. Native buffers and NRT holds must be
+    // destroyed before another refresh can observe this reservation refunded.
+    _reservation: Reservation,
 }
 impl Snapshot {
     pub(crate) fn new(
@@ -81,16 +97,23 @@ impl Snapshot {
         schema: Schema,
         reservation: Reservation,
     ) -> Result<Self> {
-        if !(0..=MAX_DOCUMENTS as i32).contains(&reader.max_doc())
-            || reader.segment_readers().len() > 32
+        // Establish the destruction order before validation can return an
+        // error; function-parameter drop order must not refund the slot early.
+        let snapshot = Self {
+            reader: NativeReader {
+                #[cfg(test)]
+                _before_drop: None,
+                reader,
+            },
+            schema,
+            _reservation: reservation,
+        };
+        if !(0..=MAX_DOCUMENTS as i32).contains(&snapshot.reader.max_doc())
+            || snapshot.reader.segment_readers().len() > 32
         {
             return Err(Error::Limit);
         }
-        Ok(Self {
-            reader,
-            schema,
-            _reservation: reservation,
-        })
+        Ok(snapshot)
     }
     /// Read one logical identity from this frozen snapshot. This is not an
     /// authoritative latest GET or a distributed freshness guarantee.
@@ -293,4 +316,103 @@ pub(crate) fn verify(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    //! Pause an actual snapshot before native reader teardown, then compete for its slot.
+    use super::*;
+    use crate::{Engine, Mutation, Value};
+    use lucene_store::ByteBuffersDirectory;
+    use std::sync::{Mutex, atomic::AtomicBool, mpsc};
+    use std::time::Duration;
+
+    pub(super) struct BeforeReaderDrop {
+        entered: mpsc::SyncSender<()>,
+        resume: Mutex<mpsc::Receiver<()>>,
+        observation_failed: Arc<AtomicBool>,
+    }
+    impl Drop for BeforeReaderDrop {
+        fn drop(&mut self) {
+            // This test-only field precedes the actual DirectoryReader. No native
+            // buffer or NRT hold has been destroyed when the observer is notified.
+            let observed = self.entered.send(()).is_ok()
+                && self
+                    .resume
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .is_ok();
+            self.observation_failed.store(!observed, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn reader_teardown_keeps_its_slot_until_native_resources_are_gone() {
+        for reopen in [false, true] {
+            let directory = ByteBuffersDirectory::new();
+            let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
+            let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+            engine
+                .apply(
+                    schema
+                        .prepare(
+                            "initial",
+                            &[Mutation::Put {
+                                id: "id",
+                                version: 1,
+                                fields: &[("key", Value::String("retained"))],
+                            }],
+                        )
+                        .unwrap(),
+                )
+                .unwrap();
+            let checkpoint = engine.commit().unwrap();
+            let mut retiring = engine.refresh().unwrap();
+            let retained = [
+                engine.refresh().unwrap(),
+                engine.refresh().unwrap(),
+                engine.refresh().unwrap(),
+            ];
+            let engine = if reopen {
+                engine.close().unwrap();
+                Engine::open(&directory, schema, Some(checkpoint)).unwrap()
+            } else {
+                engine
+            };
+            let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+            let (resume_tx, resume_rx) = mpsc::sync_channel(1);
+            let observation_failed = Arc::new(AtomicBool::new(false));
+            retiring.reader._before_drop = Some(BeforeReaderDrop {
+                entered: entered_tx,
+                resume: Mutex::new(resume_rx),
+                observation_failed: Arc::clone(&observation_failed),
+            });
+            std::thread::scope(|scope| {
+                let dropping = scope.spawn(move || drop(retiring));
+                entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                // Four real native readers still exist. The old reservation-first
+                // field order permits refresh here, before native teardown starts.
+                let competing = engine.refresh();
+                resume_tx.send(()).unwrap();
+                dropping.join().unwrap();
+                assert!(matches!(competing, Err(Error::Limit)));
+            });
+            assert!(!observation_failed.load(Ordering::SeqCst));
+            let replacement = engine.refresh().unwrap();
+            assert!(matches!(engine.refresh(), Err(Error::Limit)));
+            for snapshot in retained.iter().chain(std::iter::once(&replacement)) {
+                let hit = snapshot.get("id", &["key"]).unwrap().unwrap();
+                assert_eq!(hit.version, 1);
+                assert_eq!(
+                    hit.fields,
+                    vec![(
+                        "key".to_string(),
+                        StoredValue::String("retained".to_string())
+                    )]
+                );
+            }
+            engine.close().unwrap();
+        }
+    }
 }

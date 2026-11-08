@@ -1,6 +1,6 @@
 use lucene_store::{ByteBuffersDirectory, Directory, FsIndexOutput, Input, Lock};
 use std::sync::{
-    Mutex,
+    Arc, Mutex,
     atomic::{AtomicU8, AtomicUsize, Ordering},
     mpsc::{Receiver, SyncSender},
 };
@@ -12,16 +12,18 @@ pub(super) struct Block {
 }
 pub(super) struct FaultDirectory {
     inner: ByteBuffersDirectory,
-    pub(super) mode: AtomicU8,
-    pub(super) failures: AtomicUsize,
+    pub(super) mode: Arc<AtomicU8>,
+    pub(super) failures: Arc<AtomicUsize>,
+    pub(super) lock_closes: Arc<AtomicUsize>,
     pub(super) block: Mutex<Option<Block>>,
 }
 impl FaultDirectory {
     pub(super) fn new() -> Self {
         Self {
             inner: ByteBuffersDirectory::new(),
-            mode: AtomicU8::new(0),
-            failures: AtomicUsize::new(0),
+            mode: Arc::new(AtomicU8::new(0)),
+            failures: Arc::new(AtomicUsize::new(0)),
+            lock_closes: Arc::new(AtomicUsize::new(0)),
             block: Mutex::new(None),
         }
     }
@@ -85,6 +87,32 @@ impl Directory for FaultDirectory {
         self.inner.sync_meta_data()
     }
     fn obtain_lock(&self, name: &str) -> lucene_store::Result<Box<dyn Lock>> {
-        self.inner.obtain_lock(name)
+        Ok(Box::new(CountedLock {
+            inner: self.inner.obtain_lock(name)?,
+            mode: Arc::clone(&self.mode),
+            failures: Arc::clone(&self.failures),
+            closes: Arc::clone(&self.lock_closes),
+        }))
+    }
+}
+
+#[derive(Debug)]
+struct CountedLock {
+    inner: Box<dyn Lock>,
+    mode: Arc<AtomicU8>,
+    failures: Arc<AtomicUsize>,
+    closes: Arc<AtomicUsize>,
+}
+impl Lock for CountedLock {
+    fn close(&self) -> lucene_store::Result<()> {
+        self.closes.fetch_add(1, Ordering::SeqCst);
+        if self.mode.load(Ordering::SeqCst) == 6 {
+            self.failures.fetch_add(1, Ordering::SeqCst);
+            return Err(std::io::Error::other("injected lock release failure").into());
+        }
+        self.inner.close()
+    }
+    fn ensure_valid(&self) -> lucene_store::Result<()> {
+        self.inner.ensure_valid()
     }
 }

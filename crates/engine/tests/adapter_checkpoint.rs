@@ -268,3 +268,45 @@ fn implicit_drop_and_failed_native_close_leave_checkpoint_lineage_uncertain() {
         assert_eq!(old.get("id", &[]).unwrap().unwrap().version, 1);
     }
 }
+
+// Required native-port regression. At the current pin the consuming native
+// close never calls CountedLock::close, so this is an unresolved control,
+// not a claim that release propagation is implemented or has been executed.
+#[test]
+fn actual_lock_release_failure_is_returned_and_invalidates_lineage() {
+    let directory = FaultDirectory::new();
+    let schema = schema();
+    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    engine
+        .apply(put(&schema, "initial", "id", 1, "old"))
+        .unwrap();
+    let checkpoint = engine.commit().unwrap();
+    let old = engine.refresh().unwrap();
+    assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 0);
+    directory.mode.store(6, Ordering::SeqCst);
+    let result = engine.close();
+    // Count the actual Lock::close boundary before inspecting its result.
+    assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 1);
+    assert_eq!(directory.failures.load(Ordering::SeqCst), 1);
+    assert_eq!(result, Err(Error::Native));
+    directory.mode.store(0, Ordering::SeqCst);
+    assert!(matches!(
+        Engine::open(&directory, schema, Some(checkpoint)),
+        Err(Error::Checkpoint)
+    ));
+    assert_eq!(old.get("id", &[]).unwrap().unwrap().version, 1);
+}
+
+#[test]
+fn reusable_close_requires_one_observed_lock_release() {
+    let directory = FaultDirectory::new();
+    let schema = schema();
+    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let checkpoint = engine.commit().unwrap();
+    assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 0);
+    engine.close().unwrap();
+    assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 1);
+    let reopened = Engine::open(&directory, schema, Some(checkpoint)).unwrap();
+    reopened.close().unwrap();
+    assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 2);
+}
