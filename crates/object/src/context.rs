@@ -46,6 +46,7 @@ pub struct Usage {
 pub struct RequestContext {
     deadline: Instant,
     cancellation: Cancellation,
+    expired: AtomicBool,
     budget: Budget,
     usage: Mutex<Usage>,
 }
@@ -60,7 +61,17 @@ impl RequestContext {
             return Err(Error::InvalidInput);
         }
         let deadline = Instant::now().checked_add(duration).ok_or(Error::InvalidInput)?;
-        Ok(Self { deadline, cancellation, budget, usage: Mutex::new(Usage::default()) })
+        Ok(Self { deadline, cancellation, expired: AtomicBool::new(false), budget, usage: Mutex::new(Usage::default()) })
+    }
+
+    /// Cancel future admission, without rolling back accepted mutations.
+    pub fn cancel(&self) {
+        self.cancellation.cancel();
+    }
+
+    /// Shorten this context's deadline to now. It can never be extended.
+    pub fn expire(&self) {
+        self.expired.store(true, Ordering::Release);
     }
 
     /// Check whether a new operation can still be admitted.
@@ -68,7 +79,7 @@ impl RequestContext {
         if self.cancellation.is_cancelled() {
             return Err(Error::Cancelled);
         }
-        if Instant::now() >= self.deadline {
+        if self.expired.load(Ordering::Acquire) || Instant::now() >= self.deadline {
             return Err(Error::DeadlineExceeded);
         }
         Ok(())

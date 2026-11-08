@@ -5,6 +5,7 @@
 //! mutation response requires resolution using the original request identity.
 
 mod context;
+pub mod memory;
 mod value;
 
 pub use context::{Budget, Cancellation, RequestContext, Usage};
@@ -127,4 +128,29 @@ pub trait MetadataStore: ObjectBackend {
     /// Resolve the full original mutation, detecting changed identity content.
     fn resolve<'a>(&'a self, context: &'a RequestContext, request: &'a Mutation)
         -> Operation<'a, WriteReceipt>;
+}
+
+/// A retry decision borrows the entire original envelope without changing it.
+#[derive(Debug, Eq, PartialEq)]
+pub enum RetryAction<'a> {
+    /// Resolve a possibly accepted request before any further mutation.
+    Resolve(&'a Mutation),
+    /// Retry the identical request after a certified pre-acceptance refusal.
+    Retry(&'a Mutation),
+    /// No automatic retry is permitted for this result.
+    Stop,
+}
+
+/// Choose only identity-preserving retry actions from the typed outcome.
+///
+/// This is a classification, not a retry loop or authorization to exceed context
+/// budgets. A replacement request identity is never produced. Throttle timing
+/// and scheduling remain caller policy within its original deadline.
+#[must_use]
+pub fn retry_action(request: &Mutation, error: Error) -> RetryAction<'_> {
+    match error {
+        Error::UnknownOutcome => RetryAction::Resolve(request),
+        Error::Unavailable | Error::Throttled => RetryAction::Retry(request),
+        _ => RetryAction::Stop,
+    }
 }
