@@ -172,5 +172,45 @@ class ReadOnlySourceControls(unittest.TestCase):
                 TASK["source_fingerprint"](root, head, [])
 
 
+
+
+class DifferentialReferenceEvidence(unittest.TestCase):
+    def test_actual_reference_projection_retains_typed_count_and_projection(self):
+        d = REF["DIFFERENTIAL"]
+        bundle = d["load_fixture"](ROOT)
+        case = bundle["inputs"]["fixtures/api/core-v1/search-cases.json"][0]
+        oracle = case["reference_oracle"]
+        body = {"hits": {"hits": [{"_id": identity, "_source": {"uid": identity}} for identity in oracle["ids"]],
+                         "total": {"value": oracle["exact_total"], "relation": "eq"}}}
+        REF["verify_search"](case, 200, body)
+        record = d["observation"](bundle, case, 200, body)
+        self.assertEqual(record["value"]["ids"], oracle["ids"])
+        for bad in (True, float(oracle["exact_total"])):
+            changed = copy.deepcopy(body)
+            changed["hits"]["total"]["value"] = bad
+            with self.assertRaises(ValueError):
+                d["observation"](bundle, case, 200, changed)
+        changed = copy.deepcopy(body)
+        changed["hits"]["hits"][0]["_source"]["unselected"] = 1
+        with self.assertRaises(ValueError):
+            d["observation"](bundle, case, 200, changed)
+
+    def test_finite_reference_metrics_normalize_only_numeric_values(self):
+        d = REF["DIFFERENTIAL"]
+        bundle = d["load_fixture"](ROOT)
+        case = next(x for x in bundle["inputs"]["fixtures/api/core-v1/search-cases.json"] if x["id"] == "finite-metrics")
+        body = {"aggregations": {name: {"value": value} for name, value in case["reference_oracle"]["values"].items()}}
+        REF["verify_search"](case, 200, body)
+        self.assertEqual(d["observation"](bundle, case, 200, body)["outcome"], "pass")
+        zero = copy.deepcopy(body)
+        zero["aggregations"]["min_price"]["value"] = -0.0
+        REF["verify_search"](case, 200, zero)
+        self.assertEqual(d["observation"](bundle, case, 200, zero)["outcome"], "pass")
+        for bad in (True, float("inf")):
+            changed = copy.deepcopy(body)
+            changed["aggregations"]["sum_price"]["value"] = bad
+            with self.assertRaises(ValueError):
+                d["observation"](bundle, case, 200, changed)
+
 if __name__ == "__main__":
     unittest.main()
