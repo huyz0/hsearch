@@ -47,6 +47,11 @@ def main():
         subprocess.run(command, cwd=ROOT, env=environment, check=True)
 
     try:
+        checked([
+            sys.executable, "crates/engine/tests/render_adapter_fixtures.py",
+            "--root", str(ROOT), "--check",
+            "--formatter", tools["rustfmt_executable"],
+        ])
         for command in CHECKS:
             checked(command)
         runpy.run_path(str(ROOT / "tools/engine_research.py"))["run_samples"](checked)
