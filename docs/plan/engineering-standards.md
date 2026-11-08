@@ -20,6 +20,8 @@ Keep >=90% aggregate/per-crate/changed-line production coverage requirements, na
 
 ## Work, review and integration
 
+The [M02.02 prospective start seed](native-engine-start-policy.md) removes only its whole-M01 task-start sequencing edge after accepted M19/M02.09. It is a legitimate committed development seed only after root audits exact source, prerequisites, owner and paths; it is not independently accepted policy or implementation permission. Full policy+code qualification retains original992 scope and all acceptance; whole-M02/M01 completion and every other task gate remain. Finite experiment inputs/resources must be frozen before execution without inventing M02.05 calibration or release defaults.
+
 Use one owned task branch/worktree and resource namespace, preserve existing work and serialize shared contracts, lockfiles and ledger edits. Task-level dependencies govern start; milestone prerequisites govern completion. API-affecting work must descend from M19 and the relevant measured budget freeze. Rebase preserved M01.03 work without overwriting the revised API/spec/standards.
 
 Run deterministic checks, then independent correctness/test review; API/routing/fencing/crypto/unsafe changes additionally receive architecture/security/scalability review. Bind reports to exact source and test evidence. Plan at most two review rounds, hard ceiling three per task; counters survive diff changes. Unresolved blockers at the ceiling require split/redesign, not passing by budget. Formal approving GitHub reviews under the user's identity require separate specific authorization; independent session reports satisfy the current workflow.

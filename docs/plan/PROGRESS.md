@@ -1,5 +1,12 @@
 # Progress and handoff
 
+## 8 November 2026: isolated M02.02 native-engine start seed
+
+The [prospective seed](native-engine-start-policy.md) removes only M02.02's whole-M01 task-start edge, retaining exact dependencies M19/M02.09, planned status and its full adapter contract. Root adopted the one-edge decision under delegated agent-created gate authority. Accepted M02.09 supplies concrete engineering prerequisites; its old research/coverage counts do not qualify a new production adapter. Whole-M02/M01 completion, unqualified M01.08, M02.04/M02.10 and all other tasks/history remain unchanged.
+
+This isolated branch is source preparation only. Root must audit the clean committed seed and actual owner/base/paths before separately admitting a normal development claim. Policy+later code retain the full original992 comparison and normal native x64/ARM/profile/Java/failure/coverage/independent/CI/protected/postmerge qualification; no extra policy-only review packet is issued. No code, dependency, collector/compiler, resource/native/provider/network/FFF or external publication action occurs. The sealed delivery2e2b and every prior candidate stay read-only and are not imported here.
+
+
 ## 8 November 2026: retention redesign plan integrated
 
 [M01.18's plan artifact is accepted](evidence/m01-18-integrated.md): reviewed source `3c44380` merged normally through [PR26](https://github.com/huyz0/hsearch/pull/26) as `81bae9b` with the same tree, both R2 nonauthor roles clear, the durable gate passed and all seven PR/main jobs successful. The decomposition, frozen history and verbatim eleven-clause bridge are accepted; M01.19/.20/.21 remain unimplemented and require their own qualification. The factual bookkeeping source needs its own final legal same-M18 R3/checks/integration before successor admission.

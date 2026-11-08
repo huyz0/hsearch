@@ -1,4 +1,8 @@
 # Coordinator research split: concrete scope before implementation
+
+Current prospective exception: the [M02.02 native-engine start seed](native-engine-start-policy.md) supersedes only the historical future whole-M01 M02.02 start restriction below. Actually accepted M19/M02.09 provide engineering prerequisites; root audits the exact committed seed and normal owner/path admission before any implementation. M02.09's [accepted component evidence](evidence/m02-09-integrated.md), failures and original wording stay verbatim. M02.04/M02.10, whole-M02/M01 completion, all other gates and full final native/coverage/review/CI acceptance remain. This seed imports no M03/M19/M02.11 candidate code or policy and grants no resources, baseline/productivity or runtime acceptance.
+
+## Original research-plan instructions (historical scope)
 Status: M01.14's [plan and guard are accepted](evidence/m01-14-integrated.md). M02.09/.10 remain planned coordinator-run experiments; their own source, results, reviews and full qualification are still required.
 The accepted M01.14 planning task lives in unfinished M01 and depends on M19/M01.13/M08.01; preserve M19 completion and every accepted task.
 Add M02.09 bounded native lifecycle experiments and M02.10 bounded local durability/metadata experiments, depending explicitly on M19, accepted M01.02-.07/.13, M01.14, M02.01/.08 and M08.01.

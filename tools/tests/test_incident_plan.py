@@ -60,7 +60,9 @@ class IncidentPlanTests(unittest.TestCase):
         self.assertTrue(ready("M01.08"))
         self.assertEqual(tasks["M01.08"]["status"], "planned")
         self.assertNotEqual(milestones["M01"]["status"], "done")
-        for task_id in ("M02.02", "M02.04", "M03.01"):
+        self.assertTrue(ready("M02.02"))
+        self.assertEqual(tasks["M02.02"]["status"], "planned")
+        for task_id in ("M02.04", "M03.01"):
             self.assertFalse(ready(task_id), task_id)
 
     def test_both_tasks_need_the_actual_disposition_record(self):
@@ -84,7 +86,8 @@ class IncidentPlanTests(unittest.TestCase):
 
     def test_baseline_and_product_edges_cannot_be_removed_after_closure(self):
         self.accepted_disposition_model()
-        for task_id, dependency in (("M01.08", "M01.09"), ("M02.02", "M01"),
+        for task_id, dependency in (("M01.08", "M01.09"), ("M02.02", "M19"),
+                                    ("M02.02", "M02.09"),
                                     ("M02.04", "M01"), ("M03.01", "M01")):
             with self.subTest(task=task_id):
                 self.tasks[task_id]["depends_on"].remove(dependency)
