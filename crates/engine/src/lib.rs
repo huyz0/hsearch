@@ -79,3 +79,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 /// Adapter result with redacted typed errors.
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+#[path = "../tests/support/adapter_directory.rs"]
+mod adapter_test_support;

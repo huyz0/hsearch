@@ -8,8 +8,7 @@ use lucene_store::{ByteBuffersDirectory, FsDirectory};
 use std::sync::{atomic::AtomicUsize, mpsc};
 use std::time::Duration;
 
-#[path = "../tests/support/adapter_directory.rs"]
-mod support;
+use crate::adapter_test_support as support;
 use support::{Block, FaultDirectory};
 
 fn schema() -> Schema {
@@ -611,4 +610,17 @@ fn every_production_directory_method_reaches_the_same_backend() {
         .close()
         .unwrap();
     assert_eq!(raw.seen.load(Ordering::SeqCst), (1 << 15) - 1);
+}
+
+impl FaultDirectory {
+    // Controlled actual-lock early-release mutant. No synthetic acknowledgement.
+    fn release_early(&self) {
+        self.lock
+            .lock()
+            .unwrap()
+            .upgrade()
+            .unwrap()
+            .close()
+            .unwrap();
+    }
 }

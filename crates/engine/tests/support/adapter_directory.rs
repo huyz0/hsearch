@@ -23,7 +23,7 @@ pub(super) struct FaultDirectory {
     pub(super) expect_drop: Arc<AtomicBool>,
     pub(super) writer_dropped: Arc<AtomicBool>,
     pub(super) early_release: Arc<AtomicUsize>,
-    lock: Mutex<Weak<CountedLock>>,
+    pub(super) lock: Mutex<Weak<CountedLock>>,
 }
 impl FaultDirectory {
     pub(super) fn new() -> Self {
@@ -44,16 +44,6 @@ impl FaultDirectory {
             early_release: Arc::default(),
             lock: Mutex::new(Weak::new()),
         }
-    }
-    // Controlled actual-lock early-release mutant. No synthetic acknowledgement.
-    pub(super) fn release_early(&self) {
-        self.lock
-            .lock()
-            .unwrap()
-            .upgrade()
-            .unwrap()
-            .close()
-            .unwrap();
     }
     fn fail(&self, mode: u8) -> lucene_store::Result<()> {
         let active = self.mode.load(Ordering::SeqCst);
@@ -171,7 +161,7 @@ impl Directory for FaultDirectory {
 }
 
 #[derive(Debug)]
-struct CountedLock {
+pub(super) struct CountedLock {
     inner: Box<dyn Lock>,
     mode: Arc<AtomicU8>,
     failures: Arc<AtomicUsize>,

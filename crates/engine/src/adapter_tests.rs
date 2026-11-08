@@ -1,8 +1,7 @@
 //! Private boundary controls use real native commits, then inject read failure.
 use super::*;
+use crate::adapter_test_support as support;
 use std::sync::atomic::Ordering;
-#[path = "../tests/support/adapter_directory.rs"]
-mod support;
 use support::FaultDirectory;
 
 fn schema() -> Schema {
