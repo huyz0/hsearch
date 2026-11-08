@@ -1,3 +1,4 @@
+//! Public storage-trait histories and deterministic fault controls.
 mod support;
 
 use hsearch_object::memory::{Fault, MemoryLimits, MemoryStore};

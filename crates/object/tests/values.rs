@@ -1,3 +1,4 @@
+//! Bounded values, retry decisions and context admission controls.
 mod support;
 
 use hsearch_object::memory::{MemoryLimits, MemoryStore};
