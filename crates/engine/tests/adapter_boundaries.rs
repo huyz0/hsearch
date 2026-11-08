@@ -1,5 +1,6 @@
 //! Exact finite admission boundaries and source-backed analyzer controls.
 use hsearch_engine::{Engine, Error, Kind, Mutation, Query, Schema, Value, analyze_text};
+use lucene_search::directory_reader::DirectoryReader;
 use lucene_store::ByteBuffersDirectory;
 
 #[test]
@@ -236,60 +237,59 @@ fn repeated_refresh_segment_limit_refuses_until_explicit_merge() {
     let directory = ByteBuffersDirectory::new();
     let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
     let engine = Engine::open(&directory, schema.clone(), None).unwrap();
-    let mut accepted = 0;
-    let mut refused = false;
-    for version in 1..=64 {
-        let batch = schema
+    let prepare = |id: &str| {
+        schema
             .prepare(
-                &format!("request-{version}"),
-                &[Mutation::Put {
-                    id: "stable",
-                    version,
+                id,
+                &[Mutation::Create {
+                    id,
+                    version: 1,
                     fields: &[("key", Value::String("value"))],
                 }],
             )
-            .unwrap();
-        match engine.apply(batch) {
-            Ok(_) => {
-                accepted = version;
-                drop(engine.refresh().unwrap());
-            }
-            Err(Error::Limit) => {
-                refused = true;
-                break;
-            }
-            Err(error) => panic!("unexpected admission failure {error}"),
-        }
+            .unwrap()
+    };
+    // Each refresh flushes one distinct live document. Replacing a single ID
+    // instead lets native delete application drop its fully deleted segments
+    // (pinned index_writer.rs:11110-11128), even without an auto-merge policy.
+    // The unchanged adapter admission guard reserves two slots below its
+    // 32-segment ceiling, so the 32nd one-document batch must be refused.
+    for number in 1..=31 {
+        engine.apply(prepare(&format!("id-{number}"))).unwrap();
+        drop(engine.refresh().unwrap());
     }
-    assert!(refused);
-    assert!((1..=32).contains(&accepted));
-    let old = engine.refresh().unwrap();
-    engine.merge().unwrap();
-    engine
-        .apply(
-            schema
-                .prepare(
-                    "after-merge",
-                    &[Mutation::Put {
-                        id: "stable",
-                        version: accepted + 1,
-                        fields: &[("key", Value::String("new"))],
-                    }],
-                )
-                .unwrap(),
-        )
-        .unwrap();
-    assert_eq!(old.get("stable", &[]).unwrap().unwrap().version, accepted);
+    assert_eq!(engine.apply(prepare("id-32")), Err(Error::Limit));
+    engine.commit().unwrap();
     assert_eq!(
-        engine
-            .refresh()
+        DirectoryReader::open(&directory)
             .unwrap()
-            .get("stable", &[])
-            .unwrap()
-            .unwrap()
-            .version,
-        accepted + 1
+            .segment_readers()
+            .len(),
+        31
     );
+    assert_eq!(engine.apply(prepare("id-32")), Err(Error::Limit));
+    let old = engine.refresh().unwrap();
+    assert_eq!(old.search(&Query::All, &[], 128, &[]).unwrap().total, 31);
+    assert!(old.get("id-32", &[]).unwrap().is_none());
+
+    engine.merge().unwrap();
+    engine.commit().unwrap();
+    assert_eq!(
+        DirectoryReader::open(&directory)
+            .unwrap()
+            .segment_readers()
+            .len(),
+        1
+    );
+    // Retry the exact refused logical mutation after explicit maintenance.
+    // A rejection must not consume its identity or poison continuation.
+    engine.apply(prepare("id-32")).unwrap();
+    let current = engine.refresh().unwrap();
+    assert_eq!(current.search(&Query::All, &[], 128, &[]).unwrap().total, 32);
+    assert_eq!(current.get("id-32", &[]).unwrap().unwrap().version, 1);
+    assert_eq!(old.search(&Query::All, &[], 128, &[]).unwrap().total, 31);
+    assert_eq!(old.get("id-1", &[]).unwrap().unwrap().version, 1);
+    assert!(old.get("id-32", &[]).unwrap().is_none());
     engine.close().unwrap();
 }
 #[test]

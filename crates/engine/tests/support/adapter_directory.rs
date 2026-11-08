@@ -1,7 +1,7 @@
 use lucene_store::{ByteBuffersDirectory, Directory, FsIndexOutput, Input, Lock};
 use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, AtomicU8, Ordering},
+    Mutex,
+    atomic::{AtomicU8, AtomicUsize, Ordering},
     mpsc::{Receiver, SyncSender},
 };
 use std::time::Duration;
@@ -13,7 +13,7 @@ pub(super) struct Block {
 pub(super) struct FaultDirectory {
     inner: ByteBuffersDirectory,
     pub(super) mode: AtomicU8,
-    pub(super) close_failure: Arc<AtomicBool>,
+    pub(super) failures: AtomicUsize,
     pub(super) block: Mutex<Option<Block>>,
 }
 impl FaultDirectory {
@@ -21,36 +21,17 @@ impl FaultDirectory {
         Self {
             inner: ByteBuffersDirectory::new(),
             mode: AtomicU8::new(0),
-            close_failure: Arc::new(AtomicBool::new(false)),
+            failures: AtomicUsize::new(0),
             block: Mutex::new(None),
         }
     }
     fn fail(&self, mode: u8) -> lucene_store::Result<()> {
         if self.mode.load(Ordering::SeqCst) == mode {
+            self.failures.fetch_add(1, Ordering::SeqCst);
             Err(std::io::Error::other("injected native failure").into())
         } else {
             Ok(())
         }
-    }
-}
-#[derive(Debug)]
-struct FaultLock {
-    inner: Box<dyn Lock>,
-    fail: Arc<AtomicBool>,
-}
-impl Lock for FaultLock {
-    fn close(&self) -> lucene_store::Result<()> {
-        self.inner.close()?;
-        if self.fail.load(Ordering::SeqCst) {
-            Err(lucene_store::Error::LockReleaseFailed(
-                "injected close failure".to_string(),
-            ))
-        } else {
-            Ok(())
-        }
-    }
-    fn ensure_valid(&self) -> lucene_store::Result<()> {
-        self.inner.ensure_valid()
     }
 }
 impl Directory for FaultDirectory {
@@ -104,9 +85,6 @@ impl Directory for FaultDirectory {
         self.inner.sync_meta_data()
     }
     fn obtain_lock(&self, name: &str) -> lucene_store::Result<Box<dyn Lock>> {
-        Ok(Box::new(FaultLock {
-            inner: self.inner.obtain_lock(name)?,
-            fail: Arc::clone(&self.close_failure),
-        }))
+        self.inner.obtain_lock(name)
     }
 }

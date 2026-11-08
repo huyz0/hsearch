@@ -246,12 +246,21 @@ fn implicit_drop_and_failed_native_close_leave_checkpoint_lineage_uncertain() {
             .unwrap();
         let checkpoint = engine.commit().unwrap();
         let old = engine.refresh().unwrap();
+        assert_eq!(directory.failures.load(Ordering::SeqCst), 0);
         if fail_close {
-            directory.close_failure.store(true, Ordering::SeqCst);
+            // Pinned lifecycle.rs:73-81 propagates try_rollback errors;
+            // index_file_deleter.rs:603-604 calls Directory::list_all.
+            // Lock::close is not called on the wrapper when the writer drops.
+            directory.mode.store(5, Ordering::SeqCst);
             assert_eq!(engine.close(), Err(Error::Native));
+            assert_eq!(directory.failures.load(Ordering::SeqCst), 1);
+            directory.mode.store(0, Ordering::SeqCst);
         } else {
             drop(engine);
+            assert_eq!(directory.failures.load(Ordering::SeqCst), 0);
         }
+        // The directory is healthy again, so refusal must come from the
+        // uncertain lineage rather than from a still-armed I/O fault.
         assert!(matches!(
             Engine::open(&directory, schema, Some(checkpoint)),
             Err(Error::Checkpoint)
