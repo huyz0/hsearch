@@ -9,8 +9,11 @@ use lucene_index::segment_info::LuceneVersion;
 use lucene_search::directory_reader::DirectoryReader;
 
 use crate::checkpoint::{Head, Lineage, NativeCommit, WriterLease};
+use crate::directory::DirectoryAttempt;
 use crate::schema::{MAX_DOCUMENTS, MAX_OPERATIONS, analyzer};
-use crate::{Directory, Error, Result, Schema, Value};
+use crate::{
+    CleanupStatus, Directory, EngineDirectory, Error, ReleaseStatus, Result, Schema, Value,
+};
 
 const VERSION: LuceneVersion = LuceneVersion {
     major: 10,
@@ -278,10 +281,52 @@ pub struct Engine<'d> {
     // Declaration order is part of WriterLease's implicit-drop invariant.
     writer: Mutex<IndexWriter<'d>>,
     lease: WriterLease,
+    attempt: DirectoryAttempt<'d>,
     directory: &'d dyn Directory,
     snapshots: Arc<AtomicUsize>,
     schema: Schema,
     state: Mutex<State>,
+}
+
+// Keep declaration-order cleanup even when native close unwinds after the
+// Engine has been destructured into locals.
+struct Closing<'d> {
+    lease: WriterLease,
+    attempt: DirectoryAttempt<'d>,
+}
+
+struct Opening<'a, 'd> {
+    head: &'a mut Head,
+    attempt: &'a DirectoryAttempt<'d>,
+    complete: bool,
+}
+impl Drop for Opening<'_, '_> {
+    fn drop(&mut self) {
+        if !self.complete && self.attempt.may_have_acquired() {
+            // Native construction/configuration may already have effects.
+            self.head.uncertain = true;
+        }
+    }
+}
+
+fn close_result(cleanup: Result<()>, release: ReleaseStatus) -> Result<()> {
+    if release == ReleaseStatus::Acknowledged {
+        return cleanup;
+    }
+    let cleanup = match cleanup {
+        Ok(()) => CleanupStatus::Succeeded,
+        Err(Error::Poisoned) => CleanupStatus::Poisoned,
+        Err(_) => CleanupStatus::NativeFailure,
+    };
+    Err(Error::Close { cleanup, release })
+}
+
+fn open_failure(attempt: &DirectoryAttempt<'_>, error: Error) -> Error {
+    if attempt.may_have_acquired() {
+        close_result(Err(error), attempt.status()).unwrap_err()
+    } else {
+        error
+    }
 }
 
 fn gate<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
@@ -301,11 +346,28 @@ fn live(state: &State) -> Result<()> {
 impl<'d> Engine<'d> {
     /// Open an empty directory, or reopen with the exact caller-held checkpoint.
     /// Existing native contents are verified before opening a mutable writer.
-    pub fn open(
-        directory: &'d dyn Directory,
+    pub fn open<D: Directory>(
+        directory: &'d EngineDirectory<D>,
         schema: Schema,
         checkpoint: Option<Checkpoint>,
     ) -> Result<Self> {
+        Self::open_configured(directory, schema, checkpoint, |writer| {
+            writer.set_analyzer(Some(Arc::new(analyzer())));
+            writer
+                .set_ram_buffer_size_mb(8.0)
+                .map_err(|_| Error::Native)?;
+            writer.set_max_buffered_docs(8).map_err(|_| Error::Native)
+        })
+    }
+
+    fn open_configured<D: Directory>(
+        directory: &'d EngineDirectory<D>,
+        schema: Schema,
+        checkpoint: Option<Checkpoint>,
+        configure: impl FnOnce(&mut IndexWriter<'d>) -> Result<()>,
+    ) -> Result<Self> {
+        let attempt = directory.begin()?;
+        let directory: &'d dyn Directory = &directory.observed;
         let lineage = checkpoint.as_ref().map_or_else(
             || Arc::new(Lineage::default()),
             |checkpoint| Arc::clone(&checkpoint.lineage),
@@ -348,21 +410,39 @@ impl<'d> Engine<'d> {
                 state
             }
         };
-        let mut writer = IndexWriter::open(directory, vec![], "Lucene104", VERSION)
-            .map_err(|_| Error::Native)?;
+        // Declared before writer so failures and unwinding destroy the native
+        // owner before the guard invalidates the still-locked lineage head.
+        let mut opening = Opening {
+            head: &mut head,
+            attempt: &attempt,
+            complete: false,
+        };
+        let mut writer = match IndexWriter::open(directory, vec![], "Lucene104", VERSION) {
+            Ok(writer) => writer,
+            Err(_) => return Err(open_failure(&attempt, Error::Native)),
+        };
         writer.set_commit_on_close(false);
-        writer.set_analyzer(Some(Arc::new(analyzer())));
-        writer
-            .set_ram_buffer_size_mb(8.0)
-            .map_err(|_| Error::Native)?;
-        writer.set_max_buffered_docs(8).map_err(|_| Error::Native)?;
-        head.writer_active = true;
+        if let Err(error) = configure(&mut writer) {
+            drop(writer);
+            return Err(open_failure(&attempt, error));
+        }
+        if !attempt.acquired() {
+            drop(writer);
+            return Err(Error::Close {
+                cleanup: CleanupStatus::Succeeded,
+                release: ReleaseStatus::Unobserved,
+            });
+        }
+        opening.head.writer_active = true;
+        opening.complete = true;
+        drop(opening);
         drop(head);
         Ok(Self {
             writer: Mutex::new(writer),
             directory,
             snapshots: Arc::clone(&lineage.readers),
             lease: WriterLease::new(lineage),
+            attempt,
             schema,
             state: Mutex::new(state),
         })
@@ -557,14 +637,26 @@ impl<'d> Engine<'d> {
     /// remain usable. Close consumes the adapter, including on native failure.
     pub fn close(self) -> Result<()> {
         let Self {
-            writer, mut lease, ..
+            writer,
+            lease,
+            attempt,
+            ..
         } = self;
-        let result = writer
-            .into_inner()
-            .map_err(|_| Error::Poisoned)
-            .and_then(|writer| writer.close().map_err(|_| Error::Native));
-        let released = lease.finish(result.is_ok());
-        result.and(released)
+        let mut closing = Closing { lease, attempt };
+        let cleanup = match writer.into_inner() {
+            Ok(writer) => writer.close().map_err(|_| Error::Native),
+            Err(poisoned) => {
+                // Consume the poisoned owner before inspecting release too.
+                drop(poisoned.into_inner());
+                Err(Error::Poisoned)
+            }
+        };
+        let result = close_result(cleanup, closing.attempt.status());
+        let finished = closing.lease.finish(result.is_ok());
+        // Admission remains occupied until both native teardown and lineage
+        // completion. Implicit drop never reaches finish(true).
+        drop(closing);
+        result.and(finished)
     }
 }
 

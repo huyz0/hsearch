@@ -653,8 +653,9 @@ fn differential_jdiff_v1_supplementary_prefix_255() {
 #[test]
 fn differential_match_all() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::All;
@@ -677,8 +678,9 @@ fn differential_match_all() {
 #[test]
 fn differential_keyword_term() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Term {
@@ -702,8 +704,9 @@ fn differential_keyword_term() {
 #[test]
 fn differential_keyword_terms() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Terms {
@@ -727,8 +730,9 @@ fn differential_keyword_terms() {
 #[test]
 fn differential_integer_range() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Range {
@@ -753,8 +757,9 @@ fn differential_integer_range() {
 #[test]
 fn differential_integer_threshold_bool() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Bool {
@@ -804,8 +809,9 @@ fn differential_integer_threshold_bool() {
 #[test]
 fn differential_standard_match() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Match {
@@ -830,8 +836,9 @@ fn differential_standard_match() {
 #[test]
 fn differential_standard_phrase() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Match {
@@ -856,8 +863,9 @@ fn differential_standard_phrase() {
 #[test]
 fn differential_standard_accent_preserved() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Match {
@@ -882,8 +890,9 @@ fn differential_standard_accent_preserved() {
 #[test]
 fn differential_analyzed_text_term_is_case_sensitive() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Term {
@@ -907,8 +916,9 @@ fn differential_analyzed_text_term_is_case_sensitive() {
 #[test]
 fn differential_bounded_field_sort() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::All;
@@ -935,8 +945,9 @@ fn differential_bounded_field_sort() {
 #[test]
 fn differential_date_range() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Range {
@@ -963,8 +974,9 @@ fn differential_date_range() {
 #[test]
 fn differential_finite_metrics() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::All;
@@ -986,8 +998,9 @@ fn differential_finite_metrics() {
 #[test]
 fn differential_finite_key_ordered_terms() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::All;
@@ -1013,8 +1026,9 @@ fn differential_finite_key_ordered_terms() {
 #[test]
 fn differential_local_bm25_ranking_order() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = core_schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     seed_core(&engine, &schema);
     let snapshot = engine.refresh().unwrap();
     let query = Query::Match {
@@ -1042,8 +1056,9 @@ fn differential_local_bm25_ranking_order() {
 #[test]
 fn differential_jdiff_v1_supplementary_phrase() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("uid", Kind::Keyword), ("title", Kind::Text)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine.apply(schema.prepare("exact",&[Mutation::Put{id:"exact",version:1,fields:&[("uid",Value::String("exact")),("title",Value::String("brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"))]}]).unwrap()).unwrap();
     engine
         .apply(
@@ -1119,8 +1134,9 @@ fn differential_jdiff_v1_supplementary_phrase() {
 #[test]
 fn differential_jdiff_v1_held_out_phrase() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("uid", Kind::Keyword), ("title", Kind::Text)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(
             schema
@@ -1195,8 +1211,9 @@ fn differential_jdiff_v1_held_out_phrase() {
 #[test]
 fn differential_jdiff_v1_held_out_date() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("uid", Kind::Keyword), ("date", Kind::Date)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(
             schema
@@ -1305,8 +1322,9 @@ fn differential_jdiff_v1_held_out_date() {
 #[test]
 fn differential_jdiff_v1_held_out_phrase_unordered_control() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("uid", Kind::Keyword), ("title", Kind::Text)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(
             schema
@@ -1392,8 +1410,9 @@ fn differential_jdiff_v1_held_out_phrase_unordered_control() {
 #[test]
 fn differential_jdiff_v1_held_out_date_all_control() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("uid", Kind::Keyword), ("date", Kind::Date)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(
             schema

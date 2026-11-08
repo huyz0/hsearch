@@ -23,8 +23,9 @@ fn schema() -> Schema {
 #[test]
 fn public_queries_aggregations_and_projection() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(
             schema
@@ -822,8 +823,9 @@ fn public_analyzer_tokens_positions_and_utf16_offsets() {
 #[test]
 fn production_held_out_phrase_discriminates_unordered_and() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("title", Kind::Text)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(
             schema
@@ -920,8 +922,9 @@ fn production_held_out_phrase_discriminates_unordered_and() {
 #[test]
 fn production_held_out_date_range_discriminates_match_all() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("date", Kind::Date)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(
             schema

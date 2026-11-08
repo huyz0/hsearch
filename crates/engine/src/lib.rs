@@ -2,6 +2,8 @@
 //! not establish hsearch authority, quorum durability, or archival state.
 mod aggregations;
 mod checkpoint;
+mod directory;
+pub use directory::EngineDirectory;
 mod schema;
 pub use aggregations::{Bucket, Metrics};
 mod adapter;
@@ -19,6 +21,27 @@ pub use schema::{
 pub const ENGINE_REVISION: &str = "46e280bc2a208544fb36ecd95932e89cd8bc5618";
 pub use lucene_store::{Directory, Input};
 
+/// Native consuming cleanup outcome, without backend error text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CleanupStatus {
+    /// Native cleanup returned success.
+    Succeeded,
+    /// Native cleanup returned an error.
+    NativeFailure,
+    /// The writer mutex was poisoned; its owner was still destroyed.
+    Poisoned,
+}
+/// Actual acquired-lock release outcome, independent of writer cleanup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReleaseStatus {
+    /// The wrapper explicitly delegated close and observed success.
+    Acknowledged,
+    /// The explicit backend close returned an error.
+    Failed,
+    /// Missing, stale, poisoned, duplicate or incomplete observation.
+    Unobserved,
+}
+
 /// Redacted bounded adapter failures. Native error text never contains payloads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -34,6 +57,13 @@ pub enum Error {
     Conflict,
     /// A native operation failed; mutation continuation may be poisoned.
     Native,
+    /// Cleanup and actual lock release have separate bounded outcomes.
+    Close {
+        /// Result of consuming native writer cleanup.
+        cleanup: CleanupStatus,
+        /// Result for that writer's exact acquired lock.
+        release: ReleaseStatus,
+    },
     /// Native state cannot be proven to match the caller's checkpoint.
     Checkpoint,
     /// Concurrent work already holds the admission gate.

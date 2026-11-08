@@ -351,8 +351,9 @@ mod tests {
     fn reader_teardown_keeps_its_slot_until_native_resources_are_gone() {
         for reopen in [false, true] {
             let directory = ByteBuffersDirectory::new();
+            let observed_directory = crate::EngineDirectory::new(&directory);
             let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
-            let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+            let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
             engine
                 .apply(
                     schema
@@ -376,7 +377,7 @@ mod tests {
             ];
             let engine = if reopen {
                 engine.close().unwrap();
-                Engine::open(&directory, schema, Some(checkpoint)).unwrap()
+                Engine::open(&observed_directory, schema, Some(checkpoint)).unwrap()
             } else {
                 engine
             };

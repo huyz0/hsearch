@@ -23,8 +23,9 @@ fn batch(schema: &Schema, version: i64) -> PreparedBatch {
 #[test]
 fn successful_native_commit_then_identity_read_failure_invalidates_old_checkpoints() {
     let directory = FaultDirectory::new();
+    let observed_directory = crate::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine.apply(batch(&schema, 1)).unwrap();
     let old_checkpoint = engine.commit().unwrap();
     let old = engine.refresh().unwrap();
@@ -48,15 +49,16 @@ fn successful_native_commit_then_identity_read_failure_invalidates_old_checkpoin
     assert_eq!(old.get("id", &[]).unwrap().unwrap().version, 1);
     engine.close().unwrap();
     assert!(matches!(
-        Engine::open(&directory, schema, Some(old_checkpoint)),
+        Engine::open(&observed_directory, schema, Some(old_checkpoint)),
         Err(Error::Checkpoint)
     ));
 }
 #[test]
 fn epoch_exhaustion_refuses_before_native_commit_or_checkpoint_invalidation() {
     let directory = FaultDirectory::new();
+    let observed_directory = crate::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema, None).unwrap();
+    let engine = Engine::open(&observed_directory, schema, None).unwrap();
     engine.commit().unwrap();
     let native = NativeCommit::read(&directory).unwrap();
     engine.lease.lineage.head.lock().unwrap().epoch = u64::MAX;
@@ -68,8 +70,9 @@ fn epoch_exhaustion_refuses_before_native_commit_or_checkpoint_invalidation() {
 #[test]
 fn equal_native_descriptor_does_not_authorize_an_older_history_epoch() {
     let directory = FaultDirectory::new();
+    let observed_directory = crate::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let old = engine.commit().unwrap();
     let current = engine.commit().unwrap();
     engine.close().unwrap();
@@ -78,10 +81,10 @@ fn equal_native_descriptor_does_not_authorize_an_older_history_epoch() {
     let mut aliased = old;
     aliased.native = current.native;
     assert!(matches!(
-        Engine::open(&directory, schema.clone(), Some(aliased)),
+        Engine::open(&observed_directory, schema.clone(), Some(aliased)),
         Err(Error::Checkpoint)
     ));
-    Engine::open(&directory, schema, Some(current))
+    Engine::open(&observed_directory, schema, Some(current))
         .unwrap()
         .close()
         .unwrap();
@@ -89,8 +92,9 @@ fn equal_native_descriptor_does_not_authorize_an_older_history_epoch() {
 #[test]
 fn poisoned_mutexes_and_redacted_errors_have_honest_continuation() {
     let directory = FaultDirectory::new();
+    let observed_directory = crate::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _state = engine.state.lock().unwrap();
         panic!("injected admission unwind");
@@ -102,7 +106,8 @@ fn poisoned_mutexes_and_redacted_errors_have_honest_continuation() {
     assert_eq!(engine.merge(), Err(Error::Poisoned));
     engine.close().unwrap();
     let directory = FaultDirectory::new();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let observed_directory = crate::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let checkpoint = engine.commit().unwrap();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _writer = engine.writer.lock().unwrap();
@@ -111,7 +116,7 @@ fn poisoned_mutexes_and_redacted_errors_have_honest_continuation() {
     assert!(result.is_err());
     assert_eq!(engine.close(), Err(Error::Poisoned));
     assert!(matches!(
-        Engine::open(&directory, schema, Some(checkpoint)),
+        Engine::open(&observed_directory, schema, Some(checkpoint)),
         Err(Error::Checkpoint)
     ));
     assert_eq!(Error::Native.to_string(), "engine Native");
@@ -120,20 +125,156 @@ fn poisoned_mutexes_and_redacted_errors_have_honest_continuation() {
 #[test]
 fn failed_reopen_io_has_no_writer_or_lineage_effects() {
     let directory = FaultDirectory::new();
+    let observed_directory = crate::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let checkpoint = engine.commit().unwrap();
     engine.close().unwrap();
     for mode in [4, 5] {
         directory.mode.store(mode, Ordering::SeqCst);
         assert!(matches!(
-            Engine::open(&directory, schema.clone(), Some(checkpoint.clone())),
+            Engine::open(
+                &observed_directory,
+                schema.clone(),
+                Some(checkpoint.clone())
+            ),
             Err(Error::Native)
         ));
     }
     directory.mode.store(0, Ordering::SeqCst);
-    Engine::open(&directory, schema, Some(checkpoint))
+    Engine::open(&observed_directory, schema, Some(checkpoint))
         .unwrap()
         .close()
         .unwrap();
+}
+
+#[test]
+fn acquired_constructor_and_configuration_failures_guard_checkpoint_lineage() {
+    // Real native constructor acquires first, then calls list_all. mode8 fails
+    // that read; mode10 also fails the actual acquired Lock::close.
+    for mode in [7, 8, 10] {
+        let directory = FaultDirectory::new();
+        let observed = crate::EngineDirectory::new(&directory);
+        let schema = schema();
+        let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+        engine.apply(batch(&schema, 1)).unwrap();
+        let checkpoint = engine.commit().unwrap();
+        let snapshot = engine.refresh().unwrap();
+        engine.close().unwrap();
+        directory.acquired.store(0, Ordering::SeqCst);
+        directory.lock_closes.store(0, Ordering::SeqCst);
+        directory.mode.store(mode, Ordering::SeqCst);
+        let result = Engine::open(&observed, schema.clone(), Some(checkpoint.clone()));
+        let expected = if mode == 10 {
+            Error::Close {
+                cleanup: CleanupStatus::NativeFailure,
+                release: ReleaseStatus::Failed,
+            }
+        } else {
+            Error::Native
+        };
+        assert!(matches!(result, Err(error) if error == expected));
+        assert_eq!(
+            directory.acquired.load(Ordering::SeqCst),
+            usize::from(mode != 7)
+        );
+        assert_eq!(
+            directory.lock_closes.load(Ordering::SeqCst),
+            usize::from(mode != 7)
+        );
+        assert_eq!(
+            directory.failures.load(Ordering::SeqCst),
+            if mode == 10 { 2 } else { 1 }
+        );
+        directory.mode.store(0, Ordering::SeqCst);
+        let reopened = Engine::open(&observed, schema.clone(), Some(checkpoint));
+        if mode == 7 {
+            reopened.unwrap().close().unwrap();
+        } else {
+            assert!(matches!(reopened, Err(Error::Checkpoint)));
+        }
+        assert_eq!(snapshot.get("id", &[]).unwrap().unwrap().version, 1);
+    }
+    for mode in [0, 6] {
+        let directory = FaultDirectory::new();
+        let observed = crate::EngineDirectory::new(&directory);
+        let schema = schema();
+        let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+        let checkpoint = engine.commit().unwrap();
+        engine.close().unwrap();
+        let closes = directory.lock_closes.load(Ordering::SeqCst);
+        directory.mode.store(mode, Ordering::SeqCst);
+        let result =
+            Engine::open_configured(&observed, schema.clone(), Some(checkpoint.clone()), |_| {
+                Err(Error::Native)
+            });
+        let expected = if mode == 6 {
+            Error::Close {
+                cleanup: CleanupStatus::NativeFailure,
+                release: ReleaseStatus::Failed,
+            }
+        } else {
+            Error::Native
+        };
+        assert!(matches!(result, Err(error) if error == expected));
+        assert_eq!(directory.lock_closes.load(Ordering::SeqCst), closes + 1);
+        directory.mode.store(0, Ordering::SeqCst);
+        assert!(matches!(
+            Engine::open(&observed, schema, Some(checkpoint)),
+            Err(Error::Checkpoint)
+        ));
+    }
+}
+
+#[test]
+fn post_acquisition_configuration_unwind_cannot_certify_lineage() {
+    let directory = FaultDirectory::new();
+    let observed = crate::EngineDirectory::new(&directory);
+    let schema = schema();
+    let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+    let checkpoint = engine.commit().unwrap();
+    engine.close().unwrap();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ =
+            Engine::open_configured(&observed, schema.clone(), Some(checkpoint.clone()), |_| {
+                panic!("controlled post-acquisition configuration unwind");
+            });
+    }));
+    assert!(result.is_err());
+    assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 2);
+    assert!(matches!(
+        Engine::open(&observed, schema, Some(checkpoint)),
+        Err(Error::Poisoned)
+    ));
+}
+
+#[test]
+fn poisoned_native_owner_and_actual_release_failure_preserve_both_statuses() {
+    let directory = FaultDirectory::new();
+    let observed = crate::EngineDirectory::new(&directory);
+    let schema = schema();
+    let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+    engine.apply(batch(&schema, 1)).unwrap();
+    let checkpoint = engine.commit().unwrap();
+    let snapshot = engine.refresh().unwrap();
+    let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _writer = engine.writer.lock().unwrap();
+        panic!("controlled native owner poison");
+    }));
+    assert!(unwind.is_err());
+    directory.mode.store(6, Ordering::SeqCst);
+    assert_eq!(
+        engine.close(),
+        Err(Error::Close {
+            cleanup: CleanupStatus::Poisoned,
+            release: ReleaseStatus::Failed,
+        })
+    );
+    assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 1);
+    directory.mode.store(0, Ordering::SeqCst);
+    assert!(matches!(
+        Engine::open(&observed, schema, Some(checkpoint)),
+        Err(Error::Checkpoint)
+    ));
+    assert_eq!(snapshot.get("id", &[]).unwrap().unwrap().version, 1);
 }

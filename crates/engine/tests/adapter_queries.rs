@@ -16,7 +16,8 @@ fn all_types_sort_projection_empty_analysis_and_boolean_roles() {
     )
     .unwrap();
     let directory = ByteBuffersDirectory::new();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     for (id, n, active, date) in [
         ("a", i64::from(i32::MIN), false, -62_167_219_200_000),
         ("b", i64::from(i32::MAX), true, 253_402_300_799_999),
@@ -150,7 +151,7 @@ fn all_types_sort_projection_empty_analysis_and_boolean_roles() {
     );
     let checkpoint = engine.commit().unwrap();
     engine.close().unwrap();
-    let reopened = Engine::open(&directory, schema.clone(), Some(checkpoint)).unwrap();
+    let reopened = Engine::open(&observed_directory, schema.clone(), Some(checkpoint)).unwrap();
     assert_eq!(
         reopened
             .refresh()
@@ -189,7 +190,8 @@ fn all_types_sort_projection_empty_analysis_and_boolean_roles() {
 fn query_nodes_terms_depth_bytes_and_numeric_bounds_refuse_explicitly() {
     let schema = Schema::new(1, &[("tag", Kind::Keyword), ("number", Kind::Integer)]).unwrap();
     let directory = ByteBuffersDirectory::new();
-    let engine = Engine::open(&directory, schema, None).unwrap();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed_directory, schema, None).unwrap();
     let snapshot = engine.refresh().unwrap();
     let values = vec![Value::String("x"); 129];
     let clauses: Vec<_> = (0..129).map(|_| Query::All).collect();
@@ -282,8 +284,9 @@ fn boolean<'a>(must: &'a [Query<'a>]) -> Query<'a> {
 #[test]
 fn retained_reader_budget_is_released_on_drop() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
-    let engine = Engine::open(&directory, schema, None).unwrap();
+    let engine = Engine::open(&observed_directory, schema, None).unwrap();
     let a = engine.refresh().unwrap();
     let b = engine.refresh().unwrap();
     let c = engine.refresh().unwrap();
@@ -300,8 +303,9 @@ fn retained_reader_budget_is_released_on_drop() {
 #[test]
 fn empty_terms_and_impossible_boolean_threshold_match_nothing() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(
             schema

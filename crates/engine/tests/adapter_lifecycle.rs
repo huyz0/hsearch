@@ -47,8 +47,9 @@ fn state(snapshot: &Snapshot) -> Vec<(String, i64, String)> {
 #[test]
 fn reopen_replay_preserves_identity_payload_receipts_and_rollback() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let first = engine
         .apply(put(&schema, "request-1", "stable", 1, "original"))
         .unwrap();
@@ -81,10 +82,15 @@ fn reopen_replay_preserves_identity_payload_receipts_and_rollback() {
         .unwrap();
     engine.close().unwrap();
     assert!(matches!(
-        Engine::open(&directory, schema.clone(), None),
+        Engine::open(&observed_directory, schema.clone(), None),
         Err(Error::Checkpoint)
     ));
-    let engine = Engine::open(&directory, schema.clone(), Some(checkpoint.clone())).unwrap();
+    let engine = Engine::open(
+        &observed_directory,
+        schema.clone(),
+        Some(checkpoint.clone()),
+    )
+    .unwrap();
     assert_eq!(
         state(&engine.refresh().unwrap()),
         vec![("stable".into(), 3, "replacement".into())]
@@ -121,7 +127,8 @@ fn reopen_replay_preserves_identity_payload_receipts_and_rollback() {
     );
     engine.close().unwrap();
     let replay_directory = ByteBuffersDirectory::new();
-    let replay = Engine::open(&replay_directory, schema.clone(), None).unwrap();
+    let observed_replay_directory = hsearch_engine::EngineDirectory::new(&replay_directory);
+    let replay = Engine::open(&observed_replay_directory, schema.clone(), None).unwrap();
     assert_eq!(
         replay
             .apply(put(&schema, "request-1", "stable", 1, "original"))
@@ -156,14 +163,15 @@ fn reopen_replay_preserves_identity_payload_receipts_and_rollback() {
     );
     replay.close().unwrap();
     let foreign = ByteBuffersDirectory::new();
-    let wrong = Engine::open(&foreign, schema.clone(), None).unwrap();
+    let observed_foreign = hsearch_engine::EngineDirectory::new(&foreign);
+    let wrong = Engine::open(&observed_foreign, schema.clone(), None).unwrap();
     wrong
         .apply(put(&schema, "wrong", "stable", 3, "changed payload"))
         .unwrap();
     wrong.commit().unwrap();
     wrong.close().unwrap();
     assert!(matches!(
-        Engine::open(&foreign, schema, Some(checkpoint)),
+        Engine::open(&observed_foreign, schema, Some(checkpoint)),
         Err(Error::Checkpoint)
     ));
 }
@@ -171,8 +179,9 @@ fn reopen_replay_preserves_identity_payload_receipts_and_rollback() {
 #[test]
 fn private_invalid_middle_and_valid_refusal_during_concurrent_refresh() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(put(&schema, "initial", "stable", 1, "committed"))
         .unwrap();
@@ -261,7 +270,8 @@ fn bounded_schema_document_query_sort_projection_and_bucket_refusals() {
     assert_eq!(Schema::new(0, &[("ok", Kind::Text)]), Err(Error::Schema));
     let schema = schema();
     let directory = ByteBuffersDirectory::new();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let too_big = "x".repeat(8193);
     let too_many = "word ".repeat(129);
     for text in [&too_big, &too_many] {
@@ -393,7 +403,8 @@ fn bounded_schema_document_query_sort_projection_and_bucket_refusals() {
 fn exact_groups_refuse_cardinality_overflow_and_stress_has_a_finite_end() {
     let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
     let directory = ByteBuffersDirectory::new();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     for i in 0..128 {
         let key = format!("{i:03}");
         engine

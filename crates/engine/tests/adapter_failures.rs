@@ -10,8 +10,9 @@ use support::FaultDirectory;
 fn failed_native_mutation_commit_refresh_and_merge_poison_continuation() {
     for action in ["apply", "commit-sync", "commit-rename", "refresh", "merge"] {
         let directory = FaultDirectory::new();
+        let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
         let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
-        let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+        let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
         engine
             .apply(
                 schema
@@ -136,7 +137,7 @@ fn failed_native_mutation_commit_refresh_and_merge_poison_continuation() {
         engine.close().unwrap();
         assert!(
             matches!(
-                Engine::open(&directory, schema, Some(checkpoint)),
+                Engine::open(&observed_directory, schema, Some(checkpoint)),
                 Err(Error::Checkpoint)
             ),
             "{action}"
@@ -147,20 +148,22 @@ fn failed_native_mutation_commit_refresh_and_merge_poison_continuation() {
 #[test]
 fn a_second_writer_is_refused_and_checkpoint_schema_is_not_interchangeable() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     // Even an empty index has one native write-lock owner.
-    assert!(Engine::open(&directory, schema.clone(), None).is_err());
+    assert!(Engine::open(&observed_directory, schema.clone(), None).is_err());
     let checkpoint = engine.commit().unwrap();
     engine.close().unwrap();
     let changed = Schema::new(2, &[("key", Kind::Keyword)]).unwrap();
     assert!(matches!(
-        Engine::open(&directory, changed, Some(checkpoint.clone())),
+        Engine::open(&observed_directory, changed, Some(checkpoint.clone())),
         Err(Error::Checkpoint)
     ));
     let empty = ByteBuffersDirectory::new();
+    let observed_empty = hsearch_engine::EngineDirectory::new(&empty);
     assert!(matches!(
-        Engine::open(&empty, schema, Some(checkpoint)),
+        Engine::open(&observed_empty, schema, Some(checkpoint)),
         Err(Error::Checkpoint)
     ));
 }

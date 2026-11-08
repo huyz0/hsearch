@@ -31,8 +31,9 @@ fn put(
 #[test]
 fn stale_same_projection_checkpoint_cannot_forget_a_missing_delete_or_retry() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(put(&schema, "initial", "stable", 1, "same"))
         .unwrap();
@@ -55,10 +56,10 @@ fn stale_same_projection_checkpoint_cannot_forget_a_missing_delete_or_retry() {
     let b = engine.commit().unwrap();
     engine.close().unwrap();
     assert!(matches!(
-        Engine::open(&directory, schema.clone(), Some(a)),
+        Engine::open(&observed_directory, schema.clone(), Some(a)),
         Err(Error::Checkpoint)
     ));
-    let engine = Engine::open(&directory, schema.clone(), Some(b.clone())).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), Some(b.clone())).unwrap();
     assert_eq!(
         engine
             .apply(
@@ -92,10 +93,10 @@ fn stale_same_projection_checkpoint_cannot_forget_a_missing_delete_or_retry() {
     let newest = engine.commit().unwrap();
     engine.close().unwrap();
     assert!(matches!(
-        Engine::open(&directory, schema.clone(), Some(b)),
+        Engine::open(&observed_directory, schema.clone(), Some(b)),
         Err(Error::Checkpoint)
     ));
-    Engine::open(&directory, schema, Some(newest))
+    Engine::open(&observed_directory, schema, Some(newest))
         .unwrap()
         .close()
         .unwrap();
@@ -103,8 +104,9 @@ fn stale_same_projection_checkpoint_cannot_forget_a_missing_delete_or_retry() {
 #[test]
 fn native_create_point_read_and_changed_then_restored_history_keep_original_results() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let create = || {
         schema
             .prepare(
@@ -171,10 +173,10 @@ fn native_create_point_read_and_changed_then_restored_history_keep_original_resu
     let b = engine.commit().unwrap();
     engine.close().unwrap();
     assert!(matches!(
-        Engine::open(&directory, schema.clone(), Some(a)),
+        Engine::open(&observed_directory, schema.clone(), Some(a)),
         Err(Error::Checkpoint)
     ));
-    let engine = Engine::open(&directory, schema.clone(), Some(b)).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), Some(b)).unwrap();
     let hit = engine
         .refresh()
         .unwrap()
@@ -190,8 +192,9 @@ fn native_create_point_read_and_changed_then_restored_history_keep_original_resu
 #[test]
 fn blocked_native_commit_refuses_competing_admission_and_reopen_without_queueing() {
     let directory = FaultDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(put(&schema, "initial", "id", 1, "old"))
         .unwrap();
@@ -217,7 +220,7 @@ fn blocked_native_commit_refuses_competing_admission_and_reopen_without_queueing
         assert!(matches!(engine.commit(), Err(Error::Busy)));
         assert_eq!(engine.merge(), Err(Error::Busy));
         assert!(matches!(
-            Engine::open(&directory, schema.clone(), Some(checkpoint)),
+            Engine::open(&observed_directory, schema.clone(), Some(checkpoint)),
             Err(Error::Busy)
         ));
         assert_eq!(old.get("id", &[]).unwrap().unwrap().version, 1);
@@ -239,8 +242,9 @@ fn blocked_native_commit_refuses_competing_admission_and_reopen_without_queueing
 fn implicit_drop_and_failed_native_close_leave_checkpoint_lineage_uncertain() {
     for fail_close in [false, true] {
         let directory = FaultDirectory::new();
+        let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
         let schema = schema();
-        let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+        let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
         engine
             .apply(put(&schema, "initial", "id", 1, "old"))
             .unwrap();
@@ -250,7 +254,7 @@ fn implicit_drop_and_failed_native_close_leave_checkpoint_lineage_uncertain() {
         if fail_close {
             // Pinned lifecycle.rs:73-81 propagates try_rollback errors;
             // index_file_deleter.rs:603-604 calls Directory::list_all.
-            // Lock::close is not called on the wrapper when the writer drops.
+            // The observing directory separately records actual lock release.
             directory.mode.store(5, Ordering::SeqCst);
             assert_eq!(engine.close(), Err(Error::Native));
             assert_eq!(directory.failures.load(Ordering::SeqCst), 1);
@@ -262,21 +266,21 @@ fn implicit_drop_and_failed_native_close_leave_checkpoint_lineage_uncertain() {
         // The directory is healthy again, so refusal must come from the
         // uncertain lineage rather than from a still-armed I/O fault.
         assert!(matches!(
-            Engine::open(&directory, schema, Some(checkpoint)),
+            Engine::open(&observed_directory, schema, Some(checkpoint)),
             Err(Error::Checkpoint)
         ));
         assert_eq!(old.get("id", &[]).unwrap().unwrap().version, 1);
     }
 }
 
-// Required native-port regression. At the current pin the consuming native
-// close never calls CountedLock::close, so this is an unresolved control,
-// not a claim that release propagation is implemented or has been executed.
+// The observing lock delegates the actual acquired Lock::close on native
+// writer destruction; these controls require execution at the unchanged pin.
 #[test]
 fn actual_lock_release_failure_is_returned_and_invalidates_lineage() {
     let directory = FaultDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     engine
         .apply(put(&schema, "initial", "id", 1, "old"))
         .unwrap();
@@ -288,10 +292,16 @@ fn actual_lock_release_failure_is_returned_and_invalidates_lineage() {
     // Count the actual Lock::close boundary before inspecting its result.
     assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 1);
     assert_eq!(directory.failures.load(Ordering::SeqCst), 1);
-    assert_eq!(result, Err(Error::Native));
+    assert_eq!(
+        result,
+        Err(Error::Close {
+            cleanup: hsearch_engine::CleanupStatus::Succeeded,
+            release: hsearch_engine::ReleaseStatus::Failed,
+        })
+    );
     directory.mode.store(0, Ordering::SeqCst);
     assert!(matches!(
-        Engine::open(&directory, schema, Some(checkpoint)),
+        Engine::open(&observed_directory, schema, Some(checkpoint)),
         Err(Error::Checkpoint)
     ));
     assert_eq!(old.get("id", &[]).unwrap().unwrap().version, 1);
@@ -300,13 +310,14 @@ fn actual_lock_release_failure_is_returned_and_invalidates_lineage() {
 #[test]
 fn reusable_close_requires_one_observed_lock_release() {
     let directory = FaultDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = schema();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let checkpoint = engine.commit().unwrap();
     assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 0);
     engine.close().unwrap();
     assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 1);
-    let reopened = Engine::open(&directory, schema, Some(checkpoint)).unwrap();
+    let reopened = Engine::open(&observed_directory, schema, Some(checkpoint)).unwrap();
     reopened.close().unwrap();
     assert_eq!(directory.lock_closes.load(Ordering::SeqCst), 2);
 }

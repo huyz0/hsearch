@@ -8,7 +8,8 @@ fn empty_terms_validate_unknown_fields_and_charge_empty_field_bytes() {
     let name = "x".repeat(64);
     let schema = Schema::new(1, &[(&name, Kind::Keyword)]).unwrap();
     let directory = ByteBuffersDirectory::new();
-    let engine = Engine::open(&directory, schema, None).unwrap();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed_directory, schema, None).unwrap();
     let snapshot = engine.refresh().unwrap();
     assert_eq!(
         snapshot.search(
@@ -184,8 +185,9 @@ fn schema_identity_document_and_aggregate_token_limits_have_exact_edges() {
 #[test]
 fn history_byte_exhaustion_refuses_before_overwriting_the_last_admitted_version() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let payload = "p".repeat(8000);
     for version in 1..=32 {
         engine
@@ -235,8 +237,9 @@ fn history_byte_exhaustion_refuses_before_overwriting_the_last_admitted_version(
 #[test]
 fn repeated_refresh_segment_limit_refuses_until_explicit_merge() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let prepare = |id: &str| {
         schema
             .prepare(
@@ -298,15 +301,16 @@ fn repeated_refresh_segment_limit_refuses_until_explicit_merge() {
 #[test]
 fn reader_quota_is_shared_across_checkpoint_reopen() {
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("key", Kind::Keyword)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     let checkpoint = engine.commit().unwrap();
     let a = engine.refresh().unwrap();
     let b = engine.refresh().unwrap();
     let c = engine.refresh().unwrap();
     let d = engine.refresh().unwrap();
     engine.close().unwrap();
-    let engine = Engine::open(&directory, schema, Some(checkpoint)).unwrap();
+    let engine = Engine::open(&observed_directory, schema, Some(checkpoint)).unwrap();
     assert!(matches!(engine.refresh(), Err(Error::Limit)));
     drop(a);
     let replacement = engine.refresh().unwrap();
@@ -401,8 +405,9 @@ fn standard_analyzer_supplementary_buffer_boundaries_follow_pinned_java_source()
 fn phrase_match_roundtrips_supplementary_buffer_boundary() {
     let text = format!("brown {}\u{10400} fox", "a".repeat(254));
     let directory = ByteBuffersDirectory::new();
+    let observed_directory = hsearch_engine::EngineDirectory::new(&directory);
     let schema = Schema::new(1, &[("title", Kind::Text)]).unwrap();
-    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
     for (id, title) in [
         ("exact", text.as_str()),
         ("adjacent", "brown fox"),

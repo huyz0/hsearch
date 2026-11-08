@@ -291,8 +291,9 @@ mod tests {
     #[test]
     fn phrase_lowering_preserves_explicit_position_holes() {
         let directory = ByteBuffersDirectory::new();
+        let observed_directory = crate::EngineDirectory::new(&directory);
         let schema = Schema::new(1, &[("title", Kind::Text)]).unwrap();
-        let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+        let engine = Engine::open(&observed_directory, schema.clone(), None).unwrap();
         for (id, title) in [
             ("adjacent", "brown fox"),
             ("gap", "brown red fox"),

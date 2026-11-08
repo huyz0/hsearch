@@ -47,7 +47,7 @@ def held_out(root, envelope):
     held=json.loads(raw); phrase=held['phrase']; dates=held['date']
     assert len(phrase['documents'])==3 and len(dates['documents'])==5 and phrase['slop']==0
     out=['#[test] fn production_held_out_phrase_discriminates_unordered_and() {',
-         'let directory=ByteBuffersDirectory::new(); let schema=Schema::new(1,&[("title",Kind::Text)]).unwrap(); let engine=Engine::open(&directory,schema.clone(),None).unwrap();']
+         'let directory=ByteBuffersDirectory::new();let observed_directory=hsearch_engine::EngineDirectory::new(&directory); let schema=Schema::new(1,&[("title",Kind::Text)]).unwrap(); let engine=Engine::open(&observed_directory,schema.clone(),None).unwrap();']
     for row in phrase['documents']:
         out.append(f'engine.apply(schema.prepare({lit(row["id"])},&[Mutation::Put{{id:{lit(row["id"])},version:1,fields:&[("title",Value::String({lit(row["title"])}))]}}]).unwrap()).unwrap();')
     out.append('let snapshot=engine.refresh().unwrap();')
@@ -58,7 +58,7 @@ def held_out(root, envelope):
     out.append('assert_eq!(unordered.hits.iter().map(|h|h.id.as_str()).collect::<Vec<_>>(),vec!['+', '.join(lit(i) for i in phrase['unsafe_unordered_and_ids'])+']);')
     out.append('assert_ne!(exact.hits,unordered.hits);engine.close().unwrap();}')
     out+=['#[test] fn production_held_out_date_range_discriminates_match_all() {',
-         'let directory=ByteBuffersDirectory::new(); let schema=Schema::new(1,&[("date",Kind::Date)]).unwrap(); let engine=Engine::open(&directory,schema.clone(),None).unwrap();']
+         'let directory=ByteBuffersDirectory::new();let observed_directory=hsearch_engine::EngineDirectory::new(&directory); let schema=Schema::new(1,&[("date",Kind::Date)]).unwrap(); let engine=Engine::open(&observed_directory,schema.clone(),None).unwrap();']
     for row in dates['documents']:
         out.append(f'engine.apply(schema.prepare({lit(row["id"])},&[Mutation::Put{{id:{lit(row["id"])},version:1,fields:&[("date",Value::Date({row["epoch_ms"]}))]}}]).unwrap()).unwrap();')
     out.append('let snapshot=engine.refresh().unwrap();')
@@ -84,7 +84,7 @@ def render(root):
          'use lucene_store::ByteBuffersDirectory;',
          'fn schema() -> Schema { Schema::new(1,&['+', '.join(f'({lit(n)},Kind::{k})' for n,k in zip(NAMES,('Keyword','Keyword','Keyword','Text','Integer','Boolean','Date')))+']).unwrap() }',
          '#[test] fn public_queries_aggregations_and_projection() {',
-         'let directory=ByteBuffersDirectory::new();let schema=schema();let engine=Engine::open(&directory,schema.clone(),None).unwrap();']
+         'let directory=ByteBuffersDirectory::new();let observed_directory=hsearch_engine::EngineDirectory::new(&directory);let schema=schema();let engine=Engine::open(&observed_directory,schema.clone(),None).unwrap();']
     for row in data['documents.json']:
         fields=', '.join(f'({lit(n)},{val(n,row["source"][n])})' for n in NAMES)
         out.append(f'engine.apply(schema.prepare({lit(row["id"])},&[Mutation::Put{{id:{lit(row["id"])},version:1,fields:&[{fields}]}}]).unwrap()).unwrap();')
@@ -163,7 +163,7 @@ def render_supplement(root):
         out.append(f'emit({lit(case["id"])},value);'+'}')
     for case in bundle['inputs']['fixtures/api/core-v1/search-cases.json']:
         start(case['id'])
-        out.append('let directory=ByteBuffersDirectory::new();let schema=core_schema();let engine=Engine::open(&directory,schema.clone(),None).unwrap();seed_core(&engine,&schema);let snapshot=engine.refresh().unwrap();')
+        out.append('let directory=ByteBuffersDirectory::new();let observed_directory=hsearch_engine::EngineDirectory::new(&directory);let schema=core_schema();let engine=Engine::open(&observed_directory,schema.clone(),None).unwrap();seed_core(&engine,&schema);let snapshot=engine.refresh().unwrap();')
         body=case['request']['json']; oracle=case['reference_oracle']
         out.append('let query='+query(body.get('query',{'match_all':{}}))+';')
         if oracle['kind']=='hits':
@@ -187,7 +187,7 @@ def render_supplement(root):
         parent=parents[case.get('dataset',case['id'])]; rows=d['records'](bundle,parent)
         date='epoch_ms' in rows[0]
         start(case['id'])
-        out.append('let directory=ByteBuffersDirectory::new();let schema=Schema::new(1,&[("uid",Kind::Keyword),'+('("date",Kind::Date)' if date else '("title",Kind::Text)')+']).unwrap();let engine=Engine::open(&directory,schema.clone(),None).unwrap();')
+        out.append('let directory=ByteBuffersDirectory::new();let observed_directory=hsearch_engine::EngineDirectory::new(&directory);let schema=Schema::new(1,&[("uid",Kind::Keyword),'+('("date",Kind::Date)' if date else '("title",Kind::Text)')+']).unwrap();let engine=Engine::open(&observed_directory,schema.clone(),None).unwrap();')
         for row in rows:
             field='("date",Value::Date('+str(row['epoch_ms'])+'))' if date else '("title",Value::String('+lit(row['title'])+'))'
             out.append(f'engine.apply(schema.prepare({lit(row["id"])},&[Mutation::Put{{id:{lit(row["id"])},version:1,fields:&[("uid",Value::String({lit(row["id"])})),{field}]}}]).unwrap()).unwrap();')
