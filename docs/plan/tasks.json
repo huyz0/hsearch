@@ -1390,8 +1390,13 @@
             "M01.07"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-01-qualified-source.md",
+              "result": "Proposed merged state only: bounded trait/memory-fault conformance and frozen-inventory collector are implemented; exact BB x64 dev/release coverage is predecessor evidence. This combined candidate still requires its own complete ordinary/native ARM/hosted CI/coverage, both counted independent roles, gate and protected integration before acceptance. No provider/service/format/durability/license/release qualification."
+            }
+          ]
         },
         {
           "id": "M03.02",
@@ -1407,8 +1412,7 @@
             "Probe evidence binds image/config/topology; required capability failure blocks production readiness."
           ],
           "depends_on": [
-            "M03.01",
-            "M01"
+            "M03.01"
           ],
           "owner": "storage/consistency",
           "status": "planned",

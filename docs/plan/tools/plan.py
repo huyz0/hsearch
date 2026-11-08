@@ -62,7 +62,7 @@ def research_gate_contract(milestones: dict, tasks: dict) -> None:
         "M01.08": {"M01.04", "M01.05", "M01.06", "M01.07", "M19", "M01.09"},
         "M02.02": {"M19", "M01", "M02.09"},
         "M02.04": {"M01", "M02.10"},
-        "M03.02": {"M03.01", "M01"},
+        "M03.02": {"M03.01"},
         "M03.03": {"M03.01", "M19", "M02.08", "M02.05"},
         "M03.04": {"M03.03"},
         "M03.07": {"M02.07", "M03.01"},
@@ -98,8 +98,8 @@ def research_gate_contract(milestones: dict, tasks: dict) -> None:
              f"Research acceptance gate missing: {task_id}")
     need("M01" in milestones["M02"]["depends_on"],
          "Research acceptance gate missing: milestone M02")
-    need(set(tasks["M03.02"]["depends_on"]) == {"M03.01", "M01"} and
-         len(tasks["M03.02"]["depends_on"]) == 2,
+    need(set(tasks["M03.02"]["depends_on"]) == {"M03.01"} and
+         len(tasks["M03.02"]["depends_on"]) == 1,
          "Provider start profile changed: M03.02")
     need("M01" in milestones["M03"]["depends_on"],
          "Product acceptance gate missing: milestone M03")

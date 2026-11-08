@@ -159,20 +159,30 @@ class ResearchPlanTests(unittest.TestCase):
                                    "Product start profile changed"):
             PLAN["validate"](data, files=False)
 
-    def test_accepted_traits_do_not_qualify_provider_or_milestone(self):
+    def test_accepted_traits_allow_probe_start_without_qualifying_provider_or_milestone(self):
         data = self.completed_research()
         milestones, tasks = self.graph(data)
+        self.assertFalse(self.ready(data, "M03.02"))
         tasks["M03.01"].update(status="done", evidence=[{
             "path": "product-start-policy.md",
             "result": "In-memory trait acceptance model only."}])
         PLAN["validate"](data, files=False)
-        self.assertFalse(self.ready(data, "M03.02"))
+        self.assertTrue(self.ready(data, "M03.02"))
+        self.assertEqual(tasks["M03.02"]["status"], "planned")
         self.assertNotEqual(milestones["M03"]["status"], "done")
         self.assertEqual(tasks["M01.08"]["status"], "planned")
+        # Adding the retired hold really prevents otherwise admitted probe work.
+        tasks["M03.02"]["depends_on"].append("M01")
+        self.assertFalse(self.ready(data, "M03.02"))
+        with self.assertRaisesRegex(PLAN["InvalidPlan"], "Provider start profile changed"):
+            PLAN["validate"](data, files=False)
         tasks["M03.02"]["depends_on"].remove("M01")
+        # Removing the accepted-trait edge creates false readiness and must fail.
+        tasks["M03.01"]["status"] = "planned"
+        self.assertFalse(self.ready(data, "M03.02"))
+        tasks["M03.02"]["depends_on"].remove("M03.01")
         self.assertTrue(self.ready(data, "M03.02"))
-        with self.assertRaisesRegex(PLAN["InvalidPlan"],
-                                   "Research acceptance gate missing"):
+        with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research acceptance gate missing"):
             PLAN["validate"](data, files=False)
 
     def test_storage_milestone_and_later_format_runtime_gates_remain(self):

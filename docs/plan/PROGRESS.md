@@ -1,5 +1,12 @@
 # Progress and handoff
 
+## 8 November 2026: combined M03.01 final-source candidate
+
+The [combined source record](evidence/m03-01-qualified-source.md) binds unchanged BB object/workspace/CI/collector bodies and the full original992 policy+code scope after both normal code claims closed. Bounded typed contracts, memory/fault conformance and frozen-nextest-inventory collection are implemented. Exact BB local x64 dev/release coverage reports863/863 aggregate and340/340 object/changed, twelve inventory binaries/eight nonempty shards/46tests per profile with zero skips/postfreeze Cargo, plus native CLI trap and119Linux controls. Those are predecessor/body results; the new combined head still needs full ordinary/native ARM/hosted/profile/coverage qualification, both counted roles and protected integration. Candidate done is proposed merged status only.
+
+The [updated start policy](product-start-policy.md) applies root's prospective removal of only the seed-added M03.02 whole-M01 start hold: M03.02 again depends solely on actually accepted M03.01, matching main992. Whole-M03 M01 completion, M03.03 measured calibration, M01.08 unqualified status and every other acceptance gate remain. Earlier seed checkpoints below describe historical proposals and their later-superseded hold. Old40ea release failure and its unproven dirty-fingerprint trigger remain preserved; fresh BB contexts do not relabel it. No actual provider/service/format/durability/license/release acceptance or new claim/resource/native/backend/FFF action follows from this candidate.
+
+
 ## 8 November 2026: proposed narrow storage-trait start policy
 
 The [M03.01 policy candidate](product-start-policy.md) replaces only that task’s whole-M01 start edge with accepted API/workspace/sandbox/ownership/review/CI/coverage prerequisites. M03.02 gains an explicit whole-M01 prerequisite, and milestone M03 retains whole-M01. M01.08’s goal describes measuring the frozen baseline; every actual acceptance clause, status, oracle/trial/usage/recovery and history remains. All other task edges/statuses are unchanged.

@@ -17,6 +17,7 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M01.15"]["status"] = "in_progress"
         self.tasks["M01.09"]["status"] = "in_progress"
         self.tasks["M01.08"]["status"] = "planned"
+        self.tasks["M03.01"]["status"] = "planned"  # Private preacceptance model only.
         milestones["M01"]["status"] = "in_progress"
 
     def reject(self, message):
@@ -89,7 +90,7 @@ class IncidentPlanTests(unittest.TestCase):
     def test_baseline_and_product_edges_cannot_be_removed_after_closure(self):
         self.accepted_disposition_model()
         for task_id, dependency in (("M01.08", "M01.09"), ("M02.02", "M01"),
-                                    ("M02.04", "M01"), ("M03.02", "M01")):
+                                    ("M02.04", "M01"), ("M03.02", "M03.01")):
             with self.subTest(task=task_id):
                 self.tasks[task_id]["depends_on"].remove(dependency)
                 self.reject("Research acceptance gate missing")

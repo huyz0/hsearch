@@ -1,6 +1,6 @@
 # Coordinator research split: concrete scope before implementation
 
-The [M03.01 development seed](product-start-policy.md) separates one trait/memory-fault conformance implementation from harness-baseline measurement. After root audits the exact legitimate committed seed, accepted prerequisites and conflict-free owned paths, a normal development-only TaskStore claim may precede a separate policy merge. The full policy and nonempty code share counted final-source review, native CI and protected integration before acceptance; no policy-only packet is required. M03.02 and milestone M03 retain whole-M01, all other gates remain, and historical M14 acceptance is unchanged. This route grants no harness/provider/runtime/product-milestone acceptance.
+The [M03.01 development seed](product-start-policy.md) separates one trait/memory-fault conformance implementation from harness-baseline measurement. After root audits the exact legitimate committed seed, accepted prerequisites and conflict-free owned paths, a normal development-only TaskStore claim may precede a separate policy merge. The full policy and nonempty code share counted final-source review, native CI and protected integration before acceptance; no policy-only packet is required. M03.02 starts only after actually accepted M03.01, milestone M03 retains whole-M01, all other gates remain, and historical M14 acceptance is unchanged. This route grants no harness/provider/runtime/product-milestone acceptance.
 
 ## Original M14 scope and historical status framing
 
