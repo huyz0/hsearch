@@ -6,7 +6,7 @@ This prospective clarification applies to M01.19's host-context component. It in
 
 ## What the component promises
 
-`tools/retention_context_v1` supplies bounded original-context encoding, acknowledged CAS interfaces and aggregate credits, original integer clock endpoints, incremental FD discovery and a conditional Linux allocation/guardian profile. It has no TaskStore, Docker, FFF, artifact-selection, human-approval or retirement-policy imports. It introduces no dependencies, live operation or additional allowance. The [component README](../../tools/retention_context_v1/README.md) describes the APIs and consuming-port obligations.
+`tools/retention_context_v1` supplies bounded original-context encoding, acknowledged CAS interfaces and aggregate credits, original integer clock endpoints, incremental FD discovery and a conditional Linux allocation/guardian profile. It has no TaskStore, Docker, FFF, artifact-selection, human-approval or retirement-policy imports. It introduces no dependencies, live operation or additional allowance. The [component README](https://github.com/huyz0/hsearch/blob/458c96c835074bb4b43a33a3fe0d1225395c581e/tools/retention_context_v1/README.md) describes the APIs and consuming-port obligations.
 
 Payload audit bytes retain their original meaning: scoped cumulative application reads and caller-requested work, including conservative precharges. They are not physical device I/O, filesystem amplification or hidden kernel-record telemetry. Native allocation, logical discovery, source reads, metadata and payload debits remain separate, conjunctive bounds. No universal per-`next` hidden-kernel work, physical-I/O, CPU or syscall-latency certificate is claimed.
 
