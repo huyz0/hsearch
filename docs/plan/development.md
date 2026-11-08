@@ -46,6 +46,8 @@ No hsearch redistribution license has been selected. Public GitHub visibility pe
 
 ## Continue delivery
 
+The [prospective M03.01 start policy](product-start-policy.md) separates one trait/memory-fault conformance implementation from harness-baseline measurement. It requires reviewed policy integration before any product claim; M03.02 and milestone M03 retain whole-M01, and all other task gates remain. The historical M14 acceptance record is unchanged. This is a narrow source-task start profile, not harness/provider/runtime/product-milestone acceptance.
+
 Use `python3 docs/plan/tools/plan.py next` and [progress](PROGRESS.md). M01.02 and M01.06 impact CI are integrated. Owned task/recovery and bounded semantic context are integrated. M01.05 durable review is integrated; generic coverage is accepted through M13, while the frozen agent/concurrent recovery corpus remains required. The broader engine/storage/security/search/replication/provider work remains M02-M17. Keep the original acceptance criteria; bootstrap/sandbox success cannot close those milestones.
 
 API-dependent work follows integrated [core-v1](api-compatibility.md) and [engineering standards](engineering-standards.md). M01.03 is integrated; its [runner interface](task-runner.md) and [qualification record](evidence/m01-03-integrated.md) remain distinct from M01.04 semantic navigation and later harness gates. Run `python tools/api_contract.py check` alongside workspace/plan checks.

@@ -20,6 +20,8 @@ Keep >=90% aggregate/per-crate/changed-line production coverage requirements, na
 
 ## Work, review and integration
 
+The [prospective M03.01 start policy](product-start-policy.md) separates one trait/memory-fault conformance implementation from harness-baseline measurement. It requires reviewed policy integration before any product claim; M03.02 and milestone M03 retain whole-M01, and all other task gates remain. The historical M14 acceptance record is unchanged. This is a narrow source-task start profile, not harness/provider/runtime/product-milestone acceptance.
+
 Use one owned task branch/worktree and resource namespace, preserve existing work and serialize shared contracts, lockfiles and ledger edits. Task-level dependencies govern start; milestone prerequisites govern completion. API-affecting work must descend from M19 and the relevant measured budget freeze. Rebase preserved M01.03 work without overwriting the revised API/spec/standards.
 
 Run deterministic checks, then independent correctness/test review; API/routing/fencing/crypto/unsafe changes additionally receive architecture/security/scalability review. Bind reports to exact source and test evidence. Plan at most two review rounds, hard ceiling three per task; counters survive diff changes. Unresolved blockers at the ceiling require split/redesign, not passing by budget. Formal approving GitHub reviews under the user's identity require separate specific authorization; independent session reports satisfy the current workflow.

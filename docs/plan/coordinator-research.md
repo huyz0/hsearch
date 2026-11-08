@@ -1,4 +1,9 @@
 # Coordinator research split: concrete scope before implementation
+
+The [prospective M03.01 start policy](product-start-policy.md) separates one trait/memory-fault conformance implementation from harness-baseline measurement. It requires reviewed policy integration before any product claim; M03.02 and milestone M03 retain whole-M01, and all other task gates remain. The historical M14 acceptance record is unchanged. This is a narrow source-task start profile, not harness/provider/runtime/product-milestone acceptance.
+
+## Original M14 scope and historical status framing
+
 Status: M01.14's [plan and guard are accepted](evidence/m01-14-integrated.md). M02.09/.10 remain planned coordinator-run experiments; their own source, results, reviews and full qualification are still required.
 The accepted M01.14 planning task lives in unfinished M01 and depends on M19/M01.13/M08.01; preserve M19 completion and every accepted task.
 Add M02.09 bounded native lifecycle experiments and M02.10 bounded local durability/metadata experiments, depending explicitly on M19, accepted M01.02-.07/.13, M01.14, M02.01/.08 and M08.01.

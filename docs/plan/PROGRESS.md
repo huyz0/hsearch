@@ -1,5 +1,11 @@
 # Progress and handoff
 
+## 8 November 2026: proposed narrow storage-trait start policy
+
+The [M03.01 policy candidate](product-start-policy.md) replaces only that task’s whole-M01 start edge with accepted API/workspace/sandbox/ownership/review/CI/coverage prerequisites. M03.02 gains an explicit whole-M01 prerequisite, and milestone M03 retains whole-M01. M01.08’s goal describes measuring the frozen baseline; every actual acceptance clause, status, oracle/trial/usage/recovery and history remains. All other task edges/statuses are unchanged.
+
+This is prospective policy preparation, not product admission or acceptance. Its guard and graph controls preserve later provider/format/runtime gates and historical M14 evidence. Independent review, complete checks, actual PR29-main adoption and normal protected integration remain required. No crate/workspace/lock/allocator/resource/FFF work or M19 clarification is included. Earlier checkpoints remain historical.
+
 ## 8 November 2026: retention redesign plan integrated
 
 [M01.18's plan artifact is accepted](evidence/m01-18-integrated.md): reviewed source `3c44380` merged normally through [PR26](https://github.com/huyz0/hsearch/pull/26) as `81bae9b` with the same tree, both R2 nonauthor roles clear, the durable gate passed and all seven PR/main jobs successful. The decomposition, frozen history and verbatim eleven-clause bridge are accepted; M01.19/.20/.21 remain unimplemented and require their own qualification. The factual bookkeeping source needs its own final legal same-M18 R3/checks/integration before successor admission.
