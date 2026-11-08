@@ -5,10 +5,5 @@
     "xtask",
     "hsearch-testkit"
   ],
-  "non_executable": {
-    "crates/engine/src/lib.rs": {
-      "sha256": "0f819830057f863c2dbadfc74904696b30b5ac327545fcff0a907d04ade7214b",
-      "reason": "Only the pinned revision constant and upstream re-exports; no adapter function body."
-    }
-  }
+  "non_executable": {}
 }
