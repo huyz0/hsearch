@@ -241,17 +241,33 @@ class CursorPool:
                 pass
             raise
 
+    def _check_close(self, errors):
+        # A failed bookend refuses completion, never the required cleanup.
+        try:
+            self.session.check()
+        except BaseException as exc:
+            errors.append(exc)
+
+    def _deny_close(self):
+        self.denied = True
+        try:
+            self.session.deny()
+        except BaseException:
+            pass  # An uncertain acknowledgment cannot restore this session.
+
     def close(self):
         errors = []
+        self._check_close(errors)
         for cursor in tuple(reversed(self.active)):
             try:
                 cursor.close()
-            except Exception as exc:
+            except BaseException as exc:
                 errors.append(exc)
+        self._check_close(errors)
         if errors or self.close_uncertain:
-            if not errors:
-                raise Refused('cursor-close-uncertain')
-            raise Refused('cursor-close-uncertain') from errors[0]
+            self._deny_close()
+            reason = 'cursor-close-uncertain' if self.close_uncertain else 'cursor-close-context'
+            raise Refused(reason) from (errors[0] if errors else None)
 
 
 class Cursor:
@@ -266,8 +282,13 @@ class Cursor:
     def __enter__(self):
         return self
 
-    def __exit__(self, *_):
-        self.close()
+    def __exit__(self, _kind, primary, _traceback):
+        try:
+            self.close()
+        except BaseException as cleanup:
+            if primary is None:
+                raise
+            primary.add_note('cursor cleanup refused: '+type(cleanup).__name__)
 
     def next(self):
         need(not self.closed and not self.eof and not self.pool.denied, 'cursor-closed')
@@ -305,13 +326,16 @@ class Cursor:
             result = Entry(name, info.st_dev, info.st_ino, info.st_mode, info.st_size)
             self.delivered += 1
             return result
-        except Exception:
+        except BaseException as primary:
             self.pool.denied = True
             try:
                 session.deny()
-            except Exception:
+            except BaseException:
                 pass
-            self.close()
+            try:
+                self.close()
+            except BaseException as cleanup:
+                primary.add_note('cursor cleanup refused: '+type(cleanup).__name__)
             raise
 
     def open_child(self, entry, *, cap=None):
@@ -366,35 +390,40 @@ class Cursor:
                     self.pool.fds_used -= 1
         try:
             self.pool.session.check()
-        except Exception:
-            child.close()
+        except BaseException as primary:
+            try:
+                child.close()
+            except BaseException as cleanup:
+                primary.add_note('child cleanup refused: '+type(cleanup).__name__)
             raise
         return child
 
     def close(self):
-        if self.closed:
-            if self.close_error is not None:
-                raise Refused('cursor-close-uncertain') from self.close_error
-            return
-        self.closed = True
+        context_errors = []
+        self.pool._check_close(context_errors)
         errors = []
-        try:
-            self.iterator.close()
-        except Exception as exc:
-            errors.append(exc)
-        try:
-            os.close(self.fd)
-        except Exception as exc:
-            errors.append(exc)
+        if not self.closed:
+            self.closed = True
+            try:
+                self.iterator.close()
+            except BaseException as exc:
+                errors.append(exc)
+            self.pool._check_close(context_errors)
+            try:
+                os.close(self.fd)
+            except BaseException as exc:
+                errors.append(exc)
+            if not errors:
+                self.pool.active.remove(self)
+                self.pool.memory_used -= self.allocation
+                self.pool.fds_used -= 3
+        self.pool._check_close(context_errors)
         if errors:
             self.close_error = errors[0]
-            self.pool.denied = True
             self.pool.close_uncertain = True
-            try:
-                self.pool.session.deny()
-            except Exception:
-                pass
-            raise Refused('cursor-close-uncertain') from errors[0]
-        self.pool.active.remove(self)
-        self.pool.memory_used -= self.allocation
-        self.pool.fds_used -= 3
+        if self.close_error is not None:
+            self.pool._deny_close()
+            raise Refused('cursor-close-uncertain') from self.close_error
+        if context_errors:
+            self.pool._deny_close()
+            raise Refused('cursor-close-context') from context_errors[0]
