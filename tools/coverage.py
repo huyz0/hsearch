@@ -453,8 +453,29 @@ def native_export_command(llvm, objects, *, profile_path=None):
             *[part for item in objects[1:] for part in ("--object", item)]]
 
 
+def lexical_source_path(path, resolved):
+    """Remove parent components only after checking the actual traversed entries."""
+    need(path.is_relative_to(ROOT), "Coverage spelling starts outside source root")
+    current = ROOT
+    parts = path.relative_to(ROOT).parts
+    for index, part in enumerate(parts):
+        if part == "..":
+            need(current != ROOT, "Coverage spelling traverses above source root")
+            current = current.parent
+        else:
+            current = current / part
+            mode = current.lstat().st_mode
+            need(not stat.S_ISLNK(mode), "Coverage spelling traverses a symlink")
+            need(stat.S_ISREG(mode) if index == len(parts) - 1 else stat.S_ISDIR(mode),
+                 "Coverage spelling traverses an invalid source entry")
+    need(current == resolved and stat.S_ISREG(current.lstat().st_mode),
+         "Coverage spelling has a physical redirection or non-file target")
+    return current
+
+
 def normalize_report(text, sources, packages, selected, tracked, *, runtime=False, external_roots=(), report_bindings=None, export_profile="full"):
     result = {}
+    normalized_paths = {}
     owners = sorted(((Path(packages[name]["manifest_path"]).parent, name) for name in selected), key=lambda pair: len(str(pair[0])), reverse=True)
     def include(filename):
         path = Path(filename)
@@ -463,7 +484,26 @@ def normalize_report(text, sources, packages, selected, tracked, *, runtime=Fals
         if not resolved.is_relative_to(ROOT):
             need(any(resolved.is_relative_to(Path(root)) for root in external_roots), "Unowned external coverage source")
             return False  # Only declared dependency/toolchain roots may be excluded.
-        need(resolved == path, "Coverage source path is redirected")
+        if resolved != path:
+            try:
+                path = lexical_source_path(path, resolved)
+            except ValueError as error:
+                path_check = str(error)
+            except OSError as error:
+                path_check = "filesystem-error-" + str(error.errno)
+            else:
+                resolved = path
+        if resolved != path:
+            # Digests correlate the rejected spelling with
+            # a retained native export without emitting arbitrary source paths.
+            digest = lambda value: hashlib.sha256(value.encode("utf-8")).hexdigest()
+            diagnostic = {"schema_version": 1, "path_check": path_check, "raw_report_sha256": native.raw_sha256,
+                          "filename_sha256": digest(filename), "path_sha256": digest(str(path)),
+                          "resolved_sha256": digest(str(resolved)), "root_sha256": digest(str(ROOT)),
+                          "filename_bytes": len(filename.encode("utf-8")), "runtime": runtime,
+                          "lexically_under_root": path.is_relative_to(ROOT),
+                          "parent_components": path.parts.count("..")}
+            raise ValueError("Coverage source path is redirected: " + json.dumps(diagnostic, sort_keys=True, separators=(",", ":")))
         relative = path.relative_to(ROOT).as_posix()
         owner = next((name for directory, name in owners if path.is_relative_to(directory)), None)
         if owner is None:
@@ -478,13 +518,14 @@ def normalize_report(text, sources, packages, selected, tracked, *, runtime=Fals
             return False
         need(relative in tracked and relative.endswith(".rs"), "Generated/untracked first-party coverage requires explicit policy")
         sources.setdefault(relative, source_metadata(relative, owner))
+        normalized_paths[filename] = relative
         return True
     native = REPORTS["decode"](text, profile=export_profile)
     wanted = {file.filename for file in native.files if include(file.filename)}
     if report_bindings is not None:
         report_bindings.append({"raw_sha256": native.raw_sha256, "file_count": len(native.files), "selected_file_count": len(wanted)})
     for filename, lines in REPORTS["project"](native, wanted).items():
-        relative = Path(filename).relative_to(ROOT).as_posix()
+        relative = normalized_paths[filename]
         need(relative not in result, "Duplicate normalized first-party coverage source")
         result[relative] = lines
     return result

@@ -1,6 +1,7 @@
 """Collection must retain declared targets, finite policies and primary failures."""
 from pathlib import Path
 import copy
+import hashlib
 from contextlib import contextmanager
 import json
 import os
@@ -55,6 +56,113 @@ def inventory():
 
 
 class CollectionInventoryControls(unittest.TestCase):
+    def test_regular_parent_spelling_matches_canonical_production_and_runtime_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            package = root / "crates/engine"
+            (package / "src").mkdir(parents=True)
+            helper = package / "tests/support/adapter_directory.rs"
+            helper.parent.mkdir(parents=True)
+            helper.write_text("pub fn helper() {}\n", encoding="utf-8")
+            packages = {"engine": {"manifest_path": str(package / "Cargo.toml"), "targets": []}}
+            alias = package / "src/../tests/support/adapter_directory.rs"
+            name = "crates/engine/tests/support/adapter_directory.rs"
+            self.assertNotEqual(alias, alias.resolve())
+            with patch.dict(COV["normalize_report"].__globals__, ROOT=root):
+                for runtime in (False, True):
+                    original, normalized = {}, {}
+                    expected = COV["normalize_report"](native_report([helper]), original, packages, ["engine"], {name}, runtime=runtime)
+                    actual = COV["normalize_report"](native_report([alias]), normalized, packages, ["engine"], {name}, runtime=runtime)
+                    self.assertEqual(actual, expected)
+                    self.assertEqual(normalized, original)
+                    self.assertEqual(actual, {} if runtime else {name: {1: 0}})
+                with self.assertRaisesRegex(ValueError, "Duplicate normalized"):
+                    COV["normalize_report"](native_report([helper, alias]), {}, packages, ["engine"], {name})
+                with self.assertRaisesRegex(ValueError, "Generated/untracked"):
+                    COV["normalize_report"](native_report([alias]), {}, packages, ["engine"], set())
+
+    def test_missing_cancelled_component_refuses_with_bounded_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            package = root / "crates/prod"
+            (package / "src").mkdir(parents=True)
+            helper = package / "tests/support/helper.rs"
+            helper.parent.mkdir(parents=True)
+            helper.write_text("pub fn helper() {}\n", encoding="utf-8")
+            packages = {"prod": {"manifest_path": str(package / "Cargo.toml"), "targets": []}}
+            with patch.dict(COV["normalize_report"].__globals__, ROOT=root):
+                self.assertEqual(COV["normalize_report"](native_report([helper]), {}, packages, ["prod"], set(), runtime=True), {})
+                filename = (package / "missing-private-component").as_posix() + "/" * 3000 + "../tests/support/helper.rs"
+                encoded = json.loads(native_report([helper]))
+                encoded["data"][0]["files"][0]["filename"] = filename
+                report = json.dumps(encoded)
+                receipts, sources = [], {}
+                for runtime in (False, True):
+                    with self.subTest(runtime=runtime), self.assertRaisesRegex(ValueError, "Coverage source path is redirected: ") as caught:
+                        COV["normalize_report"](report, sources, packages, ["prod"], set(), runtime=runtime, report_bindings=receipts)
+                    message = str(caught.exception)
+                    self.assertLess(len(message.encode("utf-8")), 1024)
+                    self.assertNotIn(root.as_posix(), message)
+                    diagnostic = json.loads(message.split(": ", 1)[1])
+                    self.assertEqual(diagnostic, {
+                        "schema_version": 1, "path_check": "filesystem-error-2", "raw_report_sha256": hashlib.sha256(report.encode("utf-8")).hexdigest(),
+                        "filename_sha256": hashlib.sha256(filename.encode("utf-8")).hexdigest(),
+                        "path_sha256": hashlib.sha256(str(Path(filename)).encode("utf-8")).hexdigest(),
+                        "resolved_sha256": hashlib.sha256(str(helper).encode("utf-8")).hexdigest(),
+                        "root_sha256": hashlib.sha256(str(root).encode("utf-8")).hexdigest(),
+                        "filename_bytes": len(filename.encode("utf-8")), "runtime": runtime,
+                        "lexically_under_root": True, "parent_components": 1})
+                self.assertEqual((sources, receipts), ({}, []))
+
+    def test_mocked_symlink_and_non_directory_components_and_non_regular_target_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "src").mkdir()
+            source = root / "original.rs"; source.write_text("pub fn original() {}\n")
+            path = root / "src/../original.rs"
+            original_lstat = Path.lstat
+            for target, mode in ((root / "src", COV["stat"].S_IFLNK),
+                                 (root / "src", COV["stat"].S_IFREG),
+                                 (source, COV["stat"].S_IFIFO)):
+                def observed(candidate, **kwargs):
+                    return os.stat_result((mode, 0, 0, 0, 0, 0, 0, 0, 0, 0)) if candidate == target else original_lstat(candidate, **kwargs)
+                with self.subTest(target=target, mode=mode), patch.dict(COV["normalize_report"].__globals__, ROOT=root), patch.object(Path, "lstat", observed), self.assertRaisesRegex(ValueError, "Coverage source path is redirected: "):
+                    COV["normalize_report"](native_report([path]), {}, {}, [], set())
+
+    @unittest.skipIf(os.name == "nt", "Actual symlink control requires the Linux qualification host")
+    def test_in_root_symlink_still_refuses_with_no_parent_components(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "original.rs"; source.write_text("pub fn original() {}\n")
+            alias = root / "alias.rs"; alias.symlink_to(source)
+            with patch.dict(COV["normalize_report"].__globals__, ROOT=root), self.assertRaisesRegex(ValueError, "Coverage source path is redirected: ") as caught:
+                COV["normalize_report"](native_report([alias]), {}, {}, [], set())
+            diagnostic = json.loads(str(caught.exception).split(": ", 1)[1])
+            self.assertEqual(diagnostic["parent_components"], 0)
+            self.assertNotEqual(diagnostic["path_sha256"], diagnostic["resolved_sha256"])
+            directory_alias = root / "directory-alias"; directory_alias.symlink_to(root, target_is_directory=True)
+            # Even a cancelled symlink whose target stays in the checkout refuses.
+            for path in (directory_alias / "original.rs", directory_alias / "../" / root.name / "original.rs"):
+                with self.subTest(path=path), patch.dict(COV["normalize_report"].__globals__, ROOT=root), self.assertRaisesRegex(ValueError, "Coverage source path is redirected: "):
+                    COV["normalize_report"](native_report([path]), {}, {}, [], set())
+
+    def test_missing_and_root_escape_sources_still_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "checkout"; root.mkdir()
+            package = root / "prod"; package.mkdir()
+            packages = {"prod": {"manifest_path": str(package / "Cargo.toml")}}
+            with patch.dict(COV["normalize_report"].__globals__, ROOT=root):
+                with self.assertRaises(FileNotFoundError):
+                    COV["normalize_report"](native_report([package / "missing.rs"]), {}, packages, ["prod"], {"prod/missing.rs"})
+                with self.assertRaisesRegex(ValueError, "Unowned external coverage source"):
+                    COV["normalize_report"](native_report([root / "../outside.rs"]), {}, packages, ["prod"], set())
+                source = package / "original.rs"; source.write_text("pub fn original() {}\n")
+                for path in (root / ".." / root.name / "prod/original.rs", source / "../original.rs"):
+                    with self.subTest(path=path), self.assertRaises((ValueError, OSError)):
+                        COV["normalize_report"](native_report([path]), {}, packages, ["prod"], {"prod/original.rs"})
+                with self.assertRaisesRegex(ValueError, "Unqualified relative"):
+                    COV["normalize_report"](native_report([Path("prod/original.rs")]), {}, packages, ["prod"], {"prod/original.rs"})
+
     def test_merge_source_inventory_uses_actual_nul_records_including_unicode_names(self):
         names = {'crates/a/src/lib.rs': b'pub fn original() -> u32 { 42 }\n',
                  'crates/a/src/line\u2028name.rs': b'pub const DECL: u32 = 1;\n'}
