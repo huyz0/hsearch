@@ -67,6 +67,13 @@
       "checksum": null
     },
     {
+      "name": "hsearch-object",
+      "version": "0.1.0",
+      "source": "workspace",
+      "license": "not selected",
+      "checksum": null
+    },
+    {
       "name": "hsearch-observe",
       "version": "0.1.0",
       "source": "workspace",

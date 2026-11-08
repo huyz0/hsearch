@@ -577,7 +577,7 @@
         {
           "id": "M01.08",
           "title": "Qualify the harness baseline",
-          "goal": "Prove productivity mechanisms work before delegating product tasks.",
+          "goal": "Measure and qualify the frozen harness productivity baseline, independently of explicitly scoped product-task start profiles.",
           "deliverables": [
             "Frozen agent task corpus, parallel integration trial, baseline timing/token/escaped-defect report"
           ],
@@ -1385,11 +1385,22 @@
             "CAS cannot be implemented as unconditional overwrite; all retry decisions preserve request identity."
           ],
           "depends_on": [
-            "M01"
+            "M19",
+            "M01.01",
+            "M01.02",
+            "M01.03",
+            "M01.05",
+            "M01.06",
+            "M01.07"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-01-qualified-source.md",
+              "result": "Proposed merged state only: bounded trait/memory-fault conformance and frozen-inventory collector are implemented; exact BB x64 dev/release coverage is predecessor evidence. This combined candidate still requires its own complete ordinary/native ARM/hosted CI/coverage, both counted independent roles, gate and protected integration before acceptance. No provider/service/format/durability/license/release qualification."
+            }
+          ]
         },
         {
           "id": "M03.02",
