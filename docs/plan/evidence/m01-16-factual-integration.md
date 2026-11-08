@@ -1,4 +1,8 @@
-# M01.16 factual integration candidate
+# M01.16 original premerge candidate record
+
+Current status: the original artifact completed review, checks and normal PR23 integration; see [original completion evidence](m01-16-integrated.md). This later factual follow-up retains its own exact-head review/check/integration obligations. The complete premerge record below preserves its observations and authors as historical provenance.
+
+## Historical premerge text
 
 Status: new factual integration artifact pending its own independent review, exact-head checks and normal protected integration. This record does not declare M01.16 accepted.
 

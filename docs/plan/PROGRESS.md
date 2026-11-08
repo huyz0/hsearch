@@ -1,5 +1,11 @@
 # Progress and handoff
 
+## 8 November 2026: original M01.16 integration recorded
+
+[M01.16's original factual integration](evidence/m01-16-integrated.md) was reviewed at `274d17a`, normally merged through [PR23](https://github.com/huyz0/hsearch/pull/23) as `2b2fd47` with the same tree, and passed its own R1 gate plus all seven PR and all seven main jobs. This follow-up reconciles the stale in-progress ledger and pending prose; its own exact-head checks, same-task R2 and protected integration remain required.
+
+PR22's nonancestor and disk-admission failures and both original authors remain preserved. The historical ARM cause is unconfirmed; M01.08/product obligations, current M01.18 completion and frozen M02.10 histories remain unchanged. Earlier checkpoints retain their historical context.
+
 ## 8 November 2026: retention redesign plan integrated
 
 [M01.18's plan artifact is accepted](evidence/m01-18-integrated.md): reviewed source `3c44380` merged normally through [PR26](https://github.com/huyz0/hsearch/pull/26) as `81bae9b` with the same tree, both R2 nonauthor roles clear, the durable gate passed and all seven PR/main jobs successful. The decomposition, frozen history and verbatim eleven-clause bridge are accepted; M01.19/.20/.21 remain unimplemented and require their own qualification. The factual bookkeeping source needs its own final legal same-M18 R3/checks/integration before successor admission.

@@ -1,6 +1,6 @@
 # Bootstrap development
 
-Current factual reconciliation: [M01.15 operational incident disposition](evidence/m01-15-incident-disposition.md) and [M02.09 bounded research acceptance](evidence/m02-09-integrated.md) cite actual original reviewed/integrated qualification. Historical draft/open statements below describe earlier stages. The historical ARM cause remains unconfirmed; M01.08 remains separately unqualified. The M01.16 factual artifact still needs its own final-tree review and checks.
+Current factual reconciliation: [M01.15 operational incident disposition](evidence/m01-15-incident-disposition.md) and [M02.09 bounded research acceptance](evidence/m02-09-integrated.md) cite actual original reviewed/integrated qualification. Historical draft/open statements below describe earlier stages. The historical ARM cause remains unconfirmed; M01.08 remains separately unqualified. [M01.16's original factual artifact is qualified](evidence/m01-16-integrated.md) through PR23 and its actual R1/gate/PR/main evidence. The later factual status follow-up retains its own exact-head review, checks and integration obligations.
 
 
 M02.09's [explicit compact exporter/context4 draft](research/native-engine-coverage-profile.md) is in progress after a real64MiB runtimeexport refusal. It is unaccepted until full native/profile/coverage/review/CI qualification. Historical M13/context3 acceptance and every original regression remain preserved.
