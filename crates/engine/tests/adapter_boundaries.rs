@@ -285,7 +285,10 @@ fn repeated_refresh_segment_limit_refuses_until_explicit_merge() {
     // A rejection must not consume its identity or poison continuation.
     engine.apply(prepare("id-32")).unwrap();
     let current = engine.refresh().unwrap();
-    assert_eq!(current.search(&Query::All, &[], 128, &[]).unwrap().total, 32);
+    assert_eq!(
+        current.search(&Query::All, &[], 128, &[]).unwrap().total,
+        32
+    );
     assert_eq!(current.get("id-32", &[]).unwrap().unwrap().version, 1);
     assert_eq!(old.search(&Query::All, &[], 128, &[]).unwrap().total, 31);
     assert_eq!(old.get("id-1", &[]).unwrap().unwrap().version, 1);
