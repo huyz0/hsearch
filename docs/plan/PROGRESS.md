@@ -4,7 +4,7 @@
 
 The [M03.01 policy candidate](product-start-policy.md) replaces only that task’s whole-M01 start edge with accepted API/workspace/sandbox/ownership/review/CI/coverage prerequisites. M03.02 gains an explicit whole-M01 prerequisite, and milestone M03 retains whole-M01. M01.08’s goal describes measuring the frozen baseline; every actual acceptance clause, status, oracle/trial/usage/recovery and history remains. All other task edges/statuses are unchanged.
 
-This is prospective policy preparation, not product admission or acceptance. Its guard and graph controls preserve later provider/format/runtime gates and historical M14 evidence. Independent review, complete checks, actual PR29-main adoption and normal protected integration remain required. No crate/workspace/lock/allocator/resource/FFF work or M19 clarification is included. Earlier checkpoints remain historical.
+This is a legitimate committed development-seed candidate, not policy or product acceptance. After root audits exact source, prerequisites, owner and conflict-free code/shared paths, normal development-only admission may start without a separate policy merge. Full policy plus nonempty code retain one counted review lineage, native CI and protected integration before acceptance. Any real main advance must be adopted safely before final review without importing out-of-claim edits. No claim, crate, workspace/lock/allocator/resource/FFF action or M19 clarification is performed by this seed; PR29 external authorization remains separate. Earlier checkpoints remain historical.
 
 ## 8 November 2026: retention redesign plan integrated
 
