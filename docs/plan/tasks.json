@@ -953,7 +953,9 @@
             "Qualify real OS iterator boundary and charged worst-case entry/name/native-buffer plus N+1/EOF probe, aggregate nested traversal/depth/FD/work limits, close/error/alias and cap-1/cap/cap+1/large-overflow controls on native Linux x86_64/ARM64.",
             "Qualify truly fresh-process same-domain positive recovery and original-end expiry/equality/wall rollback/forward/absence time; unknown boot/namespace/domain/rewind proof or malformed/uncertain legacy proof refuses without resetting duration or credits.",
             "Pin exact toolchain/image/dependencies; bind observed deployed interpreter/libc/kernel/filesystem/time-domain capability evidence without inventing an exact managed host-kernel install requirement. Native-buffer/name and blocked-syscall uncertainty remain explicit.",
-            "Retain both R3 counterexamples and all inherited relevant controls, exact-source both-role independent review, applicable coverage/no-exclusion predicates and complete required native CI/ci-ok before acceptance."
+            "Retain both R3 counterexamples and all inherited relevant controls, exact-source both-role independent review, applicable coverage/no-exclusion predicates and complete required native CI/ci-ok before acceptance.",
+            "Apply docs/plan/retention-context-native-contract.md: original audit bytes remain scoped logical application-read/requested-work debits; source/metadata/count scopes remain distinct and all original numeric caps/eleven clauses unchanged. Bound Python/C allocation, names/FDs/depth, nested traversal/rescans and N+1/EOF probes, with original-clock/acknowledgment bookends and late/unknown refusals; no universal hidden-kernel/physical-I/O/latency certificate.",
+            "Require trusted expected immutable-image/source/build/mount/backing-name and controlled no-snapshot/no-migration admission. Real native x86_64/ARM64 conditional component positives are required; fixture admission and measured runtime consistency do not qualify M21 deployment, persistence, antirollback/CAS or resource authority. Live original guardian proof supports same-domain fresh recovery only; invisible whole-VM rollback detection is not claimed."
           ],
           "definition_of_done": [
             "Accepted component proves its declared bounded host-context contract only, with source-backed native assumptions and no new allowance; it cannot authenticate a human, create a lease, choose an artifact or retire bytes.",
@@ -964,8 +966,13 @@
             "M01.18"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m01-19-qualified-source.md",
+              "result": "Proposed merged state only: unchanged builder458c96c and code-only CI42432481369 support the conditional native contract; this combined candidate still requires its own deterministic checks, both counted nonauthor roles, exact-head native CI/coverage/ci-ok, normal gate and protected integration before acceptance. No M21 deployment or live operation authority."
+            }
+          ]
         },
         {
           "id": "M01.20",

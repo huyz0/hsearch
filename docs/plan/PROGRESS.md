@@ -1,5 +1,12 @@
 # Progress and handoff
 
+## 8 November 2026: M01.19 combined source candidate
+
+The [conditional host-context contract](retention-context-native-contract.md) explicitly separates scoped application audit/source/metadata/count budgets from bounded native allocation and unsupported hidden-kernel/physical-I/O/latency or invisible-VM-rewind claims. All original numerical caps, eleven clauses, M17 R3 failures and counters remain. The [combined-source record](evidence/m01-19-qualified-source.md) binds the unchanged nine builder code files and preserves their failure history.
+
+Code-only458c96c completed seven-job CI42432481369, including real conditional tmpfs CPython3.11.2/glibc2.36 positives on x86_64/aarch64 with fixture admission. That is predecessor component evidence, not a pass for this new head or M21 deployed filesystem/persistence/antirollback/CAS/resource authority. Trusted image/build/mount and controlled no-snapshot/no-migration admission remain mandatory. The candidate ledger done is the intended merged state only: this complete source still needs deterministic checks, both counted eligible roles in the same M19 issued0/planned2/hard3 lineage, exact-head native CI/coverage/ci-ok, normal gate and protected integration. M20/M21, M08, whole-M01/product and live-operation authorization remain separate; no actual FFF action is granted.
+
+
 ## 8 November 2026: retention redesign plan integrated
 
 [M01.18's plan artifact is accepted](evidence/m01-18-integrated.md): reviewed source `3c44380` merged normally through [PR26](https://github.com/huyz0/hsearch/pull/26) as `81bae9b` with the same tree, both R2 nonauthor roles clear, the durable gate passed and all seven PR/main jobs successful. The decomposition, frozen history and verbatim eleven-clause bridge are accepted; M01.19/.20/.21 remain unimplemented and require their own qualification. The factual bookkeeping source needs its own final legal same-M18 R3/checks/integration before successor admission.

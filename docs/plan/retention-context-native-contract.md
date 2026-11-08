@@ -1,0 +1,54 @@
+# Retention context: conditional native contract
+
+Status: **M01.19 final-source candidate, pending its own checks, independent reviews, native CI and protected integration**. The proposed `done` entry in the candidate ledger describes the intended merged state; it is not present acceptance. [Source and predecessor evidence](evidence/m01-19-qualified-source.md) distinguish observed code-only qualification from this combined source.
+
+This prospective clarification applies to M01.19's host-context component. It interprets the native-work proof in the accepted [redesign](forensic-retention-redesign.md); it leaves that historical document, the [eleven-clause bridge](evidence/m01-18-acceptance-bridge.json), all original numerical caps and [M17's blocked R3 history](evidence/m01-17-hard3-disposition.json) unchanged. The eager-materialization and fresh-process duration failures remain actual counterexamples. M17 stays frozen at issued3/hard3; this component cannot close it or the whole-M01/product gates.
+
+## What the component promises
+
+`tools/retention_context_v1` supplies bounded original-context encoding, acknowledged CAS interfaces and aggregate credits, original integer clock endpoints, incremental FD discovery and a conditional Linux allocation/guardian profile. It has no TaskStore, Docker, FFF, artifact-selection, human-approval or retirement-policy imports. It introduces no dependencies, live operation or additional allowance. The [component README](../../tools/retention_context_v1/README.md) describes the APIs and consuming-port obligations.
+
+Payload audit bytes retain their original meaning: scoped cumulative application reads and caller-requested work, including conservative precharges. They are not physical device I/O, filesystem amplification or hidden kernel-record telemetry. Native allocation, logical discovery, source reads, metadata and payload debits remain separate, conjunctive bounds. No universal per-`next` hidden-kernel work, physical-I/O, CPU or syscall-latency certificate is claimed.
+
+The clarification was adopted by the coordinator from the technical coauthor memo SHA256 `40e4148037cc3efa60eba8500e62f966d71b066f537723387af9f6628af1c175`. Its exact root disposition is SHA256 `b47caee22404e99c5ba8c584ebce58cf539500392e71b7b616fb475a2affe502`. This explicitly changes the stronger agent-created native-work proof interpretation; it does not relabel an old failure or diagnostic attestation as accepted deployment evidence.
+
+## Preserve each original scope
+
+The unchanged bridge remains the complete source of numerical limits and their provenance. These examples make the distinct scopes explicit; none replaces the bridge.
+
+| Consumer | Retained scope |
+| --- | --- |
+| Payload/archive audit | 268435456 bytes (256 MiB), 32 rescans; archive occupancy 4096 nodes/64 MiB per traversal, not 4096 total yields across all rescans. |
+| Selected originals and image | Exact failed pair: 84 nodes, 69 files, 224852 payload bytes; selected reads at most 8 MiB per file, pack 2 MiB, index 1 MiB, ranges 65536 bytes; unchanged 42-node future qualification reserve. |
+| Source discovery/reads | At most 8 source snapshots per entered instance, 10000 paths/128 MiB per snapshot and 1207959552 source bytes per instance; driver at most 64 logical entries and 16 Python files/1 MiB per file. These are not payload audit credits. |
+| Metadata/control | 96 records, 72 journal events, 131072-byte ordinary records, 14417920 total metadata bytes; two private plan slots/1 MiB. The 128 snapshot-call and two reaffirmation estimates are per entered run/recover call graph, not global operation counters. |
+| Original time/transport | Positive duration at most 1200000 ms; raw 8192/public 16384 bytes, nonrefundable raw reservations of at most 16 bytes, at most 512 reservations across both pipes and recovery. Transport wait at most 30000 ms, clipped to original remaining time. |
+| Parsing/host resources | Forensic lexical containers and rooted objects each retain depth24, object/key/value visits 50000, default decode/canonical/per-string ceilings 1 MiB. Review envelope depth32 is separate. TaskStore registry remains 64 MiB; original worker envelope remains 2000 CPU millis/4 GiB RAM/zero swap/256 PIDs/2 GiB scratch. |
+
+`CursorPool` scopes preserve archive32, source8, metadata128, driver8 and plan1 traversal windows with the corresponding consumer node bounds. Children share the root traversal's aggregate count, probes and depth; opening a new object is not permission to renew an entered consumer's window. M21 must retain and reconcile those actual windows and all consuming read/metadata counters. A standalone default source counter denotes a new isolated instance, not renewed permission inside an existing run.
+
+## Bound materialization before the OS boundary
+
+Before open/advance, reserve stream/native-buffer capacity, worst-case entry/name/encoding materialization, borrowed/owned/internal descriptors and bounded evidence overhead. Use real incremental `os.scandir(fd)` over an independent `openat(".")` directory description. Charge N+1 overflow/EOF probes; overflow refuses before stat or retention. Nested traversal, repeated scans, names, descriptors, depth and application work remain finite. For a traversal cap N, the component bounds probes by 2N+1, including child EOFs. Closing a stream does not refund cumulative materialization or durable credits; uncertain close poisons the pool/context and retains uncertain capacity.
+
+The supported source-backed allocation profile reserves 1 MiB + 64 KiB per glibc stream and 8 KiB per worst-case 255-byte-name entry, plus 8 MiB/eight descriptors for bounded native evidence helpers. Supplied capacity must fit the existing admitted 4 GiB envelope including the application baseline; descriptors remain finite and at most256. These reservations bound application/C allocation capacity. A libc refill may skip records or perform hidden work; buffer size does not bound aggregate hidden work per advance. Live directory identity checks are not filesystem snapshots.
+
+The profile code supports explicitly admitted Linux x86_64/aarch64, CPython3.11.2/glibc2.36, UTF-8 and admitted ext4/overlay/tmpfs mounts with backing-name evidence. Qualification of one filesystem/profile does not qualify another. Trusted `ProfileAdmission` must supply expected immutable image, independently qualified source/binary, runtime-object hashes and actual mount-namespace/backing-name evidence. Selfhashes and version strings only check consistency against those expected pins; they cannot issue admission. Initial runtime-build observations fit one original128 MiB SOURCE observation, and debit the shared per-instance source balance before bounded reads. Diagnostic authorities and synthetic fixture admission stay explicitly labeled.
+
+[CPython's FD/iterator contract](https://docs.python.org/3.11/library/os.html#os.scandir), [its pinned POSIX implementation](https://github.com/python/cpython/blob/v3.11.2/Modules/posixmodule.c) and [glibc2.36's stream allocation](https://github.com/bminor/glibc/blob/glibc-2.36/sysdeps/unix/sysv/linux/opendir.c) support the declared interface/allocation reasoning. Source facts alone do not establish deployed binary correspondence. No managed host-kernel installation, physical reboot/suspend campaign or universal filesystem guarantee is inferred.
+
+## Keep original time and acknowledged debt
+
+Publish exactly one original operation/source/request/domain proof with integer MONOTONIC, BOOTTIME and wall starts/endpoints before consuming effects. A trusted bounded Store must provide exclusive antirollback exact-byte CAS and truthful durable acknowledgments. Visible bytes or an unacknowledged publication are insufficient. Retain nonrefundable raw/audit/rescan credits and high-water observations across fresh processes. Equality expires, wall only shortens, BOOTTIME charges suspend, and a new process never derives a new duration from wall slack. Unknown/malformed/legacy proof, regression, changed/unknown domain or acknowledgment uncertainty refuses accepted success and requires reconciliation of the exact existing identity.
+
+Bookend open/next/stat/close/storage calls and acknowledgments against the original clocks. Returned-call bookends do not bound arbitrary kernel blocking or undo late effects. Timeout, late return and unknown outcome remain uncertain; they cannot mean success, refund or permission to redispatch.
+
+A genuinely live guardian holds the original time-namespace FD and sealed operation/source/profile token across the promised replaceable-worker failure boundary. Recovery checks original handles/token/seals, owner/PID/birth, live pidfd, namespace equality and clock/source/profile bindings, then repeats liveness. Numeric inodes or booleans alone cannot establish continuity. The guardian must survive the failure boundary M21 promises; its death/unavailable handles/uncertain close cannot be repaired by respawning a fresh guardian or resetting duration.
+
+Controlled proc access, immutable image and no snapshot/rewind/migration are explicit trusted deployment assumptions, backed by identified admission evidence. Software cannot detect a whole-VM rollback that rewinds clocks, guardian, storage and boot identity together. Unsupported or unproved continuity remains unmet in that deployment. [Time namespaces](https://man7.org/linux/man-pages/man7/time_namespaces.7.html), [namespace lifetime](https://man7.org/linux/man-pages/man7/namespaces.7.html) and [clock semantics](https://man7.org/linux/man-pages/man2/clock_gettime.2.html) explain the conditional same-domain contract; they do not supply persistence or antirollback storage.
+
+## Qualification and remaining integration
+
+The code-only predecessor has real conditional tmpfs positives on native x86_64 and aarch64 with CPython3.11.2/glibc2.36 and explicit test-fixture admission. That is useful component behavior, not deployed filesystem/persistence/antirollback/CAS/resource or retention authority. The combined source needs fresh exact-head ordinary controls, both native architectures/profiles, supported-profile positives, applicable coverage with honest zero-coverable N/A, both counted nonauthor roles, every selected CI job/ci-ok, the normal gate and protected integration. Historical green code-only CI cannot qualify this new head.
+
+M20 still owns the opaque image; M21 owns actual durable/CAS ports, authenticated deployment/image/source/root/mount admission, guardian/resource supervision, late-effect reconciliation and complete eleven-clause integration. All original M17 failures, review counters, integrity oracles, raw/metadata/source pools, current ordinary refusal gates and independent M08/whole-M01/product obligations remain. Component acceptance grants no live preparation, pack/map/probe/worker/unlink authority and no fresh exact84 human permission.
