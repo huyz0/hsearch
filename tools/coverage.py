@@ -127,6 +127,7 @@ class Runner:
         need(self.root.is_dir(), "Missing coverage context")
         self.logs = self.root / ("logs-" + uuid.uuid4().hex[:12])
         self.logs.mkdir(mode=0o700)
+        self.frozen = not create
         self.started, self.number = time.monotonic(), 0
         self.env = dict(os.environ, CARGO_TARGET_DIR=str(self.root / "target"), CARGO_BUILD_JOBS="2", CARGO_INCREMENTAL="0",
                         CARGO_BUILD_BUILD_DIR=str(self.root / "target"), CLIPPY_ARGS=CLIPPY_ARGUMENTS,
@@ -137,6 +138,11 @@ class Runner:
         self.env["LLVM_PROFILE_FILE"] = str(listing / "%m-%p.profraw")
 
     def command(self, args, *, env=None, timeout=900, limit=64 * 1024**2, binary=False):
+        need(not self.frozen or Path(str(args[0])).name not in {"cargo", "cargo.exe"},
+             "Cargo invocation after test inventory freeze is forbidden")
+        if self.frozen and args[1:3] in (["nextest", "list"], ["nextest", "run"]):
+            need("--cargo-metadata" in args and "--binaries-metadata" in args,
+                 "Frozen nextest must reuse both metadata inputs")
         need(platform.system() == "Linux", "Native coverage commands require qualified Linux")
         args = cargo_command(args)
         need(sum(len(str(arg).encode()) + 1 for arg in args) <= 1024**2, "Coverage command argument bound exceeded")
@@ -243,7 +249,7 @@ def bind_compiler(runner, compiler):
     runner.env["RUSTC"] = str(compiler)
 
 
-def tool_identity(runner):
+def tool_identity(runner, *, cargo_version=None):
     need("CARGO_ENCODED_RUSTFLAGS" not in os.environ, "Unqualified compiler override: CARGO_ENCODED_RUSTFLAGS")
     for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CARGO_ENCODED_RUSTDOCFLAGS"):
         need(not os.environ.get(name), "Unqualified compiler override: " + name)
@@ -264,7 +270,8 @@ def tool_identity(runner):
                        "command": str(executor) + " --"}
     runner.env[executor_record["environment_key"]] = executor_record["command"]
     llvm = sysroot / "lib/rustlib" / host / "bin"
-    cargo = runner.command(["cargo", "--version"], limit=8192).strip()
+    # Merge rechecks the exact Cargo executable hash without executing Cargo.
+    cargo = cargo_version if cargo_version is not None else runner.command(["cargo", "--version"], limit=8192).strip()
     need(cargo.startswith("cargo 1.97.1 "), "Wrong coverage Cargo toolchain")
     located_nextest = shutil.which("cargo-nextest")
     need(located_nextest is not None, "Pinned nextest is unavailable")
@@ -294,8 +301,9 @@ def tool_identity(runner):
             "compiler_wrappers": {name: runner.env[name] for name in ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER")}}, host, llvm
 
 
-def package_inventory(runner, requested):
-    metadata = json.loads(runner.command(["cargo", "metadata", "--locked", "--offline", "--all-features", "--format-version=1"]))
+def package_inventory(runner, requested, *, metadata=None):
+    if metadata is None:
+        metadata = json.loads(runner.command(["cargo", "metadata", "--locked", "--offline", "--all-features", "--format-version=1"]))
     members = set(metadata["workspace_members"])
     packages = {p["name"]: p for p in metadata["packages"] if p["id"] in members}
     policy = load(ROOT / "harness/coverage-policy.json")
@@ -503,13 +511,86 @@ def verify_test_inventory(inventory, packages, selected):
     return suites
 
 
+def binaries_metadata(inventory):
+    # nextest0.9.150/d225b1d: BinaryListSummary/RustTestBinarySummary, not
+    # TestListSummary. ReuseBuildOpts conflicts with Cargo build switches.
+    fields = ("binary-id", "binary-name", "package-id", "kind", "binary-path", "build-platform")
+    return {"rust-build-meta": inventory["rust-build-meta"],
+            "rust-binaries": {name: {field: suite[field] for field in fields}
+                              for name, suite in inventory["rust-suites"].items()}}
+
+
+def verify_frozen_inputs(runner, context, packages, selected):
+    need(context["source"] == source_identity(), "Source changed after test inventory freeze")
+    need({"cargo_metadata", "binaries_metadata"}.issubset(context), "Missing frozen reuse-build metadata")
+    for key in ("cargo_metadata", "binaries_metadata", "test_inventory", "build_inventory"):
+        INPUT["check_record"](runner.root, context[key])
+    inventory = load(runner.root / context["test_inventory"]["path"])
+    suites = verify_test_inventory(inventory, packages, selected)
+    need(inventory["test-count"] == sum(len(suite["testcases"]) for suite in suites.values()),
+         "Frozen test count mismatch")
+    need(load(runner.root / context["binaries_metadata"]["path"]) == binaries_metadata(inventory),
+         "Frozen binaries metadata mismatch")
+    need(set(suites) == set(context["binaries"]), "Coverage context omitted a declared test binary")
+    for binary_id, suite in suites.items():
+        binary = context["binaries"][binary_id]
+        need(binary["test_count"] == len(suite["testcases"]) and
+             binary["artifact"] == owned_artifact(runner, suite["binary-path"]), "Frozen test inventory/binary mismatch")
+    need(set(context["production_artifacts"]) == set(selected), "Missing production package artifact inventory")
+    for records in context["production_artifacts"].values():
+        need(type(records) is list and records, "Missing production archive/binary")
+        for record in records:
+            INPUT["check_record"](runner.root, record)
+    for record in context["production_objects"]:
+        INPUT["check_record"](runner.root, record)
+
+
+def run_frozen_shards(runner, context, packages, selected):
+    runner.frozen = True
+    shard_directory = runner.root / "shards"
+    shard_directory.mkdir()
+    profiles_root = runner.root / "profiles"
+    profiles_root.mkdir()
+    for index, (binary_id, binary) in enumerate(sorted(context["binaries"].items())):
+        verify_frozen_inputs(runner, context, packages, selected)
+        profile_directory = profiles_root / str(index)
+        profile_directory.mkdir()
+        if binary["test_count"]:
+            env = dict(runner.env, LLVM_PROFILE_FILE=str(profile_directory / "%m-%p.profraw"))
+            # Both metadata inputs are necessary: binaries skips compilation,
+            # Cargo metadata skips querying Cargo. No Cargo build options here.
+            args = [context["toolchain"]["nextest_executable"], "nextest", "run",
+                    "--cargo-metadata", str(runner.root / context["cargo_metadata"]["path"]),
+                    "--binaries-metadata", str(runner.root / context["binaries_metadata"]["path"]),
+                    "--profile", "hsearch", "--no-tests=fail", "-E", "binary_id(=" + binary_id + ")"]
+            try:
+                runner.command(args, env=env)
+            finally:
+                primary = sys.exception()
+                try:
+                    verify_frozen_inputs(runner, context, packages, selected)
+                except Exception as error:
+                    if primary is None:
+                        raise
+                    primary.add_note("Post-shard frozen-input verification failed: " + str(error)[:256])
+        else:
+            verify_frozen_inputs(runner, context, packages, selected)
+        profiles = sorted(profile_directory.iterdir())
+        records = [INPUT["file_record"](runner.root, path.relative_to(runner.root).as_posix(), max_bytes=16 * 1024**2, single_link=True) for path in profiles]
+        save(shard_directory / (str(index) + ".json"), {"context_sha256": INPUT["context_digest"](context), "context": context,
+             "binary_id": binary_id, "completed": True, "command_exit": 0, "profile_directory": profile_directory.relative_to(runner.root).as_posix(), "raw_profiles": records})
+
+
 def collect(directory, base, profile, requested):
     runner = Runner(directory)
     nextest_policy()
     before = source_identity()
     tools, host, llvm = tool_identity(runner)
     runner.command([sys.executable, "tools/workspace.py", "check"])
-    packages, selected, policy, external_packages = package_inventory(runner, requested)
+    metadata = json.loads(runner.command(["cargo", "metadata", "--locked", "--offline", "--all-features", "--format-version=1"]))
+    cargo_metadata_path = runner.root / "cargo-metadata.json"
+    save(cargo_metadata_path, metadata)
+    packages, selected, policy, external_packages = package_inventory(runner, requested, metadata=metadata)
     tracked = tracked_paths()
     sources = initial_sources(packages, selected, tracked)
     flags = ["--locked", "--offline", "--all-features", "--target", host,
@@ -570,30 +651,21 @@ def collect(directory, base, profile, requested):
     suites = verify_test_inventory(inventory, packages, selected)
     inventory_path = runner.root / "test-inventory.json"
     save(inventory_path, inventory)
+    binaries_path = runner.root / "binaries-metadata.json"
+    save(binaries_path, binaries_metadata(inventory))
     binaries = {binary_id: {"artifact": owned_artifact(runner, suite["binary-path"]), "test_count": len(suite["testcases"])} for binary_id, suite in suites.items()}
     context = {"schema_version": 4, "native_report_protocol": native_report_protocol(), "baseline_native_reports": baseline_reports, "source_proof": proof, "generation": uuid.uuid4().hex, "source": before, "base": base, "toolchain": tools,
                "target": host, "profile": profile, "features": "all", "rustflags": RUSTFLAGS, "packages": selected,
                "sources": sources, "baseline": {name: {str(line): hits for line, hits in lines.items()} for name, lines in baseline.items()},
                "changed": changed, "non_executable": non_executable, "binaries": binaries, "production_objects": production_objects,
                "test_inventory": owned_artifact(runner, inventory_path), "production_artifacts": production_artifacts}
+    context["cargo_metadata"] = owned_artifact(runner, cargo_metadata_path)
+    context["binaries_metadata"] = owned_artifact(runner, binaries_path)
     context["build_inventory"] = owned_artifact(runner, build_inventory)
     context["external_roots"] = external_roots
     need(source_identity() == before, "Source changed during compilation")
     save(runner.root / "context.json", context)
-    shard_directory = runner.root / "shards"
-    shard_directory.mkdir()
-    profiles_root = runner.root / "profiles"
-    profiles_root.mkdir()
-    for index, (binary_id, binary) in enumerate(sorted(binaries.items())):
-        profile_directory = profiles_root / str(index)
-        profile_directory.mkdir()
-        if binary["test_count"]:
-            env = dict(runner.env, LLVM_PROFILE_FILE=str(profile_directory / "%m-%p.profraw"))
-            runner.command(nextest_command(tools, "run", *flags, "--profile", "hsearch", "--no-tests=fail", "-E", "binary_id(=" + binary_id + ")"), env=env)
-        profiles = sorted(profile_directory.iterdir())
-        records = [INPUT["file_record"](runner.root, path.relative_to(runner.root).as_posix(), max_bytes=16 * 1024**2, single_link=True) for path in profiles]
-        save(shard_directory / (str(index) + ".json"), {"context_sha256": INPUT["context_digest"](context), "context": context,
-             "binary_id": binary_id, "completed": True, "command_exit": 0, "profile_directory": profile_directory.relative_to(runner.root).as_posix(), "raw_profiles": records})
+    run_frozen_shards(runner, context, packages, selected)
     need(source_identity() == before, "Source changed during instrumented tests")
     return merge(runner.root)
 
@@ -605,9 +677,13 @@ def merge(directory):
          context["features"] == "all" and context["rustflags"] == RUSTFLAGS, "Stale or unqualified coverage collection")
     need(context["native_report_protocol"] == native_report_protocol(), "Native report protocol changed before merge")
     nextest_policy()
-    tools, host, llvm = tool_identity(runner)
+    tools, host, llvm = tool_identity(runner, cargo_version=context["toolchain"]["cargo"])
     need(context["toolchain"] == tools and context["target"] == host, "Toolchain/target changed before merge")
-    packages, selected, policy, external_packages = package_inventory(runner, context["packages"])
+    need("cargo_metadata" in context, "Missing frozen reuse-build metadata")
+    INPUT["check_record"](runner.root, context["cargo_metadata"])
+    packages, selected, policy, external_packages = package_inventory(
+        runner, context["packages"], metadata=load(runner.root / context["cargo_metadata"]["path"]))
+    verify_frozen_inputs(runner, context, packages, selected)
     tracked = tracked_paths()
     required = initial_sources(packages, selected, tracked)
     need(all(context["sources"].get(name) == record for name, record in required.items()),
@@ -673,6 +749,7 @@ def merge(directory):
     report = GATE["evaluate"](context["sources"], baseline, runtime, context["changed"], context["non_executable"], selected)
     # Recheck all physical inputs and source after LLVM reads them; leave every failed context for inspection.
     INPUT["validate_shards"](runner.root, context, shards)
+    verify_frozen_inputs(runner, context, packages, selected)
     need(context["source"] == source_identity(), "Source changed during coverage merge")
     binding = {"context_schema_version": context["schema_version"], "base": context["base"],
                "native_report_protocol": context["native_report_protocol"],
