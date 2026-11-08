@@ -320,6 +320,15 @@ def observed_cursor_fixture(case):
     return fixture(duration=1200000000000)[3], DiagnosticAuthority()
 
 
+def close_pool_fixture(case, pool):
+    if pool.session.poisoned:
+        with case.assertRaises(Refused): pool.close()
+        if not pool.close_uncertain:
+            case.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+    else:
+        pool.close()
+
+
 class NativeCursorControls(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='context-real-iterator-')
@@ -334,7 +343,7 @@ class NativeCursorControls(unittest.TestCase):
         if self.expected_cleanup_uncertainty:
             with self.assertRaisesRegex(Refused, 'cursor-close-uncertain'): self.pool.close()
         else:
-            self.pool.close()
+            close_pool_fixture(self, self.pool)
 
     def opened(self, **kw):
         fd = os.open(self.root, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
@@ -387,7 +396,7 @@ class NativeCursorControls(unittest.TestCase):
                         self.assertGreater(debt, before)
                         self.assertEqual(pool.fds_used, 0)
                     finally:
-                        pool.close(); os.close(fd)
+                        close_pool_fixture(self, pool); os.close(fd)
 
     def test_r3_eager_counterexample_real1000_never_path_iterdir(self):
         if self.unsupported(): return
@@ -512,7 +521,7 @@ class NativeCursorControls(unittest.TestCase):
             self.assertEqual(self.pool.fds_used,4)
             self.assertTrue(decode(self.session.store.raw)['denied'])
             with self.assertRaises(Refused):parent.next()
-            parent.close()
+            with self.assertRaises(Refused): parent.close()
             self.assertEqual(self.pool.fds_used,1)
             with self.assertRaises(Refused):self.pool.close()
         finally:
@@ -536,7 +545,7 @@ class NativeCursorControls(unittest.TestCase):
             cursor = cursor.open_child(cursor.next())
         self.assertEqual(cursor.depth, 24)
         with self.assertRaises(Refused): cursor.open_child(cursor.next())
-        self.pool.close()
+        with self.assertRaises(Refused): self.pool.close()
         self.assertEqual(self.pool.fds_used, 0)
 
     def test_rescan32_aggregate_and_no_recovery_reset(self):
@@ -618,6 +627,200 @@ class NativeCursorControls(unittest.TestCase):
                 self.assertTrue(decode(store.raw)['denied'])
 
 
+
+
+class CloseDeadlineControls(unittest.TestCase):
+    def pool_fixture(self):
+        clock, store, original, session = fixture()
+        return clock, store, original, session, CursorPool(session, DiagnosticAuthority(), 67108864, 96)
+
+    def open_cursor(self, pool, root):
+        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            return pool.open(fd)
+        finally:
+            os.close(fd)
+
+    def expire(self, clock, original, field='monotonic_ns', extra=0):
+        end = {'monotonic_ns': original.monotonic_end_ns,
+               'boottime_ns': original.boottime_end_ns, 'wall_ns': original.wall_end_ns}[field]
+        clock.now = replace(clock.now, **{field: end+extra})
+
+    def assert_terminal(self, pool, store):
+        self.assertTrue(pool.denied)
+        self.assertTrue(pool.session.poisoned)
+        self.assertTrue(decode(store.raw)['denied'])
+        with self.assertRaises(Refused): pool.session.check()
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_direct_early_close_and_exit_refuse_each_original_endpoint(self):
+        for mode in ('direct', 'exit', 'pool'):
+            for field in ('monotonic_ns', 'boottime_ns', 'wall_ns'):
+                for extra in (0, 1):
+                    with self.subTest(mode=mode, field=field, extra=extra), tempfile.TemporaryDirectory() as root:
+                        clock, store, original, _, pool = self.pool_fixture()
+                        cursor = self.open_cursor(pool, root)
+                        actual = cursor.iterator
+                        case = self
+                        class Late:
+                            def close(self):
+                                actual.close()
+                                case.expire(clock, original, field, extra)
+                        cursor.iterator = Late()
+                        with self.assertRaises(Refused):
+                            if mode == 'direct': cursor.close()
+                            elif mode == 'pool': pool.close()
+                            else:
+                                with cursor: pass
+                        self.assertTrue(cursor.closed)
+                        self.assertEqual(pool.active, [])
+                        self.assertEqual((pool.fds_used, pool.memory_used), (0, 0))
+                        with self.assertRaises(OSError): os.fstat(cursor.fd)
+                        self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_already_expired_pool_still_closes_all_owned_handles(self):
+        with tempfile.TemporaryDirectory() as root:
+            clock, store, original, _, pool = self.pool_fixture()
+            cursors = [self.open_cursor(pool, root) for _ in range(2)]
+            self.expire(clock, original)
+            with self.assertRaises(Refused): pool.close()
+            for cursor in cursors:
+                self.assertTrue(cursor.closed)
+                with self.assertRaises(OSError): os.fstat(cursor.fd)
+            self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+            self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_direct_close_books_real_fd_close_and_unknown_context_ack(self):
+        for unknown in (False, True):
+            with self.subTest(unknown=unknown), tempfile.TemporaryDirectory() as root:
+                clock, store, original, _, pool = self.pool_fixture()
+                cursor = self.open_cursor(pool, root)
+                real_close = os.close
+                calls = []
+                def close(fd):
+                    result = real_close(fd)
+                    if fd == cursor.fd:
+                        calls.append(fd)
+                        if unknown: store.acknowledged = False
+                        else: self.expire(clock, original)
+                    return result
+                with patch('os.close', close), self.assertRaises(Refused): cursor.close()
+                self.assertEqual(calls, [cursor.fd])
+                self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+                self.assertTrue(pool.denied); self.assertTrue(pool.session.poisoned)
+                with self.assertRaises(Refused): cursor.close()
+                with self.assertRaises(Refused): pool.close()
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_pool_continues_exact_cleanup_after_first_close_expires(self):
+        with tempfile.TemporaryDirectory() as root:
+            clock, store, original, _, pool = self.pool_fixture()
+            cursors = [self.open_cursor(pool, root) for _ in range(2)]
+            calls = []
+            case = self
+            class Close:
+                def __init__(self, cursor): self.cursor, self.inner = cursor, cursor.iterator
+                def close(self):
+                    self.inner.close(); calls.append(self.cursor.fd)
+                    case.expire(clock, original)
+            for cursor in cursors: cursor.iterator = Close(cursor)
+            with self.assertRaises(Refused): pool.close()
+            self.assertEqual(calls, [cursor.fd for cursor in reversed(cursors)])
+            self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+            self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_pool_continues_after_uncertain_close_without_retry_or_capacity_refund(self):
+        with tempfile.TemporaryDirectory() as root:
+            _, store, _, _, pool = self.pool_fixture()
+            cursors = [self.open_cursor(pool, root) for _ in range(2)]
+            calls = []
+            class Close:
+                def __init__(self, cursor): self.cursor, self.inner = cursor, cursor.iterator
+                def close(self):
+                    self.inner.close(); calls.append(self.cursor.fd)
+                    if self.cursor is cursors[-1]: raise OSError('synthetic lost iterator-close ack')
+            for cursor in cursors: cursor.iterator = Close(cursor)
+            with self.assertRaisesRegex(Refused, 'cursor-close-uncertain'): pool.close()
+            self.assertEqual(calls, [cursor.fd for cursor in reversed(cursors)])
+            for cursor in cursors:
+                with self.assertRaises(OSError): os.fstat(cursor.fd)
+            self.assertEqual(pool.active, [cursors[-1]])
+            self.assertEqual((pool.fds_used, pool.memory_used), (3, cursors[-1].allocation))
+            with self.assertRaises(Refused): pool.close()
+            self.assertEqual(len(calls), 2)
+            self.assert_terminal(pool, store)
+
+    def test_empty_pool_close_checks_preexisting_and_late_expiry(self):
+        for late in (False, True):
+            with self.subTest(late=late):
+                clock, store, original, _, pool = self.pool_fixture()
+                if late:
+                    checks = []
+                    def hook():
+                        checks.append(1)
+                        if len(checks) == 2: self.expire(clock, original)
+                    store.hook = hook
+                else: self.expire(clock, original)
+                with self.assertRaises(Refused): pool.close()
+                self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_context_exit_preserves_primary_with_late_uncertain_close(self):
+        with tempfile.TemporaryDirectory() as root:
+            clock, store, original, _, pool = self.pool_fixture()
+            cursor = self.open_cursor(pool, root)
+            actual = cursor.iterator
+            case = self
+            class Failed:
+                def close(self):
+                    actual.close(); case.expire(clock, original)
+                    raise OSError('synthetic lost close acknowledgment')
+            cursor.iterator = Failed()
+            primary = ValueError('original body failure')
+            with self.assertRaises(ValueError) as caught:
+                with cursor: raise primary
+            self.assertIs(caught.exception, primary)
+            self.assertTrue(any('cleanup' in note for note in primary.__notes__))
+            with self.assertRaises(OSError): os.fstat(cursor.fd)
+            self.assertTrue(pool.close_uncertain)
+            self.assertEqual(pool.fds_used, 3)
+            with self.assertRaises(Refused): cursor.close()
+            with self.assertRaises(Refused): pool.close()
+            self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_next_primary_failure_survives_cleanup_clock_refusal(self):
+        with tempfile.TemporaryDirectory() as root:
+            clock, store, original, _, pool = self.pool_fixture()
+            cursor = self.open_cursor(pool, root)
+            actual = cursor.iterator
+            case = self
+            primary = OSError('original iterator failure')
+            class Failed:
+                def __next__(self): raise primary
+                def close(self): actual.close(); case.expire(clock, original)
+            cursor.iterator = Failed()
+            with self.assertRaises(OSError) as caught: cursor.next()
+            self.assertIs(caught.exception, primary)
+            self.assertTrue(any('cleanup' in note for note in primary.__notes__))
+            self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+            self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_early_close_positive_keeps_context_and_credit_debt(self):
+        with tempfile.TemporaryDirectory() as root:
+            _, store, _, session, pool = self.pool_fixture()
+            cursor = self.open_cursor(pool, root)
+            credits = dict(decode(store.raw)['credits'])
+            with cursor: pass
+            cursor.close(); pool.close()
+            self.assertFalse(pool.denied)
+            self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+            self.assertEqual(decode(store.raw)['credits'], credits)
+            session.check()
 
 
 def recover_guardian(path, proof, token, *, directory=None, admission=None):
@@ -949,7 +1152,7 @@ class DiscoveryScopeControls(unittest.TestCase):
                 with self.assertRaisesRegex(Refused, 'cursor-open-bound'):
                     parent.open_child(entry)
                 self.assertTrue(decode(session.store.raw)['denied'])
-            finally:pool.close();os.close(fd)
+            finally:close_pool_fixture(self, pool);os.close(fd)
 
     def test_runtime_build_reads_debit_shared_source_balance_before_read(self):
         from tools.retention_context_v1.profile import SourceCredits, file_identity
@@ -1054,7 +1257,7 @@ class DiscoveryScopeControls(unittest.TestCase):
                     self.assertEqual(cursor.probes, 2051)
                 self.assertEqual(session.credits()['rescans'], 2)
                 self.assertEqual(session.credits()['audit_bytes'], 0)
-            finally:pool.close();os.close(fd)
+            finally:close_pool_fixture(self, pool);os.close(fd)
 
     def test_real_source10000_paths_uses_source_scope_not_payload4096(self):
         if sys.platform != 'linux':
@@ -1073,7 +1276,7 @@ class DiscoveryScopeControls(unittest.TestCase):
                 self.assertEqual(session.credits()['rescans'], 0)
                 self.assertEqual(session.credits()['audit_bytes'], 0)
                 self.assertEqual(pool.scans, 1)
-            finally:pool.close();os.close(fd)
+            finally:close_pool_fixture(self, pool);os.close(fd)
 
 
 if __name__ == '__main__':
