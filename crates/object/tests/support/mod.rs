@@ -4,8 +4,8 @@
 #![allow(dead_code)]
 
 use hsearch_object::{
-    Budget, ByteRange, Cancellation, Error, Metadata, MetadataStore, Mutation,
-    ObjectKey, Payload, Precondition, RequestContext, RequestId,
+    Budget, ByteRange, Cancellation, Error, Metadata, MetadataStore, Mutation, ObjectKey, Payload,
+    Precondition, RequestContext, RequestId,
 };
 use std::future::Future;
 use std::sync::Arc;
