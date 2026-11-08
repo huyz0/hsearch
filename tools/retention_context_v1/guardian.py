@@ -19,6 +19,22 @@ TOKEN_FIELDS = ('version pid birth uid namespace_fd namespace_device namespace_i
                 'operation source request nonce profile allocation_build')
 
 
+def close_owned(fds, primary, label):
+    """Attempt every exact owned handle once; unknown close is never retried."""
+    errors = []
+    for fd in fds:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except Exception as exc:
+                errors.append((fd, exc))
+    if errors:
+        if primary is not None:
+            primary.add_note(label+': uncertain owned descriptors '+','.join(str(fd) for fd, _ in errors))
+        else:
+            raise Refused(label) from errors[0][1]
+
+
 def birth(pid):
     raw = bounded_file('/proc/'+str(pid)+'/stat', 4096)
     _, separator, rest = raw.rpartition(b') ')
@@ -69,6 +85,7 @@ class LiveGuardian:
     namespace_fd: int
     token_fd: int
     closed: bool = False
+    close_uncertain: bool = False
 
     @classmethod
     def create(cls, operation, source, request, policy_evidence, *, allocation_build=None):
@@ -102,24 +119,20 @@ class LiveGuardian:
             guardian = cls(raw, namespace_fd, token_fd)
             verify_guardian(raw, facts)
             return guardian
-        except Exception:
-            for fd in (token_fd, namespace_fd):
-                if fd is not None:
-                    os.close(fd)
+        except BaseException as primary:
+            close_owned((token_fd, namespace_fd), primary, 'guardian-create-cleanup-uncertain')
             raise
 
     def close(self):
         if self.closed:
+            need(not self.close_uncertain, 'guardian-close-uncertain')
             return
         self.closed = True
-        errors = []
-        for fd in (self.namespace_fd, self.token_fd):
-            try:
-                os.close(fd)
-            except OSError as exc:
-                errors.append(exc)
-        if errors:
-            raise Refused('guardian-close-uncertain') from errors[0]
+        try:
+            close_owned((self.namespace_fd, self.token_fd), None, 'guardian-close-uncertain')
+        except BaseException:
+            self.close_uncertain = True
+            raise
 
     def __enter__(self):
         return self
@@ -137,6 +150,7 @@ def verify_guardian(raw, facts):
          value['namespace'] == facts['namespace'] and value['software'] == software(facts),
          'guardian-domain-or-software')
     pidfd = namespace_fd = token_fd = None
+    primary = None
     try:
         pidfd = os.pidfd_open(value['pid'], 0)
         poll = select.poll()
@@ -156,11 +170,13 @@ def verify_guardian(raw, facts):
         need(not poll.poll(0) and birth(value['pid']) == value['birth'], 'guardian-lifetime-bookend')
         return Domain(value['boot'], value['namespace'], value['profile'], digest(value))
     except OSError as exc:
-        raise Refused('guardian-unavailable') from exc
+        primary = Refused('guardian-unavailable')
+        raise primary from exc
+    except BaseException as exc:
+        primary = exc
+        raise
     finally:
-        for fd in (token_fd, namespace_fd, pidfd):
-            if fd is not None:
-                os.close(fd)
+        close_owned((token_fd, namespace_fd, pidfd), primary, 'guardian-verification-cleanup-uncertain')
 
 
 class GuardianAuthority:
@@ -170,6 +186,7 @@ class GuardianAuthority:
         need((value['operation'], value['source'], value['request'], value['policy']) ==
              (pin(operation), pin(source), pin(request), pin(policy_evidence)), 'guardian-admission-binding')
         self.raw = raw
+        self.poisoned = False
 
     def bind(self, operation, source, request):
         value = token_from(self.raw)
@@ -177,4 +194,9 @@ class GuardianAuthority:
              (operation, source, request), 'guardian-context-binding')
 
     def verify(self, facts):
-        return verify_guardian(self.raw, facts)
+        need(not self.poisoned, 'guardian-authority-poisoned')
+        try:
+            return verify_guardian(self.raw, facts)
+        except BaseException:
+            self.poisoned = True
+            raise

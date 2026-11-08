@@ -110,9 +110,9 @@ if sys.argv[3]=='fixed':
 else:
  c=LinuxClock(DiagnosticAuthority()) if sys.platform=='linux' else PortableRealTestClock()
 try:
- session=Session(store,c,sys.argv[2]); print(json.dumps(dict(ok=True,remaining=session.check(),credits=session.credits())))
-except Refused:
- print(json.dumps(dict(ok=False)))
+ session=Session(store,c,sys.argv[2]); print(json.dumps(dict(ok=True,worker_pid=os.getpid(),remaining=session.check(),credits=session.credits())))
+except Refused as error:
+ print(json.dumps(dict(ok=False,reason=str(error)[:256])))
 '''
     result = subprocess.run([sys.executable, '-B', '-c', code, str(path), proof, clock_mode,
                              json.dumps(sample)], cwd=ROOT, capture_output=True, timeout=15,
@@ -294,12 +294,24 @@ def original_from_raw(raw):
     return decode(raw)['original']
 
 
+def component_admission_fixture(build=None):
+    """Explicit TEST controller input; no actual deployment authority claim."""
+    from tools.retention_context_v1.profile import ProfileAdmission, SourceCredits, mount_profile, observe_build
+    build = build if build is not None else observe_build(SourceCredits())
+    fd = os.open(tempfile.gettempdir(), os.O_RDONLY | os.O_DIRECTORY)
+    try: mount = mount_profile(fd)['fingerprint']
+    finally: os.close(fd)
+    return ProfileAdmission('sha256:'+P, '1'*64, build['facts']['machine'],
+                            build['python_object']['sha256'], build['libc_object']['sha256'],
+                            (mount,), '2'*64)
+
+
 def observed_cursor_fixture(case):
     # Qualified CI uses the production authority for real cursor controls.
     # Out-of-profile developer hosts retain explicitly diagnostic tests.
     facts = observe_host() if sys.platform == 'linux' else None
     if facts is not None and facts['python'].startswith('3.11.2 ') and facts['libc'] == 'glibc 2.36':
-        guardian, authority = LinuxHostProfile.start_guardian(P, P, P, P)
+        guardian, authority = LinuxHostProfile.start_guardian(P, P, P, P, admission=component_admission_fixture())
         case.addCleanup(guardian.close)
         clock = LinuxClock(authority)
         original = Original.begin(P, P, P, clock, 1200000000000)
@@ -315,7 +327,14 @@ class NativeCursorControls(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.session, self.cursor_authority = observed_cursor_fixture(self)
         self.pool = CursorPool(self.session, self.cursor_authority, 67108864, 96)
-        self.addCleanup(self.pool.close)
+        self.expected_cleanup_uncertainty = False
+        self.addCleanup(self.cleanup_pool)
+
+    def cleanup_pool(self):
+        if self.expected_cleanup_uncertainty:
+            with self.assertRaisesRegex(Refused, 'cursor-close-uncertain'): self.pool.close()
+        else:
+            self.pool.close()
 
     def opened(self, **kw):
         fd = os.open(self.root, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
@@ -446,6 +465,67 @@ class NativeCursorControls(unittest.TestCase):
             def verify(self, *args): raise Refused('initial-domain-and-no-rewind-unproved')
         with self.assertRaises(Refused): LinuxClock(Unknown()).sample()
 
+    def test_failed_open_cleanup_keeps_unknown_capacity_and_attempts_owned_close(self):
+        if self.unsupported():return
+        actual_scandir=os.scandir;actual_close=os.close;actual_check=self.session.check
+        created=[];closed=[]
+        class Iterator:
+            def __init__(self,fd):self.inner=actual_scandir(fd);created.append(fd)
+            def close(self):self.inner.close();raise OSError('synthetic iterator close acknowledgment')
+        def check():
+            if created:raise Refused('synthetic after scandir')
+            return actual_check()
+        def close(fd):closed.append(fd);return actual_close(fd)
+        self.expected_cleanup_uncertainty=True
+        with (patch('os.scandir',Iterator),patch.object(self.session,'check',check),
+              patch('os.close',close),self.assertRaisesRegex(Refused,'synthetic after scandir')):
+            self.opened()
+        self.assertIn(created[0],closed)
+        self.assertEqual(self.pool.fds_used,3)
+        self.assertTrue(self.pool.close_uncertain)
+        self.assertTrue(decode(self.session.store.raw)['denied'])
+        with self.assertRaises(Refused):self.pool.close()
+
+    def child_close_fault(self, primary_failure):
+        if self.unsupported(): return
+        path=self.root/'child';path.mkdir()
+        parent=self.opened(cap=2);entry=parent.next()
+        if primary_failure:
+            path.rename(self.root/'old-child');path.mkdir()
+        opened=[];actual_open=os.open;actual_close=os.close
+        def traced_open(path,*args,**kwargs):
+            fd=actual_open(path,*args,**kwargs)
+            if path==entry.name and kwargs.get('dir_fd')==parent.fd:opened.append(fd)
+            return fd
+        def failed_close(fd):
+            if opened and fd==opened[0]:raise OSError('synthetic temporary close acknowledgment')
+            return actual_close(fd)
+        self.expected_cleanup_uncertainty=True
+        try:
+            with patch('os.open',traced_open),patch('os.close',failed_close):
+                with self.assertRaisesRegex(Refused,'child-identity' if primary_failure else 'child-temporary-close-uncertain') as error:
+                    parent.open_child(entry)
+            if primary_failure:
+                self.assertTrue(any('child-temporary-close-uncertain' in n for n in error.exception.__notes__))
+            self.assertTrue(self.pool.denied);self.assertTrue(self.pool.close_uncertain)
+            self.assertEqual(len(self.pool.active),1)
+            self.assertEqual(self.pool.fds_used,4)
+            self.assertTrue(decode(self.session.store.raw)['denied'])
+            with self.assertRaises(Refused):parent.next()
+            parent.close()
+            self.assertEqual(self.pool.fds_used,1)
+            with self.assertRaises(Refused):self.pool.close()
+        finally:
+            # The injector failed BEFORE the real syscall. This exact isolated
+            # descriptor is known still open; production never retries unknown.
+            if opened:actual_close(opened[0])
+
+    def test_child_temporary_close_failure_poison_and_retained_capacity(self):
+        self.child_close_fault(False)
+
+    def test_child_primary_identity_failure_survives_cleanup_failure(self):
+        self.child_close_fault(True)
+
     def test_actual_nested_depth24_and25_refusal(self):
         if self.unsupported(): return
         path = self.root
@@ -506,6 +586,7 @@ class NativeCursorControls(unittest.TestCase):
         class CloseFailure:
             def close(self): actual.close(); raise OSError('synthetic lost close ack')
         cursor.iterator = CloseFailure()
+        self.expected_cleanup_uncertainty = True
         with self.assertRaisesRegex(Refused, 'cursor-close-uncertain'): cursor.close()
         self.assertEqual(self.pool.fds_used, 3)
         with self.assertRaises(Refused): self.opened()
@@ -539,11 +620,15 @@ class NativeCursorControls(unittest.TestCase):
 
 
 
-def recover_guardian(path, proof, token, *, directory=None):
+def recover_guardian(path, proof, token, *, directory=None, admission=None):
     code = '''
 from tools.tests.test_retention_context_v1 import *
 raw=bytes.fromhex(sys.argv[3])
-authority=(LinuxHostProfile if len(sys.argv)>4 and sys.argv[4] else GuardianAuthority)(raw,operation=P,source=P,request=P,policy_evidence=P)
+params=dict(operation=P,source=P,request=P,policy_evidence=P)
+if len(sys.argv)>5 and sys.argv[5]:
+ from tools.retention_context_v1.profile import ProfileAdmission
+ a=json.loads(sys.argv[5]);a['mount_profiles']=tuple(a['mount_profiles']);params['admission']=ProfileAdmission(**a)
+authority=(LinuxHostProfile if len(sys.argv)>4 and sys.argv[4] else GuardianAuthority)(raw,**params)
 clock=LinuxClock(authority)
 try:
  session=Session(FileStore(sys.argv[1]),clock,sys.argv[2])
@@ -553,16 +638,75 @@ try:
    pool=CursorPool(session,authority,67108864,96)
    cursor=pool.open(fd,cap=1);assert cursor.next().name=='file';assert cursor.next() is None
   finally:os.close(fd)
- print(json.dumps(dict(ok=True,remaining=session.check(),credits=session.credits())))
-except Refused:
- print(json.dumps(dict(ok=False)))
+ print(json.dumps(dict(ok=True,worker_pid=os.getpid(),remaining=session.check(),credits=session.credits())))
+except Refused as error:
+ print(json.dumps(dict(ok=False,reason=str(error)[:256])))
 '''
-    r = subprocess.run([sys.executable, '-B', '-c', code, str(path), proof, token.hex(), str(directory) if directory is not None else ''],
+    r = subprocess.run([sys.executable, '-B', '-c', code, str(path), proof, token.hex(), str(directory) if directory is not None else '',json.dumps(asdict(admission)) if admission is not None else ''],
                        cwd=ROOT, capture_output=True, timeout=15,
                        env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
     if r.returncode or len(r.stdout)+len(r.stderr) > 8192:
         raise AssertionError('guardian recovery child failed: '+r.stderr[:400].decode(errors='replace'))
     return json.loads(r.stdout)
+
+
+class GuardianProcessFixture:
+    """Original guardian survives replaceable workers and monitor isolation.
+
+    A monitor may intentionally be non-dumpable; never relax that protection.
+    This fresh same-owner guardian owns only its namespace/token capabilities.
+    M21 owns equivalent actual process/resource supervision.
+    """
+    def __init__(self,admission=None):
+        self.admission=admission;self.process=None;self.raw=None
+
+    def __enter__(self):
+        import select
+        code="""
+from tools.tests.test_retention_context_v1 import *
+if sys.argv[1]:
+ from tools.retention_context_v1.profile import ProfileAdmission
+ a=json.loads(sys.argv[1]);a['mount_profiles']=tuple(a['mount_profiles'])
+ guardian,_=LinuxHostProfile.start_guardian(P,P,P,P,admission=ProfileAdmission(**a))
+else:
+ guardian=LiveGuardian.create(P,P,P,P)
+try:
+ print(guardian.raw.hex(),flush=True)
+ sys.stdin.buffer.read(1)
+finally:guardian.close()
+"""
+        self.process=subprocess.Popen([sys.executable,'-B','-c',code,
+                                        json.dumps(asdict(self.admission)) if self.admission is not None else ''],
+                                       cwd=ROOT,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                                       env={**os.environ,'PYTHONDONTWRITEBYTECODE':'1'})
+        try:
+            ready,_,_=select.select([self.process.stdout],[],[],10)
+            if not ready:raise AssertionError('guardian fixture startup timeout')
+            raw=self.process.stdout.readline(16385)
+            if not raw or len(raw)>16384:
+                raise AssertionError('guardian fixture startup failed')
+            self.raw=bytes.fromhex(raw.decode().strip())
+            return self
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        if self.process is None:return
+        process=self.process;self.process=None
+        try:
+            stdout,stderr=process.communicate(b'x' if process.poll() is None else None,timeout=10)
+        except subprocess.TimeoutExpired:
+            process.terminate();stdout,stderr=process.communicate(timeout=10)
+            raise AssertionError('owned guardian fixture shutdown timeout')
+        if len(stdout)+len(stderr)>8192 or process.returncode:
+            raise AssertionError('guardian fixture failed: '+stderr[:512].decode(errors='replace'))
+
+    def __exit__(self,kind,error,traceback):
+        try:self.close()
+        except Exception as cleanup:
+            if error is not None:error.add_note('guardian fixture cleanup: '+str(cleanup)[:256])
+            else:raise
 
 
 class GuardianControls(unittest.TestCase):
@@ -577,7 +721,7 @@ class GuardianControls(unittest.TestCase):
 
     def test_live_guardian_native_clock_and_truly_fresh_process(self):
         if not self.supported(): return
-        with LiveGuardian.create(P, P, P, P) as guardian:
+        with GuardianProcessFixture() as guardian:
             clock = LinuxClock(self.authority(guardian))
             with tempfile.TemporaryDirectory(prefix='guardian-positive-') as tmp:
                 store = FileStore(Path(tmp)/'original.json')
@@ -585,22 +729,30 @@ class GuardianControls(unittest.TestCase):
                 session = Session.publish(original, store, clock)
                 session.reserve(raw_bytes=16, audit_bytes=42)
                 result = recover_guardian(store.path, digest(asdict(original)), guardian.raw)
-                self.assertTrue(result['ok'])
+                self.assertTrue(result['ok'],result)
                 self.assertLess(result['remaining'], 8000000000)
                 self.assertEqual(result['credits']['raw_bytes'], 16)
                 self.assertEqual(result['credits']['audit_bytes'], 42)
+                replacement=recover_guardian(store.path,digest(asdict(original)),guardian.raw)
+                self.assertTrue(replacement['ok'],replacement)
+                self.assertNotEqual(result['worker_pid'],replacement['worker_pid'])
+                self.assertLess(replacement['remaining'],result['remaining'])
+                self.assertEqual(replacement['credits']['raw_bytes'],16)
+                self.assertIsNone(guardian.process.poll())
                 self.assertEqual(original_from_raw(store.path.read_bytes()), asdict(original))
 
     def test_live_guardian_absence_uses_original_end(self):
         if not self.supported(): return
-        with LiveGuardian.create(P, P, P, P) as guardian:
+        with GuardianProcessFixture() as guardian:
             clock = LinuxClock(self.authority(guardian))
             with tempfile.TemporaryDirectory(prefix='guardian-absence-') as tmp:
                 store = FileStore(Path(tmp)/'original.json')
                 original = Original.begin(P, P, P, clock, 1000000000)
                 Session.publish(original, store, clock)
                 time.sleep(1.1)
-                self.assertFalse(recover_guardian(store.path, digest(asdict(original)), guardian.raw)['ok'])
+                expired=recover_guardian(store.path,digest(asdict(original)),guardian.raw)
+                self.assertFalse(expired['ok'],expired)
+                self.assertEqual(expired['reason'],'original-deadline')
                 self.assertTrue(decode(store.path.read_bytes())['denied'])
 
     def test_closed_guardian_cannot_reopen_or_rebind_to_replacement(self):
@@ -665,6 +817,76 @@ with LiveGuardian.create(P,P,P,P) as guardian:
             if process.poll() is None:process.terminate();process.wait(timeout=10)
             for stream in [process.stdin, process.stdout, process.stderr]: stream.close()
 
+    def test_verifier_attempts_all_closes_and_poison_after_first_or_middle_failure(self):
+        if not self.supported():return
+        for index in (0,1):
+            with self.subTest(index=index),LiveGuardian.create(P,P,P,P) as guardian:
+                authority=self.authority(guardian);calls=[];failed=[];actual=os.close
+                def close(fd):
+                    calls.append(fd)
+                    if len(calls)-1==index:
+                        failed.append(fd);raise OSError('synthetic verifier close acknowledgment')
+                    return actual(fd)
+                try:
+                    with patch('os.close',close),self.assertRaisesRegex(Refused,'guardian-verification-cleanup-uncertain'):
+                        authority.verify(observe_host())
+                    self.assertEqual(len(calls),3)
+                    self.assertEqual(len(set(calls)),3)
+                    self.assertTrue(authority.poisoned)
+                    with self.assertRaisesRegex(Refused,'guardian-authority-poisoned'):authority.verify(observe_host())
+                finally:
+                    for fd in failed:actual(fd)
+
+    def test_verifier_primary_refusal_is_not_masked_by_cleanup_failure(self):
+        if not self.supported():return
+        with LiveGuardian.create(P,P,P,P) as guardian:
+            changed=decode(guardian.raw);changed['nonce']='0'*64
+            authority=GuardianAuthority(encode(changed),operation=P,source=P,request=P,policy_evidence=P)
+            calls=[];actual=os.close
+            def close(fd):
+                calls.append(fd)
+                if len(calls)==1:raise OSError('synthetic first close')
+                return actual(fd)
+            try:
+                with patch('os.close',close),self.assertRaisesRegex(Refused,'guardian-token-binding') as error:
+                    authority.verify(observe_host())
+                self.assertEqual(len(calls),3)
+                self.assertTrue(any('guardian-verification-cleanup-uncertain' in n for n in error.exception.__notes__))
+            finally:
+                if calls:actual(calls[0])
+
+    def test_create_attempts_both_closes_preserves_primary_and_returns_no_guardian(self):
+        if not self.supported():return
+        calls=[];actual=os.close
+        def close(fd):
+            calls.append(fd)
+            if len(calls)==1:raise OSError('synthetic creator close')
+            return actual(fd)
+        try:
+            with (patch('tools.retention_context_v1.guardian.verify_guardian',side_effect=Refused('synthetic creation verification')),
+                  patch('os.close',close),self.assertRaisesRegex(Refused,'synthetic creation verification') as error):
+                LiveGuardian.create(P,P,P,P)
+            self.assertEqual(len(calls),2)
+            self.assertTrue(any('guardian-create-cleanup-uncertain' in n for n in error.exception.__notes__))
+        finally:
+            if calls:actual(calls[0])
+
+    def test_cleanup_uncertainty_denies_original_context_across_fresh_authority(self):
+        if not self.supported():return
+        with LiveGuardian.create(P,P,P,P) as guardian:
+            authority=self.authority(guardian);clock=LinuxClock(authority)
+            original=Original.begin(P,P,P,clock,8000000000);store=MemoryStore()
+            session=Session.publish(original,store,clock);failed=[];actual=os.close
+            def close(fd):
+                if not failed:failed.append(fd);raise OSError('synthetic unknown close')
+                return actual(fd)
+            try:
+                with patch('os.close',close),self.assertRaises(Refused):session.check()
+                self.assertTrue(decode(store.raw)['denied'])
+                with self.assertRaises(Refused):Session(store,LinuxClock(self.authority(guardian)),digest(asdict(original)))
+            finally:
+                for fd in failed:actual(fd)
+
     def test_observed_supported_allocation_profile_positive_or_explicit_unknown(self):
         if not self.supported(): return
         facts = observe_host()
@@ -672,13 +894,18 @@ with LiveGuardian.create(P,P,P,P) as guardian:
         with LiveGuardian.create(P, P, P, P) as guardian:
             params = dict(operation=P, source=P, request=P, policy_evidence=P)
             if not supported:
+                from tools.retention_context_v1.profile import observe_build, SourceCredits
                 with self.assertRaisesRegex(Refused, 'unsupported-allocation-profile'):
-                    LinuxHostProfile(guardian.raw, **params)
+                    observe_build(SourceCredits())
+                with self.assertRaisesRegex(Refused, 'profile-admission-required'):
+                    LinuxHostProfile(guardian.raw, admission=None, **params)
                 print('RETENTION_CONTEXT_SUPPORTED_PROFILE '+json.dumps(dict(positive=False, facts=facts)))
                 return
             guardian.close()
-            guardian, profile = LinuxHostProfile.start_guardian(P, P, P, P)
+            admission=component_admission_fixture()
+            guardian=GuardianProcessFixture(admission).__enter__()
             self.addCleanup(guardian.close)
+            profile=LinuxHostProfile(guardian.raw,operation=P,source=P,request=P,policy_evidence=P,admission=admission)
             clock = LinuxClock(profile)
             original = Original.begin(P, P, P, clock, 8000000000)
             with tempfile.TemporaryDirectory(prefix='profile-real-fd-') as tmp:
@@ -696,11 +923,11 @@ with LiveGuardian.create(P,P,P,P) as guardian:
                     self.assertEqual(cursor.probes, 2)
                     self.assertEqual(pool.fds_used, 0)
                     self.assertEqual(session.credits()['audit_bytes'], 0)
-                    recovered = recover_guardian(store.path, digest(asdict(original)), guardian.raw, directory=entries)
+                    recovered = recover_guardian(store.path, digest(asdict(original)), guardian.raw, directory=entries, admission=profile.admission)
                     self.assertTrue(recovered['ok'])
                     from tools.retention_context_v1.profile import filesystem
                     print('RETENTION_CONTEXT_SUPPORTED_PROFILE '+json.dumps(dict(
-                        positive=True, build=profile.build, filesystem=filesystem(fd),
+                        positive=True, conditional_component_contract=True, deployment_admission='test fixture; M21 must supply qualified deployment evidence', build=profile.build, filesystem=filesystem(fd),
                         stream_allocation_bytes=1114112, entry_allocation_bytes=8192)))
                 finally: os.close(fd)
 
@@ -738,6 +965,30 @@ class DiscoveryScopeControls(unittest.TestCase):
             self.assertEqual(exhausted.used,1207959550)
             self.assertTrue(exhausted.denied)
             with self.assertRaises(Refused):exhausted.reserve(0)
+
+    def test_expected_source_binary_pins_cannot_self_admit_modified_same_version(self):
+        from tools.retention_context_v1.profile import ProfileAdmission
+        admission=ProfileAdmission('sha256:'+P,'1'*64,'x86_64',P,'b'*64,('c'*64,),'d'*64)
+        build=dict(facts=dict(machine='x86_64',python='3.11.2 same version',libc='glibc 2.36'),
+                   python_object=dict(sha256=P,bytes=1),libc_object=dict(sha256='b'*64,bytes=2))
+        accepted=admission.bind_build(build)
+        for which in ('python_object','libc_object'):
+            changed=copy.deepcopy(build);changed[which]['sha256']='0'*64
+            with self.subTest(binary=which),self.assertRaisesRegex(Refused,'profile-admitted-build'):
+                admission.bind_build(changed)
+        self.assertNotEqual(accepted,replace(admission,mount_profiles=('e'*64,)).bind_build(build))
+        self.assertNotEqual(accepted,replace(admission,source_evidence='f'*64).bind_build(build))
+        with self.assertRaisesRegex(Refused,'profile-admission-required'):
+            LinuxHostProfile.start_guardian(P,P,P,P,admission=None)
+
+    def test_profile_admission_shape_and_auxiliary_bounds(self):
+        from tools.retention_context_v1.profile import ProfileAdmission
+        good=ProfileAdmission('sha256:'+P,'1'*64,'x86_64',P,'b'*64,('c'*64,),'d'*64)
+        good.validate()
+        for invalid in [replace(good,image_id=P),replace(good,mount_profiles=()),
+                        replace(good,mount_profiles=('c'*64,)*9),replace(good,machine='unknown'),
+                        replace(good,source_evidence='not-proof'),replace(good,mount_profiles=['c'*64])]:
+            with self.subTest(admission=invalid),self.assertRaises(Refused):invalid.validate()
 
     def test_exact_original_scope_windows_not_a_global4096_pool(self):
         from tools.retention_context_v1.native import SCOPES

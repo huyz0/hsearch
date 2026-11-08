@@ -149,6 +149,7 @@ class CursorPool:
         self.active = []
         self.memory_used = self.fds_used = 0
         self.denied = False
+        self.close_uncertain = False
 
     def open(self, directory_fd, *, cap=None):
         cap = self.entry_limit if cap is None else cap
@@ -221,6 +222,8 @@ class CursorPool:
             if not errors:
                 self.memory_used -= charge
                 self.fds_used -= 3
+            else:
+                self.close_uncertain = True
             self.denied = True
             try:
                 self.session.deny()
@@ -235,7 +238,9 @@ class CursorPool:
                 cursor.close()
             except Exception as exc:
                 errors.append(exc)
-        if errors:
+        if errors or self.close_uncertain:
+            if not errors:
+                raise Refused('cursor-close-uncertain')
             raise Refused('cursor-close-uncertain') from errors[0]
 
 
@@ -308,6 +313,8 @@ class Cursor:
         need(stat.S_ISDIR(entry.mode), 'child-not-directory')
         self.pool.session.check()
         fd = None
+        child = None
+        primary = None
         try:
             # Reserve the temporary descriptor before open, beyond both cursor
             # descriptors already held by the pool.
@@ -318,7 +325,8 @@ class Cursor:
             info = os.fstat(fd)
             need((info.st_dev, info.st_ino) == (entry.device, entry.inode), 'child-identity')
             child = self.pool._open(fd, depth=self.depth+1, cap=cap, traversal=self.traversal)
-        except Exception:
+        except BaseException as exc:
+            primary = exc
             self.pool.denied = True
             try:
                 self.pool.session.deny()
@@ -327,8 +335,25 @@ class Cursor:
             raise
         finally:
             if fd is not None:
-                os.close(fd)
-                self.pool.fds_used -= 1
+                try:
+                    os.close(fd)
+                except Exception as close_error:
+                    self.pool.denied = self.pool.close_uncertain = True
+                    try:
+                        self.pool.session.deny()
+                    except Exception:
+                        pass
+                    if child is not None:
+                        try:
+                            child.close()
+                        except Exception as child_error:
+                            close_error.add_note('child cleanup also uncertain: '+type(child_error).__name__)
+                    if primary is not None:
+                        primary.add_note('child-temporary-close-uncertain; descriptor capacity retained')
+                    else:
+                        raise Refused('child-temporary-close-uncertain') from close_error
+                else:
+                    self.pool.fds_used -= 1
         try:
             self.pool.session.check()
         except Exception:
@@ -354,6 +379,7 @@ class Cursor:
         if errors:
             self.close_error = errors[0]
             self.pool.denied = True
+            self.pool.close_uncertain = True
             try:
                 self.pool.session.deny()
             except Exception:

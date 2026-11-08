@@ -8,9 +8,9 @@ import hashlib
 import os
 import stat
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
-from .codec import digest, integer, need, Refused
+from .codec import digest, integer, need, pin, Refused
 from .guardian import GuardianAuthority, LiveGuardian, token_from
 from .native import CursorProof, bounded_file, observe_host
 
@@ -40,7 +40,7 @@ class SourceCredits:
         self.used += count
 
 
-def filesystem(directory_fd):
+def mount_profile(directory_fd):
     info = bounded_file('/proc/self/fdinfo/'+str(directory_fd), 4096)
     ids = [line.split(b':', 1)[1].strip() for line in info.splitlines() if line.startswith(b'mnt_id:')]
     need(len(ids) == 1 and ids[0].isdigit(), 'profile-mount-id')
@@ -50,9 +50,53 @@ def filesystem(directory_fd):
         prefix, separator, suffix = line.partition(b' - ')
         if prefix.split(b' ', 1)[0] == ids[0]:
             need(bool(separator), 'profile-mount-framing')
-            selected.append(suffix.split(b' ', 1)[0].decode('ascii'))
-    need(len(selected) == 1 and selected[0] in SUPPORTED_FILESYSTEMS, 'profile-filesystem')
+            namespace = os.stat('/proc/self/ns/mnt')
+            selected.append(dict(filesystem=suffix.split(b' ', 1)[0].decode('ascii'),
+                                 fingerprint=digest(dict(line=hashlib.sha256(line).hexdigest(),
+                                                         namespace=[namespace.st_dev, namespace.st_ino]))))
+    need(len(selected) == 1 and selected[0]['filesystem'] in SUPPORTED_FILESYSTEMS, 'profile-filesystem')
     return selected[0]
+
+
+def filesystem(directory_fd):
+    return mount_profile(directory_fd)['filesystem']
+
+
+@dataclass(frozen=True)
+class ProfileAdmission:
+    """Expected pins from TRUSTED qualified-image/source/mount admission.
+
+    Measuring current files is not a way to issue this evidence. M21 supplies
+    authenticated deployment admission referencing independently qualified
+    binary/source correspondence and actual mount/backing-name evidence.
+    """
+    image_id: str
+    source_evidence: str
+    machine: str
+    python_sha256: str
+    libc_sha256: str
+    mount_profiles: tuple
+    mount_evidence: str
+
+    def validate(self):
+        need(type(self.image_id) is str and self.image_id.startswith('sha256:'), 'profile-image-id')
+        pin(self.image_id[7:])
+        for value in (self.source_evidence, self.python_sha256, self.libc_sha256, self.mount_evidence):
+            pin(value)
+        need(self.machine in ('x86_64', 'aarch64'), 'profile-machine')
+        need(type(self.mount_profiles) is tuple and 1 <= len(self.mount_profiles) <= 8, 'profile-mount-admission-bound')
+        for value in self.mount_profiles:
+            pin(value)
+
+    def bind_build(self, build):
+        self.validate()
+        need(build['facts']['machine'] == self.machine and
+             build['python_object']['sha256'] == self.python_sha256 and
+             build['libc_object']['sha256'] == self.libc_sha256, 'profile-admitted-build')
+        # Canonical codec uses lists; tuple is the immutable in-process API.
+        admission = asdict(self)
+        admission['mount_profiles'] = list(self.mount_profiles)
+        return digest(dict(build=build, admission=admission))
 
 
 def file_identity(path, source_reads):
@@ -104,23 +148,29 @@ class LinuxHostProfile(GuardianAuthority):
     immutable admitted image and no snapshot/rewind/migration. Those deployment
     properties are not inferred from samples; M21 must supply them in practice.
     """
-    def __init__(self, raw, *, operation, source, request, policy_evidence, source_reads=None):
+    def __init__(self, raw, *, operation, source, request, policy_evidence, admission,
+                 source_reads=None):
         super().__init__(raw, operation=operation, source=source, request=request, policy_evidence=policy_evidence)
+        need(type(admission) is ProfileAdmission, 'profile-admission-required')
+        self.admission = admission
         self.source_reads = source_reads if source_reads is not None else SourceCredits()
         self.build = observe_build(self.source_reads)
-        need(token_from(raw)['allocation_build'] == digest(self.build), 'profile-original-build')
+        need(token_from(raw)['allocation_build'] == admission.bind_build(self.build), 'profile-original-build')
         # Observe the live guardian before handing out any native authority.
         super().verify(self.build['facts'])
 
     @classmethod
-    def start_guardian(cls, operation, source, request, policy_evidence, *, source_reads=None):
+    def start_guardian(cls, operation, source, request, policy_evidence, *, admission,
+                       source_reads=None):
+        need(type(admission) is ProfileAdmission, 'profile-admission-required')
         source_reads = source_reads if source_reads is not None else SourceCredits()
         build = observe_build(source_reads)
         guardian = LiveGuardian.create(operation, source, request, policy_evidence,
-                                       allocation_build=digest(build))
+                                       allocation_build=admission.bind_build(build))
         try:
             profile = cls(guardian.raw, operation=operation, source=source, request=request,
-                          policy_evidence=policy_evidence, source_reads=source_reads)
+                          policy_evidence=policy_evidence, admission=admission, source_reads=source_reads)
+            # The expected admission is retained through every reconstruction.
             return guardian, profile
         except Exception:
             guardian.close()
@@ -134,9 +184,11 @@ class LinuxHostProfile(GuardianAuthority):
         need(len(directory) == 3, 'profile-directory-arguments')
         info, name_max, directory_fd = directory
         need(stat.S_ISDIR(info.st_mode) and name_max == 255, 'profile-directory-name')
-        mount_type = filesystem(directory_fd)
-        evidence = digest(dict(build=self.build, filesystem=mount_type, name_max=name_max,
-                               guardian=domain.evidence))
+        mount = mount_profile(directory_fd)
+        need(mount['fingerprint'] in self.admission.mount_profiles, 'profile-unadmitted-mount')
+        evidence = digest(dict(build=self.build, mount=mount, name_max=name_max,
+                               guardian=domain.evidence, source_evidence=self.admission.source_evidence,
+                               mount_evidence=self.admission.mount_evidence))
         # glibc2.36 opendir.c clamps native buffer to1MiB. Extra64KiB
         # conservatively covers DIR/allocator/iterator overhead. Entry8KiB
         # covers a255-byte name, worst-case Unicode, encoding, DirEntry/stat

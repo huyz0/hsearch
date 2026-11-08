@@ -72,5 +72,12 @@
     "coordinator_adopted": true,
     "scope": "application traversal/native allocation; no universal hidden kernel-work certificate",
     "copied_bodies": []
+  },
+  "coauthor_advice": {
+    "author": "01a1ab60-4bff-7752-9544-a9eab0fca10a",
+    "immutable_source": "c8dfede6a942736cafd2f82b38f9b9a33536ce5e",
+    "memo_sha256": "2d68c1e6bec2867eb782f839623a3cedfa349137067b9f21d123b8401d2d159a",
+    "role": "coauthor static advice, not independent review",
+    "copied_bodies": []
   }
 }
