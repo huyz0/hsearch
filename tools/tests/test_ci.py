@@ -468,6 +468,19 @@ class BoundedResearchSchedulingControls(unittest.TestCase):
         expected_checks = [coverage["cargo_command"](coverage["correctness_command"](tools, command))
                            for command in check["CHECKS"]]
         self.assertEqual(commands[1:1 + len(expected_checks)], expected_checks)
+        ordinary = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"]
+                    and "--workspace" in command and "--test" not in command and "-E" not in command]
+        self.assertEqual(len(ordinary), 2)
+        self.assertEqual(sum("--release" in command for command in ordinary), 1)
+        for command in ordinary:
+            self.assertEqual(command.count("--no-fail-fast"), 1)
+            self.assertTrue(all(flag in command for flag in ["--locked", "--offline", "--workspace", "--all-features"]))
+            self.assertEqual(command[-3:], ["--profile", "hsearch", "--no-tests=fail"])
+            self.assertIn("--config", command)
+            self.assertTrue(any(str(arg).endswith("cargo-correctness.toml") for arg in command))
+        diagnostics = [command for command in commands if "-E" in command or "--test" in command]
+        self.assertEqual(len(diagnostics), 8)  # Two layout receipts and six native experiment commands.
+        self.assertTrue(all("--no-fail-fast" not in command for command in diagnostics))
         samples = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "--test" in command]
         self.assertEqual(len(samples), 6)
         self.assertEqual(sum("--release" in command for command in samples), 3)
@@ -478,6 +491,19 @@ class BoundedResearchSchedulingControls(unittest.TestCase):
             self.assertEqual(command[command.index("--profile") + 1], "hsearch")
             self.assertTrue(all(flag in command for flag in ["--locked", "--offline", "--all-features", "--no-tests=fail"]))
             self.assertTrue("--config" in command and any(str(arg).endswith("cargo-correctness.toml") for arg in command))
+        attempted = []
+        def fail_profile(command, **kwargs):
+            attempted.append(command)
+            self.assertTrue(kwargs["check"])
+            if "--no-fail-fast" in command:
+                raise subprocess.CalledProcessError(100, command)
+        with patch.dict(check["main"].__globals__, COVERAGE=fixture_coverage()), \
+                patch.object(check["subprocess"], "run", side_effect=fail_profile), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(check["main"](), 1)
+        self.assertEqual(attempted[-1], ordinary[0])
+        self.assertEqual(sum("--no-fail-fast" in command for command in attempted), 1)
+        self.assertFalse(any("--test" in command or "-E" in command for command in attempted))
 
 if __name__ == "__main__":
     unittest.main()

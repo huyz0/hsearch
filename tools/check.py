@@ -17,9 +17,9 @@ CHECKS = [
     [sys.executable, "tools/workspace.py", "selftest"],
     ["cargo", "fmt", "--all", "--", "--check"],
     ["cargo", "clippy", "--locked", "--offline", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"],
-    ["cargo", "nextest", "run", "--locked", "--offline", "--workspace", "--all-features", "--profile", "hsearch", "--no-tests=fail"],
+    ["cargo", "nextest", "run", "--locked", "--offline", "--workspace", "--all-features", "--no-fail-fast", "--profile", "hsearch", "--no-tests=fail"],
     ["cargo", "test", "--locked", "--offline", "--workspace", "--all-features", "--doc"],
-    ["cargo", "nextest", "run", "--locked", "--offline", "--workspace", "--all-features", "--release", "--profile", "hsearch", "--no-tests=fail"],
+    ["cargo", "nextest", "run", "--locked", "--offline", "--workspace", "--all-features", "--release", "--no-fail-fast", "--profile", "hsearch", "--no-tests=fail"],
     ["cargo", "test", "--locked", "--offline", "--workspace", "--all-features", "--release", "--doc"],
     # Retain actual target/profile layout receipts using the same attested test actor and policy.
     ['cargo', 'nextest', 'run', '--locked', '--offline', '--package', 'hsearch-observe', '--all-features', '--profile', 'hsearch', '--no-tests=fail', '-E', 'test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension)', '--success-output', 'immediate'],
