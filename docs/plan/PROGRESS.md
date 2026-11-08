@@ -1,5 +1,20 @@
 # Progress and handoff
 
+## 8 November 2026: successor delivery preparation adopts actual PR29 main
+
+The [v2 preparation snapshot](evidence/delivery-integration-v2.md) starts from sealed2e2, normally merges actual protected PR29 main0a2ff358 with an initially identical tree, then normally merges corrected4f817522 development policy. M03/M19/M16 contributions, all implementation/Cargo/inventory/CI/collector/test bodies and raw history remain exact v1 bytes. Active engine and M02 repair source/graphs are excluded and untouched.
+
+PR29 was actually protected-merged with tree91833b09 identical reviewed3b25 after both M16R2 roles, a fresh normal gate and all seven PR jobs passed. Main push run42453742793 was still in progress at root's preparation receipt; no postmerge qualification is inferred. Fresh complete exact-source checks and later same-task component R2 remain required. M03/M19/M02.11 each retain issued1/planned2/hard3/original992base; M19 P2 AS-M19-R1-01 and full Linux64/62pass/2clockerrors FAILED remain. No M16R3 is consumed.
+
+M02.11 done/evidence is restored only as this final candidate's proposed merged state, pending final R2/current-source checks/CI/protected integration/postmerge; immutable4f seed stays planned. Separately admitted reversible development remains narrowly allowed, while actual campaigns/qualification/solefutureoverall4MAX4 still wait for actual policy integration and proper admission. The historical entries below retain their original phase and do not describe current acceptance.
+
+
+## 8 November 2026: M02.10 reversible-development seed
+
+M02.11 is restored to planned/unaccepted. The [development addendum](m02-10-development.md) narrowly permits separately admitted reversible code development and explicitly bounded ordinary synthetic controls after root audits this seed. No code import, claim or execution follows from seed preparation. Actual experiments, native/provider matrices, qualification and the sole future overall4/MAX4 candidate still wait for actual M02.11 integration and proper admission. The old51187fb R1 remains exact-source history, issued1/planned2/hard3; final checks/review/integration of the revised policy remain outstanding. All original tasks, frozen bodies, failures, counters, quotas and active engine reservations are retained.
+
+The earlier candidate entries below describe their historical source; their blanket development hold and intended merged `done` state are superseded only as described above.
+
 ## 8 November 2026: combined local delivery preparation
 
 The [preparation snapshot](evidence/delivery-integration-v1.md) combines PR29 source3b25, M03R1/530, M02.11R1/511, M19R1/46 and closed M19fix0a49 through normal retained-parent local merges. Ledger contributions are a field-level union; no task's fields replace another's. Source/byte provenance, original histories and three existing leases remain bound. No current acceptance, publication or new review packet follows.
@@ -25,7 +40,6 @@ The [updated start policy](product-start-policy.md) applies root's prospective r
 The [M03.01 policy candidate](product-start-policy.md) replaces only that task’s whole-M01 start edge with accepted API/workspace/sandbox/ownership/review/CI/coverage prerequisites. M03.02 gains an explicit whole-M01 prerequisite, and milestone M03 retains whole-M01. M01.08’s goal describes measuring the frozen baseline; every actual acceptance clause, status, oracle/trial/usage/recovery and history remains. All other task edges/statuses are unchanged.
 
 This is a legitimate committed development-seed candidate, not policy or product acceptance. After root audits exact source, prerequisites, owner and conflict-free code/shared paths, normal development-only admission may start without a separate policy merge. Full policy plus nonempty code retain one counted review lineage, native CI and protected integration before acceptance. Any real main advance must be adopted safely before final review without importing out-of-claim edits. No claim, crate, workspace/lock/allocator/resource/FFF action or M19 clarification is performed by this seed; PR29 external authorization remains separate. Earlier checkpoints remain historical.
-
 ## 8 November 2026: prospective M02.10 policy qualification candidate
 
 [M02.11](evidence/m02-11-qualified-source.md) is a genuine, distinct policy-only qualification unit for the [M02.10 continuation addendum](m02-10-continuation.md). It requires its own counted eligible nonauthor reviews, deterministic checks, exact-source hosted CI/ci-ok and protected integration before any M02.10 admission or execution. Candidate ledger done is intended merged status only; no current policy/code/product acceptance is claimed.

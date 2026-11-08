@@ -1,3 +1,23 @@
+# M02.11 successor combined policy candidate: unaccepted
+
+Current phase: proposed merged `done`/evidence in this final candidate only; actual policy acceptance is pending exact-final-source checks, the same issued1/planned2/hard3 lineage's R2, selected current-source CI/ci-ok, protected integration and postmerge. The immutable4f817522 development seed remains planned/unaccepted. Candidate done cannot admit M02.10 campaigns or qualify code findings. The [v2 snapshot](delivery-integration-v2.md) records actual PR29 main adoption and unchanged implementation bodies; main postmerge qualification remains pending at the bound preparation observation.
+
+The narrow [development route](../m02-10-development.md) is retained. Historical R1 at511 remains exact-source evidence only, not approval of this revision. Original992 review base, actual authors and all candidate counters/sidecars remain unchanged. No packet or gate is issued by this preparation.
+
+## Retained development-seed and prior input context
+
+The notes below describe their own source phases, including4f's planned status and v1's then-pending actual-main adoption. They are not present qualification claims. Original accepted/factual records and17rawhistory bodies remain exact.
+
+# M02.11 revised policy seed: unaccepted
+
+Current status: planned, with no ledger acceptance evidence. The [development addendum](../m02-10-development.md) supersedes only the historical blanket pre-integration development hold. Root must audit the seed and separately admit the actual normal code owner/import scope before reversible development or explicitly bounded ordinary synthetic controls. Experiments, qualification, the sole future M02.10 candidate and all gates still require actual M02.11 integration and separate admission.
+
+Historical R1 at `51187fb42ce6f644f42d4c1a389643f86f50bf34` had both nonauthor roles clear at that exact source. Retain issued1/planned2/hard3 and original public review base `992084caa931fc64b1589350453fde9fa0e3a765`; do not reuse that clearance as approval of this revision or issue a policy-only review round for seed preparation. Same-lineage final-source checks/review, selected hosted CI/ci-ok and integration remain unrun. The external seed handoff binds current source, ledger delta, observed checks and frozen/engine bookends. All actual policy contributors below plus the development assessment author/coordinator remain disclosed and excluded from future reviews.
+
+## Historical51187fb source preparation record
+
+The following record is preserved as history. Its intended merged `done` and integration-before-any-admission/execution statements describe the earlier source, superseded only for the development phase above. Original accepted evidence, root disposition and17 raw history bodies remain unchanged.
+
 # M02.11 policy-only source candidate
 
 **Historical R1 source snapshot:** the original sections below describe `51187fb42ce6f644f42d4c1a389643f86f50bf34`. References there to this candidate, pending first reviews, unchanged bodies or other-task isolation are scoped to that exact original head. Both R1 policy roles were clear at this head. Its135-other-task/sole-actor-clause assertions describe that isolated policy R1 comparison; the combined tree also retains the other independently identified task contributions. The input commit and original evidence remain immutable.
