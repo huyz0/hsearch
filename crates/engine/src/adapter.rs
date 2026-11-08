@@ -315,13 +315,12 @@ impl<'d> Engine<'d> {
         if head.uncertain {
             return Err(Error::Checkpoint);
         }
-        if let Some(checkpoint) = &checkpoint {
-            if checkpoint.schema != schema
+        if let Some(checkpoint) = &checkpoint
+            && (checkpoint.schema != schema
                 || checkpoint.epoch != head.epoch
-                || head.native != Some(checkpoint.native)
-            {
-                return Err(Error::Checkpoint);
-            }
+                || head.native != Some(checkpoint.native))
+        {
+            return Err(Error::Checkpoint);
         }
         if head.writer_active {
             return Err(Error::Busy);
