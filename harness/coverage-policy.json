@@ -5,5 +5,10 @@
     "xtask",
     "hsearch-testkit"
   ],
-  "non_executable": {}
+  "non_executable": {
+    "crates/engine/src/adapter_tests.rs": {
+      "sha256": "d4b1dfba4a89dbd53e16e02eebab3c69d448b76502f456dd4774d95e683f953a",
+      "reason": "Only the cfg(test) path module in adapter.rs includes this unit-test/helper file; production library builds exclude it."
+    }
+  }
 }
