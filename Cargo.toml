@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/types", "crates/observe", "crates/engine", "crates/testkit", "xtask"]
-default-members = ["crates/types", "crates/observe", "crates/engine"]
+members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/testkit", "xtask"]
+default-members = ["crates/types", "crates/observe", "crates/engine", "crates/object"]
 
 [workspace.package]
 version = "0.1.0"

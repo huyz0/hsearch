@@ -1,0 +1,11 @@
+[package]
+name = "hsearch-object"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Bounded object and conditional metadata contracts"
+
+[lints]
+workspace = true

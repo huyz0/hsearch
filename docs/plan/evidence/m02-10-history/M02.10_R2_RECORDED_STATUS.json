@@ -1,0 +1,191 @@
+{
+  "packet_sha256": "b77a80c51fd00ae5c6ca0fbd3a80cf73158d8f3d66e564369d355d72c087cbc9",
+  "packet": {
+    "schema_version": 1,
+    "task_id": "M02.10",
+    "round": 2,
+    "planned_rounds": 2,
+    "hard_ceiling": 3,
+    "base": "b19074d3022694b6180f115c875f9883c1ac9425",
+    "head": "adb96aa5a7ef2f3f499366ccee49867b3be995df",
+    "tree": "8c817e83962eb79e2eda516c63cbfb805ed3aa95",
+    "source_digest": "190bb3b87b264bc1027bf611d179d2e8ea9096c66cb59acd120a47c1e8ea3c76",
+    "implementer_session": "/root",
+    "reviewers": {
+      "correctness_tests_claims": "/root/publication_review",
+      "architecture_security": "/root/sandbox_security_review"
+    },
+    "required_roles": [
+      "architecture_security",
+      "correctness_tests_claims"
+    ],
+    "changed_paths": [
+      ".github/workflows/bootstrap.yml",
+      ".github/workflows/native-durability.yml",
+      "AGENTS.md",
+      "Cargo.lock",
+      "Cargo.toml",
+      "crates/testkit/Cargo.toml",
+      "crates/testkit/research/bounded_transfer.py",
+      "crates/testkit/research/native_bundle.py",
+      "crates/testkit/research/native_capture.py",
+      "crates/testkit/research/native_ci.py",
+      "crates/testkit/research/native_commit_verify.py",
+      "crates/testkit/research/native_controller.py",
+      "crates/testkit/research/native_failure_verify.py",
+      "crates/testkit/research/native_sample_verify.py",
+      "crates/testkit/research/native_scale_verify.py",
+      "crates/testkit/research/native_tools.py",
+      "crates/testkit/research/native_verify.py",
+      "crates/testkit/research/native_worker.py",
+      "crates/testkit/research/native_workload_verify.py",
+      "crates/testkit/research/object_controller.py",
+      "crates/testkit/research/object_io.py",
+      "crates/testkit/research/object_verify.py",
+      "crates/testkit/research/object_worker.py",
+      "crates/testkit/tests/durability/budget.rs",
+      "crates/testkit/tests/durability/common.rs",
+      "crates/testkit/tests/durability/mod.rs",
+      "crates/testkit/tests/durability/openraft.rs",
+      "crates/testkit/tests/durability/raft_rs.rs",
+      "crates/testkit/tests/durability/sample_gate.rs",
+      "crates/testkit/tests/durability/workload.rs",
+      "crates/testkit/tests/fixtures/durability-traces.json",
+      "crates/testkit/tests/native_durability.rs",
+      "docs/plan/PROGRESS.md",
+      "docs/plan/coordinator-research.md",
+      "docs/plan/dependencies.json",
+      "docs/plan/evidence/m02-09-integrated.md",
+      "docs/plan/evidence/m02-10-components.md",
+      "docs/plan/milestones/M02.md",
+      "docs/plan/research/durability-envelope.json",
+      "docs/plan/research/durability-execution.md",
+      "docs/plan/research/local-durability-feasibility.md",
+      "docs/plan/research/native-engine-coverage-profile.md",
+      "docs/plan/research/native-engine-feasibility.md",
+      "docs/plan/roadmap.md",
+      "docs/plan/tasks.json",
+      "tools/check.py",
+      "tools/ci.py",
+      "tools/durability_research.py",
+      "tools/tests/test_ci.py",
+      "tools/tests/test_durability_research.py",
+      "tools/workspace.py"
+    ],
+    "checks": [
+      {
+        "name": "schema-static",
+        "head": "adb96aa5a7ef2f3f499366ccee49867b3be995df",
+        "conclusion": "success",
+        "evidence": "Complete policy/API/plan/generated/dependency/allfeatures checks passed in actual full suite bf75987a5e7c6ae8cec9a4ac4602a505a4b6f937b1d5b23eb63350f0426b7dc2; immutable22production/policy objects and exact inventoried161package lock retained; proof b9fcff153107b0a748f7de748b8ca3a5b87bfdcca97b762615b50ee23229d669"
+      },
+      {
+        "name": "local-linux",
+        "head": "adb96aa5a7ef2f3f499366ccee49867b3be995df",
+        "conclusion": "success",
+        "evidence": "Full native42Rust/profile/allfeatures/no skips,393Python/no skips,11actual compiler controls, lint/fmt/doctests/prodbuild and6preserved strict engine repetitions. Actual exited/TERM-exited leader group controls and older-snapshot/latest-membership tracker reopen passed. Fullproof bf75987a5e7c6ae8cec9a4ac4602a505a4b6f937b1d5b23eb63350f0426b7dc2"
+      },
+      {
+        "name": "production-coverage",
+        "head": "adb96aa5a7ef2f3f499366ccee49867b3be995df",
+        "conclusion": "success",
+        "evidence": "Actual exact-source both523/523 with unchanged90floors; engine0/0 and changed0/0N/A bound to immutable shipped Rust/compiler/coverage objects and inventoried dev-only graph; files/context4/nativeJSON3.1/physical/source/private compiler predicates retained. Proof 8b1870152dbf2f68a5579071d4f59d1cbe36e41d15202be871a0d4b681f9cf52"
+      },
+      {
+        "name": "native-oracles",
+        "head": "adb96aa5a7ef2f3f499366ccee49867b3be995df",
+        "conclusion": "success",
+        "evidence": "New144RustFS cases+12fresh native candidate/profile/repetition workers,40temporal contexts/sample/all84original unsafe-copy controls; actual wire/state/operation/count/source/kernel/tool/actor/command/cleanup independently reopened and4actual matrix corruptions refused. Rawproof 33ebdb730092d5596177cd53611df4305d71a4174c8a17e5edcf6ae1d9236cc1;12complete-sample temporal corruptions 346fd8a094ecef42262277019346d9cb49eb91aaa6f6fd53f82c880056cf7b65;3otherwise-old-valid OpenRaft corruptions f2d6cece1c518412ed4e15912b92e67773ee710790cb8922158dcb91f5292307"
+      },
+      {
+        "name": "publication-provenance",
+        "head": "adb96aa5a7ef2f3f499366ccee49867b3be995df",
+        "conclusion": "success",
+        "evidence": "51exact changed UTF8 Git blobs no credential/privatehost pattern hits (scan only; independent review required), proof 375b41a9f67912d56662927fb04dab624ff0f0e4fff46ddfd969f9c7896083d6; combined161package audited inventory 8bc71c1d0c72db2fc01800892313718d0581b1701760cd6ed7dc617cd672d5da; public repo owner/login/admin/main/protection rechecked 170915be632ad4c723a7fa7b4121200cb4fc353bcf83bd776fa82d2a41317eb4; coordinator helpers must also be reviewed {\"m02_durability_zip.py\": \"6d08c96a69c64a663e4a897f86e13aeb4fe2ebb550038f9dcc7d47ad7753019c\", \"verify_hsearch_ci_durability.py\": \"c58c8118cb7f967bfc47c9ff99019146fd76f148ff727f49047e631ec6434c3d\", \"verify_m02_durability_public.py\": \"94e5694ff3d570e850c5435d7e2cd489fcd8c4fca0fee07c37326b7f8df7a7c5\"}"
+      },
+      {
+        "name": "resource-provenance",
+        "head": "adb96aa5a7ef2f3f499366ccee49867b3be995df",
+        "conclusion": "success",
+        "evidence": "Frozen worker/history/sample/write/sync/queue/retained bounds unchanged. Actual bounded Docker archive export precedes host writes; Linux owned-group and native intermediate-membership controls passed. New144object/all12samples normally cleaned. All original failure archives/R1blocked reports and issued helper bytes preserved. Full public healthy12/144 plus coherently recounted forged object header refuses specifically at raw provenance, proof b6a23424d621be8ea8e310aa17593222bc057ce4471935fca5ff2ac4aa23a426;12fresh object predicate negatives 1e3a7985a841b6331fd3c00212df1fac4814857c59cce57cf4689548fbf1b1da; CI predicate retention audit d407b7d8d87eabe4e34dfc5dcfa7f8c8f06c031e8475fd3a2cf32e7347cc9b9a; prior normal/ZIP64/retained/metadata/same-job controls remain. Helpers {\"m02_durability_zip.py\": \"6d08c96a69c64a663e4a897f86e13aeb4fe2ebb550038f9dcc7d47ad7753019c\", \"verify_hsearch_ci_durability.py\": \"c58c8118cb7f967bfc47c9ff99019146fd76f148ff727f49047e631ec6434c3d\", \"verify_m02_durability_public.py\": \"94e5694ff3d570e850c5435d7e2cd489fcd8c4fca0fee07c37326b7f8df7a7c5\"}"
+      }
+    ],
+    "required_check_names": [
+      "ci-ok",
+      "local-linux",
+      "native-oracles",
+      "production-coverage",
+      "publication-provenance",
+      "resource-provenance",
+      "schema-static"
+    ],
+    "reason": "Final formalR2/overallhard3 after recorded five-P2 R1 batch repairs and complete final-source local qualification. Whole original public integration and frozen external helpers; preserve design/R1 history. Actual hosted x64/ARM nine-job qualification and protected gate remain separate before integration.",
+    "previous_findings": [
+      {
+        "review_key": "1:correctness_tests_claims:OBJECT_RAW_EXECUTION_PROVENANCE_UNCHECKED",
+        "id": "OBJECT_RAW_EXECUTION_PROVENANCE_UNCHECKED",
+        "priority": "P2",
+        "file": "verify_m02_durability_public.py",
+        "line": 143,
+        "reproduction": "External helper is P-root D:\\codex\\2026-11-01\\task\\verify_m02_durability_public.py (packet SHA 1d537157e36507481bcb55d00d220d25b2ed05512402ca7899e9dbbb4982c5ed). Run the task-owned M02.10_R1_CORRECTNESS_PUBLIC_BINDING_REPLAY.py against the retained M02.10_LOCAL_MATRIX_V2 data. It first invokes actual verify_components on the original, then copies that public tree and changes only the object's raw run_started record: source/fixture/envelope hashes to zero, architecture to aarch64, uid to 0 and all cgroups to unlimited. It recalculates that copied extent's bytes/hash and object_result.artifacts descriptor, retaining the original claimed outer source/target/verification. Both full 12-native/144-object replays return pass. Receipt M02.10_R1_CORRECTNESS_PUBLIC_BINDING_REPLAY.json; elapsed217.985s. Direct verify_events also passes with run_started removed entirely (separate OBJECT_BINDING_REPLAY receipt). Original evidence and source are unchanged.",
+        "expected": "Independently require exactly one complete object raw execution receipt and bind its run/namespace, source/fixture/envelope, native target, uid and finite CPU/memory/swap/PID limits to the expected source and actual object summary/engine/worker evidence, failing on omission or contradiction before complete_public_durability_raw=pass. Retain equivalent negative controls through the public helper, including the official-job path.",
+        "observed": "The object branch checks outer result.source/image and monitors, then calls an oracle that ignores run_started. Unlike the native branch, it never verifies actual raw object source/target/kernel identity or the corresponding summary/engine proof. A current claimed wrapper can therefore qualify raw object evidence explicitly declaring a different source/architecture and unlimited root execution."
+      },
+      {
+        "review_key": "1:correctness_tests_claims:MATCHED_ORACLE_ACCEPTS_UNCOMMITTED_APPLICATION",
+        "id": "MATCHED_ORACLE_ACCEPTS_UNCOMMITTED_APPLICATION",
+        "priority": "P2",
+        "file": "crates/testkit/research/native_failure_verify.py",
+        "line": 165,
+        "reproduction": "Run task-owned M02.10_R1_CORRECTNESS_EARLY_APPLY_REPLAY.py and M02.10_R1_CORRECTNESS_EARLY_APPLY_SAMPLE.py. In actual raft-rs run3ce03ac0e15bf717e0e23062, sparse/seed7/wait50000 workload, move leader applied(index2, sparse-7-000) from sequence270 immediately before the first serialized transmission of that operation to any follower (original sequence223, source1->target2). Reindex event sequences and set the moved timestamp to its preceding event; recount only artifact metadata/hashes. Existing wire bytes, final voter files, all operations and sample counts remain unchanged. Native workload verify_case and order_events both accept. Repacking that changed context into the original complete40-context sample also yields native_complete_sample=pass,18workloads, all7unsafe controls passing. Exact receipts are the paired EARLY_APPLY_REPLAY.json and EARLY_APPLY_SAMPLE.json under P; no native workload/source edit.",
+        "expected": "Every applied index/identity must have independent, temporally prior evidence of the required committed/durably backed prefix and synced application state, including matched workloads, before the raw complete sample can qualify. The actual early-application mutation must fail while legitimate normal-entry atomic Ready staging, deferred configuration changes and LightReady ordering remain accepted without lowering bounds or assertions.",
+        "observed": "The applied branch only requires an existing sync generation (and a newer generation if a Ready is active); it does not establish that this applied index/identity was committed or present in that transaction. Workload checks later require contiguous indices, final files and final acknowledgments, which cannot detect this earlier violation. The independent full sample accepts a declared application before the entry was sent to either follower. This is an oracle false acceptance, not an observed early-apply defect in the current Rust adapter."
+      },
+      {
+        "review_key": "1:architecture_security:SEC01_EXITED_LEADER_GROUP_NOT_REAPED",
+        "id": "SEC01_EXITED_LEADER_GROUP_NOT_REAPED",
+        "priority": "P2",
+        "file": "crates/testkit/research/native_tools.py",
+        "line": 79,
+        "reproduction": "With TEMP=TMP=D:\\codex\\2026-11-01\\task\\test-temp and PYTHONDONTWRITEBYTECODE=1, run python -B D:\\codex\\2026-11-01\\task\\M02.10_R1_SECURITY_REPRO.py. The lifecycle section mocks an exited direct leader while the selector still owns a descendant-held pipe, then expires the deadline. The actual bounded() finally branch closes the pipes/selector but calls killpg zero times and wait zero times. This is source reachability, not live native execution. The function serves Cargo metadata and protoc probes, including ordinary host CI.",
+        "expected": "Deadline/output failure must terminate the owned group even after its leader exits. Preserve the primary failure and perform finite group TERM/grace/KILL/reaping. Outer Docker containment cannot replace the promised subcommand lifecycle cleanup.",
+        "observed": "The entire group cleanup is guarded by process.poll() is None. If the leader has already exited, an owned descendant retaining the pipes survives refusal. A leader that exits on TERM also prevents later KILL of a TERM-ignoring descendant. The error is detected but group cleanup is omitted."
+      },
+      {
+        "review_key": "1:architecture_security:SEC02_HOST_COPY_QUOTA_CHECKED_AFTER_ALLOCATION",
+        "id": "SEC02_HOST_COPY_QUOTA_CHECKED_AFTER_ALLOCATION",
+        "priority": "P2",
+        "file": "crates/testkit/research/native_controller.py",
+        "line": 123,
+        "reproduction": "Run root M02.10_R1_SECURITY_REPRO.py under task-local TEMP/TMP/no-bytecode. Valid descriptors claim one byte; fake Docker cp writes exactly2MiB to the owned destination before returning. Actual copy_bundle, object_controller.copy_artifacts and native_capture.copy each permit that allocation, then refuse its size. Receipt records2,097,152 host bytes before refusal at each boundary, beyond1MiB/file; all fixtures were removed normally. Docker was mocked and no real resource was touched.",
+        "expected": "Enforce actual source type/size and aggregate host allocation during transfer, before writing over-quota files. Guest descriptors are untrusted hints. Use bounded bytes/header admission or equivalent streaming enforcement, reject directory/link substitutions and preserve uncertain resource state.",
+        "observed": "native_controller.copy_bundle:123, object_controller.copy_artifacts:71 and native_capture.copy:81 invoke docker cp directly to disk, then inspect completed bytes. Docker.command stdout bounds do not bound cp payloads. Oversized or directory source data can consume the host artifact quota before refusal; finite guest8/18GiB scratch caps do not enforce host1MiB/file or32MiB/artifact limits."
+      },
+      {
+        "review_key": "1:architecture_security:SEC03_SNAPSHOT_OVERWRITES_APPLIED_MEMBERSHIP",
+        "id": "SEC03_SNAPSHOT_OVERWRITES_APPLIED_MEMBERSHIP",
+        "priority": "P2",
+        "file": "crates/testkit/tests/durability/raft_rs.rs",
+        "line": 298,
+        "reproduction": "Run root M02.10_R1_SECURITY_MEMBERSHIP.py (actual retained bytes and pinned source semantics; no native rerun). Current-source raft-rs/dev run3ce03ac0e15bf717e0e23062, nextest UUIDa05fbaf2-5df5-4a47-89d7-e4fdf8aec3fa, failure/four-voters/node-1 witness SHA80dd692831beee84c104f56774fe99be3dca3630c27545e4fef3dc243178548a is accepted by the independent raft_state oracle: latest applied10 has voters1234/no learners, snapshot8 has voters123/learner4. Exact pinned storage.rs243-258 replaces ConfState during apply_snapshot. Constructor ordering and absence of a reset before RawNode::new are checked; intermediate Rust reopen was NOT executed.",
+        "expected": "Initialize RawNode with membership corresponding to the latest persisted applied prefix, including membership entries after the snapshot. Either restore that final ConfState after loading snapshot storage, or replay configuration consistently from a snapshot checkpoint. Add a real snapshot-before-membership-change/reopen regression inspecting the actual tracker and voter/learner behavior.",
+        "observed": "from_disk initializes MemStorage from latest state.conf_state at285-287, then apply_snapshot at298 overwrites it with older snapshot membership. Later entries are appended, but Config.applied at324 skips through the latest applied index without reapplying their membership. The valid snapshot8/applied10 tuple restores learner4 instead of voter4. The existing full-reopen history takes fresh snapshots at1134-1135 immediately before reopening, masking the gap."
+      }
+    ],
+    "packet_payload_bytes": 15947,
+    "estimated_tokens_bytes_div4": 3987,
+    "token_count_is_estimate": true
+  },
+  "rounds_issued": 2,
+  "recorded_verdicts": {
+    "correctness_tests_claims": {
+      "sha256": "da0e88581efd2b8f927301c7aaedf790ed010d04f89b228fbd52009f14354f33",
+      "conclusion": "blocked"
+    },
+    "architecture_security": {
+      "sha256": "7913cfe645fdb7276c053120f4bc14de275c4c150514adaf05111b23e0450cd4",
+      "conclusion": "blocked"
+    }
+  },
+  "not_a_current_validation_verdict": true
+}

@@ -1,0 +1,1283 @@
+"""Component controls; fresh synthetic data only, no operation-policy imports.
+
+Diagnostic authorities below are explicit test doubles, not deployment proof.
+Linux tests exercise real FD scandir/stat/open; Windows exercises refusal.
+"""
+import copy
+from dataclasses import asdict, replace
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from unittest.mock import patch
+
+from tools.retention_context_v1 import (
+    CursorPool, CursorProof, Domain, LinuxClock, Original, Receipt, Refused,
+    Sample, Session, decode, digest, encode, GuardianAuthority, LiveGuardian, LinuxHostProfile,
+)
+from tools.retention_context_v1.native import observe_host
+
+ROOT = Path(__file__).resolve().parents[2]
+P = 'a'*64
+DOMAIN = Domain('b'*64, 'c'*64, P, 'd'*64)
+
+
+class FixedClock:
+    def __init__(self):
+        self.now = Sample(100, 200, 300, DOMAIN)
+
+    def sample(self):
+        return self.now
+
+
+class MemoryStore:
+    def __init__(self):
+        self.raw = None
+        self.acknowledged = True
+        self.fail = False
+        self.hook = lambda: None
+
+    def load(self):
+        return Receipt(self.raw, self.acknowledged)
+
+    def compare_exchange(self, expected, replacement):
+        if self.fail:
+            raise OSError('synthetic uncertain CAS')
+        if self.raw != expected:
+            return Receipt(self.raw, False)
+        self.raw = replacement
+        self.hook()
+        return Receipt(self.raw, self.acknowledged)
+
+
+class FileStore(MemoryStore):
+    """Fresh test-only single-writer disk CAS. No physical persistence claim."""
+    def __init__(self, path):
+        super().__init__()
+        self.path = Path(path)
+
+    def load(self):
+        raw = self.path.read_bytes() if self.path.exists() else None
+        return Receipt(raw, True)
+
+    def compare_exchange(self, expected, replacement):
+        if self.load().raw != expected:
+            return Receipt(self.load().raw, False)
+        temporary = self.path.with_suffix('.pending')
+        with temporary.open('xb') as stream:
+            stream.write(replacement)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, self.path)
+        return Receipt(replacement, True)
+
+
+class DiagnosticAuthority:
+    """Tests deliberately do not claim proc/no-rewind/libc work qualification."""
+    def verify(self, facts, *directory):
+        if directory:
+            return CursorProof(P, 'e'*64, 255, 8192, 1114112, 24, 24)
+        return Domain(facts['boot'], facts['namespace'], P, 'f'*64)
+
+
+class PortableRealTestClock:
+    def sample(self):
+        m = time.monotonic_ns()
+        return Sample(m, m, time.time_ns(), DOMAIN)
+
+
+def fixture(clock=None, duration=1200):
+    clock = clock or FixedClock()
+    store = MemoryStore()
+    original = Original.begin(P, '1'*64, '2'*64, clock, duration)
+    session = Session.publish(original, store, clock)
+    return clock, store, original, session
+
+
+def child(path, proof, clock_mode, sample=None):
+    # Same executable and imported module in a genuinely new interpreter.
+    code = '''
+import sys,json
+from tools.tests.test_retention_context_v1 import *
+store=FileStore(sys.argv[1])
+if sys.argv[3]=='fixed':
+ c=FixedClock(); s=json.loads(sys.argv[4]); c.now=Sample(s[0],s[1],s[2],DOMAIN)
+else:
+ c=LinuxClock(DiagnosticAuthority()) if sys.platform=='linux' else PortableRealTestClock()
+try:
+ session=Session(store,c,sys.argv[2]); print(json.dumps(dict(ok=True,worker_pid=os.getpid(),remaining=session.check(),credits=session.credits())))
+except Refused as error:
+ print(json.dumps(dict(ok=False,reason=str(error)[:256])))
+'''
+    result = subprocess.run([sys.executable, '-B', '-c', code, str(path), proof, clock_mode,
+                             json.dumps(sample)], cwd=ROOT, capture_output=True, timeout=15,
+                            env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
+    if result.returncode or len(result.stdout)+len(result.stderr) > 8192:
+        raise AssertionError('fresh child refused or exceeded bounded diagnostics: '+result.stderr[:256].decode(errors='replace'))
+    return json.loads(result.stdout)
+
+
+class CodecControls(unittest.TestCase):
+    def test_roundtrip_and_numeric_edges(self):
+        value = dict(x=[None, True, False, -(2**63), 2**63-1, 'é[]\\"'])
+        self.assertEqual(decode(encode(value)), value)
+        for value in [2**63, -(2**63)-1, 1.0, object(), {'x': '\ud800'}, {1: 2}]:
+            with self.subTest(kind=type(value).__name__), self.assertRaises(Refused):
+                encode(value)
+
+    def test_lexical24_is_not_review32(self):
+        self.assertEqual(decode(b'['*24+b'0'+b']'*24), [[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]])
+        for n in [25, 32]:
+            with self.subTest(depth=n), self.assertRaises(Refused):
+                decode(b'['*n+b'0'+b']'*n)
+
+    def test_object_nodes_and_byte_bound(self):
+        self.assertEqual(len(decode(encode([0]*49999))), 49999)
+        with self.assertRaises(Refused):
+            encode([0]*50000)
+        self.assertEqual(len(encode('x'*(1048576-2))), 1048576)
+        with self.assertRaises(Refused):
+            encode('x'*1048576)
+        with self.assertRaisesRegex(Refused, 'aggregate-string-bound'):
+            encode(['x'*524288]*3)
+
+    def test_strict_decode(self):
+        for raw in [b'', b'{"x":1,"x":2}', b'{ "x":1}', b'NaN', b'1.0', b'\xff',
+                    b'1'*100, b'[}', b'"unterminated', b'0 '*1048576]:
+            with self.subTest(raw=raw[:32]), self.assertRaises(Refused):
+                decode(raw)
+
+
+class ContextControls(unittest.TestCase):
+    def test_fixed_endpoints_and_positive_new_handle(self):
+        clock, store, original, session = fixture()
+        session.reserve(raw_bytes=16, audit_bytes=100, rescans=1)
+        clock.now = replace(clock.now, monotonic_ns=110, boottime_ns=215, wall_ns=320)
+        recovered = Session(store, clock, digest(asdict(original)))
+        self.assertEqual(recovered.command_timeout_ns(9999), 1180)
+        self.assertEqual(recovered.credits()['raw_bytes'], 16)
+        self.assertEqual(original_from_raw(store.raw), asdict(original))
+
+    def test_equality_expiry_each_original_clock(self):
+        for name, value in [('monotonic_ns', 1300), ('boottime_ns', 1400), ('wall_ns', 1500)]:
+            clock, store, original, session = fixture()
+            clock.now = replace(clock.now, **{name: value})
+            with self.subTest(clock=name), self.assertRaises(Refused):
+                session.check()
+            clock.now = original.start
+            with self.assertRaises(Refused):
+                Session(store, clock, digest(asdict(original)))
+            self.assertTrue(decode(store.raw)['denied'])
+
+    def test_regression_and_unknown_domain(self):
+        for sample in [Sample(99, 200, 300, DOMAIN), Sample(100, 199, 300, DOMAIN),
+                       Sample(100, 200, 299, DOMAIN),
+                       Sample(100, 200, 300, replace(DOMAIN, boot='0'*64)),
+                       Sample(100, 200, 300, replace(DOMAIN, namespace='0'*64)),
+                       Sample(100, 200, 300, replace(DOMAIN, evidence='0'*64))]:
+            clock, store, original, session = fixture()
+            clock.now = sample
+            with self.subTest(sample=sample), self.assertRaises(Refused):
+                Session(store, clock, digest(asdict(original)))
+
+    def test_wall_rollback_forward_and_observed_highwater(self):
+        clock, store, original, session = fixture()
+        clock.now = replace(clock.now, wall_ns=1200)
+        self.assertEqual(session.check(), 300)
+        clock.now = replace(clock.now, wall_ns=1199)
+        with self.assertRaises(Refused):
+            Session(store, clock, digest(asdict(original)))
+
+    def test_original_duration_cannot_refresh_or_rebind(self):
+        clock, store, original, session = fixture()
+        with self.assertRaises(Refused):
+            Session.publish(original, store, clock)
+        with self.assertRaises(Refused):
+            Session(store, clock, '0'*64)
+        for value in [0, -1, 1200000000001, True]:
+            with self.subTest(duration=value), self.assertRaises(Refused):
+                Original.begin(P, P, P, clock, value)
+
+    def test_missing_legacy_corrupt_uncertain_proof(self):
+        for raw, ack in [(None, True), (b'{}', True), (b'{', True), (b'{}', False)]:
+            store = MemoryStore(); store.raw = raw; store.acknowledged = ack
+            with self.subTest(raw=raw, ack=ack), self.assertRaises(Refused):
+                Session(store, FixedClock(), P)
+
+    def test_raw_aggregate512_reservations_no_refund_or_reset(self):
+        clock, store, original, session = fixture()
+        for i in range(512):
+            session.reserve(raw_bytes=16)
+            if i in (0, 100, 300):
+                # A process-error/timeout/unused reservation gets no refund.
+                session = Session(store, clock, digest(asdict(original)))
+        self.assertEqual(session.credits()['raw_bytes'], 8192)
+        self.assertEqual(session.credits()['raw_reservations'], 512)
+        self.assertLess(len(store.raw), 4096)
+        with self.assertRaises(Refused):
+            session.reserve(raw_bytes=1)
+        with self.assertRaises(Refused):
+            Session(store, clock, digest(asdict(original)))
+
+    def test_credit_units_names_caps_and_false_integers(self):
+        for charge in [dict(raw_bytes=17), dict(raw_bytes=0), dict(raw_reservations=0),
+                       dict(entries=True), dict(audit_bytes=268435457), dict(rescans=33),
+                       dict(entries=4097), dict(other=1), dict(audit_bytes=-1)]:
+            _, _, _, session = fixture()
+            with self.subTest(charge=charge), self.assertRaises(Refused):
+                session.reserve(**charge)
+
+    def test_terminal_cas_crossing_deadline_poisoned_and_durable(self):
+        clock, store, original, session = fixture()
+        store.hook = lambda: setattr(clock, 'now', replace(clock.now, monotonic_ns=1300))
+        with self.assertRaises(Refused):
+            session.check()
+        self.assertTrue(decode(store.raw)['denied'])
+        clock.now = original.start
+        with self.assertRaises(Refused):
+            Session(store, clock, digest(asdict(original)))
+
+    def test_unknown_checkpoint_ack_blocks_same_and_fresh_handles(self):
+        clock, store, original, session = fixture()
+        store.acknowledged = False
+        with self.assertRaises(Refused):
+            session.reserve(raw_bytes=16)
+        store.acknowledged = True
+        with self.assertRaises(Refused):
+            session.check()
+        # The integration must retain an uncertain acknowledgment. Do not
+        # reinterpret its disappearance as component-proved recovery.
+
+    def test_unknown_clock_failure_retained_before_store_load(self):
+        clock, store, original, session = fixture()
+        class UnknownClock:
+            def sample(self): raise Refused('lost-domain-evidence')
+        with self.assertRaises(Refused):
+            Session(store, UnknownClock(), digest(asdict(original)))
+        self.assertTrue(decode(store.raw)['denied'])
+        with self.assertRaises(Refused):
+            Session(store, clock, digest(asdict(original)))
+
+    def test_r3_fresh_process_counterexample_original_end_survives_wall_slack(self):
+        with tempfile.TemporaryDirectory(prefix='context-counterexample-') as tmp:
+            clock = FixedClock(); store = FileStore(Path(tmp)/'proof.json')
+            original = Original.begin(P, P, P, clock, 1200)
+            Session.publish(original, store, clock)
+            result = child(store.path, digest(asdict(original)), 'fixed', [1301, 300, 400])
+            self.assertFalse(result['ok'])
+            self.assertEqual(original_from_raw(store.path.read_bytes()), asdict(original))
+
+    def test_truly_fresh_process_positive_original_credits_and_absence_expiry(self):
+        clock = LinuxClock(DiagnosticAuthority()) if sys.platform == 'linux' else PortableRealTestClock()
+        with tempfile.TemporaryDirectory(prefix='context-real-clock-') as tmp:
+            store = FileStore(Path(tmp)/'proof.json')
+            original = Original.begin(P, P, P, clock, 8000000000)
+            session = Session.publish(original, store, clock)
+            session.reserve(raw_bytes=16, audit_bytes=42)
+            result = child(store.path, digest(asdict(original)), 'real')
+            self.assertTrue(result['ok']); self.assertLess(result['remaining'], 8000000000)
+            self.assertEqual(result['credits']['raw_bytes'], 16)
+            self.assertEqual(original_from_raw(store.path.read_bytes()), asdict(original))
+            short = FileStore(Path(tmp)/'short.json')
+            original = Original.begin(P, P, P, clock, 1000000000)
+            Session.publish(original, short, clock)
+            time.sleep(1.1)
+            self.assertFalse(child(short.path, digest(asdict(original)), 'real')['ok'])
+
+
+def original_from_raw(raw):
+    return decode(raw)['original']
+
+
+def component_admission_fixture(build=None):
+    """Explicit TEST controller input; no actual deployment authority claim."""
+    from tools.retention_context_v1.profile import ProfileAdmission, SourceCredits, mount_profile, observe_build
+    build = build if build is not None else observe_build(SourceCredits())
+    fd = os.open(tempfile.gettempdir(), os.O_RDONLY | os.O_DIRECTORY)
+    try: mount = mount_profile(fd)['fingerprint']
+    finally: os.close(fd)
+    return ProfileAdmission('sha256:'+P, '1'*64, build['facts']['machine'],
+                            build['python_object']['sha256'], build['libc_object']['sha256'],
+                            (mount,), '2'*64)
+
+
+def observed_cursor_fixture(case):
+    # Qualified CI uses the production authority for real cursor controls.
+    # Out-of-profile developer hosts retain explicitly diagnostic tests.
+    facts = observe_host() if sys.platform == 'linux' else None
+    if facts is not None and facts['python'].startswith('3.11.2 ') and facts['libc'] == 'glibc 2.36':
+        guardian, authority = LinuxHostProfile.start_guardian(P, P, P, P, admission=component_admission_fixture())
+        case.addCleanup(guardian.close)
+        clock = LinuxClock(authority)
+        original = Original.begin(P, P, P, clock, 1200000000000)
+        session = Session.publish(original, MemoryStore(), clock)
+        return session, authority
+    return fixture(duration=1200000000000)[3], DiagnosticAuthority()
+
+
+def close_pool_fixture(case, pool):
+    if pool.session.poisoned:
+        with case.assertRaises(Refused): pool.close()
+        if not pool.close_uncertain:
+            case.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+    else:
+        pool.close()
+
+
+class NativeCursorControls(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='context-real-iterator-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.session, self.cursor_authority = observed_cursor_fixture(self)
+        self.pool = CursorPool(self.session, self.cursor_authority, 67108864, 96)
+        self.expected_cleanup_uncertainty = False
+        self.addCleanup(self.cleanup_pool)
+
+    def cleanup_pool(self):
+        if self.expected_cleanup_uncertainty:
+            with self.assertRaisesRegex(Refused, 'cursor-close-uncertain'): self.pool.close()
+        else:
+            close_pool_fixture(self, self.pool)
+
+    def opened(self, **kw):
+        fd = os.open(self.root, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+        try:
+            return self.pool.open(fd, **kw)
+        finally:
+            os.close(fd)
+
+    def unsupported(self):
+        if sys.platform != 'linux':
+            with self.assertRaises(Refused):
+                observe_host()
+            return True
+        return False
+
+    def populate(self, n):
+        for i in range(n):
+            (self.root/('entry%05d'%i)).touch()
+
+    def test_real_os_cap_minus_exact_plus_and_empty_charged_probe(self):
+        if self.unsupported(): return
+        for count, cap in [(0, 0), (1, 2), (2, 2), (3, 2)]:
+            with self.subTest(count=count, cap=cap):
+                # Separate actual directories and operation contexts.
+                with tempfile.TemporaryDirectory(dir=self.root) as tmp:
+                    for i in range(count): (Path(tmp)/str(i)).touch()
+                    session, authority = observed_cursor_fixture(self)
+                    pool = CursorPool(session, authority, 67108864, 96)
+                    fd = os.open(tmp, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        cursor = pool.open(fd, cap=cap)
+                        before = pool.materialized_bytes
+                        got = []
+                        if count > cap:
+                            with self.assertRaisesRegex(Refused, 'cursor-overflow'):
+                                while True:
+                                    item = cursor.next()
+                                    if item is None: break
+                                    got.append(item)
+                        else:
+                            while True:
+                                item = cursor.next()
+                                if item is None: break
+                                got.append(item)
+                        self.assertEqual(len(got), min(count, cap))
+                        self.assertEqual(cursor.probes, min(count, cap)+1)
+                        # Overflow is terminal, so inspect the durable debt
+                        # without requesting new permission from that session.
+                        debt = pool.materialized_bytes
+                        self.assertGreater(debt, before)
+                        self.assertEqual(pool.fds_used, 0)
+                    finally:
+                        close_pool_fixture(self, pool); os.close(fd)
+
+    def test_r3_eager_counterexample_real1000_never_path_iterdir(self):
+        if self.unsupported(): return
+        self.populate(1000)
+        calls = []
+        actual = os.scandir
+        class Observed:
+            def __init__(self, fd): self.inner = actual(fd)
+            def __next__(self): calls.append(1); return next(self.inner)
+            def close(self): self.inner.close()
+        with (patch('pathlib.Path.iterdir', side_effect=AssertionError('eager boundary forbidden')),
+              patch('os.scandir', Observed)):
+            cursor = self.opened(cap=1)
+            self.assertEqual(len(calls), 0)
+            self.assertIsNotNone(cursor.next())
+            with self.assertRaisesRegex(Refused, 'cursor-overflow'): cursor.next()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(cursor.delivered, 1)
+
+    def test_nested_operation_aggregate_entry_cap(self):
+        if self.unsupported(): return
+        directory = self.root/'nested'; directory.mkdir(); (directory/'leaf').touch()
+        parent = self.opened(cap=1)
+        entry = parent.next()
+        child_cursor = parent.open_child(entry)
+        with self.assertRaises(Refused): child_cursor.next()
+        self.assertEqual(self.session.poisoned, True)
+
+    def test_fd_memory_depth_work_and_stream_capacity(self):
+        if self.unsupported(): return
+        self.pool.fd_limit = 1
+        with self.assertRaisesRegex(Refused, 'cursor.*capacity'): self.opened()
+        self.pool.fd_limit = 96; self.pool.memory_bytes = 1
+        with self.assertRaisesRegex(Refused, 'cursor.*capacity'): self.opened()
+        self.pool.memory_bytes = 67108864
+        self.populate(1)
+        cursor = self.opened()
+        self.session.reserve(audit_bytes=268435456)
+        self.assertIsNotNone(cursor.next())
+        self.pool.memory_bytes = self.pool.memory_used+self.pool.materialized_bytes+8191
+        with self.assertRaises(Refused): cursor.next()
+        self.assertTrue(cursor.closed)
+
+    def test_early_close_error_close_and_rescan_debt(self):
+        if self.unsupported(): return
+        self.populate(1)
+        cursor = self.opened(); cursor.next()
+        before = self.pool.materialized_bytes
+        cursor.close(); cursor.close()
+        self.assertEqual(self.pool.fds_used, 0)
+        with self.assertRaises(Refused): cursor.next()
+        other = self.opened(); other.next(); other.close()
+        self.assertGreater(self.pool.materialized_bytes, before)
+
+    def test_real_alias_and_changed_child_identity_refuse(self):
+        if self.unsupported(): return
+        (self.root/'outside-link').symlink_to(self.root, target_is_directory=True)
+        cursor = self.opened()
+        with self.assertRaisesRegex(Refused, 'cursor-alias'): cursor.next()
+        self.assertTrue(cursor.closed)
+
+    def test_native_unknown_profile_refuses(self):
+        if self.unsupported(): return
+        class Unknown:
+            def verify(self, *args): raise Refused('unsupported-observed-profile')
+        self.pool.authority = Unknown()
+        with self.assertRaisesRegex(Refused, 'unsupported-observed-profile'): self.opened()
+        self.assertEqual(self.pool.fds_used, 0)
+
+    def test_native_observation_is_not_domain_authority(self):
+        if self.unsupported(): return
+        facts = observe_host()
+        self.assertEqual(len(facts['boot']), 64)
+        class Unknown:
+            def verify(self, *args): raise Refused('initial-domain-and-no-rewind-unproved')
+        with self.assertRaises(Refused): LinuxClock(Unknown()).sample()
+
+    def test_failed_open_cleanup_keeps_unknown_capacity_and_attempts_owned_close(self):
+        if self.unsupported():return
+        actual_scandir=os.scandir;actual_close=os.close;actual_check=self.session.check
+        created=[];closed=[]
+        class Iterator:
+            def __init__(self,fd):self.inner=actual_scandir(fd);created.append(fd)
+            def close(self):self.inner.close();raise OSError('synthetic iterator close acknowledgment')
+        def check():
+            if created:raise Refused('synthetic after scandir')
+            return actual_check()
+        def close(fd):closed.append(fd);return actual_close(fd)
+        self.expected_cleanup_uncertainty=True
+        with (patch('os.scandir',Iterator),patch.object(self.session,'check',check),
+              patch('os.close',close),self.assertRaisesRegex(Refused,'synthetic after scandir')):
+            self.opened()
+        self.assertIn(created[0],closed)
+        self.assertEqual(self.pool.fds_used,3)
+        self.assertTrue(self.pool.close_uncertain)
+        self.assertTrue(decode(self.session.store.raw)['denied'])
+        with self.assertRaises(Refused):self.pool.close()
+
+    def child_close_fault(self, primary_failure):
+        if self.unsupported(): return
+        path=self.root/'child';path.mkdir()
+        parent=self.opened(cap=2);entry=parent.next()
+        if primary_failure:
+            path.rename(self.root/'old-child');path.mkdir()
+        opened=[];actual_open=os.open;actual_close=os.close
+        def traced_open(path,*args,**kwargs):
+            fd=actual_open(path,*args,**kwargs)
+            if path==entry.name and kwargs.get('dir_fd')==parent.fd:opened.append(fd)
+            return fd
+        def failed_close(fd):
+            if opened and fd==opened[0]:raise OSError('synthetic temporary close acknowledgment')
+            return actual_close(fd)
+        self.expected_cleanup_uncertainty=True
+        try:
+            with patch('os.open',traced_open),patch('os.close',failed_close):
+                with self.assertRaisesRegex(Refused,'child-identity' if primary_failure else 'child-temporary-close-uncertain') as error:
+                    parent.open_child(entry)
+            if primary_failure:
+                self.assertTrue(any('child-temporary-close-uncertain' in n for n in error.exception.__notes__))
+            self.assertTrue(self.pool.denied);self.assertTrue(self.pool.close_uncertain)
+            self.assertEqual(len(self.pool.active),1)
+            self.assertEqual(self.pool.fds_used,4)
+            self.assertTrue(decode(self.session.store.raw)['denied'])
+            with self.assertRaises(Refused):parent.next()
+            with self.assertRaises(Refused): parent.close()
+            self.assertEqual(self.pool.fds_used,1)
+            with self.assertRaises(Refused):self.pool.close()
+        finally:
+            # The injector failed BEFORE the real syscall. This exact isolated
+            # descriptor is known still open; production never retries unknown.
+            if opened:actual_close(opened[0])
+
+    def test_child_temporary_close_failure_poison_and_retained_capacity(self):
+        self.child_close_fault(False)
+
+    def test_child_primary_identity_failure_survives_cleanup_failure(self):
+        self.child_close_fault(True)
+
+    def test_actual_nested_depth24_and25_refusal(self):
+        if self.unsupported(): return
+        path = self.root
+        for _ in range(24):
+            path = path/'d'; path.mkdir()
+        cursor = self.opened()
+        for _ in range(23):
+            cursor = cursor.open_child(cursor.next())
+        self.assertEqual(cursor.depth, 24)
+        with self.assertRaises(Refused): cursor.open_child(cursor.next())
+        with self.assertRaises(Refused): self.pool.close()
+        self.assertEqual(self.pool.fds_used, 0)
+
+    def test_rescan32_aggregate_and_no_recovery_reset(self):
+        if self.unsupported(): return
+        for _ in range(32):
+            self.opened().close()
+        self.assertEqual(self.session.credits()['rescans'], 32)
+        with self.assertRaises(Refused): self.opened()
+
+    def test_changed_child_inode_and_forged_outside_name(self):
+        if self.unsupported(): return
+        path = self.root/'child'; path.mkdir()
+        cursor = self.opened(); entry = cursor.next()
+        with self.assertRaisesRegex(Refused, 'child-name'):
+            cursor.open_child(replace(entry, name='../outside'))
+        # Keep the old inode allocated so the replacement cannot reuse it.
+        path.rename(self.root/'old-child'); path.mkdir()
+        with self.assertRaisesRegex(Refused, 'child-identity'): cursor.open_child(entry)
+        self.assertEqual(self.pool.fds_used, 3)
+
+    def test_name_unknown_and_insufficient_worst_case_reservation(self):
+        if self.unsupported(): return
+        class Insufficient:
+            def verify(self, *args):
+                return CursorProof(P, 'e'*64, 255, 1, 1114112, 24, 24)
+        self.pool.authority = Insufficient()
+        with self.assertRaises(Refused): self.opened()
+        self.assertEqual(self.pool.fds_used, 0)
+
+    def test_actual_iterator_stat_error_closes_and_retains_debt(self):
+        if self.unsupported(): return
+        self.populate(1)
+        cursor = self.opened()
+        actual = os.stat
+        def fail(path, *args, **kwargs):
+            if kwargs.get('dir_fd') == cursor.fd: raise OSError('synthetic stat failure')
+            return actual(path, *args, **kwargs)
+        with patch('os.stat', fail), self.assertRaises(OSError): cursor.next()
+        self.assertTrue(cursor.closed)
+        self.assertEqual(self.pool.fds_used, 0)
+        self.assertTrue(decode(self.session.store.raw)['denied'])
+
+    def test_close_failure_keeps_capacity_uncertain_and_no_new_stream(self):
+        if self.unsupported(): return
+        cursor = self.opened()
+        actual = cursor.iterator
+        class CloseFailure:
+            def close(self): actual.close(); raise OSError('synthetic lost close ack')
+        cursor.iterator = CloseFailure()
+        self.expected_cleanup_uncertainty = True
+        with self.assertRaisesRegex(Refused, 'cursor-close-uncertain'): cursor.close()
+        self.assertEqual(self.pool.fds_used, 3)
+        with self.assertRaises(Refused): self.opened()
+        with self.assertRaises(Refused): self.pool.close()
+        # Both real handles were closed; only conservative uncertainty remains.
+        self.pool.active.remove(cursor)
+
+    def test_deadline_cross_during_next_and_eof_close_never_returns_entry(self):
+        if self.unsupported(): return
+        for eof in (False, True):
+            _, store, original, session = fixture()
+            pool = CursorPool(session, DiagnosticAuthority(), 67108864, 96)
+            with tempfile.TemporaryDirectory(dir=self.root) as tmp:
+                if not eof: (Path(tmp)/'file').touch()
+                fd = os.open(tmp, os.O_RDONLY | os.O_DIRECTORY)
+                cursor = pool.open(fd); os.close(fd)
+                actual = cursor.iterator
+                class Late:
+                    def __next__(self):
+                        value = next(actual)
+                        session.clock.now = replace(session.clock.now, monotonic_ns=1300)
+                        return value
+                    def close(self):
+                        actual.close()
+                        if eof: session.clock.now = replace(session.clock.now, monotonic_ns=1300)
+                cursor.iterator = Late()
+                with self.assertRaises(Refused): cursor.next()
+                self.assertEqual(pool.fds_used, 0)
+                self.assertTrue(decode(store.raw)['denied'])
+
+
+
+
+class CloseDeadlineControls(unittest.TestCase):
+    def pool_fixture(self):
+        clock, store, original, session = fixture()
+        return clock, store, original, session, CursorPool(session, DiagnosticAuthority(), 67108864, 96)
+
+    def open_cursor(self, pool, root):
+        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            return pool.open(fd)
+        finally:
+            os.close(fd)
+
+    def expire(self, clock, original, field='monotonic_ns', extra=0):
+        end = {'monotonic_ns': original.monotonic_end_ns,
+               'boottime_ns': original.boottime_end_ns, 'wall_ns': original.wall_end_ns}[field]
+        clock.now = replace(clock.now, **{field: end+extra})
+
+    def assert_terminal(self, pool, store):
+        self.assertTrue(pool.denied)
+        self.assertTrue(pool.session.poisoned)
+        self.assertTrue(decode(store.raw)['denied'])
+        with self.assertRaises(Refused): pool.session.check()
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_direct_early_close_and_exit_refuse_each_original_endpoint(self):
+        for mode in ('direct', 'exit', 'pool'):
+            for field in ('monotonic_ns', 'boottime_ns', 'wall_ns'):
+                for extra in (0, 1):
+                    with self.subTest(mode=mode, field=field, extra=extra), tempfile.TemporaryDirectory() as root:
+                        clock, store, original, _, pool = self.pool_fixture()
+                        cursor = self.open_cursor(pool, root)
+                        actual = cursor.iterator
+                        case = self
+                        class Late:
+                            def close(self):
+                                actual.close()
+                                case.expire(clock, original, field, extra)
+                        cursor.iterator = Late()
+                        with self.assertRaises(Refused):
+                            if mode == 'direct': cursor.close()
+                            elif mode == 'pool': pool.close()
+                            else:
+                                with cursor: pass
+                        self.assertTrue(cursor.closed)
+                        self.assertEqual(pool.active, [])
+                        self.assertEqual((pool.fds_used, pool.memory_used), (0, 0))
+                        with self.assertRaises(OSError): os.fstat(cursor.fd)
+                        self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_already_expired_pool_still_closes_all_owned_handles(self):
+        with tempfile.TemporaryDirectory() as root:
+            clock, store, original, _, pool = self.pool_fixture()
+            cursors = [self.open_cursor(pool, root) for _ in range(2)]
+            self.expire(clock, original)
+            with self.assertRaises(Refused): pool.close()
+            for cursor in cursors:
+                self.assertTrue(cursor.closed)
+                with self.assertRaises(OSError): os.fstat(cursor.fd)
+            self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+            self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_direct_close_books_real_fd_close_and_unknown_context_ack(self):
+        for unknown in (False, True):
+            with self.subTest(unknown=unknown), tempfile.TemporaryDirectory() as root:
+                clock, store, original, _, pool = self.pool_fixture()
+                cursor = self.open_cursor(pool, root)
+                real_close = os.close
+                calls = []
+                def close(fd):
+                    result = real_close(fd)
+                    if fd == cursor.fd:
+                        calls.append(fd)
+                        if unknown: store.acknowledged = False
+                        else: self.expire(clock, original)
+                    return result
+                with patch('os.close', close), self.assertRaises(Refused): cursor.close()
+                self.assertEqual(calls, [cursor.fd])
+                self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+                self.assertTrue(pool.denied); self.assertTrue(pool.session.poisoned)
+                with self.assertRaises(Refused): cursor.close()
+                with self.assertRaises(Refused): pool.close()
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_pool_continues_exact_cleanup_after_first_close_expires(self):
+        with tempfile.TemporaryDirectory() as root:
+            clock, store, original, _, pool = self.pool_fixture()
+            cursors = [self.open_cursor(pool, root) for _ in range(2)]
+            calls = []
+            case = self
+            class Close:
+                def __init__(self, cursor): self.cursor, self.inner = cursor, cursor.iterator
+                def close(self):
+                    self.inner.close(); calls.append(self.cursor.fd)
+                    case.expire(clock, original)
+            for cursor in cursors: cursor.iterator = Close(cursor)
+            with self.assertRaises(Refused): pool.close()
+            self.assertEqual(calls, [cursor.fd for cursor in reversed(cursors)])
+            self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+            self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_pool_continues_after_uncertain_close_without_retry_or_capacity_refund(self):
+        with tempfile.TemporaryDirectory() as root:
+            _, store, _, _, pool = self.pool_fixture()
+            cursors = [self.open_cursor(pool, root) for _ in range(2)]
+            calls = []
+            class Close:
+                def __init__(self, cursor): self.cursor, self.inner = cursor, cursor.iterator
+                def close(self):
+                    self.inner.close(); calls.append(self.cursor.fd)
+                    if self.cursor is cursors[-1]: raise OSError('synthetic lost iterator-close ack')
+            for cursor in cursors: cursor.iterator = Close(cursor)
+            with self.assertRaisesRegex(Refused, 'cursor-close-uncertain'): pool.close()
+            self.assertEqual(calls, [cursor.fd for cursor in reversed(cursors)])
+            for cursor in cursors:
+                with self.assertRaises(OSError): os.fstat(cursor.fd)
+            self.assertEqual(pool.active, [cursors[-1]])
+            self.assertEqual((pool.fds_used, pool.memory_used), (3, cursors[-1].allocation))
+            with self.assertRaises(Refused): pool.close()
+            self.assertEqual(len(calls), 2)
+            self.assert_terminal(pool, store)
+
+    def test_empty_pool_close_checks_preexisting_and_late_expiry(self):
+        for late in (False, True):
+            with self.subTest(late=late):
+                clock, store, original, _, pool = self.pool_fixture()
+                if late:
+                    checks = []
+                    def hook():
+                        checks.append(1)
+                        if len(checks) == 2: self.expire(clock, original)
+                    store.hook = hook
+                else: self.expire(clock, original)
+                with self.assertRaises(Refused): pool.close()
+                self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_context_exit_preserves_primary_with_late_uncertain_close(self):
+        with tempfile.TemporaryDirectory() as root:
+            clock, store, original, _, pool = self.pool_fixture()
+            cursor = self.open_cursor(pool, root)
+            actual = cursor.iterator
+            case = self
+            class Failed:
+                def close(self):
+                    actual.close(); case.expire(clock, original)
+                    raise OSError('synthetic lost close acknowledgment')
+            cursor.iterator = Failed()
+            primary = ValueError('original body failure')
+            with self.assertRaises(ValueError) as caught:
+                with cursor: raise primary
+            self.assertIs(caught.exception, primary)
+            self.assertTrue(any('cleanup' in note for note in primary.__notes__))
+            with self.assertRaises(OSError): os.fstat(cursor.fd)
+            self.assertTrue(pool.close_uncertain)
+            self.assertEqual(pool.fds_used, 3)
+            with self.assertRaises(Refused): cursor.close()
+            with self.assertRaises(Refused): pool.close()
+            self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_next_primary_failure_survives_cleanup_clock_refusal(self):
+        with tempfile.TemporaryDirectory() as root:
+            clock, store, original, _, pool = self.pool_fixture()
+            cursor = self.open_cursor(pool, root)
+            actual = cursor.iterator
+            case = self
+            primary = OSError('original iterator failure')
+            class Failed:
+                def __next__(self): raise primary
+                def close(self): actual.close(); case.expire(clock, original)
+            cursor.iterator = Failed()
+            with self.assertRaises(OSError) as caught: cursor.next()
+            self.assertIs(caught.exception, primary)
+            self.assertTrue(any('cleanup' in note for note in primary.__notes__))
+            self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+            self.assert_terminal(pool, store)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'real FD close requires Linux')
+    def test_early_close_positive_keeps_context_and_credit_debt(self):
+        with tempfile.TemporaryDirectory() as root:
+            _, store, _, session, pool = self.pool_fixture()
+            cursor = self.open_cursor(pool, root)
+            credits = dict(decode(store.raw)['credits'])
+            with cursor: pass
+            cursor.close(); pool.close()
+            self.assertFalse(pool.denied)
+            self.assertEqual((pool.active, pool.fds_used, pool.memory_used), ([], 0, 0))
+            self.assertEqual(decode(store.raw)['credits'], credits)
+            session.check()
+
+
+def recover_guardian(path, proof, token, *, directory=None, admission=None):
+    code = '''
+from tools.tests.test_retention_context_v1 import *
+raw=bytes.fromhex(sys.argv[3])
+params=dict(operation=P,source=P,request=P,policy_evidence=P)
+if len(sys.argv)>5 and sys.argv[5]:
+ from tools.retention_context_v1.profile import ProfileAdmission
+ a=json.loads(sys.argv[5]);a['mount_profiles']=tuple(a['mount_profiles']);params['admission']=ProfileAdmission(**a)
+authority=(LinuxHostProfile if len(sys.argv)>4 and sys.argv[4] else GuardianAuthority)(raw,**params)
+clock=LinuxClock(authority)
+try:
+ session=Session(FileStore(sys.argv[1]),clock,sys.argv[2])
+ if len(sys.argv)>4 and sys.argv[4]:
+  fd=os.open(sys.argv[4],os.O_RDONLY|os.O_DIRECTORY)
+  try:
+   pool=CursorPool(session,authority,67108864,96)
+   cursor=pool.open(fd,cap=1);assert cursor.next().name=='file';assert cursor.next() is None
+  finally:os.close(fd)
+ print(json.dumps(dict(ok=True,worker_pid=os.getpid(),remaining=session.check(),credits=session.credits())))
+except Refused as error:
+ print(json.dumps(dict(ok=False,reason=str(error)[:256])))
+'''
+    r = subprocess.run([sys.executable, '-B', '-c', code, str(path), proof, token.hex(), str(directory) if directory is not None else '',json.dumps(asdict(admission)) if admission is not None else ''],
+                       cwd=ROOT, capture_output=True, timeout=15,
+                       env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
+    if r.returncode or len(r.stdout)+len(r.stderr) > 8192:
+        raise AssertionError('guardian recovery child failed: '+r.stderr[:400].decode(errors='replace'))
+    return json.loads(r.stdout)
+
+
+class GuardianProcessFixture:
+    """Original guardian survives replaceable workers and monitor isolation.
+
+    A monitor may intentionally be non-dumpable; never relax that protection.
+    This fresh same-owner guardian owns only its namespace/token capabilities.
+    M21 owns equivalent actual process/resource supervision.
+    """
+    def __init__(self,admission=None):
+        self.admission=admission;self.process=None;self.raw=None
+
+    def __enter__(self):
+        import select
+        code="""
+from tools.tests.test_retention_context_v1 import *
+if sys.argv[1]:
+ from tools.retention_context_v1.profile import ProfileAdmission
+ a=json.loads(sys.argv[1]);a['mount_profiles']=tuple(a['mount_profiles'])
+ guardian,_=LinuxHostProfile.start_guardian(P,P,P,P,admission=ProfileAdmission(**a))
+else:
+ guardian=LiveGuardian.create(P,P,P,P)
+try:
+ print(guardian.raw.hex(),flush=True)
+ sys.stdin.buffer.read(1)
+finally:guardian.close()
+"""
+        self.process=subprocess.Popen([sys.executable,'-B','-c',code,
+                                        json.dumps(asdict(self.admission)) if self.admission is not None else ''],
+                                       cwd=ROOT,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                                       env={**os.environ,'PYTHONDONTWRITEBYTECODE':'1'})
+        try:
+            ready,_,_=select.select([self.process.stdout],[],[],10)
+            if not ready:raise AssertionError('guardian fixture startup timeout')
+            raw=self.process.stdout.readline(16385)
+            if not raw or len(raw)>16384:
+                raise AssertionError('guardian fixture startup failed')
+            self.raw=bytes.fromhex(raw.decode().strip())
+            return self
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        if self.process is None:return
+        process=self.process;self.process=None
+        try:
+            stdout,stderr=process.communicate(b'x' if process.poll() is None else None,timeout=10)
+        except subprocess.TimeoutExpired:
+            process.terminate();stdout,stderr=process.communicate(timeout=10)
+            raise AssertionError('owned guardian fixture shutdown timeout')
+        if len(stdout)+len(stderr)>8192 or process.returncode:
+            raise AssertionError('guardian fixture failed: '+stderr[:512].decode(errors='replace'))
+
+    def __exit__(self,kind,error,traceback):
+        try:self.close()
+        except Exception as cleanup:
+            if error is not None:error.add_note('guardian fixture cleanup: '+str(cleanup)[:256])
+            else:raise
+
+
+class GuardianControls(unittest.TestCase):
+    def supported(self):
+        if sys.platform != 'linux':
+            with self.assertRaises(Refused): LiveGuardian.create(P, P, P, P)
+            return False
+        return True
+
+    def authority(self, guardian):
+        return GuardianAuthority(guardian.raw, operation=P, source=P, request=P, policy_evidence=P)
+
+    def test_live_guardian_native_clock_and_truly_fresh_process(self):
+        if not self.supported(): return
+        with GuardianProcessFixture() as guardian:
+            clock = LinuxClock(self.authority(guardian))
+            with tempfile.TemporaryDirectory(prefix='guardian-positive-') as tmp:
+                store = FileStore(Path(tmp)/'original.json')
+                original = Original.begin(P, P, P, clock, 8000000000)
+                session = Session.publish(original, store, clock)
+                session.reserve(raw_bytes=16, audit_bytes=42)
+                result = recover_guardian(store.path, digest(asdict(original)), guardian.raw)
+                self.assertTrue(result['ok'],result)
+                self.assertLess(result['remaining'], 8000000000)
+                self.assertEqual(result['credits']['raw_bytes'], 16)
+                self.assertEqual(result['credits']['audit_bytes'], 42)
+                replacement=recover_guardian(store.path,digest(asdict(original)),guardian.raw)
+                self.assertTrue(replacement['ok'],replacement)
+                self.assertNotEqual(result['worker_pid'],replacement['worker_pid'])
+                self.assertLess(replacement['remaining'],result['remaining'])
+                self.assertEqual(replacement['credits']['raw_bytes'],16)
+                self.assertIsNone(guardian.process.poll())
+                self.assertEqual(original_from_raw(store.path.read_bytes()), asdict(original))
+
+    def test_live_guardian_absence_uses_original_end(self):
+        if not self.supported(): return
+        with GuardianProcessFixture() as guardian:
+            clock = LinuxClock(self.authority(guardian))
+            with tempfile.TemporaryDirectory(prefix='guardian-absence-') as tmp:
+                store = FileStore(Path(tmp)/'original.json')
+                original = Original.begin(P, P, P, clock, 1000000000)
+                Session.publish(original, store, clock)
+                time.sleep(1.1)
+                expired=recover_guardian(store.path,digest(asdict(original)),guardian.raw)
+                self.assertFalse(expired['ok'],expired)
+                self.assertEqual(expired['reason'],'original-deadline')
+                self.assertTrue(decode(store.path.read_bytes())['denied'])
+
+    def test_closed_guardian_cannot_reopen_or_rebind_to_replacement(self):
+        if not self.supported(): return
+        guardian = LiveGuardian.create(P, P, P, P)
+        authority = self.authority(guardian)
+        clock = LinuxClock(authority)
+        original = Original.begin(P, P, P, clock, 8000000000)
+        store = MemoryStore(); Session.publish(original, store, clock)
+        guardian.close()
+        with self.assertRaises(Refused): Session(store, clock, digest(asdict(original)))
+        with LiveGuardian.create(P, P, P, P) as replacement:
+            self.assertNotEqual(replacement.raw, guardian.raw)
+            with self.assertRaises(Refused):
+                Session(store, LinuxClock(self.authority(replacement)), digest(asdict(original)))
+
+    def test_sealed_identity_and_wrong_birth_domain_nonce_source_policy(self):
+        if not self.supported(): return
+        with LiveGuardian.create(P, P, P, P) as guardian:
+            with self.assertRaises(OSError): os.write(guardian.token_fd, b'x')
+            from tools.retention_context_v1.guardian import verify_guardian
+            value = decode(guardian.raw)
+            changes = [('birth', value['birth']+1), ('namespace_inode', value['namespace_inode']+1),
+                       ('token_inode', value['token_inode']+1), ('nonce', '0'*64)]
+            for key, changed in changes:
+                altered = dict(value); altered[key] = changed
+                with self.subTest(field=key), self.assertRaises(Refused):
+                    verify_guardian(encode(altered), observe_host())
+            for values in [dict(operation='0'*64), dict(source='0'*64), dict(request='0'*64),
+                           dict(policy_evidence='0'*64)]:
+                params = dict(operation=P, source=P, request=P, policy_evidence=P);params.update(values)
+                with self.subTest(binding=values), self.assertRaises(Refused):
+                    GuardianAuthority(guardian.raw, **params)
+            clock = LinuxClock(self.authority(guardian))
+            with self.assertRaises(Refused): Original.begin(P, '0'*64, P, clock, 1000000000)
+
+    def test_actual_guardian_process_death_refuses_fresh_recovery(self):
+        if not self.supported(): return
+        import select
+        code = '''
+from tools.tests.test_retention_context_v1 import *
+with LiveGuardian.create(P,P,P,P) as guardian:
+ print(guardian.raw.hex(),flush=True)
+ sys.stdin.buffer.read(1)
+'''
+        process = subprocess.Popen([sys.executable, '-B', '-c', code], cwd=ROOT,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
+        try:
+            ready, _, _ = select.select([process.stdout], [], [], 10)
+            self.assertTrue(ready)
+            line = process.stdout.readline(16385)
+            self.assertLessEqual(len(line), 16384)
+            raw = bytes.fromhex(line.decode().strip())
+            authority = GuardianAuthority(raw, operation=P, source=P, request=P, policy_evidence=P)
+            original = Original.begin(P, P, P, LinuxClock(authority), 8000000000)
+            store = MemoryStore();Session.publish(original, store, LinuxClock(authority))
+            process.stdin.write(b'x');process.stdin.flush();process.wait(timeout=10)
+            with self.assertRaises(Refused): Session(store, LinuxClock(authority), digest(asdict(original)))
+            self.assertTrue(decode(store.raw)['denied'])
+        finally:
+            if process.poll() is None:process.terminate();process.wait(timeout=10)
+            for stream in [process.stdin, process.stdout, process.stderr]: stream.close()
+
+    def test_verifier_attempts_all_closes_and_poison_after_first_or_middle_failure(self):
+        if not self.supported():return
+        for index in (0,1):
+            with self.subTest(index=index),LiveGuardian.create(P,P,P,P) as guardian:
+                authority=self.authority(guardian);calls=[];failed=[];actual=os.close
+                def close(fd):
+                    calls.append(fd)
+                    if len(calls)-1==index:
+                        failed.append(fd);raise OSError('synthetic verifier close acknowledgment')
+                    return actual(fd)
+                try:
+                    with patch('os.close',close),self.assertRaisesRegex(Refused,'guardian-verification-cleanup-uncertain'):
+                        authority.verify(observe_host())
+                    self.assertEqual(len(calls),3)
+                    self.assertEqual(len(set(calls)),3)
+                    self.assertTrue(authority.poisoned)
+                    with self.assertRaisesRegex(Refused,'guardian-authority-poisoned'):authority.verify(observe_host())
+                finally:
+                    for fd in failed:actual(fd)
+
+    def test_verifier_primary_refusal_is_not_masked_by_cleanup_failure(self):
+        if not self.supported():return
+        with LiveGuardian.create(P,P,P,P) as guardian:
+            changed=decode(guardian.raw);changed['nonce']='0'*64
+            authority=GuardianAuthority(encode(changed),operation=P,source=P,request=P,policy_evidence=P)
+            calls=[];actual=os.close
+            def close(fd):
+                calls.append(fd)
+                if len(calls)==1:raise OSError('synthetic first close')
+                return actual(fd)
+            try:
+                with patch('os.close',close),self.assertRaisesRegex(Refused,'guardian-token-binding') as error:
+                    authority.verify(observe_host())
+                self.assertEqual(len(calls),3)
+                self.assertTrue(any('guardian-verification-cleanup-uncertain' in n for n in error.exception.__notes__))
+            finally:
+                if calls:actual(calls[0])
+
+    def test_create_attempts_both_closes_preserves_primary_and_returns_no_guardian(self):
+        if not self.supported():return
+        calls=[];actual=os.close
+        def close(fd):
+            calls.append(fd)
+            if len(calls)==1:raise OSError('synthetic creator close')
+            return actual(fd)
+        try:
+            with (patch('tools.retention_context_v1.guardian.verify_guardian',side_effect=Refused('synthetic creation verification')),
+                  patch('os.close',close),self.assertRaisesRegex(Refused,'synthetic creation verification') as error):
+                LiveGuardian.create(P,P,P,P)
+            self.assertEqual(len(calls),2)
+            self.assertTrue(any('guardian-create-cleanup-uncertain' in n for n in error.exception.__notes__))
+        finally:
+            if calls:actual(calls[0])
+
+    def test_cleanup_uncertainty_denies_original_context_across_fresh_authority(self):
+        if not self.supported():return
+        with LiveGuardian.create(P,P,P,P) as guardian:
+            authority=self.authority(guardian);clock=LinuxClock(authority)
+            original=Original.begin(P,P,P,clock,8000000000);store=MemoryStore()
+            session=Session.publish(original,store,clock);failed=[];actual=os.close
+            def close(fd):
+                if not failed:failed.append(fd);raise OSError('synthetic unknown close')
+                return actual(fd)
+            try:
+                with patch('os.close',close),self.assertRaises(Refused):session.check()
+                self.assertTrue(decode(store.raw)['denied'])
+                with self.assertRaises(Refused):Session(store,LinuxClock(self.authority(guardian)),digest(asdict(original)))
+            finally:
+                for fd in failed:actual(fd)
+
+    def test_observed_supported_allocation_profile_positive_or_explicit_unknown(self):
+        if not self.supported(): return
+        facts = observe_host()
+        supported = facts['python'].startswith('3.11.2 ') and facts['libc'] == 'glibc 2.36'
+        with LiveGuardian.create(P, P, P, P) as guardian:
+            params = dict(operation=P, source=P, request=P, policy_evidence=P)
+            if not supported:
+                from tools.retention_context_v1.profile import observe_build, SourceCredits
+                with self.assertRaisesRegex(Refused, 'unsupported-allocation-profile'):
+                    observe_build(SourceCredits())
+                with self.assertRaisesRegex(Refused, 'profile-admission-required'):
+                    LinuxHostProfile(guardian.raw, admission=None, **params)
+                print('RETENTION_CONTEXT_SUPPORTED_PROFILE '+json.dumps(dict(positive=False, facts=facts)))
+                return
+            guardian.close()
+            admission=component_admission_fixture()
+            guardian=GuardianProcessFixture(admission).__enter__()
+            self.addCleanup(guardian.close)
+            profile=LinuxHostProfile(guardian.raw,operation=P,source=P,request=P,policy_evidence=P,admission=admission)
+            clock = LinuxClock(profile)
+            original = Original.begin(P, P, P, clock, 8000000000)
+            with tempfile.TemporaryDirectory(prefix='profile-real-fd-') as tmp:
+                store = FileStore(Path(tmp)/'original.json')
+                session = Session.publish(original, store, clock)
+                (Path(tmp)/'file').touch()
+                entries=Path(tmp)/'entries';entries.mkdir();(entries/'file').touch()
+                (Path(tmp)/'file').unlink()
+                fd = os.open(entries, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    pool = CursorPool(session, profile, 67108864, 96)
+                    cursor = pool.open(fd, cap=1)
+                    self.assertEqual(cursor.next().name, 'file')
+                    self.assertIsNone(cursor.next())
+                    self.assertEqual(cursor.probes, 2)
+                    self.assertEqual(pool.fds_used, 0)
+                    self.assertEqual(session.credits()['audit_bytes'], 0)
+                    recovered = recover_guardian(store.path, digest(asdict(original)), guardian.raw, directory=entries, admission=profile.admission)
+                    self.assertTrue(recovered['ok'])
+                    from tools.retention_context_v1.profile import filesystem
+                    print('RETENTION_CONTEXT_SUPPORTED_PROFILE '+json.dumps(dict(
+                        positive=True, conditional_component_contract=True, deployment_admission='test fixture; M21 must supply qualified deployment evidence', build=profile.build, filesystem=filesystem(fd),
+                        stream_allocation_bytes=1114112, entry_allocation_bytes=8192)))
+                finally: os.close(fd)
+
+
+class DiscoveryScopeControls(unittest.TestCase):
+    def test_reopening_a_child_is_bounded_not_free_after_close(self):
+        if sys.platform != 'linux':
+            with self.assertRaises(Refused): observe_host()
+            return
+        session, authority = observed_cursor_fixture(self)
+        pool = CursorPool(session, authority, 67108864, 96)
+        with tempfile.TemporaryDirectory(prefix='bounded-child-opens-') as tmp:
+            (Path(tmp)/'child').mkdir()
+            fd = os.open(tmp, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                parent = pool.open(fd, cap=1)
+                entry = parent.next()
+                parent.open_child(entry).close()
+                with self.assertRaisesRegex(Refused, 'cursor-open-bound'):
+                    parent.open_child(entry)
+                self.assertTrue(decode(session.store.raw)['denied'])
+            finally:close_pool_fixture(self, pool);os.close(fd)
+
+    def test_runtime_build_reads_debit_shared_source_balance_before_read(self):
+        from tools.retention_context_v1.profile import SourceCredits, file_identity
+        with tempfile.TemporaryDirectory(prefix='profile-source-balance-') as tmp:
+            path=Path(tmp)/'synthetic';path.write_bytes(b'abc')
+            balance=SourceCredits()
+            observed=file_identity(path,balance)
+            self.assertEqual(balance.used,3)
+            self.assertEqual(observed['sha256'],hashlib.sha256(b'abc').hexdigest())
+            exhausted=SourceCredits(used=1207959550)
+            with self.assertRaisesRegex(Refused,'source-instance-byte-bound'):
+                file_identity(path,exhausted)
+            self.assertEqual(exhausted.used,1207959550)
+            self.assertTrue(exhausted.denied)
+            with self.assertRaises(Refused):exhausted.reserve(0)
+
+    def test_expected_source_binary_pins_cannot_self_admit_modified_same_version(self):
+        from tools.retention_context_v1.profile import ProfileAdmission
+        admission=ProfileAdmission('sha256:'+P,'1'*64,'x86_64',P,'b'*64,('c'*64,),'d'*64)
+        build=dict(facts=dict(machine='x86_64',python='3.11.2 same version',libc='glibc 2.36'),
+                   python_object=dict(sha256=P,bytes=1),libc_object=dict(sha256='b'*64,bytes=2))
+        accepted=admission.bind_build(build)
+        for which in ('python_object','libc_object'):
+            changed=copy.deepcopy(build);changed[which]['sha256']='0'*64
+            with self.subTest(binary=which),self.assertRaisesRegex(Refused,'profile-admitted-build'):
+                admission.bind_build(changed)
+        self.assertNotEqual(accepted,replace(admission,mount_profiles=('e'*64,)).bind_build(build))
+        self.assertNotEqual(accepted,replace(admission,source_evidence='f'*64).bind_build(build))
+        with self.assertRaisesRegex(Refused,'profile-admission-required'):
+            LinuxHostProfile.start_guardian(P,P,P,P,admission=None)
+
+    def test_profile_admission_shape_and_auxiliary_bounds(self):
+        from tools.retention_context_v1.profile import ProfileAdmission
+        good=ProfileAdmission('sha256:'+P,'1'*64,'x86_64',P,'b'*64,('c'*64,),'d'*64)
+        good.validate()
+        for invalid in [replace(good,image_id=P),replace(good,mount_profiles=()),
+                        replace(good,mount_profiles=('c'*64,)*9),replace(good,machine='unknown'),
+                        replace(good,source_evidence='not-proof'),replace(good,mount_profiles=['c'*64])]:
+            with self.subTest(admission=invalid),self.assertRaises(Refused):invalid.validate()
+
+    def test_evidence_short_reads_reach_eof_exact_cap_and_bounded_overflow(self):
+        from tools.retention_context_v1.native import bounded_file
+        class ShortReads:
+            def __init__(self,data):self.data=data;self.offset=0;self.requests=[]
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def readinto(self,view):
+                self.requests.append(len(view));n=min(2,len(view),len(self.data)-self.offset)
+                view[:n]=self.data[self.offset:self.offset+n];self.offset+=n;return n
+        for data,cap in [(b'',4),(b'abcd',4),(b'abc',4)]:
+            stream=ShortReads(data)
+            with patch('builtins.open',return_value=stream):self.assertEqual(bounded_file('/synthetic',cap),data)
+            self.assertGreaterEqual(len(stream.requests),1)
+            self.assertLessEqual(max(stream.requests),cap+1)
+        stream=ShortReads(b'0123456789')
+        with patch('builtins.open',return_value=stream),self.assertRaisesRegex(Refused,'host-evidence-bound'):
+            bounded_file('/synthetic',4)
+        self.assertEqual(stream.offset,5)
+
+    def test_real_pipe_evidence_first_short_read_is_not_eof(self):
+        if sys.platform!='linux':
+            with self.assertRaises(Refused):observe_host()
+            return
+        import threading
+        from tools.retention_context_v1.native import bounded_file
+        read_fd,write_fd=os.pipe();errors=[]
+        def writer():
+            try:
+                os.write(write_fd,b'first');time.sleep(0.02);os.write(write_fd,b'second')
+            except Exception as error:errors.append(error)
+            finally:os.close(write_fd)
+        thread=threading.Thread(target=writer);thread.start()
+        try:self.assertEqual(bounded_file('/proc/self/fd/'+str(read_fd),11),b'firstsecond')
+        finally:os.close(read_fd);thread.join(timeout=2)
+        self.assertFalse(thread.is_alive());self.assertFalse(errors)
+
+    def test_exact_original_scope_windows_not_a_global4096_pool(self):
+        from tools.retention_context_v1.native import SCOPES
+        self.assertEqual(SCOPES['archive'], (4096, 32))
+        self.assertEqual(SCOPES['source'], (10000, 8))
+        self.assertEqual(SCOPES['metadata'], (96, 128))
+        self.assertEqual(SCOPES['driver'], (64, 8))
+        self.assertEqual(SCOPES['plan'], (1, 1))
+        _, _, _, session = fixture()
+        with self.assertRaises(Refused): CursorPool(session, DiagnosticAuthority(), 67108864, 96, scope='other')
+
+    def test_two_real_archive_scans_over4096_total_and_independent_audit_debt(self):
+        if sys.platform != 'linux':
+            with self.assertRaises(Refused): observe_host()
+            return
+        session, authority = observed_cursor_fixture(self)
+        pool = CursorPool(session, authority, 4294967296, 96)
+        with tempfile.TemporaryDirectory(prefix='archive-rescan-scope-') as tmp:
+            for i in range(2050):(Path(tmp)/str(i)).touch()
+            fd = os.open(tmp, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                for _ in range(2):
+                    cursor = pool.open(fd)
+                    count = 0
+                    while cursor.next() is not None:count += 1
+                    self.assertEqual(count, 2050)
+                    self.assertEqual(cursor.probes, 2051)
+                self.assertEqual(session.credits()['rescans'], 2)
+                self.assertEqual(session.credits()['audit_bytes'], 0)
+            finally:close_pool_fixture(self, pool);os.close(fd)
+
+    def test_real_source10000_paths_uses_source_scope_not_payload4096(self):
+        if sys.platform != 'linux':
+            with self.assertRaises(Refused): observe_host()
+            return
+        session, authority = observed_cursor_fixture(self)
+        pool = CursorPool(session, authority, 4294967296, 96, scope='source')
+        with tempfile.TemporaryDirectory(prefix='source-10000-') as tmp:
+            for i in range(10000):(Path(tmp)/str(i)).touch()
+            fd = os.open(tmp, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                cursor = pool.open(fd)
+                count = 0
+                while cursor.next() is not None:count += 1
+                self.assertEqual(count, 10000);self.assertEqual(cursor.probes, 10001)
+                self.assertEqual(session.credits()['rescans'], 0)
+                self.assertEqual(session.credits()['audit_bytes'], 0)
+                self.assertEqual(pool.scans, 1)
+            finally:close_pool_fixture(self, pool);os.close(fd)
+
+
+if __name__ == '__main__':
+    unittest.main()

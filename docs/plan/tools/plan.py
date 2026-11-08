@@ -57,12 +57,18 @@ def task_dependencies(task: dict, milestones: dict, tasks: dict) -> list[str]:
 
 
 def research_gate_contract(milestones: dict, tasks: dict) -> None:
-    """Keep preliminary coordinator research separate from original acceptance."""
+    """Retain research boundaries and the explicit prospective trait-start profile."""
     required = {
         "M01.08": {"M01.04", "M01.05", "M01.06", "M01.07", "M19", "M01.09"},
         "M02.02": {"M19", "M01", "M02.09"},
         "M02.04": {"M01", "M02.10"},
-        "M03.01": {"M01"},
+        "M03.02": {"M03.01"},
+        "M03.03": {"M03.01", "M19", "M02.08", "M02.05"},
+        "M03.04": {"M03.03"},
+        "M03.07": {"M02.07", "M03.01"},
+        "M03.08": {"M02.07", "M03.04", "M03.02", "M03.07"},
+        "M03.05": {"M03.02", "M03.04", "M03.08"},
+        "M03.06": {"M03.05", "M03.07"},
         "M07.02": {"M05", "M01"},
         "M16.04": {"M01", "M08", "M16.02"},
         "M02.03": {"M02.02"},
@@ -71,6 +77,14 @@ def research_gate_contract(milestones: dict, tasks: dict) -> None:
         "M02.07": {"M02.01", "M02.04"},
         "M01.14": {"M19", "M01.13", "M08.01"},
     }
+    # This prospective start exception does not accept the harness, provider or
+    # milestone. The historical M14 guard remains authoritative elsewhere.
+    trait_start = {"M19", "M01.01", "M01.02", "M01.03",
+                   "M01.05", "M01.06", "M01.07"}
+    need("M03.01" in tasks and
+         set(tasks["M03.01"]["depends_on"]) == trait_start and
+         len(tasks["M03.01"]["depends_on"]) == len(trait_start),
+         "Product start profile changed: M03.01")
     prerequisites = {"M19", "M01.02", "M01.03", "M01.04", "M01.05",
                      "M01.06", "M01.07", "M01.13", "M01.14",
                      "M02.01", "M02.08", "M08.01"}
@@ -84,6 +98,11 @@ def research_gate_contract(milestones: dict, tasks: dict) -> None:
              f"Research acceptance gate missing: {task_id}")
     need("M01" in milestones["M02"]["depends_on"],
          "Research acceptance gate missing: milestone M02")
+    need(set(tasks["M03.02"]["depends_on"]) == {"M03.01"} and
+         len(tasks["M03.02"]["depends_on"]) == 1,
+         "Provider start profile changed: M03.02")
+    need("M01" in milestones["M03"]["depends_on"],
+         "Product acceptance gate missing: milestone M03")
 
 
 def incident_gate_contract(tasks: dict) -> None:

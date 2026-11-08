@@ -1,0 +1,295 @@
+{
+  "artifact_kind": "Allowlisted exact-byte M02.10 history projection for prospective M02.11 policy qualification",
+  "not_a_verdict_or_implementation_acceptance": true,
+  "policy_status": "Pending own actual final-source checks/reviews/CI/protected integration; no code admission.",
+  "files": [
+    {
+      "projected_path": "M02.10_DESIGN_PRECHECK.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_PRECHECK.json",
+      "bytes": 1240,
+      "raw_sha256": "0359e35bc7a3c75b25c7a285d861c9ebfd3185b0a4cfab1696f8c7ad3207469e",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_PRECHECK.json",
+        "bytes": 1240,
+        "sha256": "0359e35bc7a3c75b25c7a285d861c9ebfd3185b0a4cfab1696f8c7ad3207469e"
+      }
+    },
+    {
+      "projected_path": "M02.10_DESIGN_PROPOSAL.md",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_PROPOSAL.md",
+      "bytes": 12385,
+      "raw_sha256": "49ce2032d8257b7270850ec7d01ee99824e755488feacd1f8356381cd30e7556",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_PROPOSAL.md",
+        "bytes": 12385,
+        "sha256": "49ce2032d8257b7270850ec7d01ee99824e755488feacd1f8356381cd30e7556"
+      }
+    },
+    {
+      "projected_path": "M02.10_DESIGN_CORRECTNESS.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_CORRECTNESS.json",
+      "bytes": 4883,
+      "raw_sha256": "6a2285b816a1718a907049dbd5122b46f4e7b952141ccac680eaf173a1fd3545",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_CORRECTNESS.json",
+        "bytes": 4883,
+        "sha256": "6a2285b816a1718a907049dbd5122b46f4e7b952141ccac680eaf173a1fd3545"
+      }
+    },
+    {
+      "projected_path": "M02.10_DESIGN_SECURITY.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_SECURITY.json",
+      "bytes": 13391,
+      "raw_sha256": "1e88d8626b16e349753b0df5474aaf4d42319b5c257a3155a760497e056e463f",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_DESIGN_SECURITY.json",
+        "bytes": 13391,
+        "sha256": "1e88d8626b16e349753b0df5474aaf4d42319b5c257a3155a760497e056e463f"
+      }
+    },
+    {
+      "projected_path": "M02.10_ROUND1_PACKET.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_ROUND1_PACKET.json",
+      "bytes": 10230,
+      "raw_sha256": "74b005d68ea46efab4d4dd9c554c908282a8ded80617b82d07d345ed099f17f3",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_ROUND1_PACKET.json",
+        "bytes": 10230,
+        "sha256": "74b005d68ea46efab4d4dd9c554c908282a8ded80617b82d07d345ed099f17f3"
+      }
+    },
+    {
+      "projected_path": "M02.10_R1_RECORDED_STATUS.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_R1_RECORDED_STATUS.json",
+      "bytes": 10632,
+      "raw_sha256": "ace4b81d4e65df01dcb5244d25bc07cec5c42e1b8c2a33bc3f47287149e58deb",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_R1_RECORDED_STATUS.json",
+        "bytes": 10632,
+        "sha256": "ace4b81d4e65df01dcb5244d25bc07cec5c42e1b8c2a33bc3f47287149e58deb"
+      }
+    },
+    {
+      "projected_path": "M02.10_R1_CORRECTNESS.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_R1_CORRECTNESS.json",
+      "bytes": 8058,
+      "raw_sha256": "1b2026ec7fad51a16389b1ffd8d6d15e4014da970157fe21c79ad291bffcb96e",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_R1_CORRECTNESS.json",
+        "bytes": 8058,
+        "sha256": "1b2026ec7fad51a16389b1ffd8d6d15e4014da970157fe21c79ad291bffcb96e"
+      }
+    },
+    {
+      "projected_path": "M02.10_R1_SECURITY.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_R1_SECURITY.json",
+      "bytes": 9840,
+      "raw_sha256": "05a9aae6ed7c28c31ebe0b38d714582bec39b7659ac03364e11ae4fc4bd5baaa",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_R1_SECURITY.json",
+        "bytes": 9840,
+        "sha256": "05a9aae6ed7c28c31ebe0b38d714582bec39b7659ac03364e11ae4fc4bd5baaa"
+      }
+    },
+    {
+      "projected_path": "M02.10_ROUND2_PACKET.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_ROUND2_PACKET.json",
+      "bytes": 17434,
+      "raw_sha256": "457aca9292cca381652673eab543d8f074316b568d6abbfb7ee0e4681f1366bd",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_ROUND2_PACKET.json",
+        "bytes": 17434,
+        "sha256": "457aca9292cca381652673eab543d8f074316b568d6abbfb7ee0e4681f1366bd"
+      }
+    },
+    {
+      "projected_path": "M02.10_R2_RECORDED_STATUS.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_R2_RECORDED_STATUS.json",
+      "bytes": 17836,
+      "raw_sha256": "5c9eef025297672ad3033b0f20d3e189844eecf36440005a068a4dce1f146c4b",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_R2_RECORDED_STATUS.json",
+        "bytes": 17836,
+        "sha256": "5c9eef025297672ad3033b0f20d3e189844eecf36440005a068a4dce1f146c4b"
+      }
+    },
+    {
+      "projected_path": "M02.10_R2_CORRECTNESS.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_R2_CORRECTNESS.json",
+      "bytes": 11128,
+      "raw_sha256": "e787d0c6c1ace1a5758d171da43ac896a506e566426a3c027775361fb3fb6328",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_R2_CORRECTNESS.json",
+        "bytes": 11128,
+        "sha256": "e787d0c6c1ace1a5758d171da43ac896a506e566426a3c027775361fb3fb6328"
+      }
+    },
+    {
+      "projected_path": "M02.10_R2_SECURITY.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\M02.10_R2_SECURITY.json",
+      "bytes": 8467,
+      "raw_sha256": "05bd30f38696b19736b041aab17378e948aae02bd814d2802e7ffc1e224073af",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\M02.10_R2_SECURITY.json",
+        "bytes": 8467,
+        "sha256": "05bd30f38696b19736b041aab17378e948aae02bd814d2802e7ffc1e224073af"
+      }
+    },
+    {
+      "projected_path": "hard3-disposition.json",
+      "original_path": "D:\\codex\\2026-11-01\\task\\delivery-task-state\\9811fdfde55b1cc26316\\evidence\\m02-10-c02574068480\\eadf719fd349a19e43aad24af743c9f38e218da03b6adc4463cb4864fd42f273.json",
+      "bytes": 875,
+      "raw_sha256": "eadf719fd349a19e43aad24af743c9f38e218da03b6adc4463cb4864fd42f273",
+      "original_ref": {
+        "path": "D:\\codex\\2026-11-01\\task\\delivery-task-state\\9811fdfde55b1cc26316\\evidence\\m02-10-c02574068480\\eadf719fd349a19e43aad24af743c9f38e218da03b6adc4463cb4864fd42f273.json",
+        "bytes": 875,
+        "sha256": "eadf719fd349a19e43aad24af743c9f38e218da03b6adc4463cb4864fd42f273"
+      }
+    },
+    {
+      "projected_path": "public-index.json",
+      "original_path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab60-4bff-7752-9544-a9eab0fca10a\\m02-10-external-history-bridge\\public-index.json",
+      "bytes": 12157,
+      "raw_sha256": "6889f02b04ac3f648d21e4e40b6142222d032eacd8845a9bb4a5a19caada2ee3",
+      "original_ref": {
+        "path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab60-4bff-7752-9544-a9eab0fca10a\\m02-10-external-history-bridge\\public-index.json",
+        "bytes": 12157,
+        "sha256": "6889f02b04ac3f648d21e4e40b6142222d032eacd8845a9bb4a5a19caada2ee3"
+      }
+    },
+    {
+      "projected_path": "legacy-findings.json",
+      "original_path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab60-4bff-7752-9544-a9eab0fca10a\\m02-10-external-history-bridge\\legacy-findings.json",
+      "bytes": 7624,
+      "raw_sha256": "618e81556a805c81ce7dd3d5c87040d5c0c7958c3bcfa009a95a39243213ad55",
+      "original_ref": {
+        "path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab60-4bff-7752-9544-a9eab0fca10a\\m02-10-external-history-bridge\\legacy-findings.json",
+        "bytes": 7624,
+        "sha256": "618e81556a805c81ce7dd3d5c87040d5c0c7958c3bcfa009a95a39243213ad55"
+      }
+    },
+    {
+      "projected_path": "root-disposition.json",
+      "original_path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab4c-4786-7472-bdb7-59c35c310347\\m02-10-prospective-continuation-disposition-20261108.json",
+      "bytes": 3157,
+      "raw_sha256": "a73267bb731fe52c991601d1490cd781570e68736cced61f66f8d9cd67107b59",
+      "original_ref": {
+        "path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab4c-4786-7472-bdb7-59c35c310347\\m02-10-prospective-continuation-disposition-20261108.json",
+        "bytes": 3157,
+        "sha256": "a73267bb731fe52c991601d1490cd781570e68736cced61f66f8d9cd67107b59"
+      }
+    },
+    {
+      "projected_path": "legacy-resolution-sidecar.template.json",
+      "original_path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab9f-fde6-7952-9877-efb2fce35b9c\\m02-10-continuation-policy-draft\\legacy-resolution-sidecar.template.json",
+      "bytes": 3529,
+      "raw_sha256": "94806584a8598d3a25d848af6923ee0d30704d2e15da61b694740bbf8fe06c7c",
+      "original_ref": {
+        "path": "C:\\Users\\Huy\\.codex\\visualizations\\2026\\11\\05\\01a1ab9f-fde6-7952-9877-efb2fce35b9c\\m02-10-continuation-policy-draft\\legacy-resolution-sidecar.template.json",
+        "bytes": 3529,
+        "sha256": "94806584a8598d3a25d848af6923ee0d30704d2e15da61b694740bbf8fe06c7c"
+      }
+    }
+  ],
+  "canonical_records": [
+    {
+      "kind": "packet",
+      "file": "M02.10_ROUND1_PACKET.json",
+      "canonical_sha256": "96c998c90fb37f4922729623bac59782ae4741a3927bfdc9b76c422184ff6b07",
+      "raw_sha256": "74b005d68ea46efab4d4dd9c554c908282a8ded80617b82d07d345ed099f17f3"
+    },
+    {
+      "kind": "report",
+      "file": "M02.10_R1_CORRECTNESS.json",
+      "canonical_sha256": "541c95005e58136e2bf7624dbd1b1ebcc50e796688c7ba019e71597cbf53cc29",
+      "raw_sha256": "1b2026ec7fad51a16389b1ffd8d6d15e4014da970157fe21c79ad291bffcb96e"
+    },
+    {
+      "kind": "report",
+      "file": "M02.10_R1_SECURITY.json",
+      "canonical_sha256": "97d0454c5fa58741e524e7b8e48bdae649e5cdc4653bef9c6512b60ee96e1d79",
+      "raw_sha256": "05a9aae6ed7c28c31ebe0b38d714582bec39b7659ac03364e11ae4fc4bd5baaa"
+    },
+    {
+      "kind": "packet",
+      "file": "M02.10_ROUND2_PACKET.json",
+      "canonical_sha256": "b77a80c51fd00ae5c6ca0fbd3a80cf73158d8f3d66e564369d355d72c087cbc9",
+      "raw_sha256": "457aca9292cca381652673eab543d8f074316b568d6abbfb7ee0e4681f1366bd"
+    },
+    {
+      "kind": "report",
+      "file": "M02.10_R2_CORRECTNESS.json",
+      "canonical_sha256": "da0e88581efd2b8f927301c7aaedf790ed010d04f89b228fbd52009f14354f33",
+      "raw_sha256": "e787d0c6c1ace1a5758d171da43ac896a506e566426a3c027775361fb3fb6328"
+    },
+    {
+      "kind": "report",
+      "file": "M02.10_R2_SECURITY.json",
+      "canonical_sha256": "7913cfe645fdb7276c053120f4bc14de275c4c150514adaf05111b23e0450cd4",
+      "raw_sha256": "05bd30f38696b19736b041aab17378e948aae02bd814d2802e7ffc1e224073af"
+    }
+  ],
+  "hash_semantics": "raw_sha256 covers exact original file bytes including formatting; canonical_sha256 covers the contained compact sorted JSON packet/report, not its wrapper. Neither is reviewer authentication.",
+  "finding_keys": [
+    "design-overall1:correctness_tests_claims:CAS_SCHEDULE_AND_ETAG_LINEAGE_AMBIGUOUS",
+    "1:correctness_tests_claims:OBJECT_RAW_EXECUTION_PROVENANCE_UNCHECKED",
+    "1:correctness_tests_claims:MATCHED_ORACLE_ACCEPTS_UNCOMMITTED_APPLICATION",
+    "1:architecture_security:SEC01_EXITED_LEADER_GROUP_NOT_REAPED",
+    "1:architecture_security:SEC02_HOST_COPY_QUOTA_CHECKED_AFTER_ALLOCATION",
+    "1:architecture_security:SEC03_SNAPSHOT_OVERWRITES_APPLIED_MEMBERSHIP",
+    "2:correctness_tests_claims:DURABLE_QUORUM_CAN_REUSE_UNRELATED_LOG_SYNC",
+    "2:architecture_security:SEC04_DURABLE_QUORUM_ACCEPTS_UNRELATED_SYNC"
+  ],
+  "design_constraints": [
+    "M210-SEC-C01-PERSISTENCE-ORDER",
+    "M210-SEC-C02-COMPARISON-DOMAINS",
+    "M210-SEC-C03-CONTROLLER-CREDENTIALS",
+    "M210-SEC-C04-TIMERS-AGGREGATE-BUDGET"
+  ],
+  "template": "legacy-resolution-sidecar.template.json is UNFILLED DRAFT ONLY, not a report/evidence/resolution.",
+  "limits": {
+    "original_overall": 3,
+    "original_formal": 2,
+    "sole_future_current_formal_if_empty": 1,
+    "cumulative_formal": 3,
+    "actual_overall": 4,
+    "maximum_overall": 4,
+    "scope": "M02.11 policy reviews are separately counted governance events, not M02.10 candidate packets or code-finding resolutions."
+  },
+  "omitted": [
+    "Full700440-byte legacy reviews registry",
+    "M02.10_WORK_STATE.json",
+    "Issuance/other scripts",
+    "Private source tree, raw research payloads, unrelated task records and live state"
+  ],
+  "provenance_limits": [
+    "No independent authentication of legacy session identities beyond retained protocol records.",
+    "Historical code/test/native/replay results were read as reported metadata, not rerun or requalified.",
+    "No public availability guarantee for private retained files; approved publication must package an allowlisted bounded projection if needed.",
+    "Current registry and eventual new comparison base/source are not inspected or selected here.",
+    "No migration is attempted; old registry repository field/packets must never be rewritten under a new repository identity."
+  ],
+  "privacy_inspection": "Only these17 explicit files read/copied; selected report prose and metadata inspected, bounded private-key/token/credential-URL/value signature scan found no matches. This is not a general repository secret certificate.",
+  "legacy_registry_note": "Root decision originally recorded physical review-state root unlocated. The later exact public-index records a bounded direct observation/path/hash and selected comparisons. Both original artifacts remain byte-identical; no registry body is copied, imported, fabricated or rewritten.",
+  "policy_contributors": [
+    "01a1ab4c-4786-7472-bdb7-59c35c310347",
+    "01a1ab9f-fde6-7952-9877-efb2fce35b9c",
+    "01a1ab60-4bff-7752-9544-a9eab0fca10a",
+    "01a1ad0c-a57c-7462-9adc-44dda960885a"
+  ],
+  "legacy_recorded_implementers": [
+    "/root"
+  ],
+  "author_limit": "Recorded legacy author union does not prove no unrecorded contributor; add every actual current/incoming author before reviewer assignment. Old report authors remain identified in unchanged reports, not recast as policy reviewers.",
+  "byte_preservation": {
+    "local_attributes": ".gitattributes",
+    "purpose": "Prevent global eol=lf normalization of exactly four original CRLF JSON bodies; all17 copied body bytes/hashes remain original. No global attributes, schema or review guard change.",
+    "exact_CRLF_names": [
+      "public-index.json",
+      "legacy-findings.json",
+      "M02.10_DESIGN_PRECHECK.json",
+      "legacy-resolution-sidecar.template.json"
+    ],
+    "whitespace": "Only original CRLF framing is recognized with cr-at-eol; blank-at-eol, blank-at-eof and space-before-tab checks remain explicit."
+  }
+}

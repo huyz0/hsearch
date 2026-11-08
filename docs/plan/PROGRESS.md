@@ -1,11 +1,56 @@
 # Progress and handoff
 
+## 8 November 2026: successor delivery preparation adopts actual PR29 main
+
+The [v2 preparation snapshot](evidence/delivery-integration-v2.md) starts from sealed2e2, normally merges actual protected PR29 main0a2ff358 with an initially identical tree, then normally merges corrected4f817522 development policy. M03/M19/M16 contributions, all implementation/Cargo/inventory/CI/collector/test bodies and raw history remain exact v1 bytes. Active engine and M02 repair source/graphs are excluded and untouched.
+
+PR29 was actually protected-merged with tree91833b09 identical reviewed3b25 after both M16R2 roles, a fresh normal gate and all seven PR jobs passed. Main push run42453742793 was still in progress at root's preparation receipt; no postmerge qualification is inferred. Fresh complete exact-source checks and later same-task component R2 remain required. M03/M19/M02.11 each retain issued1/planned2/hard3/original992base; M19 P2 AS-M19-R1-01 and full Linux64/62pass/2clockerrors FAILED remain. No M16R3 is consumed.
+
+M02.11 done/evidence is restored only as this final candidate's proposed merged state, pending final R2/current-source checks/CI/protected integration/postmerge; immutable4f seed stays planned. Separately admitted reversible development remains narrowly allowed, while actual campaigns/qualification/solefutureoverall4MAX4 still wait for actual policy integration and proper admission. The historical entries below retain their original phase and do not describe current acceptance.
+
+
+## 8 November 2026: M02.10 reversible-development seed
+
+M02.11 is restored to planned/unaccepted. The [development addendum](m02-10-development.md) narrowly permits separately admitted reversible code development and explicitly bounded ordinary synthetic controls after root audits this seed. No code import, claim or execution follows from seed preparation. Actual experiments, native/provider matrices, qualification and the sole future overall4/MAX4 candidate still wait for actual M02.11 integration and proper admission. The old51187fb R1 remains exact-source history, issued1/planned2/hard3; final checks/review/integration of the revised policy remain outstanding. All original tasks, frozen bodies, failures, counters, quotas and active engine reservations are retained.
+
+The earlier candidate entries below describe their historical source; their blanket development hold and intended merged `done` state are superseded only as described above.
+
+## 8 November 2026: combined local delivery preparation
+
+The [preparation snapshot](evidence/delivery-integration-v1.md) combines PR29 source3b25, M03R1/530, M02.11R1/511, M19R1/46 and closed M19fix0a49 through normal retained-parent local merges. Ledger contributions are a field-level union; no task's fields replace another's. Source/byte provenance, original histories and three existing leases remain bound. No current acceptance, publication or new review packet follows.
+
+M03 and M02.11 R1 roles were clear at their original heads; M19 R1 architecture P2 AS-M19-R1-01 remains pending same-task R2. All three keep issued1/planned2/hard3/original992base. M19's9new close controls pass, while full pinned Linux64/62pass/2clock-regression-errors/0failures/0skips remains FAILED. No clock tolerance/substitution/refresh/retry-to-green. Old native/CI observations are predecessor evidence, not new combined-head qualification. PR29 source/branch/PR remain unchanged at3b25; actual authorized protected integration/postmerge and actual-main adoption precede fresh final qualification/R2. Dated input notes below are historical source snapshots; their issued0/isolation claims describe those original preparation phases.
+
+
 ## 8 November 2026: original M01.16 integration recorded
 
 [M01.16's original factual integration](evidence/m01-16-integrated.md) was reviewed at `274d17a`, normally merged through [PR23](https://github.com/huyz0/hsearch/pull/23) as `2b2fd47` with the same tree, and passed its own R1 gate plus all seven PR and all seven main jobs. This follow-up reconciles the stale in-progress ledger and pending prose; its own exact-head checks, same-task R2 and protected integration remain required.
 
 PR22's nonancestor and disk-admission failures and both original authors remain preserved. The historical ARM cause is unconfirmed; M01.08/product obligations, current M01.18 completion and frozen M02.10 histories remain unchanged. Earlier checkpoints retain their historical context.
 
+## 8 November 2026: combined M03.01 final-source candidate
+
+The [combined source record](evidence/m03-01-qualified-source.md) binds unchanged BB object/workspace/CI/collector bodies and the full original992 policy+code scope after both normal code claims closed. Bounded typed contracts, memory/fault conformance and frozen-nextest-inventory collection are implemented. Exact BB local x64 dev/release coverage reports863/863 aggregate and340/340 object/changed, twelve inventory binaries/eight nonempty shards/46tests per profile with zero skips/postfreeze Cargo, plus native CLI trap and119Linux controls. Those are predecessor/body results; the new combined head still needs full ordinary/native ARM/hosted/profile/coverage qualification, both counted roles and protected integration. Candidate done is proposed merged status only.
+
+The [updated start policy](product-start-policy.md) applies root's prospective removal of only the seed-added M03.02 whole-M01 start hold: M03.02 again depends solely on actually accepted M03.01, matching main992. Whole-M03 M01 completion, M03.03 measured calibration, M01.08 unqualified status and every other acceptance gate remain. Earlier seed checkpoints below describe historical proposals and their later-superseded hold. Old40ea release failure and its unproven dirty-fingerprint trigger remain preserved; fresh BB contexts do not relabel it. No actual provider/service/format/durability/license/release acceptance or new claim/resource/native/backend/FFF action follows from this candidate.
+
+
+## 8 November 2026: proposed narrow storage-trait start policy
+
+The [M03.01 policy candidate](product-start-policy.md) replaces only that task’s whole-M01 start edge with accepted API/workspace/sandbox/ownership/review/CI/coverage prerequisites. M03.02 gains an explicit whole-M01 prerequisite, and milestone M03 retains whole-M01. M01.08’s goal describes measuring the frozen baseline; every actual acceptance clause, status, oracle/trial/usage/recovery and history remains. All other task edges/statuses are unchanged.
+
+This is a legitimate committed development-seed candidate, not policy or product acceptance. After root audits exact source, prerequisites, owner and conflict-free code/shared paths, normal development-only admission may start without a separate policy merge. Full policy plus nonempty code retain one counted review lineage, native CI and protected integration before acceptance. Any real main advance must be adopted safely before final review without importing out-of-claim edits. No claim, crate, workspace/lock/allocator/resource/FFF action or M19 clarification is performed by this seed; PR29 external authorization remains separate. Earlier checkpoints remain historical.
+## 8 November 2026: prospective M02.10 policy qualification candidate
+
+[M02.11](evidence/m02-11-qualified-source.md) is a genuine, distinct policy-only qualification unit for the [M02.10 continuation addendum](m02-10-continuation.md). It requires its own counted eligible nonauthor reviews, deterministic checks, exact-source hosted CI/ci-ok and protected integration before any M02.10 admission or execution. Candidate ledger done is intended merged status only; no current policy/code/product acceptance is claimed.
+
+The [allowlisted exact-byte projection](evidence/m02-10-history/projection-index.json) preserves the design precheck, both formal blocked packets/reports, eight finding keys, four constraints and original raw/canonical hash distinctions. M02.10 remains historical overall3/formal2 BLOCKED; the sole prospective candidate would be current formal1/cumulative formal3/actual overall4/max4, with no replacement after blocked/incomplete/unknown issuance. Policy governance events do not consume, reset or conceal that candidate history. Only the actor clause changes; full144object/12native/480temporal/84unsafe, numeric caps, prerequisites/whole-M01, coverage/native/CI/integration/postmerge and every original M02.10 obligation remain. No claim, code repair, native/backend/FFF campaign or resource action follows from this candidate.
+
+## 8 November 2026: M01.19 combined source candidate
+
+The [conditional host-context contract](retention-context-native-contract.md) explicitly separates scoped application audit/source/metadata/count budgets from bounded native allocation and unsupported hidden-kernel/physical-I/O/latency or invisible-VM-rewind claims. All original numerical caps, eleven clauses, M17 R3 failures and counters remain. The [combined-source record](evidence/m01-19-qualified-source.md) binds the unchanged nine builder code files and preserves their failure history.
+
+Code-only458c96c completed seven-job CI42432481369, including real conditional tmpfs CPython3.11.2/glibc2.36 positives on x86_64/aarch64 with fixture admission. That is predecessor component evidence, not a pass for this new head or M21 deployed filesystem/persistence/antirollback/CAS/resource authority. Trusted image/build/mount and controlled no-snapshot/no-migration admission remain mandatory. The candidate ledger done is the intended merged state only: this complete source still needs deterministic checks, both counted eligible roles in the same M19 issued0/planned2/hard3 lineage, exact-head native CI/coverage/ci-ok, normal gate and protected integration. M20/M21, M08, whole-M01/product and live-operation authorization remain separate; no actual FFF action is granted.
 ## 8 November 2026: retention redesign plan integrated
 
 [M01.18's plan artifact is accepted](evidence/m01-18-integrated.md): reviewed source `3c44380` merged normally through [PR26](https://github.com/huyz0/hsearch/pull/26) as `81bae9b` with the same tree, both R2 nonauthor roles clear, the durable gate passed and all seven PR/main jobs successful. The decomposition, frozen history and verbatim eleven-clause bridge are accepted; M01.19/.20/.21 remain unimplemented and require their own qualification. The factual bookkeeping source needs its own final legal same-M18 R3/checks/integration before successor admission.

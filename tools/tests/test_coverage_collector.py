@@ -399,6 +399,142 @@ class CollectionInventoryControls(unittest.TestCase):
             self.assertEqual(other.read_bytes(), b"retain original fixture")
 
 
+
+class FrozenExecutionControls(unittest.TestCase):
+    @contextmanager
+    def frozen(self):
+        # Portable real files/child paths, not a native nextest/LLVM qualification.
+        with tempfile.TemporaryDirectory() as directory:
+            runner = COV["Runner"](Path(directory) / "context")
+            value = inventory()
+            value["rust-build-meta"] = {"target-directory": str(runner.root / "target")}
+            value["test-count"] = 2
+            for name, suite in value["rust-suites"].items():
+                path = runner.root / (name + ".py")
+                path.write_text("import os;from pathlib import Path;"
+                                "p=os.environ['LLVM_PROFILE_FILE'].replace('%m','fixture').replace('%p',str(os.getpid()));"
+                                "Path(p).write_text(" + repr(name) + ")\n", encoding="utf8")
+                suite.update({"binary-path": str(path), "build-platform": "target"})
+            for name, value_ in (("test-inventory.json", value), ("cargo-metadata.json", {"fixture": True}),
+                                 ("binaries-metadata.json", COV["binaries_metadata"](value)), ("build-inventory.json", [])):
+                COV["save"](runner.root / name, value_)
+            production = runner.root / "production.o"; production.write_bytes(b"original production")
+            record = lambda path: COV["owned_artifact"](runner, path)
+            context = {"source": {"head": "a"*40}, "toolchain": {"nextest_executable": "/pinned/cargo-nextest"},
+                       "cargo_metadata": record(runner.root / "cargo-metadata.json"),
+                       "binaries_metadata": record(runner.root / "binaries-metadata.json"),
+                       "test_inventory": record(runner.root / "test-inventory.json"),
+                       "build_inventory": record(runner.root / "build-inventory.json"),
+                       "binaries": {name: {"artifact": record(Path(suite["binary-path"])), "test_count": 1}
+                                    for name, suite in value["rust-suites"].items()},
+                       "production_objects": [record(production)], "production_artifacts": {"fixture": [record(production)]}}
+            with patch.dict(COV["run_frozen_shards"].__globals__, source_identity=lambda: context["source"]):
+                yield runner, context
+
+    def run_shards(self, runner, context):
+        COV["run_frozen_shards"](runner, context, metadata(), ["fixture"])
+
+    def test_frozen_runner_refuses_any_cargo_invocation_before_execution(self):
+        with self.frozen() as (runner, _context):
+            runner.frozen = True
+            with patch("subprocess.Popen", side_effect=AssertionError("must not execute")):
+                for cargo in ("cargo", "/toolchain/bin/cargo", "cargo.exe"):
+                    for action in ("metadata", "build", "nextest", "--version"):
+                        with self.subTest(cargo=cargo, action=action), self.assertRaisesRegex(ValueError, "after test inventory freeze"):
+                            runner.command([cargo, action])
+
+                for action in ("list", "run"):
+                    for flags in ([], ["--binaries-metadata", "only-binaries.json"], ["--cargo-metadata", "only-cargo.json"]):
+                        with self.assertRaisesRegex(ValueError, "reuse both metadata inputs"):
+                            runner.command(["/pinned/cargo-nextest", "nextest", action, *flags])
+
+    def test_multiple_real_selected_child_paths_receive_distinct_profile_environment(self):
+        with self.frozen() as (runner, context):
+            executed, destinations = [], []
+            def command(args, *, env):
+                self.assertTrue(runner.frozen)
+                self.assertEqual(args[:3], ["/pinned/cargo-nextest", "nextest", "run"])
+                self.assertEqual(args[-5:-1], ["--profile", "hsearch", "--no-tests=fail", "-E"])
+                self.assertFalse(set(args) & {"--locked", "--offline", "--all-features", "--release", "--target", "--package", "--config"})
+                self.assertEqual(args[args.index("--cargo-metadata")+1], str(runner.root / "cargo-metadata.json"))
+                binary_meta = COV["load"](Path(args[args.index("--binaries-metadata")+1]))
+                selected = args[-1].removeprefix("binary_id(=").removesuffix(")")
+                path = Path(binary_meta["rust-binaries"][selected]["binary-path"])
+                self.assertEqual(COV["owned_artifact"](runner, path), context["binaries"][selected]["artifact"])
+                destinations.append(env["LLVM_PROFILE_FILE"]); executed.append(path)
+                subprocess.run([sys.executable, str(path)], env=env, check=True, timeout=10)
+                return ""
+            with patch.object(runner, "command", side_effect=command):
+                self.run_shards(runner, context)
+            self.assertEqual(len(set(executed)), 2)
+            self.assertEqual(len(set(destinations)), 2)
+            shards = [COV["load"](p) for p in sorted((runner.root / "shards").iterdir())]
+            profiles = COV["INPUT"]["validate_shards"](runner.root, context, shards)
+            self.assertEqual({Path(p).read_text() for p in profiles}, {"fixture", "integration"})
+            self.assertTrue(all(str(runner.root / "profiles") in p for p in destinations))
+
+    def test_stale_replaced_missing_inventory_source_and_production_refuse_before_shard(self):
+        for kind in ("binary-replaced", "binary-missing", "test_inventory", "binaries_metadata", "cargo_metadata", "build_inventory", "production", "source", "binary-count"):
+            with self.subTest(kind=kind), self.frozen() as (runner, context):
+                binary = runner.root / context["binaries"]["fixture"]["artifact"]["path"]
+                if kind == "binary-replaced": binary.write_bytes(b"replacement")
+                elif kind == "binary-missing": binary.unlink()
+                elif kind in ("test_inventory", "binaries_metadata", "cargo_metadata", "build_inventory"):
+                    (runner.root / context[kind]["path"]).write_bytes(b"{}")
+                elif kind == "production": (runner.root / "production.o").write_bytes(b"changed")
+                elif kind == "binary-count": context["binaries"]["fixture"]["test_count"] = 2
+                with patch.object(runner, "command", side_effect=AssertionError("no command on stale input")):
+                    if kind == "source":
+                        with patch.dict(COV["run_frozen_shards"].__globals__, source_identity=lambda: {"head": "b"*40}), self.assertRaises(ValueError):
+                            self.run_shards(runner, context)
+                    else:
+                        with self.assertRaises((ValueError, OSError)): self.run_shards(runner, context)
+
+    def test_changed_inputs_after_first_shard_stop_before_second_and_manifest(self):
+        for kind in ("binary", "inventory", "source"):
+            with self.subTest(kind=kind), self.frozen() as (runner, context):
+                identity = dict(context["source"])
+                def changed(*_args, **_kwargs):
+                    if kind == "binary":
+                        (runner.root / context["binaries"]["integration"]["artifact"]["path"]).write_bytes(b"changed")
+                    elif kind == "inventory":
+                        (runner.root / context["test_inventory"]["path"]).write_bytes(b"{}")
+                    else:identity["head"] = "b"*40
+                with patch.dict(COV["run_frozen_shards"].__globals__, source_identity=lambda: identity), patch.object(runner, "command", side_effect=changed) as run:
+                    with self.assertRaises(ValueError): self.run_shards(runner, context)
+                self.assertEqual(run.call_count, 1)
+                self.assertEqual(list((runner.root / "shards").iterdir()), [])
+
+    def test_command_failure_remains_primary_and_empty_profiles_cannot_qualify(self):
+        with self.frozen() as (runner, context):
+            def failure(*_args, **_kwargs):
+                (runner.root / context["test_inventory"]["path"]).write_bytes(b"{}")
+                raise RuntimeError("original shard command failure")
+            with patch.object(runner, "command", side_effect=failure), self.assertRaisesRegex(RuntimeError, "original shard command failure") as error:
+                self.run_shards(runner, context)
+            self.assertTrue(any("Post-shard" in note for note in error.exception.__notes__))
+            self.assertEqual(list((runner.root / "shards").iterdir()), [])
+        with self.frozen() as (runner, context), patch.object(runner, "command", return_value=""):
+            self.run_shards(runner, context)
+            shards = [COV["load"](p) for p in (runner.root / "shards").iterdir()]
+            with self.assertRaisesRegex(ValueError, "profile"):
+                COV["INPUT"]["validate_shards"](runner.root, context, shards)
+
+    def test_metadata_projection_uses_pinned_binary_summary_not_test_summary(self):
+        with self.frozen() as (runner, context):
+            binary_meta = COV["load"](runner.root / context["binaries_metadata"]["path"])
+            self.assertEqual(set(binary_meta), {"rust-build-meta", "rust-binaries"})
+            for binary in binary_meta["rust-binaries"].values():
+                self.assertEqual(set(binary), {"binary-id", "binary-name", "package-id", "kind", "binary-path", "build-platform"})
+            COV["verify_frozen_inputs"](runner, context, metadata(), ["fixture"])
+            # Even a newly hashed, shape-valid metadata record must match the original inventory.
+            binary_meta["rust-binaries"].pop("integration")
+            path = runner.root / "incomplete-binaries.json"; COV["save"](path, binary_meta)
+            context["binaries_metadata"] = COV["owned_artifact"](runner, path)
+            with self.assertRaisesRegex(ValueError, "Frozen binaries metadata mismatch"):
+                COV["verify_frozen_inputs"](runner, context, metadata(), ["fixture"])
+
+
 @unittest.skipIf(os.name == "nt", "Native process groups are qualified inside Linux")
 class NativeCommandControls(unittest.TestCase):
     def test_dead_leader_retained_pipe_stops_owned_descendant_and_preserves_bystander(self):

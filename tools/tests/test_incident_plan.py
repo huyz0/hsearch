@@ -17,6 +17,8 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M01.15"]["status"] = "in_progress"
         self.tasks["M01.09"]["status"] = "in_progress"
         self.tasks["M01.08"]["status"] = "planned"
+        self.tasks["M03.01"]["status"] = "planned"  # Private preacceptance model only.
+        self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.
         milestones["M01"]["status"] = "in_progress"
 
     def reject(self, message):
@@ -50,7 +52,7 @@ class IncidentPlanTests(unittest.TestCase):
                 self.reject("retain the unresolved original cause")
                 self.tasks["M01.09"][field] = previous
 
-    def test_complete_model_opens_only_agent_task_not_whole_baseline(self):
+    def test_disposition_keeps_baseline_unqualified_and_provider_blocked(self):
         self.accepted_disposition_model()
         PLAN["validate"](self.data, files=False)
         milestones, tasks = PLAN["indexes"](self.data)
@@ -60,7 +62,11 @@ class IncidentPlanTests(unittest.TestCase):
         self.assertTrue(ready("M01.08"))
         self.assertEqual(tasks["M01.08"]["status"], "planned")
         self.assertNotEqual(milestones["M01"]["status"], "done")
-        for task_id in ("M02.02", "M02.04", "M03.01"):
+        # The prospective trait-start profile is independent of incident
+        # closure; it cannot accept the baseline or a real provider.
+        self.assertTrue(ready("M03.01"))
+        self.assertEqual(tasks["M03.01"]["status"], "planned")
+        for task_id in ("M02.02", "M02.04", "M03.02"):
             self.assertFalse(ready(task_id), task_id)
 
     def test_both_tasks_need_the_actual_disposition_record(self):
@@ -85,7 +91,7 @@ class IncidentPlanTests(unittest.TestCase):
     def test_baseline_and_product_edges_cannot_be_removed_after_closure(self):
         self.accepted_disposition_model()
         for task_id, dependency in (("M01.08", "M01.09"), ("M02.02", "M01"),
-                                    ("M02.04", "M01"), ("M03.01", "M01")):
+                                    ("M02.04", "M01"), ("M03.02", "M03.01")):
             with self.subTest(task=task_id):
                 self.tasks[task_id]["depends_on"].remove(dependency)
                 self.reject("Research acceptance gate missing")

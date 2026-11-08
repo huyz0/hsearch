@@ -577,7 +577,7 @@
         {
           "id": "M01.08",
           "title": "Qualify the harness baseline",
-          "goal": "Prove productivity mechanisms work before delegating product tasks.",
+          "goal": "Measure and qualify the frozen harness productivity baseline, independently of explicitly scoped product-task start profiles.",
           "deliverables": [
             "Frozen agent task corpus, parallel integration trial, baseline timing/token/escaped-defect report"
           ],
@@ -957,7 +957,9 @@
             "Qualify real OS iterator boundary and charged worst-case entry/name/native-buffer plus N+1/EOF probe, aggregate nested traversal/depth/FD/work limits, close/error/alias and cap-1/cap/cap+1/large-overflow controls on native Linux x86_64/ARM64.",
             "Qualify truly fresh-process same-domain positive recovery and original-end expiry/equality/wall rollback/forward/absence time; unknown boot/namespace/domain/rewind proof or malformed/uncertain legacy proof refuses without resetting duration or credits.",
             "Pin exact toolchain/image/dependencies; bind observed deployed interpreter/libc/kernel/filesystem/time-domain capability evidence without inventing an exact managed host-kernel install requirement. Native-buffer/name and blocked-syscall uncertainty remain explicit.",
-            "Retain both R3 counterexamples and all inherited relevant controls, exact-source both-role independent review, applicable coverage/no-exclusion predicates and complete required native CI/ci-ok before acceptance."
+            "Retain both R3 counterexamples and all inherited relevant controls, exact-source both-role independent review, applicable coverage/no-exclusion predicates and complete required native CI/ci-ok before acceptance.",
+            "Apply docs/plan/retention-context-native-contract.md: original audit bytes remain scoped logical application-read/requested-work debits; source/metadata/count scopes remain distinct and all original numeric caps/eleven clauses unchanged. Bound Python/C allocation, names/FDs/depth, nested traversal/rescans and N+1/EOF probes, with original-clock/acknowledgment bookends and late/unknown refusals; no universal hidden-kernel/physical-I/O/latency certificate.",
+            "Require trusted expected immutable-image/source/build/mount/backing-name and controlled no-snapshot/no-migration admission. Real native x86_64/ARM64 conditional component positives are required; fixture admission and measured runtime consistency do not qualify M21 deployment, persistence, antirollback/CAS or resource authority. Live original guardian proof supports same-domain fresh recovery only; invisible whole-VM rollback detection is not claimed."
           ],
           "definition_of_done": [
             "Accepted component proves its declared bounded host-context contract only, with source-backed native assumptions and no new allowance; it cannot authenticate a human, create a lease, choose an artifact or retire bytes.",
@@ -968,8 +970,13 @@
             "M01.18"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m01-19-qualified-source.md",
+              "result": "Proposed merged state only: unchanged builder458c96c and code-only CI42432481369 support the conditional native contract; this combined candidate still requires its own deterministic checks, both counted nonauthor roles, exact-head native CI/coverage/ci-ok, normal gate and protected integration before acceptance. No M21 deployment or live operation authority."
+            }
+          ]
         },
         {
           "id": "M01.20",
@@ -1185,7 +1192,7 @@
             "Raw local measurements separated from provider-price/failure-domain estimates; inputs for M02.04, not its acceptance"
           ],
           "validation": [
-            "Coordinator-run pinned-source/public-fixture component experiments only; independent sessions review code/results, with no delegated implementation claim",
+            "Coordinator-supervised pinned-source/public-fixture component work through the actual registered author session/worktree: reversible source development and explicitly bounded ordinary synthetic development controls may follow a root-audited seed and separate normal owner/claim admission before M02.11 integration; experiments and qualification still require actual M02.11 integration and separate admission. Independent nonauthor sessions review code/results, with no general product or agent-productivity acceptance.",
             "Freeze exact feature/target/profile/workload and CPU/RAM/disk/PID/output/deadline envelope before execution; retain raw failure/ambiguity and deliberately failing controls",
             "Both native targets dev/release/applicable allfeatures/doctests/lint and >=90% aggregate/percrate/changed production coverage, exact-source independent review and required full CI",
             "Compare matched sparse/busy/skewed workloads; account for retries, CAS/root/page/KMS/network paths explicitly; never invent consensus or real-provider evidence"
@@ -1351,6 +1358,37 @@
           "owner": "engine/architecture",
           "status": "planned",
           "evidence": []
+        },
+        {
+          "id": "M02.11",
+          "title": "Qualify prospective M02.10 continuation policy",
+          "goal": "Independently qualify the distinct policy-only continuation route before M02.10 experiments, qualification or its sole future candidate checkpoint, retaining the complete frozen candidate history, actual cumulative counters and original acceptance; separately admitted reversible development may precede policy integration.",
+          "deliverables": [
+            "Prospective M02.10 continuation addendum and bounded normative links, with exactly one actor-clause clarification and no implementation, review-tool/schema or allocator change.",
+            "Allowlisted exact-byte public history projection with original provenance, separate raw/canonical hashes, all eight finding keys/four design constraints and a clearly unfilled legacy-resolution sidecar template."
+          ],
+          "validation": [
+            "Verify all original135 other task objects/ledger fields unchanged; M02.10 changes only validation[0] actor wording, retaining dependencies/status/evidence/execution_scope and full144object/12native/480temporal/84unsafe plus coverage/CI/integration/postmerge obligations.",
+            "Verify original M02.10 overall3/formal2 BLOCKED and sole future currentformal1/cumulativeformal3/actualoverall4/max4, all original authors/checks/bases/findings/constraints and no reset; policy review is not candidate review or code-finding resolution.",
+            "Run applicable existing API/plan/generated/docs/review/ownership checks and source/history/ledger/frozen-resource bookends; obtain both exact-final-source eligible nonauthor policy roles, every selected hosted job/ci-ok and normal protected integration before M02.10 experiments, qualification or its sole future candidate checkpoint. Separately admitted reversible development follows the narrow development addendum only."
+          ],
+          "definition_of_done": [
+            "Only this policy source is accepted after its own observed checks, independently counted reviews and protected integration; a candidate done entry is proposed merged status until then. No M02.10 code finding or product/research result is accepted by policy review.",
+            "M02.11 has its own genuine issued0/planned2/hard3 governance lineage, preserves actual policy review events and excludes all policy contributors; it does not consume, replenish or hide any M02.10 candidate packet.",
+            "Unmodified ReviewStore/schemas, full history audit and both exact-packet/source-bound sidecars remain required for the sole later M02.10 candidate; blocked/incomplete/unknown overall4 stops for split/redesign. No claim/resource/native/backend/FFF/publication authority follows."
+          ],
+          "depends_on": [
+            "M01.14",
+            "M02.09"
+          ],
+          "owner": "harness/integrator",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m02-11-qualified-source.md",
+              "result": "Proposed merged FINALCANDIDATE state only: revised development policy remains unaccepted pending same-lineage exact-final-source R2, complete current-source checks/native-hosted CI/ci-ok, normal protected integration and postmerge. Historical R1 binds511 only. No M02.10 experiment/campaign admission, code-finding resolution or counter reset follows from candidate done."
+            }
+          ]
         }
       ]
     },
@@ -1385,11 +1423,22 @@
             "CAS cannot be implemented as unconditional overwrite; all retry decisions preserve request identity."
           ],
           "depends_on": [
-            "M01"
+            "M19",
+            "M01.01",
+            "M01.02",
+            "M01.03",
+            "M01.05",
+            "M01.06",
+            "M01.07"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-01-qualified-source.md",
+              "result": "Proposed merged state only: bounded trait/memory-fault conformance and frozen-inventory collector are implemented; exact BB x64 dev/release coverage is predecessor evidence. This combined candidate still requires its own complete ordinary/native ARM/hosted CI/coverage, both counted independent roles, gate and protected integration before acceptance. No provider/service/format/durability/license/release qualification."
+            }
+          ]
         },
         {
           "id": "M03.02",

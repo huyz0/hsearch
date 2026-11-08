@@ -1,0 +1,126 @@
+{
+  "packet_sha256": "96c998c90fb37f4922729623bac59782ae4741a3927bfdc9b76c422184ff6b07",
+  "packet": {
+    "schema_version": 1,
+    "task_id": "M02.10",
+    "round": 1,
+    "planned_rounds": 2,
+    "hard_ceiling": 3,
+    "base": "b19074d3022694b6180f115c875f9883c1ac9425",
+    "head": "375cc084e27e07846041bd9f8cf8126ab5ac2b65",
+    "tree": "db886ef75560f2e2cf7271f1b02ecff0170be527",
+    "source_digest": "d42af5cf1dbb38d3a7be6ac34f854062a8a0a8661b19c03c9e7e083d91f45794",
+    "implementer_session": "/root",
+    "reviewers": {
+      "correctness_tests_claims": "/root/publication_review",
+      "architecture_security": "/root/sandbox_security_review"
+    },
+    "required_roles": [
+      "architecture_security",
+      "correctness_tests_claims"
+    ],
+    "changed_paths": [
+      ".github/workflows/bootstrap.yml",
+      ".github/workflows/native-durability.yml",
+      "AGENTS.md",
+      "Cargo.lock",
+      "Cargo.toml",
+      "crates/testkit/Cargo.toml",
+      "crates/testkit/research/native_bundle.py",
+      "crates/testkit/research/native_capture.py",
+      "crates/testkit/research/native_ci.py",
+      "crates/testkit/research/native_controller.py",
+      "crates/testkit/research/native_failure_verify.py",
+      "crates/testkit/research/native_sample_verify.py",
+      "crates/testkit/research/native_scale_verify.py",
+      "crates/testkit/research/native_tools.py",
+      "crates/testkit/research/native_verify.py",
+      "crates/testkit/research/native_worker.py",
+      "crates/testkit/research/native_workload_verify.py",
+      "crates/testkit/research/object_controller.py",
+      "crates/testkit/research/object_io.py",
+      "crates/testkit/research/object_verify.py",
+      "crates/testkit/research/object_worker.py",
+      "crates/testkit/tests/durability/budget.rs",
+      "crates/testkit/tests/durability/common.rs",
+      "crates/testkit/tests/durability/mod.rs",
+      "crates/testkit/tests/durability/openraft.rs",
+      "crates/testkit/tests/durability/raft_rs.rs",
+      "crates/testkit/tests/durability/sample_gate.rs",
+      "crates/testkit/tests/durability/workload.rs",
+      "crates/testkit/tests/fixtures/durability-traces.json",
+      "crates/testkit/tests/native_durability.rs",
+      "docs/plan/PROGRESS.md",
+      "docs/plan/coordinator-research.md",
+      "docs/plan/dependencies.json",
+      "docs/plan/evidence/m02-09-integrated.md",
+      "docs/plan/evidence/m02-10-components.md",
+      "docs/plan/milestones/M02.md",
+      "docs/plan/research/durability-envelope.json",
+      "docs/plan/research/durability-execution.md",
+      "docs/plan/research/local-durability-feasibility.md",
+      "docs/plan/research/native-engine-coverage-profile.md",
+      "docs/plan/research/native-engine-feasibility.md",
+      "docs/plan/roadmap.md",
+      "docs/plan/tasks.json",
+      "tools/check.py",
+      "tools/ci.py",
+      "tools/durability_research.py",
+      "tools/tests/test_ci.py",
+      "tools/tests/test_durability_research.py",
+      "tools/workspace.py"
+    ],
+    "checks": [
+      {
+        "name": "schema-static",
+        "head": "375cc084e27e07846041bd9f8cf8126ab5ac2b65",
+        "conclusion": "success",
+        "evidence": "Exact complete implemented policy/API/plan/generated/dependency/feature checks passed in full native source proof SHA=782d680242c3931a77592a70ac24d9ae5e3188a1f9636a2211c58435ae7c89d8; exact retained prior38lock identities=2ead2a5aa1e8137edb5c14fd2beaa97f654b82fe8296b83f7c473c3b3a60020d"
+      },
+      {
+        "name": "local-linux",
+        "head": "375cc084e27e07846041bd9f8cf8126ab5ac2b65",
+        "conclusion": "success",
+        "evidence": "Full42Rust/profile dev+release/allfeatures/no skips/doctests/lint/fmt/prodbuild,389Python/no skips,11actual compiler controls and6strict capped M09engine repetitions. Source-bound fullproof=782d680242c3931a77592a70ac24d9ae5e3188a1f9636a2211c58435ae7c89d8"
+      },
+      {
+        "name": "production-coverage",
+        "head": "375cc084e27e07846041bd9f8cf8126ab5ac2b65",
+        "conclusion": "success",
+        "evidence": "Exact source local both523/523;90floors unchanged, engine0/0N/A, changed0/0N/A bound to immutable shipped production/compiler/coverage objects and exact audited dev-only graph; context4/nativeJSON3.1/files/physical/compiler/source predicates retained. Proof=b7bdb520f641cb193eff062cecffdfa7f28805997e18920736c93292c1b35f09"
+      },
+      {
+        "name": "native-oracles",
+        "head": "375cc084e27e07846041bd9f8cf8126ab5ac2b65",
+        "conclusion": "success",
+        "evidence": "144actual RustFS object cases plus12fresh native candidate/profile/repetition workers,40contexts/sample including18matched, fixed failure/membership/snapshot and21scalegroups;7unsafe-copy controls each, actual wire/state/source/tool/cgroup/actor/command/cleanup independently reopened;4actual corrupted evidence controls refused. Rawproof=6b03ae54e6f7b0b99af29c81f0464a1808271785e043d857150cae27979ec1d1"
+      },
+      {
+        "name": "publication-provenance",
+        "head": "375cc084e27e07846041bd9f8cf8126ab5ac2b65",
+        "conclusion": "success",
+        "evidence": "49changed exact UTF8 Git blobs no credential/privatehost signatures; pattern scan only, actual independent source/license review still required. Scan=68e28666d4e4312c28149ebf5a88708e44cdc00994fb7552519a8e9fb5cdaa77; combined161package locked audited inventory=8bc71c1d0c72db2fc01800892313718d0581b1701760cd6ed7dc617cd672d5da; coordinator helpers must be reviewed too {\"m02_durability_zip.py\": \"6d08c96a69c64a663e4a897f86e13aeb4fe2ebb550038f9dcc7d47ad7753019c\", \"verify_hsearch_ci_durability.py\": \"766184e67b08474b137bd57678aaeb40c1bdbcb0e8c8949f73e4e2460c89a472\", \"verify_m02_durability_public.py\": \"1d537157e36507481bcb55d00d220d25b2ed05512402ca7899e9dbbb4982c5ed\"}"
+      },
+      {
+        "name": "resource-provenance",
+        "head": "375cc084e27e07846041bd9f8cf8126ab5ac2b65",
+        "conclusion": "success",
+        "evidence": "All original worker/history/sample/transport/write/sync/queue/artifact bounds unchanged; actual combined metadata+raw+diagnostic retained caps pass. Original oversized/parser/Clippy/concurrency/formatter/strict15s failures preserved and nonqualifying. Pure guard metadata11/log7/ordinary7/retained4/ZIP9 negatives plus normal/ZIP64 and actual prior official ZIP probe pass. Host/guest path replay failure preserved then12actual command mapping controls and full raw recheck passed; no native workload rerun. All prior relevant main verifier predicates retained except documented inventory/selected-job counts and immutable shipped-base audit. Helpers={\"m02_durability_zip.py\": \"6d08c96a69c64a663e4a897f86e13aeb4fe2ebb550038f9dcc7d47ad7753019c\", \"verify_hsearch_ci_durability.py\": \"766184e67b08474b137bd57678aaeb40c1bdbcb0e8c8949f73e4e2460c89a472\", \"verify_m02_durability_public.py\": \"1d537157e36507481bcb55d00d220d25b2ed05512402ca7899e9dbbb4982c5ed\"}"
+      }
+    ],
+    "required_check_names": [
+      "ci-ok",
+      "local-linux",
+      "native-oracles",
+      "production-coverage",
+      "publication-provenance",
+      "resource-provenance",
+      "schema-static"
+    ],
+    "reason": "FIRST formalR1/overall2 after retained designoverall1/formal0; at most2formal/hardoverall3, no reset across claims or failed histories. Entire publicb190->current source49paths, not last commit only, plus external coordinator helpers/hashes in publication/resource checks and M02.10_REVIEW_CONTEXT.md. Verify design CAS barrier/ETag P2 repair and four security constraints against final actual code/evidence; formal previous_findings is empty because designprecheck was separately recorded, do not invent protocol resolutions. All current local final-source deterministic gates passed; hosted native x64/ARM9jobs/official raw artifact acceptance/protected merge/postmerge remain pending, never mark them passed. Raw local12sample+144object full oracle and7unsafe copies each plus actual missing/reused/stale/byte corruptions pass. All budgets and original assertions/workloads preserved. Atomic normal-entry Ready/application coalescing has private staging and actualsync; membership mutations retain old ordered path, LightReady separate. New Ready-generation oracle strictness retained. Controller/worker/codegen/native tools/exactsource/nextest/cgroup/emptytarget isolation and every artifact quota require independent review, including combined diagnostics and metadata. Read all original failure evidence listed in context; original61acstderr-parser recovery is not qualifying matrix,9a strict release2deadline failure not erased by375ccsuccess. Every completed new worker had fresh CID/volume/UUID and normal verified cleanup; retained original8GiB and failed-full3GiB storage remains reserved with no force cleanup. Physical actual HTTP/wire/voter-write/resource observations separate from modeled clocks/prices/policy domains/KMSunits (actualKMS0). No comparative performance/provider/fleet/physical-powerloss/runtime authority/API/finalformat/crypto/license/release/deploy acceptance. Source/license combined inventory136prospective+20base-only externals/161total includes pinned bundledprotoc; actual ARM codegen execution remains pending hostedCI. New9-job CI checker keeps all old relevant coverage/source/catalog/native/6engine predicates,42-test complete ordinary profiles, official same-run/head/attempt/app/suite/raw identity,24fresh samples/288objectcases, full artifacts matching official job execution frames and equal-tree-only postmerge source projection. Bounded ZIP central-directory preparse and exact official size/hash download provenance must be inspected; final actual hosted inputs not yet available. OriginalM01.09causeUNCONFIRMED/M01.08open and downstream wholeM01/product requirements unchanged. Return honest independent findings (empty valid), checks run/not run and exact source/packet bindings; no implementation edits or formal GitHub approvals as user. Additional work after unresolved overall3 requires genuine split/redesign, never another packet or weakened checks.",
+    "previous_findings": [],
+    "packet_payload_bytes": 9232,
+    "estimated_tokens_bytes_div4": 2308,
+    "token_count_is_estimate": true
+  }
+}

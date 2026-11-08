@@ -1,0 +1,55 @@
+# M02.11 successor combined policy candidate: unaccepted
+
+Current phase: proposed merged `done`/evidence in this final candidate only; actual policy acceptance is pending exact-final-source checks, the same issued1/planned2/hard3 lineage's R2, selected current-source CI/ci-ok, protected integration and postmerge. The immutable4f817522 development seed remains planned/unaccepted. Candidate done cannot admit M02.10 campaigns or qualify code findings. The [v2 snapshot](delivery-integration-v2.md) records actual PR29 main adoption and unchanged implementation bodies; main postmerge qualification remains pending at the bound preparation observation.
+
+The narrow [development route](../m02-10-development.md) is retained. Historical R1 at511 remains exact-source evidence only, not approval of this revision. Original992 review base, actual authors and all candidate counters/sidecars remain unchanged. No packet or gate is issued by this preparation.
+
+## Retained development-seed and prior input context
+
+The notes below describe their own source phases, including4f's planned status and v1's then-pending actual-main adoption. They are not present qualification claims. Original accepted/factual records and17rawhistory bodies remain exact.
+
+# M02.11 revised policy seed: unaccepted
+
+Current status: planned, with no ledger acceptance evidence. The [development addendum](../m02-10-development.md) supersedes only the historical blanket pre-integration development hold. Root must audit the seed and separately admit the actual normal code owner/import scope before reversible development or explicitly bounded ordinary synthetic controls. Experiments, qualification, the sole future M02.10 candidate and all gates still require actual M02.11 integration and separate admission.
+
+Historical R1 at `51187fb42ce6f644f42d4c1a389643f86f50bf34` had both nonauthor roles clear at that exact source. Retain issued1/planned2/hard3 and original public review base `992084caa931fc64b1589350453fde9fa0e3a765`; do not reuse that clearance as approval of this revision or issue a policy-only review round for seed preparation. Same-lineage final-source checks/review, selected hosted CI/ci-ok and integration remain unrun. The external seed handoff binds current source, ledger delta, observed checks and frozen/engine bookends. All actual policy contributors below plus the development assessment author/coordinator remain disclosed and excluded from future reviews.
+
+## Historical51187fb source preparation record
+
+The following record is preserved as history. Its intended merged `done` and integration-before-any-admission/execution statements describe the earlier source, superseded only for the development phase above. Original accepted evidence, root disposition and17 raw history bodies remain unchanged.
+
+# M02.11 policy-only source candidate
+
+**Historical R1 source snapshot:** the original sections below describe `51187fb42ce6f644f42d4c1a389643f86f50bf34`. References there to this candidate, pending first reviews, unchanged bodies or other-task isolation are scoped to that exact original head. Both R1 policy roles were clear at this head. Its135-other-task/sole-actor-clause assertions describe that isolated policy R1 comparison; the combined tree also retains the other independently identified task contributions. The input commit and original evidence remain immutable.
+
+**Current local preparation:** [delivery-integration-v1](delivery-integration-v1.md) is a new combined tree, not an acceptance certificate. M02.11 retains one issued round/planned2/hard3 and its original992 review base; no new packet or clearance is claimed here. Actual PR29 protected integration/postmerge, actual-main adoption and fresh final qualification precede later same-task R2.
+
+Status: **pending this source's deterministic checks, both counted independent policy reviews, exact-source hosted CI/ci-ok and protected integration**. The candidate M02.11 ledger `done` describes the intended merged state only. It is not current acceptance, M02.10 admission, implementation clearance or a code-finding resolution. No future review, run, gate or merge identity is invented here.
+
+## Distinct qualification unit
+
+M02.11 qualifies the [prospective M02.10 continuation policy](../m02-10-continuation.md), not a witness implementation. Its prerequisites are accepted M01.14 and M02.09. The existing ReviewStore requires a genuine ledger task ID, so policy review has its own issued0/planned2/hard3 lineage and actual governance review events. This cannot consume or disguise the sole future M02.10 candidate checkpoint, replenish a legacy budget, resolve its findings or grant product acceptance.
+
+The governing [root disposition](m02-10-history/root-disposition.json) is SHA256 `a73267bb731fe52c991601d1490cd781570e68736cced61f66f8d9cd67107b59`. It requires actual independent policy review/checks/integration before any M02.10 admission or execution. Historical M02.10 remains overall3/formal2 BLOCKED. The sole prospective candidate would be current-registry formal1, cumulative formal3, actual overall4/max4, with the actual current count checked before issuance. Lost/incomplete reports or source changes after issuance do not grant a replacement checkpoint. Blocked, incomplete, stale or unknown overall4 stops for split/redesign.
+
+All original M02.10 prerequisites, `execution_scope`, deliverables, DoD, status and evidence remain unchanged. Only validation[0]'s actor clause is clarified to actual registered coordinator-supervised authorship, under the separately accepted policy. M02.04/whole-M01 and every product boundary remain. The full144 object/12 native/480 temporal/84 unsafe matrix, original quotas/pins, >=90% applicable production coverage, both native architectures/profiles, full selected official CI/ci-ok, final independent roles, protected integration and postmerge remain obligations. Policy checks cannot supply those code/native results. M07/M12/M13/M17 frozen histories and prohibitions stay unchanged.
+
+## Exact history projection
+
+The [projection index](m02-10-history/projection-index.json) maps17 explicit original files copied byte-for-byte: public index, legacy findings, root disposition, design precheck/proposal/two reports, two formal packet wrappers/statuses/four reports, hard3 disposition and unfilled sidecar template. It records original paths, exact byte counts and raw SHA256, plus independently recomputed canonical hashes for the two contained packets and four report objects. Wrapper-file hashes are not canonical packet hashes. Both packet/status objects and all recorded blocked report hashes match the retained index.
+
+All eight finding keys and four P3 design constraints are retained exactly. Earlier reported resolutions remain historical statements; every `new_final_source_resolution` is still null. Both future roles must examine all keys/constraints at the exact future packet/head/tree/digest and cite concrete evidence or continuing blockers. The [template](m02-10-history/legacy-resolution-sidecar.template.json) is unfilled, explicitly not a report, resolution or evidence. Normal schema verdicts, exact sidecar bindings and the coordinator's complete gate-time history audit remain required without changing review schemas/tools.
+
+The projection excludes the700440-byte legacy registry, workstate, issuance scripts, private source tree, raw research payloads and unrelated records. Selected report prose/metadata were inspected; bounded private-key/token/credential-URL/value scans found no matches. This is a scoped inspection, not a general secret-free certificate. No artifact has been published by this source preparation. The original root disposition's then-unlocated review-state observation remains exact; the later public-index's bounded registry observation is separately disclosed, with no registry import, fabrication or retarget. A local history-directory `.gitattributes` marks only the four original CRLF JSON bodies as `-text`, preventing global LF normalization from changing their raw hashes; global attributes and review guards remain unchanged.
+
+## Ownership and authors
+
+Root assignment SHA256 `66006ef53248c45a5455f7d0cb8cb2d32c49db05bc98e6dc2f08da04a2945a9d` names integrator `01a1ad0c-a57c-7462-9adc-44dda960885a` for twelve policy paths on `codex/m02-10-continuation-policy-v1`, at freshly fetched main `992084caa931fc64b1589350453fde9fa0e3a765`. The pre-edit binding records the narrow same-owner exception for tasks.json, PROGRESS.md and roadmap.md reserved by frozen M08. This is serialized administrative integration, not a TaskStore allocation or immutable packet/owner/record change. Source fingerprints prove bytes, not ownership.
+
+The draft contributor handoff is SHA256 `66d3c3dad88523b02fad03a198aa830d840bf8ff96a9bce19fa787d12fdf6c14`; integrator proposal is SHA256 `a12ab47c0f6ad15f97505a96402d3934eb02374d063a67fdc88dbe06831d43da`. Policy contributors include root `01a1ab4c-4786-7472-bdb7-59c35c310347`, draft author `01a1ab9f-fde6-7952-9877-efb2fce35b9c`, metadata investigator `01a1ab60-4bff-7752-9544-a9eab0fca10a` and this integrator; all are excluded from policy reviews. Retain recorded legacy implementer `/root` and reviewer identities as historical provenance. Add every actual incoming contributor before assignments; recorded identities do not prove absence of unrecorded authors.
+
+## Observations and remaining gates
+
+The external clean-source handoff records actual command results, Windows skips, exact source head/tree/digest, public twelve-path fingerprint and actual `ReviewStore.source()`, ledger delta, author/history hashes and frozen/source/three-existing-lease bookends. It verifies all original135 other task objects and other ledger fields unchanged, M02.10's sole actor-clause edit, and one genuine added M02.11 definition. Only affected authorized generated outputs are written through the canonical renderer.
+
+One preparation helper initially stopped at Windows' default text encoding after writing only the exact allowlisted history bodies; explicit UTF-8 reading corrected it, and existing body bytes were checked before continuation. Precommit also stopped on an overbroad expectation that unrelated live M19 review history remain empty; the scoped checks retain the specified six frozen sources/records and three existing leases while allowing independent M03/M19 work. The first whitespace check treated the retained CRLF framing as trailing whitespace; the local attributes explicitly recognize `cr-at-eol` for those four bodies while retaining blank-at-eol, blank-at-eof and space-before-tab checks. Failed diagnostics remain external; no original body was normalized or relabeled. Native Rust/provider/backend/coverage campaigns are unrun in this policy-only preparation. No M03 source/workspace/collector or resource changes, M02.10 repair/admission, review issuance, publication or ready/merge transition occurs here. M19/PR29 publication authorization remains separate and is not retried by this assignment.

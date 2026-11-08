@@ -1,0 +1,44 @@
+{
+  "head": "adb96aa5a7ef2f3f499366ccee49867b3be995df",
+  "tree": "8c817e83962eb79e2eda516c63cbfb805ed3aa95",
+  "source_digest": "190bb3b87b264bc1027bf611d179d2e8ea9096c66cb59acd120a47c1e8ea3c76",
+  "schema_version": 1,
+  "packet_sha256": "b77a80c51fd00ae5c6ca0fbd3a80cf73158d8f3d66e564369d355d72c087cbc9",
+  "role": "architecture_security",
+  "reviewer_session": "/root/sandbox_security_review",
+  "conclusion": "blocked",
+  "basis": "Whole original public b19074d3022694b6180f115c875f9883c1ac9425-to-adb96aa5a7ef2f3f499366ccee49867b3be995df integration reviewed:51paths plus all3exact frozen P-root helpers. Included controller/admission/CID uncertainty and cleanup; pinned dev-only source/license/codegen inventory; normal Ready pure staging/persistence/application plus post-Ready membership/LightReady and recovery; physical-versus-policy-domain accounting; timers/aggregate resources/diagnostics/artifacts; unchanged compiler/source/production-coverage policy; and9official-job/public-artifact binding. Four original scenarios are repaired. Simple early/uncommitted-apply mutations refuse, but matched temporal durability remains PARTIAL: SEC04 passes complete40-context sample. This is an actual oracle false acceptance, not observed upstream-library misconduct or a cryptographic-attestation requirement. Own checks112tests/110pass/2native-onlyskips, API/plan/durability static pass; clean source/head/index and helper bookends equal. Own mocks verify exited-leader TERM/group-probe/KILL and all3copy adapters refuse2MiB before payload creation; actual object positive and missing/forged/unlimited header negatives checked. Reviewed hash-bound completed coordinator evidence, not native-rerun here:393Linux/no skips,42Rust/profile,11compiler controls,6engine repetitions,144objects/12fresh native samples/480temporal contexts/84unsafe controls,both production523/523. Frozen production/policy objects, complete matrices, floors and inventoried dev-only graph retained. No new concrete license/credential/publication issue established; no hsearch reuse license inferred. Scope remains local component research: one physical cluster, distinct compatible single-class batches, no authority/KMS/provider/fleet/distributed/runtime/format/crypto or productionRSS acceptance. PR draft independent durable-quorum guarantee is blocked. FormalR2 is overallhard3 after preserved design/R1; unresolved SEC04 requires genuine split/redesign, never another packet/reset/pass. HostedARM/x64 nine-job/protected integration pending; M01.09causeUNCONFIRMED/M01.08open. No source/store/helper/claim/resource/native/GitHub mutation or denied-action retry. Verdict unrecorded.",
+  "findings": [
+    {
+      "id": "SEC04_DURABLE_QUORUM_ACCEPTS_UNRELATED_SYNC",
+      "priority": "P2",
+      "file": "crates/testkit/research/native_commit_verify.py",
+      "line": 223,
+      "reproduction": "With TEMP=TMP=D:\\codex\\2026-11-01\\task\\test-temp and PYTHONDONTWRITEBYTECODE=1, use python -B on root M02.10_R2_SECURITY_QUORUM_REPLAY.py then M02.10_R2_SECURITY_QUORUM_SAMPLE.py (pure retained-byte replays). Actual OpenRaft run c86eb9a226f00055158d2a7b,workload-00,entry5/sparse-7-003 has unrelated follower2 sync518, first entry5 transmission568, actual follower entry5 sync595, append/flush596/597, leader callback707/applied732. Move596,597,707 and full leader machine IO/application708,709,710,711,712,713,714,726,727,730,731,732 immediately after568; reindex and assign moved at_us from preceding event. Keep follower IO later, raw wire/state bytes/counts unchanged; recount copied event hash/extents and repack only that context into original sample. Current complete40-context verification passes. Event SHA9a4e40337100d9f9c0d3fe0502c33d7d25e0e96ff04d9d98a5bbdcd6b00117ec; indexSHA01135d307dcd2400479e3e27942caae3a23954209bfcac9f48b90412a97bb630. Owned copies removed; originals unchanged.",
+      "expected": "Refuse committed application before a prior quorum actually persisted this exact entry/operation. Derive each durable entry/prefix from the corresponding completed file+directory-synced transaction and its serialized content. A newer unrelated sync plus append declaration cannot substitute. Preserve all prior source/raw/unsafe/finite-resource controls.",
+      "observed": "native_failure_verify.py154-158 admits the moved append against unrelated log sync518. native_commit_verify.py178-185/223-226 marks its delivered identity durable; frame():197 skips log-only content. The leader callback/application is certified before actual follower entry5 sync595. order_events plus unchanged workload pass; native_sample_verify accepts18workloads/all40temporal/all7unsafe controls. Thus a declaration counterfeits prior durable quorum while actual IO remains later. Independent temporal-commit/application requirement is incomplete; this does not assert either library actually executed this schedule."
+    }
+  ],
+  "resolutions": [
+    {
+      "review_key": "1:correctness_tests_claims:OBJECT_RAW_EXECUTION_PROVENANCE_UNCHECKED",
+      "evidence": "Original scenario resolved. Frozen P-root verify_m02_durability_public.py SHA94e5694ff3d570e850c5435d7e2cd489fcd8c4fca0fee07c37326b7f8df7a7c5 calls verify_object_execution first, binding one first raw run_started to outer run/source/fixture/envelope/target/UID/cgroups, acknowledged CID/engine/mounts and actual worker/monitor/verifier evidence. Own M02.10_R2_SECURITY_CHECKS.json passes actual144-case context and refuses missing-start, forged-source and unlimited/root/other-target. Completed full-public recounted forged-header controls reviewed. Native SEC04 is separate."
+    },
+    {
+      "review_key": "1:correctness_tests_claims:MATCHED_ORACLE_ACCEPTS_UNCOMMITTED_APPLICATION",
+      "evidence": "PARTIAL ONLY; obligation remains blocked by SEC04. New wire identity/operation/membership, callback/certified prefix and actual synced application-image checks reject original simple uncommitted apply,12stored complete-sample temporal and3otherwise-old-valid OpenRaft mutations. However own M02.10_R2_SECURITY_QUORUM_REPLAY.py/.json and QUORUM_SAMPLE.py/.json move follower append/flush declarations to reuse unrelated sync518 and admit leader application before actual follower entry5 sync595. Full18workloads/40temporal/7unsafe sample passes. Cannot mark temporal proof complete until durable entry identities are derived from exact synced transaction content and this counterexample refuses."
+    },
+    {
+      "review_key": "1:architecture_security:SEC01_EXITED_LEADER_GROUP_NOT_REAPED",
+      "evidence": "Original scenario resolved. native_tools.bounded finally signals group regardless of leader poll, probes through finite grace, KILLs survivors and reaps preserving primary failure. Own mock recordsTERM15/probe0/KILL9 and wait once after exited leader, retaining deadline ValueError. Actual Linux regression tools/tests/test_durability_research.py1392+ covers exited and TERM-exited leaders/TERM-ignoring pipe holders in completed393Linux/no-skips proof. Reviewed rather than rerun on Windows; host native-only skips explicit."
+    },
+    {
+      "review_key": "1:architecture_security:SEC02_HOST_COPY_QUOTA_CHECKED_AFTER_ALLOCATION",
+      "evidence": "Original scenario resolved. bounded_transfer.py admits bounded Docker cp archive bytes/framing/type/name/size/hash before exclusive regular host-file creation; all3native_controller.copy_bundle/object_controller.copy_artifacts/native_capture.copy paths use it. Own2MiB invalid-source controls through actual adapters confirm zero payload files/zero old cp calls. Focused tests retain oversize descriptor/stream and link/type/extra/truncated/name/hash refusals plus regular/PAX positives. Actual144object/12native source-bound proof exercises archive export under unchanged caps; not rerun here."
+    },
+    {
+      "review_key": "1:architecture_security:SEC03_SNAPSHOT_OVERWRITES_APPLIED_MEMBERSHIP",
+      "evidence": "Original scenario resolved. raft_rs.rs from_disk restores state.conf_state after older snapshot/entries and before RawNode::new (set_conf_state379). membership_reopen_control219 snapshots learner4, applies later voter4 without refreshing snapshot, reopens node1 and checks actual tracker voters1234/no learners/joint sets/progress4. Completed42Rust/profile exact-source proof includes actual intermediate reopen. Own source check confirms ordering/case; no native rerun or deferred membership/LightReady relaxation."
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "task": "M02.10",
+  "kind": "independent_design_precheck",
+  "role": "correctness_tests_claims",
+  "reviewer_session": "/root/publication_review",
+  "proposal_sha256": "49ce2032d8257b7270850ec7d01ee99824e755488feacd1f8356381cd30e7556",
+  "committed_base": "f9d15ccb1ecffe369ef2da05c9fc59d11b3ff597",
+  "committed_base_tree": "04dad82d441a23361e9f8287f5c74fefd642eb22",
+  "public_review_base": "b19074d3022694b6180f115c875f9883c1ac9425",
+  "conclusion": "changes_required",
+  "review_budget": {
+    "overall_round": 1,
+    "formal_issued": 0,
+    "remaining_max_formal_rounds": 2,
+    "hard_overall_ceiling": 3
+  },
+  "findings": [
+    {
+      "id": "CAS_SCHEDULE_AND_ETAG_LINEAGE_AMBIGUOUS",
+      "severity": "P2",
+      "evidence": {
+        "proposal_locations": [
+          {
+            "file": "M02.10_DESIGN_PROPOSAL.md",
+            "line": 26,
+            "detail": "One request per lane and four globally."
+          },
+          {
+            "file": "M02.10_DESIGN_PROPOSAL.md",
+            "line": 42,
+            "detail": "Four contenders x eight rounds against one shared ETag, up to32simultaneous attempts; no required fresh-tag/round barrier/content-change rule."
+          }
+        ],
+        "reproduction": "Run M02.10_DESIGN_CORRECTNESS_CAS_REPLAY.py. Pure content-stable-token CAS models produce8success/24conflict with fresh per-round tags and changed bodies;1/31 when one initial tag is reused;32/0 for unchanged-body writes that preserve the tag. Each can be scheduled with peak4; the separately permitted32-overlap schedule also exceeds the declared4-global limit by8x. These are abstract counterexamples, not observed RustFS behavior.",
+        "check_artifact": "M02.10_DESIGN_CORRECTNESS_CAS_REPLAY.json"
+      },
+      "requested_fix": "Freeze eight sequential, barriered rounds of four contenders, one freshly read shared tag per round and at most four global requests. Use distinct round/generation/contender-bearing replacement bodies and verify the winner identity plus changed tag with an independently counted GET before the next round. Pin expected8winners/24conditional conflicts absent unexpected errors; retain raw412/409/other statuses. Keep the known-conflict GET+one-retry as a separate bounded case. Treat unchanged tags or unresolved results explicitly, not as an inferred successful round. Retain the wrong schedule/body/ETag variants as red controls.",
+      "scope": "Pre-freeze experiment design/accounting/admission, not an implemented-code or measured-provider finding."
+    }
+  ],
+  "checks": {
+    "source_records_verified": 19,
+    "license_artifact_blobs_verified": 91,
+    "case_count_arithmetic_consistent": true,
+    "pure_cas_counterexample_exit": 0,
+    "evidence": "M02.10_DESIGN_CORRECTNESS_CHECKS.json"
+  },
+  "implementation_requirements": [
+    "Freeze exact event timestamps/500ms window semantics, first-dirty batching deadlines/natural final drain, and candidate-specific tick/heartbeat/election/snapshot configuration before measurements. raft-rs RawNode::tick is application-driven; the audited example100ms is an example, not an automatic shared default.",
+    "Give16KiB batch/32KiB queue caps explicit encoded-versus-logical byte scopes. Keep offered-event terminal dispositions separate from attempt statuses and temporary client-unknown states; a resolved unknown is not a second offered event. Count GET/retry/response/orphan/root/page operations and directed serialized edges independently.",
+    "Preserve strict capped repetitions on both architectures, full ordinary suites/source-bound coverage and original gates. Use separate new M02.10 supporting helpers rather than modifying accepted M02.09 reports/helpers."
+  ],
+  "preflight_status": {
+    "initial_failure_retained": true,
+    "later_source_license_inventory": "V2 record and91full blobs/hash-linked qualification evidence verified; this closes the missing-root-license inventory issue only.",
+    "protoc_x64": "Exact inventoried ELF/version-only3.9.0 receipt retained, not executed by this reviewer.",
+    "protoc_arm": "NOT_RUN; exact ELF/hash/version/effective compiler selection still must qualify before native compilation.",
+    "remaining_scope": "No candidate execution, actual code-generation result, native persistence/network/RustFS experiment, reproducible binary build or release-license qualification inferred."
+  },
+  "limitations": [
+    "Frozen proposal only; current coordinator untracked drafts are outside this review and were not inspected.",
+    "No source, task ledger, review store, resource, native build, accepted M02.09 artifact or formal GitHub review mutation.",
+    "The intended CAS repair communicated by the coordinator is not implementation evidence or clearance.",
+    "Overall1/formal0 is retained; final implementation gets at most two formal rounds under overallhard3."
+  ]
+}

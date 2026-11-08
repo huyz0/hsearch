@@ -20,6 +20,7 @@ WORKSPACE = {
     "hsearch-types": {"path": "crates/types/", "dependencies": []},
     "hsearch-observe": {"path": "crates/observe/", "dependencies": ["hsearch-types"]},
     "hsearch-engine": {"path": "crates/engine/", "dependencies": ["hsearch-observe", "hsearch-testkit"]},
+    "hsearch-object": {"path": "crates/object/", "dependencies": []},
     "hsearch-testkit": {"path": "crates/testkit/", "dependencies": []}}
 
 
@@ -59,7 +60,7 @@ class SelectionControls(unittest.TestCase):
 
     def test_rename_uses_both_paths_and_deletion_uses_owner(self):
         value = choose(b"R100\0crates/types/src/old.rs\0crates/testkit/src/new.rs\0")
-        self.assertEqual(value["packages"], sorted(WORKSPACE))
+        self.assertEqual(value["packages"], sorted(set(WORKSPACE) - {"hsearch-object"}))
         value = choose(b"D\0crates/observe/src/old.rs\0")
         self.assertEqual(value["packages"], ["hsearch-engine", "hsearch-observe"])
 
@@ -80,6 +81,17 @@ class SelectionControls(unittest.TestCase):
         for raw in (b"", b"M\0file", b"R100\0old\0", b"U\0file\0", b"M\0../bad\0"):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 CI["changed_paths"](raw)
+
+    def test_object_is_a_production_selection_not_an_unrelated_consumer(self):
+        value = choose(b"M\0crates/object/src/lib.rs\0")
+        self.assertEqual(value["packages"], ["hsearch-object"])
+        self.assertEqual(value["coverage_packages"], ["hsearch-object"])
+        self.assertEqual(value["profiles"], ["dev", "release"])
+        self.assertEqual(value["selected_jobs"], ["docs", "linux-x64", "linux-arm64"])
+        full = choose(b"M\0shared.rs\0")
+        self.assertEqual(full["coverage_packages"], sorted(CI["PRODUCTION"]))
+        self.assertIn("hsearch-object", full["coverage_packages"])
+        self.assertNotIn("hsearch-testkit", full["coverage_packages"])
 
     def test_graph_uses_optional_build_dev_target_edges_and_renames(self):
         root = Path(__file__).resolve().parents[2]
@@ -180,6 +192,40 @@ class ResultControls(unittest.TestCase):
             self.assertTrue(all(flag in command for flag in ["--locked", "--offline", "--all-features", "--no-tests=fail"]))
             self.assertEqual(command[command.index("--profile") + 1], "hsearch")
             self.assertTrue("--config" in command and any(str(arg).endswith("cargo-correctness.toml") for arg in command))
+
+    def test_object_only_preserves_workspace_suites_and_its_production_gate(self):
+        value = choose(b"M\0crates/object/src/lib.rs\0")
+        commands = []
+        with patch.dict(CI["native"].__globals__,
+                        output=lambda command: HEAD.encode() if command[0] == "git" else b"{}",
+                        graph=lambda _metadata, _root: WORKSPACE,
+                        run=lambda command, **kwargs: commands.append(command),
+                        COVERAGE=fixture_coverage(),
+                        qualified_coverage_base=lambda base, head: base):
+            CI["native"](value)
+        ordinary = [command for command in commands
+                    if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "-E" not in command]
+        self.assertEqual(len(ordinary), 2)
+        self.assertTrue(all("--workspace" in command and "--no-tests=fail" in command for command in ordinary))
+        self.assertEqual(sum("--release" in command for command in ordinary), 1)
+        build = next(command for command in commands if command[:2] == ["cargo", "build"])
+        self.assertIn("--lib", build)
+        self.assertEqual(build[-2:], ["--package", "hsearch-object"])
+        coverage = next(command for command in commands if "tools/coverage.py" in command)
+        self.assertEqual(coverage[-2:], ["--package", "hsearch-object"])
+        self.assertEqual(coverage[coverage.index("--base") + 1], BASE)
+        doctests = [command for command in commands if command[:2] == ["cargo", "test"]]
+        self.assertEqual(len(doctests), 2)
+        self.assertTrue(all("--doc" in command and "hsearch-object" in command for command in doctests))
+
+    def test_full_native_cannot_omit_object_from_coverage_before_commands(self):
+        value = choose(b"M\0shared.rs\0")
+        value["coverage_packages"].remove("hsearch-object")
+        commands = []
+        with patch.dict(CI["native"].__globals__, run=lambda command: commands.append(command)):
+            with self.assertRaisesRegex(ValueError, "Incomplete full coverage scope"):
+                CI["native"](value)
+        self.assertEqual(commands, [])
 
     def test_full_native_refuses_unqualified_new_production_member_before_commands(self):
         workspace = copy.deepcopy(WORKSPACE)
