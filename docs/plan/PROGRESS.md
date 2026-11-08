@@ -1,5 +1,12 @@
 # Progress and handoff
 
+## 8 November 2026: M02.10 reversible-development seed
+
+M02.11 is restored to planned/unaccepted. The [development addendum](m02-10-development.md) narrowly permits separately admitted reversible code development and explicitly bounded ordinary synthetic controls after root audits this seed. No code import, claim or execution follows from seed preparation. Actual experiments, native/provider matrices, qualification and the sole future overall4/MAX4 candidate still wait for actual M02.11 integration and proper admission. The old51187fb R1 remains exact-source history, issued1/planned2/hard3; final checks/review/integration of the revised policy remain outstanding. All original tasks, frozen bodies, failures, counters, quotas and active engine reservations are retained.
+
+The earlier candidate entries below describe their historical source; their blanket development hold and intended merged `done` state are superseded only as described above.
+
+
 ## 8 November 2026: prospective M02.10 policy qualification candidate
 
 [M02.11](evidence/m02-11-qualified-source.md) is a genuine, distinct policy-only qualification unit for the [M02.10 continuation addendum](m02-10-continuation.md). It requires its own counted eligible nonauthor reviews, deterministic checks, exact-source hosted CI/ci-ok and protected integration before any M02.10 admission or execution. Candidate ledger done is intended merged status only; no current policy/code/product acceptance is claimed.

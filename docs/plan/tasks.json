@@ -1181,7 +1181,7 @@
             "Raw local measurements separated from provider-price/failure-domain estimates; inputs for M02.04, not its acceptance"
           ],
           "validation": [
-            "Coordinator-supervised pinned-source/public-fixture component experiments only, through the actual registered author session/worktree under the M02.10 continuation policy; independent nonauthor sessions review code/results, with no general product or agent-productivity acceptance.",
+            "Coordinator-supervised pinned-source/public-fixture component work through the actual registered author session/worktree: reversible source development and explicitly bounded ordinary synthetic development controls may follow a root-audited seed and separate normal owner/claim admission before M02.11 integration; experiments and qualification still require actual M02.11 integration and separate admission. Independent nonauthor sessions review code/results, with no general product or agent-productivity acceptance.",
             "Freeze exact feature/target/profile/workload and CPU/RAM/disk/PID/output/deadline envelope before execution; retain raw failure/ambiguity and deliberately failing controls",
             "Both native targets dev/release/applicable allfeatures/doctests/lint and >=90% aggregate/percrate/changed production coverage, exact-source independent review and required full CI",
             "Compare matched sparse/busy/skewed workloads; account for retries, CAS/root/page/KMS/network paths explicitly; never invent consensus or real-provider evidence"
@@ -1351,7 +1351,7 @@
         {
           "id": "M02.11",
           "title": "Qualify prospective M02.10 continuation policy",
-          "goal": "Independently qualify the distinct policy-only continuation route before any M02.10 admission, retaining the complete frozen candidate history, actual cumulative counters and original acceptance.",
+          "goal": "Independently qualify the distinct policy-only continuation route before M02.10 experiments, qualification or its sole future candidate checkpoint, retaining the complete frozen candidate history, actual cumulative counters and original acceptance; separately admitted reversible development may precede policy integration.",
           "deliverables": [
             "Prospective M02.10 continuation addendum and bounded normative links, with exactly one actor-clause clarification and no implementation, review-tool/schema or allocator change.",
             "Allowlisted exact-byte public history projection with original provenance, separate raw/canonical hashes, all eight finding keys/four design constraints and a clearly unfilled legacy-resolution sidecar template."
@@ -1359,7 +1359,7 @@
           "validation": [
             "Verify all original135 other task objects/ledger fields unchanged; M02.10 changes only validation[0] actor wording, retaining dependencies/status/evidence/execution_scope and full144object/12native/480temporal/84unsafe plus coverage/CI/integration/postmerge obligations.",
             "Verify original M02.10 overall3/formal2 BLOCKED and sole future currentformal1/cumulativeformal3/actualoverall4/max4, all original authors/checks/bases/findings/constraints and no reset; policy review is not candidate review or code-finding resolution.",
-            "Run applicable existing API/plan/generated/docs/review/ownership checks and source/history/ledger/frozen-resource bookends; obtain both exact-final-source eligible nonauthor policy roles, every selected hosted job/ci-ok and normal protected integration before any dependent admission."
+            "Run applicable existing API/plan/generated/docs/review/ownership checks and source/history/ledger/frozen-resource bookends; obtain both exact-final-source eligible nonauthor policy roles, every selected hosted job/ci-ok and normal protected integration before M02.10 experiments, qualification or its sole future candidate checkpoint. Separately admitted reversible development follows the narrow development addendum only."
           ],
           "definition_of_done": [
             "Only this policy source is accepted after its own observed checks, independently counted reviews and protected integration; a candidate done entry is proposed merged status until then. No M02.10 code finding or product/research result is accepted by policy review.",
@@ -1371,13 +1371,8 @@
             "M02.09"
           ],
           "owner": "harness/integrator",
-          "status": "done",
-          "evidence": [
-            {
-              "path": "evidence/m02-11-qualified-source.md",
-              "result": "Proposed merged state only: this policy-only candidate still requires its own deterministic checks, both counted eligible nonauthor roles, exact-source hosted CI/ci-ok and protected integration before any M02.10 admission. No code-finding resolution, candidate-counter reset or product acceptance."
-            }
-          ]
+          "status": "planned",
+          "evidence": []
         }
       ]
     },

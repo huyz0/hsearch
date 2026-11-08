@@ -1,3 +1,13 @@
+# M02.11 revised policy seed: unaccepted
+
+Current status: planned, with no ledger acceptance evidence. The [development addendum](../m02-10-development.md) supersedes only the historical blanket pre-integration development hold. Root must audit the seed and separately admit the actual normal code owner/import scope before reversible development or explicitly bounded ordinary synthetic controls. Experiments, qualification, the sole future M02.10 candidate and all gates still require actual M02.11 integration and separate admission.
+
+Historical R1 at `51187fb42ce6f644f42d4c1a389643f86f50bf34` had both nonauthor roles clear at that exact source. Retain issued1/planned2/hard3 and original public review base `992084caa931fc64b1589350453fde9fa0e3a765`; do not reuse that clearance as approval of this revision or issue a policy-only review round for seed preparation. Same-lineage final-source checks/review, selected hosted CI/ci-ok and integration remain unrun. The external seed handoff binds current source, ledger delta, observed checks and frozen/engine bookends. All actual policy contributors below plus the development assessment author/coordinator remain disclosed and excluded from future reviews.
+
+## Historical51187fb source preparation record
+
+The following record is preserved as history. Its intended merged `done` and integration-before-any-admission/execution statements describe the earlier source, superseded only for the development phase above. Original accepted evidence, root disposition and17 raw history bodies remain unchanged.
+
 # M02.11 policy-only source candidate
 
 Status: **pending this source's deterministic checks, both counted independent policy reviews, exact-source hosted CI/ci-ok and protected integration**. The candidate M02.11 ledger `done` describes the intended merged state only. It is not current acceptance, M02.10 admission, implementation clearance or a code-finding resolution. No future review, run, gate or merge identity is invented here.
