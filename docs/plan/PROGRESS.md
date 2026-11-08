@@ -1,5 +1,12 @@
 # Progress and handoff
 
+## 8 November 2026: prospective M02.10 policy qualification candidate
+
+[M02.11](evidence/m02-11-qualified-source.md) is a genuine, distinct policy-only qualification unit for the [M02.10 continuation addendum](m02-10-continuation.md). It requires its own counted eligible nonauthor reviews, deterministic checks, exact-source hosted CI/ci-ok and protected integration before any M02.10 admission or execution. Candidate ledger done is intended merged status only; no current policy/code/product acceptance is claimed.
+
+The [allowlisted exact-byte projection](evidence/m02-10-history/projection-index.json) preserves the design precheck, both formal blocked packets/reports, eight finding keys, four constraints and original raw/canonical hash distinctions. M02.10 remains historical overall3/formal2 BLOCKED; the sole prospective candidate would be current formal1/cumulative formal3/actual overall4/max4, with no replacement after blocked/incomplete/unknown issuance. Policy governance events do not consume, reset or conceal that candidate history. Only the actor clause changes; full144object/12native/480temporal/84unsafe, numeric caps, prerequisites/whole-M01, coverage/native/CI/integration/postmerge and every original M02.10 obligation remain. No claim, code repair, native/backend/FFF campaign or resource action follows from this candidate.
+
+
 ## 8 November 2026: retention redesign plan integrated
 
 [M01.18's plan artifact is accepted](evidence/m01-18-integrated.md): reviewed source `3c44380` merged normally through [PR26](https://github.com/huyz0/hsearch/pull/26) as `81bae9b` with the same tree, both R2 nonauthor roles clear, the durable gate passed and all seven PR/main jobs successful. The decomposition, frozen history and verbatim eleven-clause bridge are accepted; M01.19/.20/.21 remain unimplemented and require their own qualification. The factual bookkeeping source needs its own final legal same-M18 R3/checks/integration before successor admission.

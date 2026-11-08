@@ -1,0 +1,5 @@
+# Preserve exact original evidence bytes, including retained CRLF framing.
+public-index.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+legacy-findings.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+M02.10_DESIGN_PRECHECK.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+legacy-resolution-sidecar.template.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

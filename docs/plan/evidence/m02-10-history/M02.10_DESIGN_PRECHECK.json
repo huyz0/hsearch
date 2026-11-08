@@ -1,0 +1,19 @@
+{
+  "task": "M02.10",
+  "kind": "Independent pre-implementation design precheck",
+  "overall_round": 1,
+  "formal_issued": 0,
+  "maximum_formal_rounds": 2,
+  "hard_overall_ceiling": 3,
+  "proposal_sha256": "49ce2032d8257b7270850ec7d01ee99824e755488feacd1f8356381cd30e7556",
+  "claim": "m02-10-c02574068480",
+  "base": "f9d15ccb1ecffe369ef2da05c9fc59d11b3ff597",
+  "public_review_base": "b19074d3022694b6180f115c875f9883c1ac9425",
+  "deterministic_inputs": "Exact nineteen API/manifest/license Git blobs verified; accepted-readiness plan/schema/16negative/API/generated checks passed. Native behavior and new code not implemented.",
+  "known_preflight_failure": "Prospective dependency metadata fetched, then strict retained registry license check stopped at fxhash having no bundled root license. Raw failure retained. No candidate code executed or project dependency imported. Exact source/license follow-up remains required before imports.",
+  "roles": [
+    "correctness_tests_claims",
+    "architecture_security"
+  ],
+  "scope": "Review proposed workload/accounting/invariants/adapter resource/evidence boundaries; do not clear final implementation or future dependency preflight. This counts conservative overall1."
+}
