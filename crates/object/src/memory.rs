@@ -5,11 +5,15 @@
 //! is dropped. Exhaustion refuses new mutations rather than evicting identity
 //! evidence or silently changing exact-version reads. No background work runs.
 
-use crate::{ByteRange, Error, MetadataStore, Mutation, ObjectBackend, ObjectInfo,
-    ObjectKey, Operation, Payload, Precondition, RequestContext, RequestId,
-    VersionToken, WriteReceipt};
+use crate::{
+    ByteRange, Error, MetadataStore, Mutation, ObjectBackend, ObjectInfo, ObjectKey, Operation,
+    Payload, Precondition, RequestContext, RequestId, VersionToken, WriteReceipt,
+};
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Mutex, atomic::{AtomicU64, Ordering}};
+use std::sync::{
+    Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 
 static NEXT_BACKEND: AtomicU64 = AtomicU64::new(1);
 
@@ -30,10 +34,17 @@ pub struct MemoryLimits {
 
 impl MemoryLimits {
     fn validate(self) -> Result<Self, Error> {
-        if self.objects == 0 || self.objects > 4096 || self.versions == 0 || self.versions > 16384
-            || self.identities == 0 || self.identities > 16384 || self.version_bytes == 0
-            || self.version_bytes > 64 * 1024 * 1024 || self.identity_bytes == 0
-            || self.identity_bytes > 64 * 1024 * 1024 {
+        if self.objects == 0
+            || self.objects > 4096
+            || self.versions == 0
+            || self.versions > 16384
+            || self.identities == 0
+            || self.identities > 16384
+            || self.version_bytes == 0
+            || self.version_bytes > 64 * 1024 * 1024
+            || self.identity_bytes == 0
+            || self.identity_bytes > 64 * 1024 * 1024
+        {
             return Err(Error::InvalidInput);
         }
         Ok(self)
@@ -90,7 +101,9 @@ pub struct MemoryStore {
 
 impl std::fmt::Debug for MemoryStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MemoryStore").field("limits", &self.limits).finish_non_exhaustive()
+        f.debug_struct("MemoryStore")
+            .field("limits", &self.limits)
+            .finish_non_exhaustive()
     }
 }
 
@@ -102,8 +115,11 @@ fn precondition_bytes(request: &Mutation) -> u64 {
 }
 
 fn request_bytes(request: &Mutation) -> u64 {
-    request.request_id.len() as u64 + request.key.len() as u64 + request.payload.len() as u64
-        + request.metadata.len() as u64 + precondition_bytes(request)
+    request.request_id.len() as u64
+        + request.key.len() as u64
+        + request.payload.len() as u64
+        + request.metadata.len() as u64
+        + precondition_bytes(request)
 }
 
 fn info_bytes(info: &ObjectInfo) -> u64 {
@@ -118,9 +134,16 @@ impl MemoryStore {
     /// Create an empty nonpersistent backend with checked finite limits.
     pub fn new(limits: MemoryLimits) -> Result<Self, Error> {
         let limits = limits.validate()?;
-        let backend = NEXT_BACKEND.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
-            |value| value.checked_add(1)).map_err(|_| Error::BudgetExceeded)?;
-        Ok(Self { backend, limits, state: Mutex::new(State::default()) })
+        let backend = NEXT_BACKEND
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .map_err(|_| Error::BudgetExceeded)?;
+        Ok(Self {
+            backend,
+            limits,
+            state: Mutex::new(State::default()),
+        })
     }
 
     /// Queue one fault, refusing more than 32 pending faults before allocation.
@@ -165,16 +188,30 @@ impl MemoryStore {
             _ => return Err(Error::Conflict),
         }
         let new_key = !state.current.contains_key(&request.key);
-        let version_bytes = state.version_bytes.checked_add(request.key.len() as u64
-            + request.payload.len() as u64 + request.metadata.len() as u64).ok_or(Error::BudgetExceeded)?;
-        let next_version = state.next_version.checked_add(1).ok_or(Error::BudgetExceeded)?;
-        let response_bytes = request.request_id.len() as u64 + 16 + 8 + request.metadata.len() as u64;
-        let identity_bytes = state.identity_bytes.checked_add(request_bytes(request)
-            + response_bytes).ok_or(Error::BudgetExceeded)?;
+        let version_bytes = state
+            .version_bytes
+            .checked_add(
+                request.key.len() as u64
+                    + request.payload.len() as u64
+                    + request.metadata.len() as u64,
+            )
+            .ok_or(Error::BudgetExceeded)?;
+        let next_version = state
+            .next_version
+            .checked_add(1)
+            .ok_or(Error::BudgetExceeded)?;
+        let response_bytes =
+            request.request_id.len() as u64 + 16 + 8 + request.metadata.len() as u64;
+        let identity_bytes = state
+            .identity_bytes
+            .checked_add(request_bytes(request) + response_bytes)
+            .ok_or(Error::BudgetExceeded)?;
         if (new_key && state.current.len() >= self.limits.objects as usize)
             || state.versions.len() >= self.limits.versions as usize
             || state.accepted.len() >= self.limits.identities as usize
-            || version_bytes > self.limits.version_bytes || identity_bytes > self.limits.identity_bytes {
+            || version_bytes > self.limits.version_bytes
+            || identity_bytes > self.limits.identity_bytes
+        {
             return Err(Error::BudgetExceeded);
         }
         // Reserve the complete known response before accepting. No fallible
@@ -184,19 +221,45 @@ impl MemoryStore {
         let mut raw = [0; 16];
         raw[..8].copy_from_slice(&self.backend.to_be_bytes());
         raw[8..].copy_from_slice(&next_version.to_be_bytes());
-        let info = ObjectInfo { version: VersionToken::new(&raw)?, length: request.payload.len() as u64,
-            metadata: request.metadata.clone() };
-        let receipt = WriteReceipt { request_id: request.request_id.clone(), object: info };
-        state.current.insert(request.key.clone(), receipt.object.version.clone());
-        state.versions.insert(receipt.object.version.clone(), Stored { key: request.key.clone(),
-            info: receipt.object.clone(), payload: request.payload.clone() });
-        state.accepted.insert(request.request_id.clone(), Accepted { request: request.clone(), receipt: receipt.clone() });
+        let info = ObjectInfo {
+            version: VersionToken::new(&raw)?,
+            length: request.payload.len() as u64,
+            metadata: request.metadata.clone(),
+        };
+        let receipt = WriteReceipt {
+            request_id: request.request_id.clone(),
+            object: info,
+        };
+        state
+            .current
+            .insert(request.key.clone(), receipt.object.version.clone());
+        state.versions.insert(
+            receipt.object.version.clone(),
+            Stored {
+                key: request.key.clone(),
+                info: receipt.object.clone(),
+                payload: request.payload.clone(),
+            },
+        );
+        state.accepted.insert(
+            request.request_id.clone(),
+            Accepted {
+                request: request.clone(),
+                receipt: receipt.clone(),
+            },
+        );
         state.version_bytes = version_bytes;
         state.identity_bytes = identity_bytes;
         state.next_version = next_version;
         match fault {
-            Some(Fault::CancelAfterCommit) => { context.cancel(); Err(Error::UnknownOutcome) }
-            Some(Fault::ExpireAfterCommit) => { context.expire(); Err(Error::UnknownOutcome) }
+            Some(Fault::CancelAfterCommit) => {
+                context.cancel();
+                Err(Error::UnknownOutcome)
+            }
+            Some(Fault::ExpireAfterCommit) => {
+                context.expire();
+                Err(Error::UnknownOutcome)
+            }
             Some(Fault::LoseResponseAfterCommit) => Err(Error::UnknownOutcome),
             _ => Ok(receipt),
         }
@@ -204,7 +267,11 @@ impl MemoryStore {
 }
 
 impl ObjectBackend for MemoryStore {
-    fn head<'a>(&'a self, context: &'a RequestContext, key: &'a ObjectKey) -> Operation<'a, ObjectInfo> {
+    fn head<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        key: &'a ObjectKey,
+    ) -> Operation<'a, ObjectInfo> {
         Box::pin(async move {
             context.charge_request(key.len() as u64)?;
             let state = self.state.lock().map_err(|_| Error::Unavailable)?;
@@ -216,7 +283,11 @@ impl ObjectBackend for MemoryStore {
         })
     }
 
-    fn create<'a>(&'a self, context: &'a RequestContext, request: &'a Mutation) -> Operation<'a, WriteReceipt> {
+    fn create<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        request: &'a Mutation,
+    ) -> Operation<'a, WriteReceipt> {
         Box::pin(async move {
             if request.precondition != Precondition::Absent {
                 return Err(Error::InvalidInput);
@@ -225,13 +296,22 @@ impl ObjectBackend for MemoryStore {
         })
     }
 
-    fn read_range<'a>(&'a self, context: &'a RequestContext, key: &'a ObjectKey,
-        version: &'a VersionToken, range: ByteRange) -> Operation<'a, Payload> {
+    fn read_range<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        key: &'a ObjectKey,
+        version: &'a VersionToken,
+        range: ByteRange,
+    ) -> Operation<'a, Payload> {
         Box::pin(async move {
             context.charge_request(key.len() as u64 + version.len() as u64 + 16)?;
             let state = self.state.lock().map_err(|_| Error::Unavailable)?;
             context.check()?;
-            let stored = state.versions.get(version).filter(|value| value.key == *key).ok_or(Error::NotFound)?;
+            let stored = state
+                .versions
+                .get(version)
+                .filter(|value| value.key == *key)
+                .ok_or(Error::NotFound)?;
             range.validate(stored.info.length)?;
             context.charge_response(range.length())?;
             let start = usize::try_from(range.offset()).map_err(|_| Error::InvalidRange)?;
@@ -242,11 +322,19 @@ impl ObjectBackend for MemoryStore {
 }
 
 impl MetadataStore for MemoryStore {
-    fn compare_exchange<'a>(&'a self, context: &'a RequestContext, request: &'a Mutation) -> Operation<'a, WriteReceipt> {
+    fn compare_exchange<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        request: &'a Mutation,
+    ) -> Operation<'a, WriteReceipt> {
         Box::pin(async move { self.write(context, request) })
     }
 
-    fn resolve<'a>(&'a self, context: &'a RequestContext, request: &'a Mutation) -> Operation<'a, WriteReceipt> {
+    fn resolve<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        request: &'a Mutation,
+    ) -> Operation<'a, WriteReceipt> {
         Box::pin(async move {
             context.charge_request(request_bytes(request))?;
             let state = self.state.lock().map_err(|_| Error::Unavailable)?;

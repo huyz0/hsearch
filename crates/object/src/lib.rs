@@ -97,20 +97,31 @@ pub struct WriteReceipt {
 /// Provider adapters must expose unsupported capabilities explicitly.
 pub trait ObjectBackend: Send + Sync {
     /// Read the latest metadata for this key within the request context.
-    fn head<'a>(&'a self, context: &'a RequestContext, key: &'a ObjectKey)
-        -> Operation<'a, ObjectInfo>;
+    fn head<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        key: &'a ObjectKey,
+    ) -> Operation<'a, ObjectInfo>;
 
     /// Create immutable content, requiring [`Precondition::Absent`].
     ///
     /// A different precondition returns [`Error::InvalidInput`] without a write.
     /// Cancellation or deadline after acceptance must return a receipt if known,
     /// or [`Error::UnknownOutcome`], never a claim that the mutation rolled back.
-    fn create<'a>(&'a self, context: &'a RequestContext, request: &'a Mutation)
-        -> Operation<'a, WriteReceipt>;
+    fn create<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        request: &'a Mutation,
+    ) -> Operation<'a, WriteReceipt>;
 
     /// Return exactly the requested bytes from this immutable version.
-    fn read_range<'a>(&'a self, context: &'a RequestContext, key: &'a ObjectKey,
-        version: &'a VersionToken, range: ByteRange) -> Operation<'a, Payload>;
+    fn read_range<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        key: &'a ObjectKey,
+        version: &'a VersionToken,
+        range: ByteRange,
+    ) -> Operation<'a, Payload>;
 }
 
 /// Linearizable conditional metadata mutation and exact identity resolution.
@@ -122,12 +133,18 @@ pub trait ObjectBackend: Send + Sync {
 /// unavailable resolution is not evidence that a mutation did not commit.
 pub trait MetadataStore: ObjectBackend {
     /// Atomically create or replace only under the supplied precondition.
-    fn compare_exchange<'a>(&'a self, context: &'a RequestContext, request: &'a Mutation)
-        -> Operation<'a, WriteReceipt>;
+    fn compare_exchange<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        request: &'a Mutation,
+    ) -> Operation<'a, WriteReceipt>;
 
     /// Resolve the full original mutation, detecting changed identity content.
-    fn resolve<'a>(&'a self, context: &'a RequestContext, request: &'a Mutation)
-        -> Operation<'a, WriteReceipt>;
+    fn resolve<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        request: &'a Mutation,
+    ) -> Operation<'a, WriteReceipt>;
 }
 
 /// A retry decision borrows the entire original envelope without changing it.

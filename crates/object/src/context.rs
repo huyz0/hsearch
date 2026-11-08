@@ -1,5 +1,8 @@
 use crate::Error;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
 /// Shared cancellation flag, containing no request or payload data.
@@ -56,12 +59,24 @@ impl RequestContext {
     ///
     /// A zero duration is valid and immediately expired. Zero budgets refuse
     /// their corresponding work. No provider operation may reset these counters.
-    pub fn new(duration: Duration, cancellation: Cancellation, budget: Budget) -> Result<Self, Error> {
+    pub fn new(
+        duration: Duration,
+        cancellation: Cancellation,
+        budget: Budget,
+    ) -> Result<Self, Error> {
         if duration > Duration::from_secs(300) {
             return Err(Error::InvalidInput);
         }
-        let deadline = Instant::now().checked_add(duration).ok_or(Error::InvalidInput)?;
-        Ok(Self { deadline, cancellation, expired: AtomicBool::new(false), budget, usage: Mutex::new(Usage::default()) })
+        let deadline = Instant::now()
+            .checked_add(duration)
+            .ok_or(Error::InvalidInput)?;
+        Ok(Self {
+            deadline,
+            cancellation,
+            expired: AtomicBool::new(false),
+            budget,
+            usage: Mutex::new(Usage::default()),
+        })
     }
 
     /// Cancel future admission, without rolling back accepted mutations.
@@ -89,7 +104,10 @@ impl RequestContext {
     pub fn charge_request(&self, bytes: u64) -> Result<(), Error> {
         self.check()?;
         let mut used = self.usage.lock().map_err(|_| Error::Unavailable)?;
-        let request_bytes = used.request_bytes.checked_add(bytes).ok_or(Error::BudgetExceeded)?;
+        let request_bytes = used
+            .request_bytes
+            .checked_add(bytes)
+            .ok_or(Error::BudgetExceeded)?;
         let attempts = used.attempts.checked_add(1).ok_or(Error::BudgetExceeded)?;
         if request_bytes > self.budget.request_bytes || attempts > self.budget.attempts {
             return Err(Error::BudgetExceeded);
@@ -105,7 +123,10 @@ impl RequestContext {
     /// outcome must not be replaced with a false pre-acceptance cancellation.
     pub fn charge_response(&self, bytes: u64) -> Result<(), Error> {
         let mut used = self.usage.lock().map_err(|_| Error::Unavailable)?;
-        let total = used.response_bytes.checked_add(bytes).ok_or(Error::BudgetExceeded)?;
+        let total = used
+            .response_bytes
+            .checked_add(bytes)
+            .ok_or(Error::BudgetExceeded)?;
         if total > self.budget.response_bytes {
             return Err(Error::BudgetExceeded);
         }
@@ -115,6 +136,9 @@ impl RequestContext {
 
     /// Read current counters, or fail if accounting was poisoned.
     pub fn usage(&self) -> Result<Usage, Error> {
-        self.usage.lock().map(|value| *value).map_err(|_| Error::Unavailable)
+        self.usage
+            .lock()
+            .map(|value| *value)
+            .map_err(|_| Error::Unavailable)
     }
 }

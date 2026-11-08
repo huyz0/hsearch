@@ -36,17 +36,44 @@ macro_rules! bounded {
 
         impl std::fmt::Debug for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_struct(stringify!($name)).field("bytes", &self.0.len()).finish()
+                f.debug_struct(stringify!($name))
+                    .field("bytes", &self.0.len())
+                    .finish()
             }
         }
     };
 }
 
-bounded!(ObjectKey, 1024, false, "Opaque object key, bounded to 1024 bytes.");
-bounded!(RequestId, 128, false, "Opaque mutation identity, bounded to 128 bytes.");
-bounded!(VersionToken, 256, false, "Equality-only provider version, bounded to 256 bytes.");
-bounded!(Payload, 16 * 1024 * 1024, true, "Payload with an absolute 16 MiB allocation bound.");
-bounded!(Metadata, 8192, true, "Opaque metadata with an absolute 8 KiB allocation bound.");
+bounded!(
+    ObjectKey,
+    1024,
+    false,
+    "Opaque object key, bounded to 1024 bytes."
+);
+bounded!(
+    RequestId,
+    128,
+    false,
+    "Opaque mutation identity, bounded to 128 bytes."
+);
+bounded!(
+    VersionToken,
+    256,
+    false,
+    "Equality-only provider version, bounded to 256 bytes."
+);
+bounded!(
+    Payload,
+    16 * 1024 * 1024,
+    true,
+    "Payload with an absolute 16 MiB allocation bound."
+);
+bounded!(
+    Metadata,
+    8192,
+    true,
+    "Opaque metadata with an absolute 8 KiB allocation bound."
+);
 
 /// A nonempty half-open byte range, checked before arithmetic or allocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
