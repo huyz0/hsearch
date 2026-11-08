@@ -28,7 +28,8 @@ def fixture_coverage():
     """Planning tests replace only native attestation, preserving real command policy."""
     value = dict(CI["COVERAGE"])
     value["qualified_tools"] = lambda: {"nextest_executable": "/verified/cargo-nextest",
-                                       "cargo_clippy_executable": "/verified/cargo-clippy", "cargo_fmt_executable": "/verified/cargo-fmt"}
+                                       "cargo_clippy_executable": "/verified/cargo-clippy", "cargo_fmt_executable": "/verified/cargo-fmt",
+                                       "rustfmt_executable": "/verified/rustfmt"}
     value["ordinary_environment"] = lambda _tools: {"QUALIFIED_ENVIRONMENT": "fixture"}
     return value
 
@@ -458,7 +459,15 @@ class BoundedResearchSchedulingControls(unittest.TestCase):
                 patch.object(check["subprocess"], "run", side_effect=lambda command, **kwargs: commands.append(command)), \
                 contextlib.redirect_stdout(captured):
             self.assertEqual(check["main"](), 0)
-        self.assertEqual(len(commands), len(check["CHECKS"]) + 6)
+        self.assertEqual(len(commands), len(check["CHECKS"]) + 7)
+        generator = [check["sys"].executable, "crates/engine/tests/render_adapter_fixtures.py",
+                     "--root", str(check["ROOT"]), "--check", "--formatter", "/verified/rustfmt"]
+        self.assertEqual(commands[0], generator)
+        coverage = fixture_coverage()
+        tools = coverage["qualified_tools"]()
+        expected_checks = [coverage["cargo_command"](coverage["correctness_command"](tools, command))
+                           for command in check["CHECKS"]]
+        self.assertEqual(commands[1:1 + len(expected_checks)], expected_checks)
         samples = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "--test" in command]
         self.assertEqual(len(samples), 6)
         self.assertEqual(sum("--release" in command for command in samples), 3)
