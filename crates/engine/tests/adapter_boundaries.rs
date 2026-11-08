@@ -314,8 +314,9 @@ fn reader_quota_is_shared_across_checkpoint_reopen() {
 }
 #[test]
 fn standard_analyzer_255_boundary_and_supplementary_offsets_are_explicit() {
-    // Pinned standard/mod.rs:55-65: length255 is the scanner buffer; ASCII
-    // runs split, while a supplementary character straddling its end can skip.
+    // Pinned Java scanner blob 82203ff65324263dc40ae4c4f2214b7af7cea202:
+    // the fixed 255-unit buffer splits long runs and holds a final high
+    // surrogate for the next token. It does not skip that boundary token.
     let a = "A".repeat(255);
     let b = "A".repeat(256);
     let exact = analyze_text(&a).unwrap();
@@ -347,21 +348,64 @@ fn standard_analyzer_255_boundary_and_supplementary_offsets_are_explicit() {
     );
 }
 #[test]
-fn phrase_lowering_preserves_analyzer_position_holes() {
-    let skipped = format!("{}𐐀", "a".repeat(254));
-    let text = format!("brown {skipped} fox");
-    let tokens = analyze_text(&text).unwrap();
-    assert_eq!(
-        tokens
-            .iter()
-            .map(|t| (t.term.as_str(), t.position))
-            .collect::<Vec<_>>(),
-        vec![("brown", 0), ("fox", 2)]
-    );
+fn standard_analyzer_supplementary_buffer_boundaries_follow_pinned_java_source() {
+    // Lucene 10.5.1 commit 64ce863a2bea79c69c19c4d56268c26710ff0ff9,
+    // StandardTokenizerImpl.java:761-813: a held high surrogate occupies
+    // buffer capacity, so 254 ASCII letters finish before its pair is read.
+    // 253 letters plus the pair fit; 255 letters fill the buffer alone.
+    // U+10400 -> U+10428 is also recorded in OpenJDK UnicodeData.txt at
+    // 6c48f4ed707bf0b15f9b6098de30db8aae6fa40f.
+    // These are source-derived oracles; this case has no Java runtime receipt.
+    for (letters, expected) in [
+        (
+            253,
+            vec![
+                ("brown".to_string(), 0, 0, 5),
+                (format!("{}\u{10428}", "a".repeat(253)), 1, 6, 261),
+                ("fox".to_string(), 2, 262, 265),
+            ],
+        ),
+        (
+            254,
+            vec![
+                ("brown".to_string(), 0, 0, 5),
+                ("a".repeat(254), 1, 6, 260),
+                ("\u{10428}".to_string(), 2, 260, 262),
+                ("fox".to_string(), 3, 263, 266),
+            ],
+        ),
+        (
+            255,
+            vec![
+                ("brown".to_string(), 0, 0, 5),
+                ("a".repeat(255), 1, 6, 261),
+                ("\u{10428}".to_string(), 2, 261, 263),
+                ("fox".to_string(), 3, 264, 267),
+            ],
+        ),
+    ] {
+        let text = format!("brown {}\u{10400} fox", "a".repeat(letters));
+        let tokens = analyze_text(&text).unwrap();
+        let actual: Vec<_> = tokens
+            .into_iter()
+            .map(|t| (t.term, t.position, t.start_offset, t.end_offset))
+            .collect();
+        assert_eq!(actual, expected, "ASCII prefix length {letters}");
+    }
+}
+
+#[test]
+fn phrase_match_roundtrips_supplementary_buffer_boundary() {
+    let text = format!("brown {}\u{10400} fox", "a".repeat(254));
     let directory = ByteBuffersDirectory::new();
     let schema = Schema::new(1, &[("title", Kind::Text)]).unwrap();
     let engine = Engine::open(&directory, schema.clone(), None).unwrap();
-    for (id, title) in [("adjacent", "brown fox"), ("gap", "brown red fox")] {
+    for (id, title) in [
+        ("exact", text.as_str()),
+        ("adjacent", "brown fox"),
+        ("gap", "brown red fox"),
+        ("reversed", "fox brown"),
+    ] {
         engine
             .apply(
                 schema
@@ -396,7 +440,7 @@ fn phrase_lowering_preserves_analyzer_position_holes() {
             .iter()
             .map(|h| h.id.as_str())
             .collect::<Vec<_>>(),
-        vec!["gap"]
+        vec!["exact"]
     );
     let adjacent = snapshot
         .search(

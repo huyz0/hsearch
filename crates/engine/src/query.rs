@@ -188,13 +188,7 @@ fn clause(schema: &Schema, query: &Query<'_>, depth: usize, budget: &mut Budget)
             let terms = crate::schema::analyze_text(text)?;
             budget.charge(0, 0, terms.len())?;
             if *phrase && !terms.is_empty() {
-                Ok(Clause::Phrase(
-                    PhraseQuery::with_positions(
-                        *field,
-                        terms.into_iter().map(|t| (t.term.into_bytes(), t.position)),
-                    )
-                    .map_err(|_| Error::Native)?,
-                ))
+                phrase_clause(field, terms)
             } else {
                 Ok(Clause::Boolean(Box::new(BooleanQuery {
                     should: terms
@@ -245,5 +239,112 @@ fn clause(schema: &Schema, query: &Query<'_>, depth: usize, budget: &mut Budget)
                 minimum_should_match: *minimum_should_match,
             })))
         }
+    }
+}
+
+// Keep absolute analyzer positions, including holes, when constructing a phrase.
+fn phrase_clause(field: &str, terms: Vec<crate::Token>) -> Result<Clause> {
+    Ok(Clause::Phrase(
+        PhraseQuery::with_positions(
+            field,
+            terms.into_iter().map(|t| (t.term.into_bytes(), t.position)),
+        )
+        .map_err(|_| Error::Native)?,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Engine, Mutation, Snapshot, Token};
+    use lucene_codecs::stored_fields::FieldValue;
+    use lucene_search::index_searcher::IndexSearcher;
+    use lucene_store::ByteBuffersDirectory;
+
+    fn logical_id(snapshot: &Snapshot, mut doc: i32) -> String {
+        for segment in snapshot.reader.segment_readers() {
+            if doc < segment.max_doc {
+                let number = segment
+                    .field_infos()
+                    .fields
+                    .iter()
+                    .find(|f| f.name == "_hs_id")
+                    .unwrap()
+                    .number;
+                let document = segment.stored_document(doc).unwrap().unwrap();
+                return match document
+                    .fields
+                    .into_iter()
+                    .find(|f| f.field_number == number)
+                    .unwrap()
+                    .value
+                {
+                    FieldValue::String(id) => id,
+                    _ => panic!("logical identity must be a stored string"),
+                };
+            }
+            doc -= segment.max_doc;
+        }
+        panic!("search returned a document outside the snapshot");
+    }
+
+    #[test]
+    fn phrase_lowering_preserves_explicit_position_holes() {
+        let directory = ByteBuffersDirectory::new();
+        let schema = Schema::new(1, &[("title", Kind::Text)]).unwrap();
+        let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+        for (id, title) in [
+            ("adjacent", "brown fox"),
+            ("gap", "brown red fox"),
+            ("reversed", "fox brown"),
+        ] {
+            engine
+                .apply(
+                    schema
+                        .prepare(
+                            id,
+                            &[Mutation::Put {
+                                id,
+                                version: 1,
+                                fields: &[("title", Value::String(title))],
+                            }],
+                        )
+                        .unwrap(),
+                )
+                .unwrap();
+        }
+        let snapshot = engine.refresh().unwrap();
+        {
+            let opened = snapshot.reader.open_segments().unwrap();
+            let segments = opened.as_open_segments();
+            let norms = vec![None; segments.len()];
+            let searcher = IndexSearcher::new(&segments, &norms).unwrap();
+            // Independent positional inputs: no lexical boundary is assumed
+            // to make a hole in the declared no-stopword analyzer.
+            for (positions, expected) in [([0, 2], "gap"), ([0, 1], "adjacent")] {
+                let terms = [("brown", positions[0], 0, 5), ("fox", positions[1], 6, 9)]
+                    .into_iter()
+                    .map(|(term, position, start_offset, end_offset)| Token {
+                        term: term.to_string(),
+                        position,
+                        start_offset,
+                        end_offset,
+                    })
+                    .collect();
+                let query = BooleanQuery {
+                    must: vec![phrase_clause("title", terms).unwrap()],
+                    ..Default::default()
+                };
+                let result = searcher.search(&query, 3).unwrap();
+                assert!(!searcher.timed_out());
+                let ids: Vec<_> = result
+                    .score_docs
+                    .iter()
+                    .map(|hit| logical_id(&snapshot, hit.doc))
+                    .collect();
+                assert_eq!(ids, vec![expected]);
+            }
+        }
+        engine.close().unwrap();
     }
 }
