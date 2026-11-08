@@ -17,10 +17,20 @@ from .context import Domain, Sample
 
 
 def bounded_file(path, cap):
+    integer(cap, 1, 131072)
+    raw = bytearray(cap+1)
+    used = 0
     with open(path, 'rb', buffering=0) as stream:
-        raw = stream.read(cap+1)
-    need(len(raw) <= cap, 'host-evidence-bound')
-    return raw
+        while True:
+            # Proc seq-files can return a page without EOF. A short read is
+            # not a complete evidence record. Reserve one overflow/EOF byte.
+            view = memoryview(raw)[used:]
+            count = stream.readinto(view)
+            integer(count, 0, len(view))
+            if count == 0:
+                return bytes(raw[:used])
+            used += count
+            need(used <= cap, 'host-evidence-bound')
 
 
 def observe_host():

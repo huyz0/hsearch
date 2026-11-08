@@ -990,6 +990,42 @@ class DiscoveryScopeControls(unittest.TestCase):
                         replace(good,source_evidence='not-proof'),replace(good,mount_profiles=['c'*64])]:
             with self.subTest(admission=invalid),self.assertRaises(Refused):invalid.validate()
 
+    def test_evidence_short_reads_reach_eof_exact_cap_and_bounded_overflow(self):
+        from tools.retention_context_v1.native import bounded_file
+        class ShortReads:
+            def __init__(self,data):self.data=data;self.offset=0;self.requests=[]
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def readinto(self,view):
+                self.requests.append(len(view));n=min(2,len(view),len(self.data)-self.offset)
+                view[:n]=self.data[self.offset:self.offset+n];self.offset+=n;return n
+        for data,cap in [(b'',4),(b'abcd',4),(b'abc',4)]:
+            stream=ShortReads(data)
+            with patch('builtins.open',return_value=stream):self.assertEqual(bounded_file('/synthetic',cap),data)
+            self.assertGreaterEqual(len(stream.requests),1)
+            self.assertLessEqual(max(stream.requests),cap+1)
+        stream=ShortReads(b'0123456789')
+        with patch('builtins.open',return_value=stream),self.assertRaisesRegex(Refused,'host-evidence-bound'):
+            bounded_file('/synthetic',4)
+        self.assertEqual(stream.offset,5)
+
+    def test_real_pipe_evidence_first_short_read_is_not_eof(self):
+        if sys.platform!='linux':
+            with self.assertRaises(Refused):observe_host()
+            return
+        import threading
+        from tools.retention_context_v1.native import bounded_file
+        read_fd,write_fd=os.pipe();errors=[]
+        def writer():
+            try:
+                os.write(write_fd,b'first');time.sleep(0.02);os.write(write_fd,b'second')
+            except Exception as error:errors.append(error)
+            finally:os.close(write_fd)
+        thread=threading.Thread(target=writer);thread.start()
+        try:self.assertEqual(bounded_file('/proc/self/fd/'+str(read_fd),11),b'firstsecond')
+        finally:os.close(read_fd);thread.join(timeout=2)
+        self.assertFalse(thread.is_alive());self.assertFalse(errors)
+
     def test_exact_original_scope_windows_not_a_global4096_pool(self):
         from tools.retention_context_v1.native import SCOPES
         self.assertEqual(SCOPES['archive'], (4096, 32))

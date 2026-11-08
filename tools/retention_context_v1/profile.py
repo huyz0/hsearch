@@ -135,7 +135,7 @@ def observe_build(source_reads):
         columns = line.split(None, 5)
         if len(columns) == 6 and columns[5].endswith(b'/libc.so.6'):
             paths.add(columns[5].decode('utf-8'))
-    need(len(paths) == 1, 'profile-libc-mapping')
+    need(len(paths) == 1, 'profile-libc-mapping-count-'+str(len(paths))+'-bytes-'+str(len(mappings)))
     return dict(facts=facts, python_object=file_identity('/proc/self/exe', source_reads),
                 libc_object=file_identity(paths.pop(), source_reads), api='cpython3.11.2-glibc2.36-linux-allocation-v1')
 
