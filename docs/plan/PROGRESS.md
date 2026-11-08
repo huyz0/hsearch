@@ -1,5 +1,12 @@
 # Progress and handoff
 
+## 8 November 2026: combined local delivery preparation
+
+The [preparation snapshot](evidence/delivery-integration-v1.md) combines PR29 source3b25, M03R1/530, M02.11R1/511, M19R1/46 and closed M19fix0a49 through normal retained-parent local merges. Ledger contributions are a field-level union; no task's fields replace another's. Source/byte provenance, original histories and three existing leases remain bound. No current acceptance, publication or new review packet follows.
+
+M03 and M02.11 R1 roles were clear at their original heads; M19 R1 architecture P2 AS-M19-R1-01 remains pending same-task R2. All three keep issued1/planned2/hard3/original992base. M19's9new close controls pass, while full pinned Linux64/62pass/2clock-regression-errors/0failures/0skips remains FAILED. No clock tolerance/substitution/refresh/retry-to-green. Old native/CI observations are predecessor evidence, not new combined-head qualification. PR29 source/branch/PR remain unchanged at3b25; actual authorized protected integration/postmerge and actual-main adoption precede fresh final qualification/R2. Dated input notes below are historical source snapshots; their issued0/isolation claims describe those original preparation phases.
+
+
 ## 8 November 2026: original M01.16 integration recorded
 
 [M01.16's original factual integration](evidence/m01-16-integrated.md) was reviewed at `274d17a`, normally merged through [PR23](https://github.com/huyz0/hsearch/pull/23) as `2b2fd47` with the same tree, and passed its own R1 gate plus all seven PR and all seven main jobs. This follow-up reconciles the stale in-progress ledger and pending prose; its own exact-head checks, same-task R2 and protected integration remain required.

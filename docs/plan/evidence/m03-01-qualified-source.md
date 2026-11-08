@@ -1,5 +1,9 @@
 # M03.01 combined source candidate and predecessor qualification
 
+**Historical R1 source snapshot:** the original sections below describe `53085a1d1b6ce702be967cb29aeab2bb725dc282`. References there to this candidate, pending first reviews, unchanged bodies or other-task isolation are scoped to that exact original head. Both R1 roles were clear at this head. Its245-body preservation and134-other-task/isolation assertions describe that R1 source, not the later combined tree. The input commit and original evidence remain immutable.
+
+**Current local preparation:** [delivery-integration-v1](delivery-integration-v1.md) is a new combined tree, not an acceptance certificate. M03.01 retains one issued round/planned2/hard3 and its original992 review base; no new packet or clearance is claimed here. Actual PR29 protected integration/postmerge, actual-main adoption and fresh final qualification precede later same-task R2.
+
 Status: **pending this combined head's complete ordinary/native architecture/profile/coverage/hosted CI, both counted independent roles and protected integration**. Candidate ledger `done` describes the intended merged state only. It is not current product acceptance or an accepted prerequisite for M03.02. No future review, run, gate or merge identity is asserted.
 
 ## Implementation and limits

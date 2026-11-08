@@ -1,5 +1,9 @@
 # M02.11 policy-only source candidate
 
+**Historical R1 source snapshot:** the original sections below describe `51187fb42ce6f644f42d4c1a389643f86f50bf34`. References there to this candidate, pending first reviews, unchanged bodies or other-task isolation are scoped to that exact original head. Both R1 policy roles were clear at this head. Its135-other-task/sole-actor-clause assertions describe that isolated policy R1 comparison; the combined tree also retains the other independently identified task contributions. The input commit and original evidence remain immutable.
+
+**Current local preparation:** [delivery-integration-v1](delivery-integration-v1.md) is a new combined tree, not an acceptance certificate. M02.11 retains one issued round/planned2/hard3 and its original992 review base; no new packet or clearance is claimed here. Actual PR29 protected integration/postmerge, actual-main adoption and fresh final qualification precede later same-task R2.
+
 Status: **pending this source's deterministic checks, both counted independent policy reviews, exact-source hosted CI/ci-ok and protected integration**. The candidate M02.11 ledger `done` describes the intended merged state only. It is not current acceptance, M02.10 admission, implementation clearance or a code-finding resolution. No future review, run, gate or merge identity is invented here.
 
 ## Distinct qualification unit
