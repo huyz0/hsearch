@@ -294,13 +294,27 @@ def original_from_raw(raw):
     return decode(raw)['original']
 
 
+def observed_cursor_fixture(case):
+    # Qualified CI uses the production authority for real cursor controls.
+    # Out-of-profile developer hosts retain explicitly diagnostic tests.
+    facts = observe_host() if sys.platform == 'linux' else None
+    if facts is not None and facts['python'].startswith('3.11.2 ') and facts['libc'] == 'glibc 2.36':
+        guardian, authority = LinuxHostProfile.start_guardian(P, P, P, P)
+        case.addCleanup(guardian.close)
+        clock = LinuxClock(authority)
+        original = Original.begin(P, P, P, clock, 1200000000000)
+        session = Session.publish(original, MemoryStore(), clock)
+        return session, authority
+    return fixture(duration=1200000000000)[3], DiagnosticAuthority()
+
+
 class NativeCursorControls(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='context-real-iterator-')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        _, _, _, self.session = fixture(duration=1200000000000)
-        self.pool = CursorPool(self.session, DiagnosticAuthority(), 67108864, 96)
+        self.session, self.cursor_authority = observed_cursor_fixture(self)
+        self.pool = CursorPool(self.session, self.cursor_authority, 67108864, 96)
         self.addCleanup(self.pool.close)
 
     def opened(self, **kw):
@@ -328,8 +342,8 @@ class NativeCursorControls(unittest.TestCase):
                 # Separate actual directories and operation contexts.
                 with tempfile.TemporaryDirectory(dir=self.root) as tmp:
                     for i in range(count): (Path(tmp)/str(i)).touch()
-                    _, _, _, session = fixture(duration=1200000000000)
-                    pool = CursorPool(session, DiagnosticAuthority(), 67108864, 96)
+                    session, authority = observed_cursor_fixture(self)
+                    pool = CursorPool(session, authority, 67108864, 96)
                     fd = os.open(tmp, os.O_RDONLY | os.O_DIRECTORY)
                     try:
                         cursor = pool.open(fd, cap=cap)
@@ -696,8 +710,8 @@ class DiscoveryScopeControls(unittest.TestCase):
         if sys.platform != 'linux':
             with self.assertRaises(Refused): observe_host()
             return
-        _, _, _, session = fixture(duration=1200000000000)
-        pool = CursorPool(session, DiagnosticAuthority(), 67108864, 96)
+        session, authority = observed_cursor_fixture(self)
+        pool = CursorPool(session, authority, 67108864, 96)
         with tempfile.TemporaryDirectory(prefix='bounded-child-opens-') as tmp:
             (Path(tmp)/'child').mkdir()
             fd = os.open(tmp, os.O_RDONLY | os.O_DIRECTORY)
@@ -709,6 +723,21 @@ class DiscoveryScopeControls(unittest.TestCase):
                     parent.open_child(entry)
                 self.assertTrue(decode(session.store.raw)['denied'])
             finally:pool.close();os.close(fd)
+
+    def test_runtime_build_reads_debit_shared_source_balance_before_read(self):
+        from tools.retention_context_v1.profile import SourceCredits, file_identity
+        with tempfile.TemporaryDirectory(prefix='profile-source-balance-') as tmp:
+            path=Path(tmp)/'synthetic';path.write_bytes(b'abc')
+            balance=SourceCredits()
+            observed=file_identity(path,balance)
+            self.assertEqual(balance.used,3)
+            self.assertEqual(observed['sha256'],hashlib.sha256(b'abc').hexdigest())
+            exhausted=SourceCredits(used=1207959550)
+            with self.assertRaisesRegex(Refused,'source-instance-byte-bound'):
+                file_identity(path,exhausted)
+            self.assertEqual(exhausted.used,1207959550)
+            self.assertTrue(exhausted.denied)
+            with self.assertRaises(Refused):exhausted.reserve(0)
 
     def test_exact_original_scope_windows_not_a_global4096_pool(self):
         from tools.retention_context_v1.native import SCOPES
@@ -724,8 +753,8 @@ class DiscoveryScopeControls(unittest.TestCase):
         if sys.platform != 'linux':
             with self.assertRaises(Refused): observe_host()
             return
-        _, _, _, session = fixture(duration=1200000000000)
-        pool = CursorPool(session, DiagnosticAuthority(), 4294967296, 96)
+        session, authority = observed_cursor_fixture(self)
+        pool = CursorPool(session, authority, 4294967296, 96)
         with tempfile.TemporaryDirectory(prefix='archive-rescan-scope-') as tmp:
             for i in range(2050):(Path(tmp)/str(i)).touch()
             fd = os.open(tmp, os.O_RDONLY | os.O_DIRECTORY)
@@ -744,8 +773,8 @@ class DiscoveryScopeControls(unittest.TestCase):
         if sys.platform != 'linux':
             with self.assertRaises(Refused): observe_host()
             return
-        _, _, _, session = fixture(duration=1200000000000)
-        pool = CursorPool(session, DiagnosticAuthority(), 4294967296, 96, scope='source')
+        session, authority = observed_cursor_fixture(self)
+        pool = CursorPool(session, authority, 4294967296, 96, scope='source')
         with tempfile.TemporaryDirectory(prefix='source-10000-') as tmp:
             for i in range(10000):(Path(tmp)/str(i)).touch()
             fd = os.open(tmp, os.O_RDONLY | os.O_DIRECTORY)

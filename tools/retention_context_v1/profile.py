@@ -8,13 +8,36 @@ import hashlib
 import os
 import stat
 import sys
+from dataclasses import dataclass
 
-from .codec import digest, need, Refused
+from .codec import digest, integer, need, Refused
 from .guardian import GuardianAuthority, LiveGuardian, token_from
 from .native import CursorProof, bounded_file, observe_host
 
 SUPPORTED_FILESYSTEMS = frozenset(('ext4', 'overlay', 'tmpfs'))
 BUILD_FILE_BYTES = 16777216
+
+
+@dataclass
+class SourceCredits:
+    """Shared entered-instance SOURCE balance, never a payload/raw allowance.
+
+    M21 passes its actual source-instance counter/adapter here, including other
+    source/driver reads. A standalone counter is for a new isolated instance.
+    """
+    used: int = 0
+    denied: bool = False
+
+    def __post_init__(self):
+        integer(self.used, 0, 1207959552)
+
+    def reserve(self, count):
+        integer(count, 0, 1207959552)
+        need(not self.denied, 'source-instance-denied')
+        if self.used+count > 1207959552:
+            self.denied = True
+            raise Refused('source-instance-byte-bound')
+        self.used += count
 
 
 def filesystem(directory_fd):
@@ -32,7 +55,7 @@ def filesystem(directory_fd):
     return selected[0]
 
 
-def file_identity(path):
+def file_identity(path, source_reads):
     """One bounded source observation; no payload/audit credit is borrowed."""
     with open(path, 'rb', buffering=0) as stream:
         before = os.fstat(stream.fileno())
@@ -40,7 +63,9 @@ def file_identity(path):
         hasher = hashlib.sha256()
         remaining = before.st_size
         while remaining:
-            raw = stream.read(min(65536, remaining))
+            amount = min(65536, remaining)
+            source_reads.reserve(amount)
+            raw = stream.read(amount)
             need(bool(raw), 'profile-build-short-read')
             remaining -= len(raw)
             hasher.update(raw)
@@ -50,7 +75,7 @@ def file_identity(path):
     return dict(sha256=hasher.hexdigest(), bytes=before.st_size)
 
 
-def observe_build():
+def observe_build(source_reads):
     """Bind actual runtime objects, not merely version strings, in CI evidence.
 
     At most two16MiB files and bounded proc metadata, fitting one original
@@ -59,6 +84,7 @@ def observe_build():
     facts = observe_host()
     need(facts['machine'] in ('x86_64', 'aarch64') and facts['python'].startswith('3.11.2 ') and
          facts['libc'] == 'glibc 2.36' and sys.getfilesystemencoding() == 'utf-8', 'unsupported-allocation-profile')
+    source_reads.reserve(131073)  # Includes the bounded overflow probe.
     mappings = bounded_file('/proc/self/maps', 131072)
     paths = set()
     for line in mappings.splitlines():
@@ -66,8 +92,8 @@ def observe_build():
         if len(columns) == 6 and columns[5].endswith(b'/libc.so.6'):
             paths.add(columns[5].decode('utf-8'))
     need(len(paths) == 1, 'profile-libc-mapping')
-    return dict(facts=facts, python_object=file_identity('/proc/self/exe'),
-                libc_object=file_identity(paths.pop()), api='cpython3.11.2-glibc2.36-linux-allocation-v1')
+    return dict(facts=facts, python_object=file_identity('/proc/self/exe', source_reads),
+                libc_object=file_identity(paths.pop(), source_reads), api='cpython3.11.2-glibc2.36-linux-allocation-v1')
 
 
 class LinuxHostProfile(GuardianAuthority):
@@ -78,21 +104,23 @@ class LinuxHostProfile(GuardianAuthority):
     immutable admitted image and no snapshot/rewind/migration. Those deployment
     properties are not inferred from samples; M21 must supply them in practice.
     """
-    def __init__(self, raw, *, operation, source, request, policy_evidence):
+    def __init__(self, raw, *, operation, source, request, policy_evidence, source_reads=None):
         super().__init__(raw, operation=operation, source=source, request=request, policy_evidence=policy_evidence)
-        self.build = observe_build()
+        self.source_reads = source_reads if source_reads is not None else SourceCredits()
+        self.build = observe_build(self.source_reads)
         need(token_from(raw)['allocation_build'] == digest(self.build), 'profile-original-build')
         # Observe the live guardian before handing out any native authority.
         super().verify(self.build['facts'])
 
     @classmethod
-    def start_guardian(cls, operation, source, request, policy_evidence):
-        build = observe_build()
+    def start_guardian(cls, operation, source, request, policy_evidence, *, source_reads=None):
+        source_reads = source_reads if source_reads is not None else SourceCredits()
+        build = observe_build(source_reads)
         guardian = LiveGuardian.create(operation, source, request, policy_evidence,
                                        allocation_build=digest(build))
         try:
             profile = cls(guardian.raw, operation=operation, source=source, request=request,
-                          policy_evidence=policy_evidence)
+                          policy_evidence=policy_evidence, source_reads=source_reads)
             return guardian, profile
         except Exception:
             guardian.close()
