@@ -77,13 +77,23 @@ class ResearchPlanTests(unittest.TestCase):
                  if tasks[tid]["status"] == "planned" and self.ready(data, tid)}
         self.assertEqual(ready, {"M02.09", "M02.10", "M03.01"})
 
-    def test_completed_research_never_accepts_original_products(self):
+    def test_completed_research_opens_engine_start_without_accepting_products(self):
+        self.assertFalse(self.ready(self.data, "M02.02"))  # M02.09 is incomplete.
         data = self.completed_research()
-        for task_id in ("M02.02", "M02.04"):
-            self.assertFalse(self.ready(data, task_id), task_id)
+        milestones, tasks = self.graph(data)
+        self.assertTrue(self.ready(data, "M02.02"))
+        self.assertEqual(tasks["M02.02"]["status"], "planned")
+        self.assertTrue(self.ready(data, "M03.01"))
+        self.assertEqual(tasks["M03.01"]["status"], "planned")
+        self.assertEqual(tasks["M01.08"]["status"], "planned")
+        self.assertNotEqual(milestones["M02"]["status"], "done")
+        self.assertNotEqual(milestones["M03"]["status"], "done")
+        tasks["M02.09"]["status"] = "planned"
+        self.assertFalse(self.ready(data, "M02.02"))
+        self.assertFalse(self.ready(data, "M02.04"))
 
     def test_removed_whole_baseline_is_a_real_false_readiness_counterexample(self):
-        for task_id in ("M02.02", "M02.04"):
+        for task_id in ("M02.04",):
             with self.subTest(task=task_id):
                 data = self.completed_research()
                 _, tasks = self.graph(data)
@@ -91,6 +101,30 @@ class ResearchPlanTests(unittest.TestCase):
                 self.assertTrue(self.ready(data, task_id))
                 with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research acceptance gate missing"):
                     PLAN["validate"](data, files=False)
+
+    def test_each_engine_start_prerequisite_prevents_real_false_readiness(self):
+        for dependency in ("M19", "M02.09"):
+            with self.subTest(dependency=dependency):
+                data = self.completed_research()
+                milestones, tasks = self.graph(data)
+                children = ([t["id"] for t in milestones[dependency]["tasks"]]
+                            if dependency in milestones else [dependency])
+                for child in children:
+                    tasks[child]["status"] = "planned"
+                self.assertFalse(self.ready(data, "M02.02"))
+                tasks["M02.02"]["depends_on"].remove(dependency)
+                self.assertTrue(self.ready(data, "M02.02"))
+                with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research acceptance gate missing"):
+                    PLAN["research_gate_contract"](milestones, tasks)
+
+    def test_retired_engine_hold_cannot_silently_block_admitted_start(self):
+        data = self.completed_research()
+        _, tasks = self.graph(data)
+        self.assertTrue(self.ready(data, "M02.02"))
+        tasks["M02.02"]["depends_on"].append("M01")
+        self.assertFalse(self.ready(data, "M02.02"))
+        with self.assertRaisesRegex(PLAN["InvalidPlan"], "Native engine start profile changed"):
+            PLAN["validate"](data, files=False)
 
     def test_other_original_product_and_incident_edges_are_required(self):
         for task_id, dep in (("M07.02", "M01"), ("M16.04", "M01"),
@@ -229,6 +263,12 @@ class ResearchPlanTests(unittest.TestCase):
         milestones, _ = self.graph(data)
         milestones["M02"]["depends_on"].remove("M01")
         with self.assertRaisesRegex(PLAN["InvalidPlan"], "Research acceptance gate missing"):
+            PLAN["validate"](data, files=False)
+
+        data = self.completed_research()
+        milestones, _ = self.graph(data)
+        milestones["M02"]["status"] = "done"
+        with self.assertRaisesRegex(PLAN["InvalidPlan"], "Milestone/task completion mismatch"):
             PLAN["validate"](data, files=False)
 
 

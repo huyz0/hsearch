@@ -66,7 +66,9 @@ class IncidentPlanTests(unittest.TestCase):
         # closure; it cannot accept the baseline or a real provider.
         self.assertTrue(ready("M03.01"))
         self.assertEqual(tasks["M03.01"]["status"], "planned")
-        for task_id in ("M02.02", "M02.04", "M03.02"):
+        self.assertTrue(ready("M02.02"))
+        self.assertEqual(tasks["M02.02"]["status"], "planned")
+        for task_id in ("M02.04", "M03.02"):
             self.assertFalse(ready(task_id), task_id)
 
     def test_both_tasks_need_the_actual_disposition_record(self):
@@ -90,7 +92,8 @@ class IncidentPlanTests(unittest.TestCase):
 
     def test_baseline_and_product_edges_cannot_be_removed_after_closure(self):
         self.accepted_disposition_model()
-        for task_id, dependency in (("M01.08", "M01.09"), ("M02.02", "M01"),
+        for task_id, dependency in (("M01.08", "M01.09"), ("M02.02", "M19"),
+                                    ("M02.02", "M02.09"),
                                     ("M02.04", "M01"), ("M03.02", "M03.01")):
             with self.subTest(task=task_id):
                 self.tasks[task_id]["depends_on"].remove(dependency)

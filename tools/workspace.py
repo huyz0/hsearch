@@ -22,7 +22,8 @@ LAYERS = {
     "xtask": set(),
 }
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object"}
-EXTERNAL = {name: ({"lucene-store"} if name == "hsearch-engine" else set()) for name in LAYERS}
+EXTERNAL = {name: ({"lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store"}
+                   if name == "hsearch-engine" else set()) for name in LAYERS}
 TEST_FEATURES = {"test-util", "test-support", "asserting"}
 
 
