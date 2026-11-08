@@ -8,6 +8,7 @@ use lucene_index::index_writer::IndexWriter;
 use lucene_index::segment_info::LuceneVersion;
 use lucene_search::directory_reader::DirectoryReader;
 
+use crate::checkpoint::{Head, Lineage, NativeCommit, WriterLease};
 use crate::schema::{MAX_DOCUMENTS, MAX_OPERATIONS, analyzer};
 use crate::{Directory, Error, Result, Schema, Value};
 
@@ -30,6 +31,15 @@ pub enum Mutation<'a> {
         /// Positive caller-resolved version.
         version: i64,
         /// Exactly the schema's fields, in canonical schema order.
+        fields: &'a [(&'a str, Value<'a>)],
+    },
+    /// Create only when no live document exists, at a newer caller version.
+    Create {
+        /// Stable logical identity.
+        id: &'a str,
+        /// Positive caller-resolved version.
+        version: i64,
+        /// Exactly the schema's fields in canonical schema order.
         fields: &'a [(&'a str, Value<'a>)],
     },
     /// Remove a document, retaining a versioned tombstone for retries.
@@ -61,6 +71,7 @@ impl OwnedValue {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Operation {
     id: String,
+    create_only: bool,
     pub(crate) version: i64,
     pub(crate) fields: Option<Vec<(String, OwnedValue)>>,
 }
@@ -107,6 +118,11 @@ impl Schema {
                     id,
                     version,
                     fields,
+                }
+                | Mutation::Create {
+                    id,
+                    version,
+                    fields,
                 } => (*id, *version, Some(*fields)),
                 Mutation::Delete { id, version } => (*id, *version, None),
             };
@@ -114,9 +130,9 @@ impl Schema {
                 return Err(Error::Document);
             }
             if mutations[..i].iter().any(|m| match m {
-                Mutation::Put { id: other, .. } | Mutation::Delete { id: other, .. } => {
-                    *other == id
-                }
+                Mutation::Put { id: other, .. }
+                | Mutation::Create { id: other, .. }
+                | Mutation::Delete { id: other, .. } => *other == id,
             }) {
                 return Err(Error::Conflict);
             }
@@ -155,8 +171,14 @@ impl Schema {
                     id,
                     version,
                     fields,
+                }
+                | Mutation::Create {
+                    id,
+                    version,
+                    fields,
                 } => Operation {
                     id: id.to_string(),
+                    create_only: matches!(m, Mutation::Create { .. }),
                     version: *version,
                     fields: Some(
                         fields
@@ -177,6 +199,7 @@ impl Schema {
                 },
                 Mutation::Delete { id, version } => Operation {
                     id: id.to_string(),
+                    create_only: false,
                     version: *version,
                     fields: None,
                 },
@@ -196,6 +219,19 @@ impl Schema {
     }
 }
 
+/// Native logical item outcome, independent of any HTTP response contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// A previously absent or deleted identity became live.
+    Created,
+    /// A live document was replaced.
+    Updated,
+    /// A live document was deleted.
+    Deleted,
+    /// A missing identity was deleted, retaining its new versioned tombstone.
+    NotFound,
+}
+
 /// Stable item result, returned in submission order, including missing deletes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Receipt {
@@ -205,6 +241,8 @@ pub struct Receipt {
     pub version: i64,
     /// Whether the mutation removed a live document.
     pub removed: bool,
+    /// Original logical outcome, retained unchanged for an exact retry.
+    pub outcome: Outcome,
 }
 
 #[derive(Clone)]
@@ -229,16 +267,23 @@ struct State {
 pub struct Checkpoint {
     schema: Schema,
     state: State,
+    lineage: Arc<Lineage>,
+    epoch: u64,
+    native: NativeCommit,
 }
 
 /// Caller-owned-directory adapter with one writer and bounded nonblocking admission.
 /// Only methods on this adapter may mutate its directory while it is open.
 pub struct Engine<'d> {
+    // Declaration order is part of WriterLease's implicit-drop invariant.
+    writer: Mutex<IndexWriter<'d>>,
+    lease: WriterLease,
+    directory: &'d dyn Directory,
     snapshots: Arc<AtomicUsize>,
     schema: Schema,
     state: Mutex<State>,
-    writer: Mutex<IndexWriter<'d>>,
 }
+
 fn gate<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
     mutex.try_lock().map_err(|e| match e {
         TryLockError::WouldBlock => Error::Busy,
@@ -261,23 +306,48 @@ impl<'d> Engine<'d> {
         schema: Schema,
         checkpoint: Option<Checkpoint>,
     ) -> Result<Self> {
+        let lineage = checkpoint.as_ref().map_or_else(
+            || Arc::new(Lineage::default()),
+            |checkpoint| Arc::clone(&checkpoint.lineage),
+        );
+        // Hold the shared lineage through validation and native lock acquisition.
+        let mut head = gate(&lineage.head)?;
+        if head.uncertain {
+            return Err(Error::Checkpoint);
+        }
+        if let Some(checkpoint) = &checkpoint {
+            if checkpoint.schema != schema
+                || checkpoint.epoch != head.epoch
+                || head.native != Some(checkpoint.native)
+            {
+                return Err(Error::Checkpoint);
+            }
+        }
+        if head.writer_active {
+            return Err(Error::Busy);
+        }
         let files = directory.list_all().map_err(|_| Error::Native)?;
-        let state = if files.is_empty() {
-            if checkpoint.is_some() {
-                return Err(Error::Checkpoint);
+        let state = match checkpoint {
+            None => {
+                if !files.is_empty() {
+                    return Err(Error::Checkpoint);
+                }
+                State::default()
             }
-            State::default()
-        } else {
-            let checkpoint = checkpoint.ok_or(Error::Checkpoint)?;
-            if checkpoint.schema != schema {
-                return Err(Error::Checkpoint);
+            Some(checkpoint) => {
+                if files.is_empty() {
+                    return Err(Error::Checkpoint);
+                }
+                let reader = DirectoryReader::open(directory).map_err(|_| Error::Native)?;
+                if NativeCommit::from_infos(&reader.segment_infos) != checkpoint.native {
+                    return Err(Error::Checkpoint);
+                }
+                crate::reader::verify(&reader, &schema, &checkpoint.state.current)?;
+                let mut state = checkpoint.state;
+                state.physical_documents =
+                    usize::try_from(reader.max_doc()).map_err(|_| Error::Limit)?;
+                state
             }
-            let reader = DirectoryReader::open(directory).map_err(|_| Error::Native)?;
-            crate::reader::verify(&reader, &schema, &checkpoint.state.current)?;
-            let mut state = checkpoint.state;
-            state.physical_documents =
-                usize::try_from(reader.max_doc()).map_err(|_| Error::Limit)?;
-            state
         };
         let mut writer = IndexWriter::open(directory, vec![], "Lucene104", VERSION)
             .map_err(|_| Error::Native)?;
@@ -287,11 +357,15 @@ impl<'d> Engine<'d> {
             .set_ram_buffer_size_mb(8.0)
             .map_err(|_| Error::Native)?;
         writer.set_max_buffered_docs(8).map_err(|_| Error::Native)?;
+        head.writer_active = true;
+        drop(head);
         Ok(Self {
+            writer: Mutex::new(writer),
+            directory,
+            snapshots: Arc::clone(&lineage.readers),
+            lease: WriterLease::new(lineage),
             schema,
             state: Mutex::new(state),
-            snapshots: Arc::new(AtomicUsize::new(0)),
-            writer: Mutex::new(writer),
         })
     }
 
@@ -325,6 +399,14 @@ impl<'d> Engine<'d> {
             return Err(Error::Limit);
         }
         for op in &batch.operations {
+            if op.create_only
+                && state
+                    .current
+                    .get(&op.id)
+                    .is_some_and(|old| old.fields.is_some())
+            {
+                return Err(Error::Conflict);
+            }
             if state
                 .current
                 .get(&op.id)
@@ -339,6 +421,18 @@ impl<'d> Engine<'d> {
             .map(|op| Receipt {
                 id: op.id.clone(),
                 version: op.version,
+                outcome: match (
+                    op.fields.is_some(),
+                    state
+                        .current
+                        .get(&op.id)
+                        .is_some_and(|old| old.fields.is_some()),
+                ) {
+                    (true, false) => Outcome::Created,
+                    (true, true) => Outcome::Updated,
+                    (false, true) => Outcome::Deleted,
+                    (false, false) => Outcome::NotFound,
+                },
                 removed: op.fields.is_none()
                     && state
                         .current
@@ -362,6 +456,7 @@ impl<'d> Engine<'d> {
             };
             if result.is_err() {
                 state.poisoned = true;
+                self.lease.invalidate();
                 return Err(Error::Native);
             }
         }
@@ -388,6 +483,7 @@ impl<'d> Engine<'d> {
             Ok(r) => r,
             Err(_) => {
                 state.poisoned = true;
+                self.lease.invalidate();
                 return Err(Error::Native);
             }
         };
@@ -399,13 +495,45 @@ impl<'d> Engine<'d> {
     pub fn commit(&self) -> Result<Checkpoint> {
         let mut state = gate(&self.state)?;
         live(&state)?;
+        let mut head = gate(&self.lease.lineage.head)?;
+        if head.uncertain {
+            return Err(Error::Poisoned);
+        }
+        let epoch = head.epoch.checked_add(1).ok_or(Error::Limit)?;
         if gate(&self.writer)?.commit().is_err() {
             state.poisoned = true;
+            head.uncertain = true;
             return Err(Error::Native);
         }
+        self.complete_checkpoint(&mut state, &mut head, epoch)
+    }
+
+    // Kept separate to exercise the real post-native-commit failure boundary:
+    // the native commit can succeed before reading its identity fails.
+    fn complete_checkpoint(
+        &self,
+        state: &mut State,
+        head: &mut Head,
+        epoch: u64,
+    ) -> Result<Checkpoint> {
+        let native = match NativeCommit::read(self.directory) {
+            Ok(native) => native,
+            Err(error) => {
+                state.poisoned = true;
+                head.uncertain = true;
+                return Err(error);
+            }
+        };
+        // Advance even if native commit identity stayed unchanged: request and
+        // tombstone history can advance without changing any live document.
+        head.epoch = epoch;
+        head.native = Some(native);
         Ok(Checkpoint {
             schema: self.schema.clone(),
             state: state.clone(),
+            lineage: Arc::clone(&self.lease.lineage),
+            epoch,
+            native,
         })
     }
 
@@ -415,6 +543,7 @@ impl<'d> Engine<'d> {
         live(&state)?;
         if gate(&self.writer)?.force_merge(1).is_err() {
             state.poisoned = true;
+            self.lease.invalidate();
             return Err(Error::Native);
         }
         state.physical_documents = state
@@ -428,10 +557,18 @@ impl<'d> Engine<'d> {
     /// Close without committing pending work. Previously returned snapshots
     /// remain usable. Close consumes the adapter, including on native failure.
     pub fn close(self) -> Result<()> {
-        self.writer
+        let Self {
+            writer, mut lease, ..
+        } = self;
+        let result = writer
             .into_inner()
-            .map_err(|_| Error::Poisoned)?
-            .close()
-            .map_err(|_| Error::Native)
+            .map_err(|_| Error::Poisoned)
+            .and_then(|writer| writer.close().map_err(|_| Error::Native));
+        let released = lease.finish(result.is_ok());
+        result.and(released)
     }
 }
+
+#[cfg(test)]
+#[path = "adapter_tests.rs"]
+mod tests;

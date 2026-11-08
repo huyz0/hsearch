@@ -7,6 +7,8 @@ use lucene_search::query::{
 
 /// Selected core-v1 query IR. No JSON DSL or unknown-option fallback.
 pub enum Query<'a> {
+    /// Exact caller identity, independent of user field names.
+    Id(&'a str),
     /// Every live document.
     All,
     /// Exact indexed term; analyzed text terms remain case-sensitive.
@@ -128,8 +130,19 @@ fn clause(schema: &Schema, query: &Query<'_>, depth: usize, budget: &mut Budget)
             MAX_DOCUMENTS as i32,
         ))),
         Query::Unsupported => Err(Error::Unsupported),
+        Query::Id(id) => {
+            if id.is_empty() || id.len() > 256 {
+                return Err(Error::Document);
+            }
+            budget.charge(0, id.len() + "_hs_id".len(), 1)?;
+            Ok(Clause::Term(TermQuery::new("_hs_id", id.as_bytes())))
+        }
         Query::Term { field, value } => exact(schema, field, *value, budget),
         Query::Terms { field, values } => {
+            schema.kind(field)?;
+            if values.is_empty() {
+                budget.charge(0, field.len(), 0)?;
+            }
             if values.len() > MAX_TERMS {
                 return Err(Error::Limit);
             }

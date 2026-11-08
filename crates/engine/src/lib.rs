@@ -1,12 +1,13 @@
 //! Bounded materialized Lucene adapter. Native visibility and native commit do
 //! not establish hsearch authority, quorum durability, or archival state.
 mod aggregations;
+mod checkpoint;
 mod schema;
 pub use aggregations::{Bucket, Metrics};
 mod adapter;
 mod query;
 mod reader;
-pub use adapter::{Checkpoint, Engine, Mutation, PreparedBatch, Receipt};
+pub use adapter::{Checkpoint, Engine, Mutation, Outcome, PreparedBatch, Receipt};
 pub use query::Query;
 pub use reader::{Hit, SearchResult, Snapshot, Sort, StoredValue};
 pub use schema::{

@@ -40,6 +40,34 @@ def query(q):
         return f'Query::Range {{field:{lit(field)},lower:{val(field,lo)},upper:{val(field,hi)}}}'
     raise ValueError(kind)
 
+def held_out(root, envelope):
+    raw=(root/'fixtures/engine-research/held-out.json').read_bytes()
+    assert len(raw)<=65536 and hashlib.sha256(raw).hexdigest()==envelope['held_out_sha256']
+    held=json.loads(raw); phrase=held['phrase']; dates=held['date']
+    assert len(phrase['documents'])==3 and len(dates['documents'])==5 and phrase['slop']==0
+    out=['#[test] fn production_held_out_phrase_discriminates_unordered_and() {',
+         'let directory=ByteBuffersDirectory::new(); let schema=Schema::new(1,&[("title",Kind::Text)]).unwrap(); let engine=Engine::open(&directory,schema.clone(),None).unwrap();']
+    for row in phrase['documents']:
+        out.append(f'engine.apply(schema.prepare({lit(row["id"])},&[Mutation::Put{{id:{lit(row["id"])},version:1,fields:&[("title",Value::String({lit(row["title"])}))]}}]).unwrap()).unwrap();')
+    out.append('let snapshot=engine.refresh().unwrap();')
+    out.append(f'let exact=snapshot.search(&Query::Match{{field:"title",text:{lit(" ".join(phrase["query"]))},phrase:true}},&[],128,&[]).unwrap();')
+    out.append('assert_eq!(exact.hits.iter().map(|h|h.id.as_str()).collect::<Vec<_>>(),vec!['+', '.join(lit(i) for i in phrase['exact_phrase_ids'])+']);')
+    terms=', '.join('Query::Term{field:"title",value:Value::String('+lit(t)+')}' for t in phrase['query'])
+    out.append('let unordered=snapshot.search(&Query::Bool{must:&['+terms+'],filter:&[],should:&[],must_not:&[],minimum_should_match:0},&[],128,&[]).unwrap();')
+    out.append('assert_eq!(unordered.hits.iter().map(|h|h.id.as_str()).collect::<Vec<_>>(),vec!['+', '.join(lit(i) for i in phrase['unsafe_unordered_and_ids'])+']);')
+    out.append('assert_ne!(exact.hits,unordered.hits);engine.close().unwrap();}')
+    out+=['#[test] fn production_held_out_date_range_discriminates_match_all() {',
+         'let directory=ByteBuffersDirectory::new(); let schema=Schema::new(1,&[("date",Kind::Date)]).unwrap(); let engine=Engine::open(&directory,schema.clone(),None).unwrap();']
+    for row in dates['documents']:
+        out.append(f'engine.apply(schema.prepare({lit(row["id"])},&[Mutation::Put{{id:{lit(row["id"])},version:1,fields:&[("date",Value::Date({row["epoch_ms"]}))]}}]).unwrap()).unwrap();')
+    out.append('let snapshot=engine.refresh().unwrap();')
+    out.append(f'let exact=snapshot.search(&Query::Range{{field:"date",lower:Value::Date({dates["minimum"]}),upper:Value::Date({dates["maximum"]})}},&[],128,&[]).unwrap();')
+    out.append('assert_eq!(exact.hits.iter().map(|h|h.id.as_str()).collect::<Vec<_>>(),vec!['+', '.join(lit(i) for i in dates['inclusive_range_ids'])+']);')
+    out.append('let wrong=snapshot.search(&Query::All,&[],128,&[]).unwrap();')
+    out.append('assert_eq!(wrong.hits.iter().map(|h|h.id.as_str()).collect::<Vec<_>>(),vec!['+', '.join(lit(i) for i in sorted(dates['unsafe_match_all_ids']))+']);')
+    out.append('assert_eq!(exact.total,3);assert_eq!(wrong.total,5);assert_ne!(exact.hits,wrong.hits);engine.close().unwrap();}')
+    return out
+
 def render(root):
     folder=root/'fixtures/api/core-v1'
     envelope=json.loads((root/'docs/plan/research/native-engine-envelope.json').read_bytes())
@@ -91,6 +119,7 @@ def render(root):
         out.append('{let expected:Vec<(&str,i32,i32,i32)>=vec!['+', '.join(f'({lit(t["token"])},{t["position"]},{t["start_offset"]},{t["end_offset"]})' for t in c['tokens'])+'];')
         out.append(f'assert_eq!(analyze_text({lit(c["text"])}).unwrap().iter().map(|t|(t.term.as_str(),t.position,t.start_offset,t.end_offset)).collect::<Vec<_>>(),expected,{lit(c["id"])});'+'}')
     out+=['}']
+    out.extend(held_out(root,envelope))
     return '\n'.join(out)+'\n'
 
 if __name__=='__main__':

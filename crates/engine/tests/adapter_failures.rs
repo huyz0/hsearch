@@ -1,68 +1,10 @@
 //! Native write/commit/refresh/merge faults and supported writer ownership.
 use hsearch_engine::{Engine, Error, Kind, Mutation, Query, Schema, Value};
-use lucene_store::{ByteBuffersDirectory, Directory, FsIndexOutput, Input, Lock};
-use std::sync::atomic::{AtomicU8, Ordering};
-
-struct FaultDirectory {
-    inner: ByteBuffersDirectory,
-    mode: AtomicU8,
-}
-impl FaultDirectory {
-    fn new() -> Self {
-        Self {
-            inner: ByteBuffersDirectory::new(),
-            mode: AtomicU8::new(0),
-        }
-    }
-    fn fail(&self, mode: u8) -> lucene_store::Result<()> {
-        if self.mode.load(Ordering::SeqCst) == mode {
-            Err(std::io::Error::other("injected native failure").into())
-        } else {
-            Ok(())
-        }
-    }
-}
-impl Directory for FaultDirectory {
-    fn list_all(&self) -> lucene_store::Result<Vec<String>> {
-        self.inner.list_all()
-    }
-    fn open(&self, name: &str) -> lucene_store::Result<Input> {
-        self.inner.open(name)
-    }
-    fn file_length(&self, name: &str) -> lucene_store::Result<u64> {
-        self.inner.file_length(name)
-    }
-    fn create_output(&self, name: &str) -> lucene_store::Result<FsIndexOutput> {
-        self.fail(1)?;
-        self.inner.create_output(name)
-    }
-    fn create_temp_output(
-        &self,
-        prefix: &str,
-        suffix: &str,
-    ) -> lucene_store::Result<FsIndexOutput> {
-        self.fail(1)?;
-        self.inner.create_temp_output(prefix, suffix)
-    }
-    fn sync(&self, names: &[String]) -> lucene_store::Result<()> {
-        self.fail(2)?;
-        self.inner.sync(names)
-    }
-    fn rename(&self, source: &str, dest: &str) -> lucene_store::Result<()> {
-        self.fail(3)?;
-        self.inner.rename(source, dest)
-    }
-    fn delete_file(&self, name: &str) -> lucene_store::Result<()> {
-        self.inner.delete_file(name)
-    }
-    fn sync_meta_data(&self) -> lucene_store::Result<()> {
-        self.fail(2)?;
-        self.inner.sync_meta_data()
-    }
-    fn obtain_lock(&self, name: &str) -> lucene_store::Result<Box<dyn Lock>> {
-        self.inner.obtain_lock(name)
-    }
-}
+use lucene_store::ByteBuffersDirectory;
+use std::sync::atomic::Ordering;
+#[path = "support/adapter_directory.rs"]
+mod support;
+use support::FaultDirectory;
 
 #[test]
 fn failed_native_mutation_commit_refresh_and_merge_poison_continuation() {
@@ -84,7 +26,7 @@ fn failed_native_mutation_commit_refresh_and_merge_poison_continuation() {
                     .unwrap(),
             )
             .unwrap();
-        engine.commit().unwrap();
+        let checkpoint = engine.commit().unwrap();
         let old = engine.refresh().unwrap();
         if action == "merge" {
             for i in 0..8 {
@@ -192,6 +134,13 @@ fn failed_native_mutation_commit_refresh_and_merge_poison_continuation() {
         );
         directory.mode.store(0, Ordering::SeqCst);
         engine.close().unwrap();
+        assert!(
+            matches!(
+                Engine::open(&directory, schema, Some(checkpoint)),
+                Err(Error::Checkpoint)
+            ),
+            "{action}"
+        );
     }
 }
 

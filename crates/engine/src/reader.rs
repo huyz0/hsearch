@@ -92,6 +92,15 @@ impl Snapshot {
             _reservation: reservation,
         })
     }
+    /// Read one logical identity from this frozen snapshot. This is not an
+    /// authoritative latest GET or a distributed freshness guarantee.
+    pub fn get(&self, id: &str, projection: &[&str]) -> Result<Option<Hit>> {
+        let mut result = self.search(&Query::Id(id), &[], 1, projection)?;
+        if result.total > 1 {
+            return Err(Error::Checkpoint);
+        }
+        Ok(result.hits.pop())
+    }
     /// Search the complete bounded native scope, with explicit source projection.
     /// Size zero returns no hits and still computes the exact admitted count.
     pub fn search(

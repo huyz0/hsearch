@@ -819,3 +819,203 @@ fn public_analyzer_tokens_positions_and_utf16_offsets() {
         );
     }
 }
+#[test]
+fn production_held_out_phrase_discriminates_unordered_and() {
+    let directory = ByteBuffersDirectory::new();
+    let schema = Schema::new(1, &[("title", Kind::Text)]).unwrap();
+    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "adjacent",
+                    &[Mutation::Put {
+                        id: "adjacent",
+                        version: 1,
+                        fields: &[("title", Value::String("brown fox"))],
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "gap",
+                    &[Mutation::Put {
+                        id: "gap",
+                        version: 1,
+                        fields: &[("title", Value::String("brown red fox"))],
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "reversed",
+                    &[Mutation::Put {
+                        id: "reversed",
+                        version: 1,
+                        fields: &[("title", Value::String("fox brown"))],
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    let snapshot = engine.refresh().unwrap();
+    let exact = snapshot
+        .search(
+            &Query::Match {
+                field: "title",
+                text: "brown fox",
+                phrase: true,
+            },
+            &[],
+            128,
+            &[],
+        )
+        .unwrap();
+    assert_eq!(
+        exact.hits.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(),
+        vec!["adjacent"]
+    );
+    let unordered = snapshot
+        .search(
+            &Query::Bool {
+                must: &[
+                    Query::Term {
+                        field: "title",
+                        value: Value::String("brown"),
+                    },
+                    Query::Term {
+                        field: "title",
+                        value: Value::String("fox"),
+                    },
+                ],
+                filter: &[],
+                should: &[],
+                must_not: &[],
+                minimum_should_match: 0,
+            },
+            &[],
+            128,
+            &[],
+        )
+        .unwrap();
+    assert_eq!(
+        unordered
+            .hits
+            .iter()
+            .map(|h| h.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["adjacent", "gap", "reversed"]
+    );
+    assert_ne!(exact.hits, unordered.hits);
+    engine.close().unwrap();
+}
+#[test]
+fn production_held_out_date_range_discriminates_match_all() {
+    let directory = ByteBuffersDirectory::new();
+    let schema = Schema::new(1, &[("date", Kind::Date)]).unwrap();
+    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "below",
+                    &[Mutation::Put {
+                        id: "below",
+                        version: 1,
+                        fields: &[("date", Value::Date(1767225599999))],
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "lower",
+                    &[Mutation::Put {
+                        id: "lower",
+                        version: 1,
+                        fields: &[("date", Value::Date(1767225600000))],
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "middle",
+                    &[Mutation::Put {
+                        id: "middle",
+                        version: 1,
+                        fields: &[("date", Value::Date(1767225600001))],
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "upper",
+                    &[Mutation::Put {
+                        id: "upper",
+                        version: 1,
+                        fields: &[("date", Value::Date(1767225600002))],
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "above",
+                    &[Mutation::Put {
+                        id: "above",
+                        version: 1,
+                        fields: &[("date", Value::Date(1767225600003))],
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    let snapshot = engine.refresh().unwrap();
+    let exact = snapshot
+        .search(
+            &Query::Range {
+                field: "date",
+                lower: Value::Date(1767225600000),
+                upper: Value::Date(1767225600002),
+            },
+            &[],
+            128,
+            &[],
+        )
+        .unwrap();
+    assert_eq!(
+        exact.hits.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(),
+        vec!["lower", "middle", "upper"]
+    );
+    let wrong = snapshot.search(&Query::All, &[], 128, &[]).unwrap();
+    assert_eq!(
+        wrong.hits.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(),
+        vec!["above", "below", "lower", "middle", "upper"]
+    );
+    assert_eq!(exact.total, 3);
+    assert_eq!(wrong.total, 5);
+    assert_ne!(exact.hits, wrong.hits);
+    engine.close().unwrap();
+}

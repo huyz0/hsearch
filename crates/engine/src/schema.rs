@@ -20,7 +20,7 @@ pub const MAX_OPERATIONS: usize = 256;
 pub enum Kind {
     /// Exact UTF-8 term, with sorted doc values.
     Keyword,
-    /// Standard analyzer, no stopwords, 255-character token limit.
+    /// Standard analyzer, no stopwords, 255-UTF-16-unit scanner buffer.
     Text,
     /// Signed 32-bit integer, without coercion.
     Integer,
