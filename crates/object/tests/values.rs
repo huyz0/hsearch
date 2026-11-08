@@ -22,7 +22,8 @@ fn bounded_inputs_reject_before_copy_and_debug_redacts() {
             let debug = format!("{value:?}");
             assert!(debug.contains("bytes"));
             assert!(!debug.contains("xxx"));
-            assert_eq!(<$ty>::new(&vec![0; $limit + 1]), Err(Error::InvalidInput));
+            let oversized = vec![0; $limit + 1];
+            assert_eq!(<$ty>::new(&oversized), Err(Error::InvalidInput));
             if $empty {
                 assert!(<$ty>::new(&[]).unwrap().is_empty());
             } else {
