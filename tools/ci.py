@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COVERAGE_SOURCES = runpy.run_path(str(ROOT / "tools/coverage_sources.py"))
 COVERAGE = runpy.run_path(str(ROOT / "tools/coverage.py"))
 JOBS = ("docs", "linux-x64", "linux-arm64", "sandbox-x64", "sandbox-arm64")
-PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine"}
+PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object"}
 SHA = re.compile(r"[0-9a-f]{40}")
 
 

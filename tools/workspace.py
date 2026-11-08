@@ -17,10 +17,11 @@ LAYERS = {
     "hsearch-types": set(),
     "hsearch-observe": {"hsearch-types"},
     "hsearch-engine": set(),
+    "hsearch-object": set(),
     "hsearch-testkit": set(),
     "xtask": set(),
 }
-PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine"}
+PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object"}
 EXTERNAL = {name: ({"lucene-store"} if name == "hsearch-engine" else set()) for name in LAYERS}
 TEST_FEATURES = {"test-util", "test-support", "asserting"}
 
@@ -115,8 +116,9 @@ def cargo(*args):
 
 def inputs():
     data = json.loads(cargo("metadata", "--locked", "--offline", "--all-features", "--format-version", "1"))
-    tree = cargo("tree", "--locked", "--offline", "--package", "hsearch-engine", "--package",
-                 "hsearch-observe", "--all-features", "--edges", "normal,build", "--prefix", "none", "--format", "{p} {f}")
+    roots = [part for name in sorted(PRODUCTION) for part in ("--package", name)]
+    tree = cargo("tree", "--locked", "--offline", *roots, "--all-features",
+                 "--edges", "normal,build", "--prefix", "none", "--format", "{p} {f}")
     return data, tree
 
 
@@ -182,6 +184,9 @@ def selftest(data, tree):
     case("foundation imports adapter", "Forbidden layer edge", lambda d, p: edge(p, "hsearch-types", "hsearch-engine"))
     case("foundation imports external adapter", "Forbidden layer edge", lambda d, p: edge(p, "hsearch-types", "object_store"))
     case("testkit normal edge", "Forbidden layer edge", lambda d, p: edge(p, "hsearch-engine", "hsearch-testkit"))
+    case("object imports engine", "Forbidden layer edge", lambda d, p: edge(p, "hsearch-object", "hsearch-engine"))
+    case("object testkit normal edge", "Forbidden layer edge", lambda d, p: edge(p, "hsearch-object", "hsearch-testkit"))
+    case("object Lucene import", "Only engine owns", lambda d, p: edge(p, "hsearch-object", "lucene-store"))
     case("dev cycle", "dependency cycle", lambda d, p: edge(p, "hsearch-testkit", "hsearch-engine", "dev"))
     case("Lucene outside boundary", "Only engine owns", lambda d, p: edge(p, "hsearch-types", "lucene-store"))
     case("wrong pin", "Incorrect engine pin", lambda d, p: p["lucene-store"].update(source="git+unreviewed"))

@@ -76,6 +76,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "hsearch-object"
+version = "0.1.0"
+
+[[package]]
 name = "hsearch-observe"
 version = "0.1.0"
 dependencies = [
