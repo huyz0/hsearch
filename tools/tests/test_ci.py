@@ -29,7 +29,10 @@ def fixture_coverage():
     value = dict(CI["COVERAGE"])
     value["qualified_tools"] = lambda: {"nextest_executable": "/verified/cargo-nextest",
                                        "cargo_clippy_executable": "/verified/cargo-clippy", "cargo_fmt_executable": "/verified/cargo-fmt",
-                                       "rustfmt_executable": "/verified/rustfmt"}
+                                       "rustfmt_executable": "/verified/rustfmt",
+                                       **{key: "synthetic-HOST-context" for key in
+                                          ("rustc", "cargo", "native_target", "cargo_compiler", "cargo_rustdoc", "nextest",
+                                           "hashes", "compiler_policy_sha256", "compiler_environment", "compiler_wrappers", "test_executor")}}
     value["ordinary_environment"] = lambda _tools: {"QUALIFIED_ENVIRONMENT": "fixture"}
     return value
 
@@ -479,9 +482,9 @@ class BoundedResearchSchedulingControls(unittest.TestCase):
             self.assertIn("--config", command)
             self.assertTrue(any(str(arg).endswith("cargo-correctness.toml") for arg in command))
         diagnostics = [command for command in commands if "-E" in command or "--test" in command]
-        self.assertEqual(len(diagnostics), 8)  # Two layout receipts and six native experiment commands.
+        self.assertEqual(len(diagnostics), 10)  # Two layout, two differential, six research captures.
         self.assertTrue(all("--no-fail-fast" not in command for command in diagnostics))
-        samples = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "--test" in command]
+        samples = [command for command in commands if command[:3] == ["/verified/cargo-nextest", "nextest", "run"] and "--test" in command and "native_feasibility" in command]
         self.assertEqual(len(samples), 6)
         self.assertEqual(sum("--release" in command for command in samples), 3)
         for command in samples:
@@ -531,3 +534,75 @@ class ActualCoverageBaseControls(unittest.TestCase):
                 tree = git("rev-parse", "HEAD^{tree}")
                 unrelated = git("commit-tree", tree, "-m", "unrelated root")
                 with self.assertRaises(ValueError): CI["qualified_coverage_base"](unrelated, head)
+
+
+class DifferentialGateControls(unittest.TestCase):
+    def full_results(self):
+        fixture = runpy.run_path(str(Path(__file__).parent / 'test_engine_differential.py'))
+        differential = fixture['D']
+        packages = []
+        for target in differential['TARGETS']:
+            result, source, image, reference = fixture['synthetic_capture'](target)
+            source['head'] = HEAD
+            packages.append(differential['architecture_package'](differential['collect_native'](result, source, source, image), reference))
+        results = {name: {'result': 'success'} for name in ('plan', *CI['JOBS'])}
+        for job, package in zip(('sandbox-x64', 'sandbox-arm64'), packages):
+            results[job]['outputs'] = {'differential': differential['canonical'](package).decode()}
+        differential['source_identity'] = lambda root: source
+        return differential, results
+
+    def test_full_gate_consumes_actual_cases_and_manifest_in_both_outputs(self):
+        differential, results = self.full_results()
+        original = runpy.run_path
+        def load(path, *args, **kwargs):
+            return differential if str(path).endswith('engine_differential.py') else original(path, *args, **kwargs)
+        with patch.object(runpy, 'run_path', side_effect=load):
+            CI['gate'](choose(b'M\0tools/check.py\0'), results)
+            for job in ('sandbox-x64', 'sandbox-arm64'):
+                bad = copy.deepcopy(results)
+                bad[job]['outputs']['differential'] = ''
+                with self.assertRaises(ValueError): CI['gate'](choose(b'M\0tools/check.py\0'), bad)
+            bad = copy.deepcopy(results)
+            bad['sandbox-arm64']['outputs'] = copy.deepcopy(bad['sandbox-x64']['outputs'])
+            with self.assertRaises(ValueError): CI['gate'](choose(b'M\0tools/check.py\0'), bad)
+
+    def test_docs_and_selective_native_do_not_borrow_sandbox_matrix(self):
+        for change in (b'M\0docs/readme.md\0', b'M\0crates/engine/src/lib.rs\0'):
+            plan = choose(change)
+            results = {'plan': {'result': 'success'}}
+            results.update({job: {'result': 'success' if job in plan['selected_jobs'] else 'skipped'} for job in CI['JOBS']})
+            CI['gate'](plan, results)
+
+    def test_workflow_routes_packages_to_existing_gate_and_public_artifacts_only(self):
+        root = Path(__file__).resolve().parents[2]
+        native = (root / '.github/workflows/native.yml').read_text(encoding='utf-8')
+        bootstrap = (root / '.github/workflows/bootstrap.yml').read_text(encoding='utf-8')
+        self.assertIn('value: ${{ jobs.qualify.outputs.differential }}', native)
+        self.assertIn('differential: ${{ steps.differential.outputs.differential }}', native)
+        self.assertIn('smoke --evidence-parent "${{ runner.temp }}/hsearch-engine-differential"', native)
+        self.assertIn('python3 tools/engine_differential.py --native', native)
+        public = native[native.index('      - name: Preserve only public'):]
+        self.assertIn('${{ runner.temp }}/hsearch-api-reference', public)
+        self.assertIn('${{ runner.temp }}/hsearch-engine-differential', public)
+        self.assertNotIn('path: ${{ runner.temp }}/hsearch-leases', native)
+        self.assertIn('CI_RESULTS: ${{ toJSON(needs) }}', bootstrap)
+        for runner in ('ubuntu-24.04', 'ubuntu-24.04-arm'):
+            self.assertIn('runner: ' + runner, bootstrap)
+        self.assertIn('needs: [plan, docs, linux-x64, linux-arm64, sandbox-x64, sandbox-arm64]', bootstrap)
+        self.assertEqual(native.count('run: python3 tools/ci.py native'), 1)
+
+
+class CaptureFailureControls(unittest.TestCase):
+    def test_failed_supplement_cannot_emit_completion_or_run_later_work(self):
+        check = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'check.py'))
+        calls, output = [], io.StringIO()
+        def fail(command, **kwargs):
+            calls.append(command)
+            if 'adapter_java_supplement' in command:
+                raise subprocess.CalledProcessError(1, command)
+        with patch.dict(check['main'].__globals__, COVERAGE=fixture_coverage()), patch.object(subprocess, 'run', side_effect=fail), contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(check['main'](), 1)
+        self.assertEqual(sum('adapter_java_supplement' in c for c in calls), 1)
+        self.assertIn('"state": "started"', output.getvalue())
+        self.assertNotIn('"state": "completed"', output.getvalue())
+        self.assertFalse(any('native_feasibility' in c for c in calls))
