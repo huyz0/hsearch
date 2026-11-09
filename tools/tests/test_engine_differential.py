@@ -389,3 +389,78 @@ class TransportAndPackagingControls(unittest.TestCase):
             package = D['decode']((native / 'package.json').read_bytes())
             self.assertEqual(len(D['verify_package'](package, source, ROOT)), 2)
             self.assertTrue(output.read_text(encoding='utf-8').startswith('differential={'))
+
+
+def literal_linux_check_commands():
+    """Independent Linux guest transcript, not derived from command reconstruction."""
+    commands = [
+        '/usr/bin/python3 crates/engine/tests/render_adapter_fixtures.py --root /workspace --check --formatter /qualified/bin/rustfmt',
+        '/usr/bin/python3 tools/api_contract.py check',
+        '/usr/bin/python3 tools/engine_research.py check',
+        '/usr/bin/python3 tools/workspace.py check',
+        '/usr/bin/python3 tools/workspace.py selftest',
+        '/qualified/bin/cargo-fmt fmt --all -- --check',
+        '/qualified/bin/cargo-clippy clippy --config /workspace/harness/cargo-correctness.toml --locked --offline --workspace --all-targets --all-features -- -D warnings',
+        '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --workspace --all-features --no-fail-fast --profile hsearch --no-tests=fail',
+        'cargo --config /workspace/harness/cargo-correctness.toml test --locked --offline --workspace --all-features --doc',
+        '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --workspace --all-features --release --no-fail-fast --profile hsearch --no-tests=fail',
+        'cargo --config /workspace/harness/cargo-correctness.toml test --locked --offline --workspace --all-features --release --doc',
+        '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --package hsearch-engine --all-features --test adapter_java_supplement --profile hsearch --no-tests=fail --success-output immediate',
+        '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --package hsearch-engine --all-features --test adapter_java_supplement --release --profile hsearch --no-tests=fail --success-output immediate',
+        '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --package hsearch-observe --all-features --profile hsearch --no-tests=fail -E test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension) --success-output immediate',
+        '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --package hsearch-observe --all-features --release --profile hsearch --no-tests=fail -E test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension) --success-output immediate',
+        'cargo --config /workspace/harness/cargo-correctness.toml build --locked --offline --release --package hsearch-engine --package hsearch-observe --package hsearch-object',
+        '/usr/bin/python3 docs/plan/tools/plan.py check',
+        '/usr/bin/python3 docs/plan/tools/plan.py selftest',
+        '/usr/bin/python3 docs/plan/tools/cost_model.py --selftest',
+        '/usr/bin/python3 -m unittest discover --start-directory tools/tests --verbose',
+        '/usr/bin/python3 tools/coverage_corpus.py',
+    ]
+    dev = '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --package hsearch-engine --all-features --test native_feasibility --profile hsearch --no-tests=fail --success-output immediate'
+    release = '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --package hsearch-engine --all-features --test native_feasibility --release --profile hsearch --no-tests=fail --success-output immediate'
+    return commands + [dev, dev, dev, release, release, release]
+
+
+def literal_linux_observation(target=D['TARGETS'][0]):
+    """Cases/tool records are synthetic; every observed CHECK line is hand-written."""
+    result, source, image, reference = synthetic_capture(target)
+    commands = iter(literal_linux_check_commands())
+    lines = []
+    for line in result['output'].splitlines():
+        lines.append('CHECK: ' + next(commands) if line.startswith('CHECK: ') else line)
+    assert next(commands, None) is None
+    result['output'] = '\n'.join(lines) + '\n'
+    return result, source, image, reference
+
+
+class PosixGuestCommandControls(unittest.TestCase):
+    def test_complete_linux_guest_transcript_is_host_independent(self):
+        tools = {'cargo_compiler': '/qualified/bin/rustc', 'python_executable': '/usr/bin/python3', 'nextest_executable': '/qualified/nextest'}
+        expected = literal_linux_check_commands()
+        self.assertEqual(len(expected), 27)
+        self.assertEqual(D['qualified_commands'](tools, ROOT), expected)
+        self.assertTrue(all('\\' not in command for command in expected))
+
+    def test_literal_linux_raw_checks_collect_on_both_target_shapes(self):
+        for target in D['TARGETS']:
+            result, source, image, _ = literal_linux_observation(target)
+            capture = D['collect_native'](result, source, source, image, ROOT)
+            self.assertEqual(capture['manifest']['commands']['count'], 27)
+            self.assertEqual(capture['manifest']['commands']['sha256'], D['digest'](literal_linux_check_commands()))
+            self.assertEqual([n['profile'] for n in capture['native']], ['dev', 'release'])
+
+    def test_backslash_linux_raw_checks_and_manifest_proof_refuse(self):
+        result, source, image, _ = literal_linux_observation()
+        capture = D['collect_native'](result, source, source, image, ROOT)
+        for index, name in ((0, 'rustfmt'), (5, 'cargo-fmt'), (6, 'cargo-clippy')):
+            linux_path = '/qualified/bin/' + name
+            windows_path = '\\qualified\\bin\\' + name
+            observed = dict(result, output=result['output'].replace(linux_path, windows_path))
+            with self.subTest(tool=name), self.assertRaisesRegex(ValueError, 'foreign check commands'):
+                D['collect_native'](observed, source, source, image, ROOT)
+            commands = literal_linux_check_commands()
+            commands[index] = commands[index].replace(linux_path, windows_path)
+            manifest = copy.deepcopy(capture['manifest'])
+            manifest['commands']['sha256'] = D['digest'](commands)
+            with self.assertRaisesRegex(ValueError, 'foreign check commands'):
+                D['verify_execution'](manifest, source, ROOT)

@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 import hashlib
 import json
 import math
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -367,10 +367,10 @@ def qualified_commands(tools, root=ROOT):
             return [tools['nextest_executable'], 'nextest', command[2], '--config', policy, *command[3:]]
         if command[:2] in (['cargo', 'clippy'], ['cargo', 'fmt']):
             name = 'cargo-clippy' if command[1] == 'clippy' else 'cargo-fmt'
-            path = str(Path(tools['cargo_compiler']).parent / name)
+            path = str(PurePosixPath(tools['cargo_compiler']).parent / name)
             return [path, command[1], *(['--config', policy] if name == 'cargo-clippy' else []), *command[2:]]
         return [command[0], '--config', policy, *command[1:]] if command[0] == 'cargo' else command
-    formatter = str(Path(tools['cargo_compiler']).parent / 'rustfmt')
+    formatter = str(PurePosixPath(tools['cargo_compiler']).parent / 'rustfmt')
     generator = [tools['python_executable'], 'crates/engine/tests/render_adapter_fixtures.py', '--root', '/workspace', '--check', '--formatter', formatter]
     research = runpy.run_path(str(Path(root) / 'tools/engine_research.py'))
     commands = [generator, *[transform(c) for c in check['CHECKS']],
