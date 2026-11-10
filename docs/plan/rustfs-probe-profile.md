@@ -102,10 +102,20 @@ commands. Input publication reserves actual bytes before writing a phase slot;
 all retained slots, partial/orphan files and evidence share the existing64MiB
 claim ceiling. Repeated profile dispatch refuses rather than replaying an
 unknown or already attempted campaign. Primary profile command evidence stores
-its bounded output as base64 plus SHA-256, before dependent decoding. This keeps
+both Docker log pipes as tagged raw bytes (base64 plus SHA-256) before dependent
+decoding. Their aggregate shares the existing1MiB command half; the monitor still
+explicitly merges its child's stdout/stderr. Non-UTF8 bytes are preserved in
+failed evidence, while live parsing requires strict UTF8 stdout and empty Docker
+stderr. The `rustfs-raw-streams-v1` execution tag is required. Old failed packets
+retain their `base64-of-utf8-output` tag and original source binding; their reader
+claims decoded UTF8 only, never retroactive raw-byte fidelity. This keeps
 worst-case control characters within the original packet instead of letting JSON
 escaping exceed it. The validator still receives the original output unchanged;
-malformed or oversized framing continues to refuse.
+malformed or oversized framing continues to refuse. Base64 is not sanitization:
+secret checks inspect decoded raw bytes before retention and again across all
+records before any public export file is created. Secret-bearing output retains
+only failure codes, byte counts and digests. Existing transport checks still
+reject actual access/secret values and auth-like provider fields before recording.
 
 The hosted entrypoint requires selected sandbox jobs and an exact clean head,
 creates its normal claim in job-local state and uses the job's shared registry.

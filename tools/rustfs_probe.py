@@ -72,6 +72,9 @@ def restart_receipt(before, after, expected):
 def check_execution(result, *, image, budget, platform):
     need(type(result) is dict and result.get("truncated") is False and
          type(result.get("exit_code")) is int and result["exit_code"] in (0, 1, 2), "unknown-or-truncated-profile-result")
+    need(result.get("output_protocol") == "rustfs-raw-streams-v1" and
+         result.get("encoding") == "utf-8-strict" and result.get("stderr_bytes") == 0,
+         "raw-output-protocol-or-encoding-refused")
     proof = result.get("execution")
     need(type(proof) is dict and proof.get("image_id") == image and
          re.fullmatch(r"[a-f0-9]{64}", proof.get("container_id", "")) and
@@ -149,6 +152,18 @@ class ProfileContext:
     def public_result(result):
         return {key: result[key] for key in ("mode", "container_id", "exit_code", "truncated", "execution")}
 
+    @staticmethod
+    def output_binding(result):
+        # TaskStore has already retained the complete bounded raw pipes. Avoid
+        # a second JSON expansion of replacement-decoded malformed bytes here.
+        streams = result.get("raw_streams")
+        need(type(streams) is dict and set(streams) == {"stdout", "stderr"} and
+             all(type(raw) is bytes for raw in streams.values()) and
+             sum(map(len, streams.values())) <= 1024**2, "raw-output-binding-unavailable")
+        return {"protocol": result.get("output_protocol"), "encoding": result.get("encoding"),
+                "streams": {name: {"bytes": len(raw), "sha256": digest(raw)}
+                            for name, raw in streams.items()}}
+
     def _body(self, result, mode):
         identity = self.source()
         raw = check_execution(result, image=identity["image"],
@@ -175,19 +190,19 @@ class ProfileContext:
         # Preserve a known first outcome through ordinary evidence before any
         # dependent parse or eligibility operation, including failed partials.
         self.append("rustfs-primary-outcome", {"result": self.public_result(result),
-                                               "output": result["output"], "sha256": digest(result["output"].encode())})
+                                               "output_binding": self.output_binding(result)})
         body, _receipt = self._body(result, mode)
         need(len(body) <= HISTORY["WIRE_BYTES"], "capture-byte-bound")
         return body
 
     def attest_checker(self, result):
-        self.append("rustfs-build-outcome", {"result": self.public_result(result), "output": result["output"]})
+        self.append("rustfs-build-outcome", {"result": self.public_result(result), "output_binding": self.output_binding(result)})
         _body, receipt = self._body(result, MODES[0])
         need(result["exit_code"] == 0 and type(receipt.get("checker")) is dict, "checker-build-failed")
         return receipt["checker"]
 
     def checker_report(self, result):
-        self.append("rustfs-checker-outcome", {"result": self.public_result(result), "output": result["output"]})
+        self.append("rustfs-checker-outcome", {"result": self.public_result(result), "output_binding": self.output_binding(result)})
         body, _receipt = self._body(result, MODES[3])
         need(len(body) <= 4096, "checker-report-bound")
         report = json.loads(body)

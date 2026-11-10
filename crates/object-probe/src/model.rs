@@ -549,16 +549,16 @@ impl History {
                 }
             }
             // Omitting a continuation label cannot authorize a blind retry.
-            if let Action::Write(m) = o.action {
-                if self.operations.iter().any(|p| p.span.end.is_some_and(|e| e.order < o.span.start.order)
+            if let Action::Write(m) = o.action
+                && self.operations.iter().any(|p| p.span.end.is_some_and(|e| e.order < o.span.start.order)
                     && p.outcome == Some(Outcome::UnknownOutcome)
                     && p.action.mutation().is_some_and(|prior| prior.request == m.request
                         && !self.operations.iter().any(|r| r.action == Action::Resolve(prior)
                             && matches!(r.outcome, Some(Outcome::Receipt(receipt)) if receipt.request == prior.request)
                             && p.span.end.is_some_and(|end| end.order < r.span.start.order)
-                            && r.span.end.is_some_and(|end| end.order < o.span.start.order)))) {
-                    return Err(Invalid::Continuation);
-                }
+                            && r.span.end.is_some_and(|end| end.order < o.span.start.order))))
+            {
+                return Err(Invalid::Continuation);
             }
             if let Some(id) = o.continuation_of {
                 let p = self

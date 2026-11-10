@@ -166,7 +166,7 @@ class WorktreeControls(unittest.TestCase):
 
     def test_evidence_content_binding_budget_and_exact_context_bytes(self):
         claim = self.claim()
-        identity = self.store.append(claim, "fixture-owner", "note", {"text": "hÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©llo ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“Ãƒâ€šÃ‚Â¨"})
+        identity = self.store.append(claim, "fixture-owner", "note", {"text": "hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©llo ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨"})
         context = self.store.context(claim, "fixture-owner")
         self.assertEqual(context["context_bytes"], len(MODULE["encoded"](context)))
         self.assertTrue(context["token_count_is_estimate"])
@@ -466,3 +466,79 @@ class ProbeEvidenceFramingControls(unittest.TestCase):
         self.assertEqual(result["output"], raw)
         with self.assertRaisesRegex(Refused, "admitted output"):
             MODULE["probe_evidence_result"](result, 1024**2-1)
+
+
+class RawProbeOutputControls(unittest.TestCase):
+    def result(self, stdout, stderr):
+        return {"output": stdout.decode("utf-8", errors="replace"),
+                "raw_streams": {"stdout": stdout, "stderr": stderr},
+                "output_protocol": "rustfs-raw-streams-v1", "exit_code": 1, "truncated": False}
+
+    def test_exact_both_pipes_control_and_non_utf8_bytes_share_one_packet_bound(self):
+        streams = {"stdout": b"\x00\xff"*(256*1024), "stderr": b"\x80\n"*(256*1024)}
+        result = self.result(**streams)
+        stored = MODULE["probe_evidence_result"](result, 1024**2)
+        self.assertEqual(MODULE["decode_probe_output"](stored), streams)
+        self.assertLess(len(MODULE["encoded"]({"result": stored, "source": {"digest": "a"*64}})), 2*1024**2)
+        self.assertEqual(result["raw_streams"], streams)
+        with self.assertRaisesRegex(Refused, "admitted output"):
+            MODULE["probe_evidence_result"](result, 1024**2-1)
+        corrupted = copy.deepcopy(stored)
+        corrupted["output_streams"]["stderr"]["sha256"] = "0"*64
+        with self.assertRaisesRegex(Refused, "binding changed"):
+            MODULE["decode_probe_output"](corrupted)
+
+    def test_raw_capture_preserves_both_os_pipes_and_refuses_aggregate_overflow(self):
+        code = "import os;os.write(1,b'out\\x00\\xff');os.write(2,b'err\\x80\\n')"
+        capture = MODULE["SANDBOX"]["bounded_capture"]
+        streams = capture([sys.executable, "-B", "-c", code], timeout=10, limit=10, raw_streams=True)
+        self.assertEqual(streams, {"stdout": b"out\x00\xff", "stderr": b"err\x80\n"})
+        with self.assertRaisesRegex(Refused, "output exceeds bound"):
+            capture([sys.executable, "-B", "-c", code], timeout=10, limit=9, raw_streams=True)
+
+    def test_encoded_secret_cannot_bypass_decoded_nested_public_export_checks(self):
+        for secret in (b"Authorization: bearer PRIVATE", b"X-Amz-Credential=PRIVATE", b"actual-fixture-secret"):
+            stored = MODULE["probe_evidence_result"](self.result(b"safe", b"\xff"+secret+b"\x00"), 1024)
+            self.assertNotIn(secret.decode(), MODULE["encoded"](stored).decode())
+            with self.assertRaisesRegex(Refused, "Secret-bearing"):
+                MODULE["require_public_probe_output"]({"nested": [stored]}, forbidden=(b"actual-fixture-secret",))
+        MODULE["require_public_probe_output"](MODULE["probe_evidence_result"](self.result(b"safe\x00", b"\xff"), 1024))
+
+    def test_legacy_failed_packet_remains_immutable_and_truthfully_decoded_utf8(self):
+        legacy = MODULE["probe_evidence_result"]({"output": "legacy\x00UTF8", "encoding": "utf-8-replacement"}, 1024)
+        packet = {"source": {"head": "a"*40}, "result": legacy}
+        frozen = MODULE["encoded"](packet)
+        self.assertEqual(legacy["output_representation"], "base64-of-utf8-output")
+        self.assertEqual(MODULE["decode_probe_output"](legacy), {"stdout": b"legacy\x00UTF8", "stderr": b""})
+        self.assertEqual(MODULE["encoded"](packet), frozen)
+        bad = copy.deepcopy(legacy)
+        bad["output_sha256"] = "0"*64
+        with self.assertRaisesRegex(Refused, "binding changed"):
+            MODULE["decode_probe_output"](bad)
+
+
+class ProbePublicExportControls(unittest.TestCase):
+    def test_last_encoded_secret_refuses_before_first_public_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private = root/"private"
+            output = root/"public"
+            output.mkdir()
+            claim = "m03-02-"+"a"*12
+            folder = private/"evidence"/claim
+            folder.mkdir(parents=True)
+            safe = MODULE["probe_evidence_result"]({"output": "safe"}, 1024)
+            secret = MODULE["probe_evidence_result"]({"output": "Authorization: PRIVATE-FIXTURE"}, 1024)
+            records = []
+            for value in (safe, secret):
+                raw = MODULE["encoded"]({"result": value})
+                digest = hashlib.sha256(raw).hexdigest()
+                (folder/(digest+".json")).write_bytes(raw)
+                records.append({"sha256": digest, "bytes": len(raw)})
+            store = SimpleNamespace(root=private, evidence=lambda *_args: records)
+            with self.assertRaisesRegex(Refused, "Secret-bearing"):
+                MODULE["export_probe_evidence"](store, claim, "fixture", output)
+            self.assertEqual(list(output.iterdir()), [])
+            records.pop()
+            self.assertEqual(MODULE["export_probe_evidence"](store, claim, "fixture", output), records)
+            self.assertEqual((output/"evidence"/(records[0]["sha256"]+".json")).read_bytes(), (folder/(records[0]["sha256"]+".json")).read_bytes())

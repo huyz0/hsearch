@@ -395,15 +395,14 @@ fn evidence(history: &History, plan: &Plan) -> Result<Option<Inconclusive>, Inva
         {
             return Err(Invalid::Shape);
         }
-        if let Some(observed) = history.operations.iter().find(|o| o.id == expected.id) {
-            if observed.client != expected.client
+        if let Some(observed) = history.operations.iter().find(|o| o.id == expected.id)
+            && (observed.client != expected.client
                 || observed.generation != expected.generation
                 || observed.race != expected.race
                 || observed.continuation_of != expected.continuation_of
-                || observed.action != expected.action
-            {
-                return Err(Invalid::Shape);
-            }
+                || observed.action != expected.action)
+        {
+            return Err(Invalid::Shape);
         }
     }
     for (index, r) in plan.ranges.iter().enumerate() {

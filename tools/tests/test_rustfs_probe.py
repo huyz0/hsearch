@@ -233,6 +233,30 @@ class ControllerControls(unittest.TestCase):
         with self.assertRaises(CONTROL["Refused"]):
             CONTROL["split_monitor"](raw+b"trailing")
 
+    def test_invalid_raw_primary_binding_stays_bounded_before_parser_refusal(self):
+        records = []
+        result = {"mode": "rustfs-capabilities-before", "container_id": "a"*64,
+                  "exit_code": 1, "truncated": False, "execution": {},
+                  "raw_streams": {"stdout": b"\xff"*(1024**2), "stderr": b""},
+                  "output": "\ufffd"*(1024**2), "output_protocol": "rustfs-raw-streams-v1",
+                  "encoding": "invalid-utf8-retained", "stderr_bytes": 0}
+        context = CONTROL["ProfileContext"](source_callback=lambda: {"image": "fixture", "platform": 1},
+            append_callback=lambda kind, value, **_kw: records.append((kind, value)),
+            run_callback=lambda _mode: None, inputs_callback=lambda *_args: None,
+            restart_callback=lambda: None, released_callback=lambda: True, budgets={"PROBE": {}})
+        with self.assertRaisesRegex(CONTROL["Refused"], "raw-output-protocol"):
+            context.capture(result, result["mode"])
+        self.assertEqual(records[0][0], "rustfs-primary-outcome")
+        self.assertLess(len(json.dumps(records).encode()), 4096)
+        self.assertEqual(records[0][1]["output_binding"]["streams"]["stdout"]["bytes"], 1024**2)
+
+    def test_live_parser_rejects_legacy_replacement_or_nonempty_stderr_after_retention(self):
+        for fields in ({}, {"output_protocol": "rustfs-raw-streams-v1", "encoding": "invalid-utf8-retained", "stderr_bytes": 0},
+                       {"output_protocol": "rustfs-raw-streams-v1", "encoding": "utf-8-strict", "stderr_bytes": 1}):
+            result = dict(truncated=False, exit_code=1, **fields)
+            with self.subTest(fields=fields), self.assertRaisesRegex(CONTROL["Refused"], "raw-output-protocol"):
+                CONTROL["check_execution"](result, image="fixture", budget={}, platform=1)
+
     def test_input_publication_follows_charged_admission_and_first_failure_stops(self):
         calls = []
         def append(*_args, **kwargs):

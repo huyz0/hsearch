@@ -735,7 +735,7 @@ pub fn payload_digest(segments: &[(u64, u64, u64)]) -> Result<Digest, Error> {
             let mut block = [0u8; 8];
             for (i, b) in chunk[..n].iter_mut().enumerate() {
                 let position = offset + done + i as u64;
-                if i == 0 || position % 8 == 0 {
+                if i == 0 || position.is_multiple_of(8) {
                     let mut value =
                         seed.wrapping_add((position / 8 + 1).wrapping_mul(0x9e3779b97f4a7c15));
                     value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
@@ -753,7 +753,7 @@ pub fn payload_digest(segments: &[(u64, u64, u64)]) -> Result<Digest, Error> {
 }
 /// Bounded lowercase hex admission before allocation.
 pub fn unhex(raw: &str, cap: usize) -> Result<Vec<u8>, Error> {
-    if raw.len() % 2 != 0
+    if !raw.len().is_multiple_of(2)
         || raw.len() / 2 > cap
         || !raw
             .bytes()

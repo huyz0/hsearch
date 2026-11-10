@@ -35,16 +35,66 @@ def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
+def decode_probe_output(value):
+    """Read tagged current raw streams or immutable legacy decoded-UTF8 records."""
+    representation = value.get("output_representation")
+    if representation == "base64-of-utf8-output":
+        need(type(value["output_base64"]) is str and len(value["output_base64"]) <= 4*((1024**2+2)//3),
+             "Legacy encoded output bound")
+        raw = base64.b64decode(value["output_base64"], validate=True)
+        need(len(raw) == value["output_bytes"] and hashlib.sha256(raw).hexdigest() == value["output_sha256"],
+             "Legacy profile output binding changed")
+        raw.decode("utf-8", errors="strict")
+        return {"stdout": raw, "stderr": b""}
+    need(representation == "raw-stdout-stderr-v1" and set(value["output_streams"]) == {"stdout", "stderr"},
+         "Unknown profile output representation")
+    decoded = {}
+    for name, record in value["output_streams"].items():
+        need(type(record["base64"]) is str and len(record["base64"]) <= 4*((1024**2+2)//3), "Encoded pipe bound")
+        raw = base64.b64decode(record["base64"], validate=True)
+        need(type(record["bytes"]) is int and len(raw) == record["bytes"] and
+             hashlib.sha256(raw).hexdigest() == record["sha256"], "Raw pipe binding changed")
+        decoded[name] = raw
+    need(sum(map(len, decoded.values())) <= 1024**2, "Aggregate raw pipe bound")
+    return decoded
+
+
+def require_public_probe_output(value, *, forbidden=()):
+    """Serialization is not sanitization. Inspect decoded bytes, never base64 text."""
+    needles = (b"authorization", b"x-amz-credential", b"-----begin private key-----", *forbidden)
+    if type(value) is dict:
+        if "output_representation" in value:
+            streams = decode_probe_output(value)
+            need(not any(needle.lower() in raw.lower() for raw in streams.values() for needle in needles if needle),
+                 "Secret-bearing profile output refused")
+        for item in value.values():
+            require_public_probe_output(item, forbidden=forbidden)
+    elif type(value) is list:
+        for item in value:
+            require_public_probe_output(item, forbidden=forbidden)
+    elif type(value) is str:
+        raw = value.encode("utf-8")
+        need(not any(needle.lower() in raw.lower() for needle in needles if needle), "Secret-bearing public evidence refused")
+
+
 def probe_evidence_result(result, output_budget):
-    """Preserve full bounded child output without JSON control-byte expansion."""
-    need(type(result) is dict and type(result.get("output")) is str,
-         "Profile result output unavailable")
-    raw = result["output"].encode("utf-8")
-    need(len(raw) <= output_budget, "Profile result exceeds admitted output budget")
-    public = {key: value for key, value in result.items() if key != "output"}
-    public.update(output_base64=base64.b64encode(raw).decode("ascii"),
-                  output_sha256=hashlib.sha256(raw).hexdigest(), output_bytes=len(raw),
-                  output_representation="base64-of-utf8-output")
+    """Bind both raw pipes; legacy results retain their truthful decoded-UTF8 tag."""
+    need(type(result) is dict and type(result.get("output")) is str, "Profile result output unavailable")
+    streams = result.get("raw_streams")
+    public = {key: value for key, value in result.items() if key not in {"output", "raw_streams"}}
+    if streams is None:
+        raw = result["output"].encode("utf-8")
+        need(len(raw) <= output_budget, "Profile result exceeds admitted output budget")
+        public.update(output_base64=base64.b64encode(raw).decode("ascii"),
+            output_sha256=hashlib.sha256(raw).hexdigest(), output_bytes=len(raw),
+            output_representation="base64-of-utf8-output")
+    else:
+        need(type(streams) is dict and set(streams) == {"stdout", "stderr"} and
+             all(type(raw) is bytes for raw in streams.values()) and
+             sum(map(len, streams.values())) <= output_budget, "Profile raw streams exceed admitted output budget")
+        public.update(output_representation="raw-stdout-stderr-v1", output_streams={name:
+            {"base64": base64.b64encode(raw).decode("ascii"), "bytes": len(raw),
+             "sha256": hashlib.sha256(raw).hexdigest()} for name, raw in streams.items()})
     return public
 
 
@@ -568,16 +618,29 @@ class TaskStore:
                 need(self.fingerprint(record) == before, "Profile source changed before execution")
                 try:
                     result = sandbox.run(namespace, mode,
-                        output_budget=record["packet"]["output_budget_bytes"]//2, stream=False)
+                        output_budget=min(1024**2, record["packet"]["output_budget_bytes"]//2), stream=False)
                 except SANDBOX["WorkloadFailed"] as error:
                     # Known failures are retained before dependent decoding. No
                     # retry, unknown cleanup or replacement attempt is allowed.
                     result = error.result
-                    append("failed-command", {"source": before, "result": probe_evidence_result(
-                        result, record["packet"]["output_budget_bytes"]//2)})
+                    kind = "failed-command"
                 else:
-                    append("command", {"source": before, "result": probe_evidence_result(
-                        result, record["packet"]["output_budget_bytes"]//2)})
+                    kind = "command"
+                evidence = probe_evidence_result(result, record["packet"]["output_budget_bytes"]//2)
+                try:
+                    require_public_probe_output(evidence)
+                except Refused:
+                    # Secret output is not admitted for raw retention/export.
+                    # Retain only hashes/counts and the primary failure code.
+                    redacted = {key: value for key, value in evidence.items()
+                        if key not in {"output_base64", "output_streams", "output_representation"}}
+                    if "output_streams" in evidence:
+                        redacted["pipe_digests"] = {name: {k: v for k, v in value.items() if k != "base64"}
+                            for name, value in evidence["output_streams"].items()}
+                    append("failed-command", {"source": before, "result": redacted,
+                        "failure": "secret-output-refused", "raw_retained": False})
+                    raise
+                append(kind, {"source": before, "result": evidence})
                 need(self.fingerprint(record) == before, "Profile source changed during execution")
                 return result
             server, storage = sandbox.probe_storage(namespace)
@@ -639,6 +702,34 @@ class TaskStore:
         return {"claim": claim, "phase": "closed", "branch_retained": record["branch"], "evidence_retained": True}
 
 
+def export_probe_evidence(store, claim, owner, output):
+    """Preflight every decoded public record before publishing the first file."""
+    references = store.evidence(claim, owner)
+    need(sum(item["bytes"] for item in references) <= 64*1024**2, "Public evidence bound exceeded")
+    def read(item):
+        source = guarded(store.root, "evidence", claim, item["sha256"]+".json")
+        need(type(item["bytes"]) is int and 0 < item["bytes"] <= 8*1024**2 and
+             not source.is_symlink() and source.is_file(), "Public evidence input bound/type")
+        with source.open("rb") as stream:
+            raw = stream.read(item["bytes"]+1)
+        need(len(raw) == item["bytes"] and hashlib.sha256(raw).hexdigest() == item["sha256"],
+             "Public evidence source binding changed")
+        require_public_probe_output(json.loads(raw))
+        return raw
+    for item in references:
+        read(item)
+    evidence = output / "evidence"
+    evidence.mkdir(mode=0o700)
+    for item in references:
+        # Recheck the exact bytes copied, not a prior decode of a mutable file.
+        raw = read(item)
+        destination = evidence / (item["sha256"]+".json")
+        if not destination.exists():
+            with destination.open("xb") as target:
+                target.write(raw)
+    return references
+
+
 def qualify_rustfs_capabilities():
     """Hosted fixed-profile entrypoint with ordinary task ownership and evidence.
 
@@ -684,16 +775,7 @@ def qualify_rustfs_capabilities():
         outcome["failure_type"] = type(error).__name__
         raise
     finally:
-        references = store.evidence(claim, owner)
-        need(sum(item["bytes"] for item in references) <= 64*1024**2, "Public evidence bound exceeded")
-        evidence = output / "evidence"
-        evidence.mkdir(mode=0o700)
-        for item in references:
-            source = guarded(store.root, "evidence", claim, item["sha256"]+".json")
-            destination = evidence / source.name
-            if not destination.exists():
-                with destination.open("xb") as target:
-                    target.write(source.read_bytes())
+        references = export_probe_evidence(store, claim, owner, output)
         SANDBOX["atomic_json"](output/"summary.json", {**outcome, "evidence": references,
             "qualification": "Real hosted observations only; no release or whole-product acceptance"})
         print(encoded(outcome).decode())

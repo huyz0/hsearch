@@ -278,10 +278,10 @@ pub fn evaluate(plan: &CapturePlan, capture: &Capture, restart: &str) -> Report 
         } else {
             observed(capture, spec.parent)
         };
-        if let Some(parent) = parent {
-            if parent.end > event.start {
-                report.scenarios[area] = Status::Failed;
-            }
+        if let Some(parent) = parent
+            && parent.end > event.start
+        {
+            report.scenarios[area] = Status::Failed;
         }
         let prior = report.scenarios[area];
         match spec.action.as_str() {
@@ -559,19 +559,18 @@ pub fn evaluate(plan: &CapturePlan, capture: &Capture, restart: &str) -> Report 
             .filter(|s| s.scenario == area && s.action == action)
             .count()
     };
-    if count(2, "create") != 2 || count(2, "resolve") != 2 || count(2, "reuse-id") != 1 {
-        if report.scenarios[2] != Status::Failed {
-            report.scenarios[2] = Status::Inconclusive;
-        }
+    if (count(2, "create") != 2 || count(2, "resolve") != 2 || count(2, "reuse-id") != 1)
+        && report.scenarios[2] != Status::Failed
+    {
+        report.scenarios[2] = Status::Inconclusive;
     }
-    if count(3, "range") != 5
+    if (count(3, "range") != 5
         || count(3, "update") != 3
         || count(3, "replay") != 1
-        || count(3, "stale-update") != 1
+        || count(3, "stale-update") != 1)
+        && report.scenarios[3] != Status::Failed
     {
-        if report.scenarios[3] != Status::Failed {
-            report.scenarios[3] = Status::Inconclusive;
-        }
+        report.scenarios[3] = Status::Inconclusive;
     }
     if count(4, "restart") != 1 || count(4, "head") != 1 || count(4, "range") != 1 {
         report.scenarios[4] = Status::Inconclusive;

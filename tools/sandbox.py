@@ -185,7 +185,7 @@ class Registry:
             del data["leases"][namespace]
 
 
-def bounded_capture(command, *, timeout, limit):
+def bounded_capture(command, *, timeout, limit, raw_streams=False):
     """Bound both host pipes before decoding untrusted guest output."""
     child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     captured, failed, overflow = {}, [], threading.Event()
@@ -220,7 +220,7 @@ def bounded_capture(command, *, timeout, limit):
     need(not any(reader.is_alive() for reader in readers) and not failed, "Docker exec pipe completion uncertain")
     need(not overflow.is_set() and sum(map(len, captured.values())) <= limit, "Docker exec output exceeds bound; inspect owned resources")
     need(child.returncode == 0, "Docker exec failed; operation outcome requires inspection")
-    return captured["out"].decode("utf-8", errors="strict")
+    return {"stdout": captured["out"], "stderr": captured["err"]} if raw_streams else captured["out"].decode("utf-8", errors="strict")
 
 
 class Docker:
@@ -237,13 +237,14 @@ class Docker:
         self.capacity = {"cpu_millis": min(8000, max(1000, (self.info["NCPU"] - 1) * 1000)),
                          "memory_bytes": min(16 * GIB, self.info["MemTotal"] // 2), "pids": 2048, "disk_bytes": 40 * GIB}
 
-    def command(self, *args, stream=False, timeout=180, input_text=None, merge_output=False, output_bytes=None):
+    def command(self, *args, stream=False, timeout=180, input_text=None, merge_output=False, output_bytes=None, raw_streams=False):
+        need(not raw_streams or output_bytes is not None, "Raw Docker output requires a bounded capture")
         prefix = ["docker"] + (["--context", self.context] if hasattr(self, "context") else [])
         try:
             if output_bytes is not None:
                 need(not stream and input_text is None and not merge_output and 0 < output_bytes <= 1024**2,
                      "Invalid bounded Docker exec profile")
-                return bounded_capture([*prefix, *args], timeout=timeout, limit=output_bytes)
+                return bounded_capture([*prefix, *args], timeout=timeout, limit=output_bytes, raw_streams=raw_streams)
             options = {} if stream else ({"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT} if merge_output else {"capture_output": True})
             result = subprocess.run([*prefix, *args], text=True, errors="replace", input=input_text, timeout=timeout, **options)
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -859,14 +860,28 @@ class Sandbox:
                  info["State"]["ExitCode"] == int(status), "Workload completion changed; lease retained")
             if mode == "check":
                 execution = self.public_execution(record, info, budget, output_budget)
-            logs = self.docker.command("logs", container_id, merge_output=True)
+            streams = None
+            if mode in PROBE_MODES:
+                streams = self.docker.command("logs", container_id, output_bytes=output_budget, raw_streams=True)
+                raw = streams["stdout"]
+                try:
+                    logs = raw.decode("utf-8", errors="strict")
+                    encoding = "utf-8-strict"
+                except UnicodeError:
+                    logs, encoding = raw.decode("utf-8", errors="replace"), "invalid-utf8-retained"
+            else:
+                logs = self.docker.command("logs", container_id, merge_output=True)
             self.docker.command("container", "rm", container_id)
             need(not self.docker.command("container", "ls", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}").strip(),
                  "Completed container removal uncertain; lease retained")
             self.registry.release(lease_id)
-            raw = logs.encode()
+            raw = logs.encode() if streams is None else streams["stdout"]
             result = {"mode": mode, "container_id": container_id, "exit_code": int(status), "encoding": "utf-8-replacement",
                       "output": raw[:output_budget].decode(errors="ignore"), "truncated": len(raw) > output_budget}
+            if streams is not None:
+                result.update(output=logs, encoding=encoding, raw_streams=streams,
+                    output_protocol="rustfs-raw-streams-v1", stderr_bytes=len(streams["stderr"]),
+                    child_stream_semantics="stdout-and-stderr-merged-by-monitor")
             if execution is not None:
                 result["execution"] = execution
             if stream:
