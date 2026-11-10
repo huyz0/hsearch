@@ -1,5 +1,13 @@
 # M03.01 combined source candidate and predecessor qualification
 
+## Accepted M03.01 status: 9 November 2026
+
+M03.01 completed acceptance for its declared typed traits and memory/fault conformance through [PR30](https://github.com/huyz0/hsearch/pull/30). The final reviewed source was `81e31623c36a4b92382c1bbba0711c9958400698`, with tree `b01cfcb0f60587836aae01898c4adbdbf242ed0a`. It was merged through the protected branch as `5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123`, with the reviewed tree unchanged. Both final R2 roles were clear, with no M03.01 findings. The normal M03.01 gate passed, and all seven jobs in [postmerge run 42458087463](https://github.com/huyz0/hsearch/actions/runs/42458087463) completed successfully. The original formal review base remains `992084caa931fc64b1589350453fde9fa0e3a765`. Two rounds have been issued out of two planned, with a hard ceiling of three. All earlier packets and failures are retained.
+
+Acceptance covers the ObjectBackend and MetadataStore typed traits and memory/fault conformance. It does not qualify RustFS or other providers, persistence or durability, a runtime or service, fleet, whole M01 or M03, or release. The later M03.02 artifact and controller source, actual archive transport, and final Linux, native, Docker, coverage and CI qualification remain separate and unqualified. The candidate and pending-review statements below describe their original source phases; they do not override this completed acceptance. Existing task dependencies, scope and later acceptance boundaries remain unchanged.
+
+## Historical candidate preparation
+
 **Historical R1 source snapshot:** the original sections below describe `53085a1d1b6ce702be967cb29aeab2bb725dc282`. References there to this candidate, pending first reviews, unchanged bodies or other-task isolation are scoped to that exact original head. Both R1 roles were clear at this head. Its245-body preservation and134-other-task/isolation assertions describe that R1 source, not the later combined tree. The input commit and original evidence remain immutable.
 
 **Current local preparation:** [delivery-integration-v2](delivery-integration-v2.md) adopts actual protected PR29 main0a2ff358 and corrected4f development policy through normal merges; every implementation body remains exact v1. M03.01 retains one issued round/planned2/hard3 and its original992 review base; no new packet or clearance is claimed. Main postmerge qualification and complete fresh current-source qualification precede later same-task R2. The immutable v1 snapshot and earlier source observations below remain historical evidence.

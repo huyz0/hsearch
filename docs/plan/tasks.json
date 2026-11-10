@@ -1239,8 +1239,13 @@
             "M02.09"
           ],
           "owner": "engine/architecture",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m02-02-integrated.md",
+              "result": "Scoped bounded native embedding/lifecycle adapter and selected internal core-v1 inventory accepted through PR31: reviewed 6d88535, identical tree c34664d merged normally as 656b790. Both R2 roles clear and all four R1 keys resolved; normal gate pass. PR 42768496915, original-992 manual 42768623024 and main 42774598520 each passed all seven jobs on attempt 1, with source-bound native/Java matrices and all required coverage floors. Original 992 lineage, issued2/planned2/hard3 and every failed history remain. No whole-M02, service/HTTP/API compatibility, provider durability, fleet or release acceptance."
+            }
+          ]
         },
         {
           "id": "M02.03",
@@ -1435,7 +1440,7 @@
           "evidence": [
             {
               "path": "evidence/m03-01-qualified-source.md",
-              "result": "Proposed merged state only: bounded trait/memory-fault conformance and frozen-inventory collector are implemented; exact BB x64 dev/release coverage is predecessor evidence. This combined candidate still requires its own complete ordinary/native ARM/hosted CI/coverage, both counted independent roles, gate and protected integration before acceptance. No provider/service/format/durability/license/release qualification."
+              "result": "M03.01 typed traits and memory/fault conformance were accepted through PR30. Reviewed source `81e31623c36a4b92382c1bbba0711c9958400698`, with tree `b01cfcb0f60587836aae01898c4adbdbf242ed0a`, was merged through the protected branch as `5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123`, with the same tree. Both R2 roles were clear, with no findings. The normal M03.01 gate passed, and all seven jobs in postmerge run 42458087463 succeeded. The original review base remains `992084caa931fc64b1589350453fde9fa0e3a765`. Two rounds have been issued out of two planned, with a hard ceiling of three. Earlier BB and candidate observations and failures remain historical. This does not qualify M03.02 artifact, runtime or native work, providers, a service, persistence, durability, fleet, whole M01 or M03, or release."
             }
           ]
         },

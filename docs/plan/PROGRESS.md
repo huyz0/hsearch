@@ -1,5 +1,15 @@
 # Progress and handoff
 
+## 10 November 2026: PR31 native component accepted
+
+M02.02's [bounded native embedding/lifecycle component](evidence/m02-02-integrated.md) is qualified and integrated. Reviewed source `6d88535` and merge `656b790` share tree `c34664d`. Both R2 roles were clear, all four R1 keys were explicitly resolved, and the normal gate passed. The two reviewed-head runs and actual main run `42774598520` each passed all seven jobs on their first attempt, with complete coverage and native/Java package matrices. Original base `992084c`, issued2/planned2/hard3, every failed run and the old interrupted local attempt remain preserved. This is scoped native component acceptance, not whole M02/M01, a runtime service, HTTP/API compatibility, provider durability, fleet or release.
+
+The PR30 factual reconciliation below records existing M03.01 acceptance. Earlier candidate/pending statements retain their original source phases; no unqualified M03.02 artifact/controller code is imported.
+
+## 9 November 2026: M03.01 accepted PR30 status reconciled
+
+M03.01's typed traits and memory/fault conformance were accepted through [PR30](https://github.com/huyz0/hsearch/pull/30). Reviewed source `81e31623`, with tree `b01cfcb0`, was merged through the protected branch as `5a0a0628`, with the same tree. Both R2 roles were clear, the normal gate passed, and all seven jobs in [postmerge run 42458087463](https://github.com/huyz0/hsearch/actions/runs/42458087463) succeeded. The original formal review base remains `992084caa931fc64b1589350453fde9fa0e3a765`. Two rounds have been issued out of two planned, with a hard ceiling of three. Earlier candidate and pending entries below retain their historical phase. This records existing acceptance without a new review round or qualification run. Later M03.02 artifact and controller source and actual Linux, native, Docker, coverage and CI qualification remain unqualified. Provider, durability, runtime, whole M01 and M03, and release boundaries are unchanged.
+
 ## 8 November 2026: administrative engine integration seed
 
 This separate reversible seed normally merges sealed delivery-v281e3162 and exact paused engine-author checkpointf0f5528. Engine Rust/tests/CAPABILITIES remain exact author bytes; all object/runtime/collector/CI/lock/inventory bodies remain v2 except the already approved engine Lucene production allowance. M02.02 receives only its separately adopted M19/M02.09 start edge and remains planned, with empty evidence/full original contract. Both independent start profiles retain whole-M02/M03/M01, M03 provider/calibration and M02.04/M02.10 boundaries.

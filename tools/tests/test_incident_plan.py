@@ -17,6 +17,7 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M01.15"]["status"] = "in_progress"
         self.tasks["M01.09"]["status"] = "in_progress"
         self.tasks["M01.08"]["status"] = "planned"
+        self.tasks["M02.02"]["status"] = "planned"  # Private preacceptance model only.
         self.tasks["M03.01"]["status"] = "planned"  # Private preacceptance model only.
         self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.
         milestones["M01"]["status"] = "in_progress"
