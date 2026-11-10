@@ -114,7 +114,7 @@ class OwnershipControls(unittest.TestCase):
                     self.volumes[args[-1]] = {"Name": args[-1], "Labels": labels}
                 if args[0] == "create":
                     labels = dict(value.split("=", 1) for value in args if value.startswith((MODULE["LABEL"] + "=", "io.hsearch.namespace=")))
-                    self.container = {"Id": "a" * 64, "Config": {"Labels": labels}, "State": {"Running": False, "ExitCode": 0}}
+                    self.container = {"Id": "a" * 64, "Image": "sha256:" + "b" * 64, "Config": {"Labels": labels}, "State": {"Running": False, "ExitCode": 0}}
                     return "a" * 64
                 if args[0] == "wait":
                     return "0"
@@ -244,7 +244,7 @@ class OwnershipControls(unittest.TestCase):
                     raise Refused("unknown run outcome")
                 return "live-cid\n"
             def inspect(self, kind, names):
-                return [{"Id": names[0], "Config": {"Labels": {MODULE["LABEL"]: "mine", "io.hsearch.namespace": "hsearch-test-0123456789ab"}}}]
+                return [{"Id": names[0], "Image": "image", "Config": {"Labels": {MODULE["LABEL"]: "mine", "io.hsearch.namespace": "hsearch-test-0123456789ab"}}}]
         with tempfile.TemporaryDirectory() as directory:
             sandbox = Sandbox(directory, docker=FakeDocker())
             namespace = "hsearch-test-0123456789ab"
@@ -459,3 +459,61 @@ class ResourceCapabilityControls(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ActualImageProjectionControls(unittest.TestCase):
+    def actual_info(self):
+        return {'Id': 'a' * 64, 'Image': 'sha256:' + 'b' * 64,
+            'Config': {'User': '10001:10001', 'Image': 'not-the-actual-id', 'Env': ['SECRET=do-not-export'],
+                       'Labels': {MODULE['LABEL']: 'mine', 'io.hsearch.namespace': 'hsearch-test-0123456789ab'}},
+            'HostConfig': {'ReadonlyRootfs': True, 'NetworkMode': 'none', 'NanoCpus': 2_000_000_000,
+                           'Memory': 4 * GIB, 'MemorySwap': 4 * GIB, 'PidsLimit': 256, 'Binds': ['private:secret']},
+            'Mounts': [{'Source': 'private-secret'}], 'State': {'Status': 'exited', 'Running': False, 'ExitCode': 0}}
+
+    def test_config_image_never_substitutes_for_actual_image(self):
+        info = self.actual_info()
+        class Docker:
+            def inspect(self, kind, names): return [info]
+        with tempfile.TemporaryDirectory() as area:
+            sb = Sandbox(area, docker=Docker())
+            record = {'image': info['Image'], 'owner': 'mine', 'namespace': 'hsearch-test-0123456789ab'}
+            self.assertEqual(sb.run_container(record, info['Id'])['Image'], record['image'])
+            for change in ('missing', 'wrong'):
+                bad = copy.deepcopy(info)
+                if change == 'missing': del bad['Image']
+                else: bad['Image'] = 'sha256:' + 'c' * 64
+                with patch.object(sb.docker, 'inspect', return_value=[bad]), self.assertRaisesRegex(Refused, 'actual image'):
+                    sb.run_container(record, info['Id'])
+
+    def test_public_proof_uses_actual_inspect_and_excludes_env_mounts(self):
+        info = self.actual_info()
+        class Docker:
+            engine = 'synthetic-engine'
+            info = {'Architecture': 'x86_64'}
+            def command(self, *args):
+                return json.dumps([{'Id': info['Image'], 'Architecture': 'amd64'}])
+        with tempfile.TemporaryDirectory() as area:
+            sb = Sandbox(area, docker=Docker())
+            record = {'image': info['Image']}
+            proof = sb.public_execution(record, info, BUILD, 512 * 1024)
+            self.assertEqual(proof['image_id'], info['Image'])
+            self.assertEqual(proof['limits']['memory'], 4 * GIB)
+            self.assertNotIn('SECRET', json.dumps(proof))
+            self.assertNotIn('Mounts', proof)
+            self.assertNotIn('Config', proof)
+            with patch.object(sb.docker, 'command', return_value=json.dumps([{'Id': info['Image'], 'Architecture': 'arm64'}])), self.assertRaisesRegex(Refused, 'architecture'):
+                sb.public_execution(record, info, BUILD, 512 * 1024)
+
+    def test_smoke_keeps_complete_single_check_and_both_cleanup_probes(self):
+        calls = []
+        class Registry:
+            def get(self, ns): return {'network': ns, 'private_address': ns}
+        with tempfile.TemporaryDirectory() as area:
+            sb = Sandbox(area, docker=object())
+            sb.registry = Registry()
+            sb.up = lambda name: name
+            sb.run = lambda namespace, mode: calls.append(('run', namespace, mode))
+            sb.down = lambda namespace: calls.append(('down', namespace))
+            sb.smoke()
+            self.assertEqual(calls, [('run', 'smoke-a', mode) for mode in ('prefetch', 'diagnostics', 'check', 'probe')] +
+                [('run', 'smoke-b', 'probe'), ('down', 'smoke-a'), ('run', 'smoke-b', 'probe'), ('down', 'smoke-b')])

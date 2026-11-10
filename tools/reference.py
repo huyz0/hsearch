@@ -17,6 +17,7 @@ API = runpy.run_path(str(ROOT / "tools/api_fixtures.py"))
 SANDBOX = runpy.run_path(str(ROOT / "tools/sandbox.py"))
 TASK = runpy.run_path(str(ROOT / "tools/task.py"))
 LIMITS = runpy.run_path(str(ROOT / "dev/execute.py"))
+DIFFERENTIAL = runpy.run_path(str(ROOT / "tools/engine_differential.py"))
 need, Refused = SANDBOX["need"], SANDBOX["Refused"]
 
 
@@ -181,6 +182,8 @@ def main():
     controller_bytes = Path(__file__).read_bytes()
     identity = source_identity()
     integrity, inputs = API["checked_inputs"]()
+    differential = DIFFERENTIAL["load_fixture"](ROOT)
+    differential_cases = []
     need(source_identity() == identity, "Source changed while freezing reference inputs")
     sb = SANDBOX["Sandbox"](args.state_root, source_root=ROOT)
     dev_image = sb.image()
@@ -346,10 +349,12 @@ def main():
             query = case["request"]
             status, body = request(query["method"], query["path"].replace("{index}", index), query["json"])
             verify_search(case, status, body)
+            differential_cases.append(DIFFERENTIAL["observation"](differential, case, status, body))
             print(json.dumps({"reference_case": case["id"], "status": "pass"}), flush=True)
         for case in inputs["analyzer-cases.json"]:
             status, body = request("POST", "/" + index + "/_analyze", {"analyzer": case["analyzer"], "text": case["text"]})
             verify_analyzer(case, status, body)
+            differential_cases.append(DIFFERENTIAL["observation"](differential, case, status, body))
             print(json.dumps({"reference_analyzer": case["id"], "status": "pass"}), flush=True)
         for case in inputs["mutation-cases.json"]:
             case_index = "hsearch-case-" + namespace.rsplit("-", 1)[1] + "-" + case["id"]
@@ -376,6 +381,10 @@ def main():
                 print(json.dumps({"reference_history": case["id"], "step": number, "status": "pass"}), flush=True)
             status, _ = request("DELETE", "/" + case_index)
             need(status == 200, "Reference history index cleanup failed")
+        differential_cases.extend(DIFFERENTIAL["run_reference"](request, differential, index))
+        differential_report = DIFFERENTIAL["reference_receipt"](
+            differential, identity, architecture + "-unknown-linux-gnu", image_id, reply[1]["version"],
+            hashlib.sha256(controller_bytes).hexdigest(), differential_cases)
         need(not violations and source_identity() == identity and Path(__file__).read_bytes() == controller_bytes,
              "Source, controller or resource state changed during reference execution")
         report = {"source": identity, "controller_sha256": hashlib.sha256(controller_bytes).hexdigest(),
@@ -386,6 +395,8 @@ def main():
                   "actual_cgroup_limits": actual_limits,
                   "peak_sampled_disk_bytes_including_pull_growth": peak, "observations": results,
                   "network": "none; fixed loopback via owned Docker exec only", "security_profile": "Security plugin disabled for isolated public-toy reference; no credentials or host ports; not hsearch security qualification",
+                  "engine_differential": differential_report,
+                  "supplement_analyzer_cases": 6, "supplement_search_cases": 3, "supplement_controls": 2,
                   "hsearch_conformance": "NOT-RUN", "client_sdk_execution": "NOT-RUN", "establishes_task_completion": False}
         (folder / "observations.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     finally:

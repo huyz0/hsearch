@@ -1,0 +1,652 @@
+{
+  "schema_version": 1,
+  "format": "hsearch-engine-java-differential-v1",
+  "status": "proposed fixture inputs/oracles; Java/native execution NOT_RUN",
+  "task": "M02.02",
+  "original_review_base": "992084caa931fc64b1589350453fde9fa0e3a765",
+  "immutable_inputs": [
+    {
+      "path": "fixtures/api/core-v1/documents.json",
+      "sha256": "5d96ef5b991a66d2757bbc8e1bf5feaba02d2a3a29343a6327b88f1d30517f04"
+    },
+    {
+      "path": "fixtures/api/core-v1/schema.json",
+      "sha256": "38e6c912a21e096ea0ff0388c9045bd430a36026f967030bee28d6c2c89f173f"
+    },
+    {
+      "path": "fixtures/api/core-v1/search-cases.json",
+      "sha256": "825496fcf3992caa4357ba869b2282644d42963a26ba26e378bc901fd99466d1"
+    },
+    {
+      "path": "fixtures/api/core-v1/analyzer-cases.json",
+      "sha256": "1d759273809ab7951901e7d0dc3f197881f0e633d1bb324a76aaf59795102756"
+    },
+    {
+      "path": "fixtures/api/core-v1/mutation-cases.json",
+      "sha256": "78450f10dab308e53ac932e658caf5881a160e3d257510779830ba5dfdce789c"
+    },
+    {
+      "path": "fixtures/api/core-v1/profile-cases.json",
+      "sha256": "db09d6a5d8215e9209100df1d0c6f749347399637aba3e45690e4ea7942e8e5d"
+    },
+    {
+      "path": "fixtures/engine-research/held-out.json",
+      "sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89"
+    }
+  ],
+  "pins": {
+    "native_lucene_revision": "46e280bc2a208544fb36ecd95932e89cd8bc5618",
+    "rust": "1.97.1",
+    "reference": {
+      "server_version": "3.9.0",
+      "server_revision": "4ee42a94e87f66fbf1e62a9871b1b87f91e02472",
+      "client_version": "3.2.0",
+      "client_revision": "8991792d3fcdfc221c9aef62d7e82c3d15ff0206",
+      "image_index": "sha256:3b55f6b6249cfdb92b52ee59adc8a266203ba9ef9f5d82544fad6f1af2f3609e",
+      "linux_amd64": "sha256:5c20af6b5cb472a74ba99f663bee3dd03afbeced14b3897b220a87fc75278445",
+      "linux_arm64": "sha256:bbdf65cb3d35c61a8ba495f22c1a42d7d7f0df23412e3419bf1e6cfca3ba4774",
+      "source_license": "Apache-2.0; no dependency source or binary is vendored"
+    },
+    "java_lucene_version": "10.5.1",
+    "java_lucene_source_commit": "64ce863a2bea79c69c19c4d56268c26710ff0ff9",
+    "java_scanner_git_blob": "82203ff65324263dc40ae4c4f2214b7af7cea202",
+    "unicode_source_commit": "6c48f4ed707bf0b15f9b6098de30db8aae6fa40f"
+  },
+  "mapping": {
+    "identity": "reference _id and keyword uid both equal caller-held native logical ID; no native internal doc IDs",
+    "typed_fields": {
+      "uid": "Kind::Keyword / Value::String",
+      "title": "Kind::Text / Value::String",
+      "date": "Kind::Date / Value::Date(signed i64 epoch_ms)"
+    },
+    "reference_settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "analysis": {
+        "analyzer": {
+          "fixture_text_v1": {
+            "type": "standard",
+            "max_token_length": 255,
+            "stopwords": "_none_"
+          }
+        }
+      }
+    },
+    "reference_properties": {
+      "uid": {
+        "type": "keyword"
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "fixture_text_v1"
+      },
+      "date": {
+        "type": "date",
+        "format": "strict_date_optional_time"
+      }
+    },
+    "dynamic": "strict",
+    "documents": "Resolve referenced frozen records losslessly; add uid=id. Only declared per-dataset fields are required in native Schema.",
+    "date_wire": "Convert each frozen signed epoch_ms exactly to UTC YYYY-MM-DDTHH:MM:SS.mmmZ; no floating-point date conversion or numeric-wire coercion claim.",
+    "native_version": "Native harness supplies version1 for initial insertion only; never compare caller versions with Java seq_no/primary_term or authoritative GET.",
+    "visibility": "Refresh after dataset insertion before either query side; no mutation/durability/PIT/bulk/wire-authority claim.",
+    "analyzer_observation": "Compare term strings, zero-based positions and half-open UTF16 offsets; reference token field maps exactly to native term."
+  },
+  "analyzer_cases": [
+    {
+      "id": "jdiff-v1-ascii-255",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "position": 0,
+          "start_offset": 0,
+          "end_offset": 255
+        }
+      ],
+      "basis": "e5 adapter_boundaries.rs:319-335",
+      "expected_status": "source-derived proposed expectation; not Java observations",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_analyze",
+        "body": {
+          "analyzer": "fixture_text_v1",
+          "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        }
+      },
+      "native_call": {
+        "api": "analyze_text",
+        "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "id": "jdiff-v1-ascii-256",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": [
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "position": 0,
+          "start_offset": 0,
+          "end_offset": 255
+        },
+        {
+          "term": "a",
+          "position": 1,
+          "start_offset": 255,
+          "end_offset": 256
+        }
+      ],
+      "basis": "e5 adapter_boundaries.rs:336-343",
+      "expected_status": "source-derived proposed expectation; not Java observations",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_analyze",
+        "body": {
+          "analyzer": "fixture_text_v1",
+          "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        }
+      },
+      "native_call": {
+        "api": "analyze_text",
+        "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "id": "jdiff-v1-supplementary-offsets",
+      "text": "A 😀 Z",
+      "expected": [
+        {
+          "term": "a",
+          "position": 0,
+          "start_offset": 0,
+          "end_offset": 1
+        },
+        {
+          "term": "😀",
+          "position": 1,
+          "start_offset": 2,
+          "end_offset": 4
+        },
+        {
+          "term": "z",
+          "position": 2,
+          "start_offset": 5,
+          "end_offset": 6
+        }
+      ],
+      "basis": "e5 adapter_boundaries.rs:344-350",
+      "expected_status": "source-derived proposed expectation; not Java observations",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_analyze",
+        "body": {
+          "analyzer": "fixture_text_v1",
+          "text": "A 😀 Z"
+        }
+      },
+      "native_call": {
+        "api": "analyze_text",
+        "text": "A 😀 Z"
+      }
+    },
+    {
+      "id": "jdiff-v1-supplementary-prefix-253",
+      "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox",
+      "expected": [
+        {
+          "term": "brown",
+          "position": 0,
+          "start_offset": 0,
+          "end_offset": 5
+        },
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐨",
+          "position": 1,
+          "start_offset": 6,
+          "end_offset": 261
+        },
+        {
+          "term": "fox",
+          "position": 2,
+          "start_offset": 262,
+          "end_offset": 265
+        }
+      ],
+      "basis": "e5 adapter_boundaries.rs:354-396; pinned Java source, runtime NOT_RUN",
+      "expected_status": "source-derived proposed expectation; not Java observations",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_analyze",
+        "body": {
+          "analyzer": "fixture_text_v1",
+          "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"
+        }
+      },
+      "native_call": {
+        "api": "analyze_text",
+        "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"
+      }
+    },
+    {
+      "id": "jdiff-v1-supplementary-prefix-254",
+      "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox",
+      "expected": [
+        {
+          "term": "brown",
+          "position": 0,
+          "start_offset": 0,
+          "end_offset": 5
+        },
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "position": 1,
+          "start_offset": 6,
+          "end_offset": 260
+        },
+        {
+          "term": "𐐨",
+          "position": 2,
+          "start_offset": 260,
+          "end_offset": 262
+        },
+        {
+          "term": "fox",
+          "position": 3,
+          "start_offset": 263,
+          "end_offset": 266
+        }
+      ],
+      "basis": "e5 adapter_boundaries.rs:354-396; pinned Java source, runtime NOT_RUN",
+      "expected_status": "source-derived proposed expectation; not Java observations",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_analyze",
+        "body": {
+          "analyzer": "fixture_text_v1",
+          "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"
+        }
+      },
+      "native_call": {
+        "api": "analyze_text",
+        "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"
+      }
+    },
+    {
+      "id": "jdiff-v1-supplementary-prefix-255",
+      "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox",
+      "expected": [
+        {
+          "term": "brown",
+          "position": 0,
+          "start_offset": 0,
+          "end_offset": 5
+        },
+        {
+          "term": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "position": 1,
+          "start_offset": 6,
+          "end_offset": 261
+        },
+        {
+          "term": "𐐨",
+          "position": 2,
+          "start_offset": 261,
+          "end_offset": 263
+        },
+        {
+          "term": "fox",
+          "position": 3,
+          "start_offset": 264,
+          "end_offset": 267
+        }
+      ],
+      "basis": "e5 adapter_boundaries.rs:354-396; pinned Java source, runtime NOT_RUN",
+      "expected_status": "source-derived proposed expectation; not Java observations",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_analyze",
+        "body": {
+          "analyzer": "fixture_text_v1",
+          "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"
+        }
+      },
+      "native_call": {
+        "api": "analyze_text",
+        "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"
+      }
+    }
+  ],
+  "search_cases": [
+    {
+      "comparison_order": "uid ascending; native logical ID ascending",
+      "projection": [
+        "uid"
+      ],
+      "size": 128,
+      "compare": [
+        "logical_ids",
+        "exact_total",
+        "uid_projection"
+      ],
+      "score_bits_compared": false,
+      "id": "jdiff-v1-supplementary-phrase",
+      "documents": [
+        {
+          "id": "exact",
+          "title": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"
+        },
+        {
+          "id": "adjacent",
+          "title": "brown fox"
+        },
+        {
+          "id": "gap",
+          "title": "brown red fox"
+        },
+        {
+          "id": "reversed",
+          "title": "fox brown"
+        }
+      ],
+      "typed_query": {
+        "kind": "match",
+        "field": "title",
+        "text": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox",
+        "phrase": true
+      },
+      "reference_query": {
+        "match_phrase": {
+          "title": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"
+        }
+      },
+      "expected_ids": [
+        "exact"
+      ],
+      "expected_total": 1,
+      "basis": "e5 adapter_boundaries.rs:401-446; preserved expected ID; Java NOT_RUN",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_search",
+        "body": {
+          "query": {
+            "match_phrase": {
+              "title": "brown aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa𐐀 fox"
+            }
+          },
+          "sort": [
+            {
+              "uid": "asc"
+            }
+          ],
+          "size": 128,
+          "track_total_hits": true,
+          "_source": [
+            "uid"
+          ]
+        }
+      }
+    },
+    {
+      "comparison_order": "uid ascending; native logical ID ascending",
+      "projection": [
+        "uid"
+      ],
+      "size": 128,
+      "compare": [
+        "logical_ids",
+        "exact_total",
+        "uid_projection"
+      ],
+      "score_bits_compared": false,
+      "id": "jdiff-v1-held-out-phrase",
+      "documents_ref": {
+        "path": "fixtures/engine-research/held-out.json",
+        "sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89",
+        "pointer": "/phrase/documents"
+      },
+      "typed_query": {
+        "kind": "match",
+        "field": "title",
+        "text": "brown fox",
+        "phrase": true
+      },
+      "reference_query": {
+        "match_phrase": {
+          "title": "brown fox"
+        }
+      },
+      "expected_ids_ref": {
+        "path": "fixtures/engine-research/held-out.json",
+        "sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89",
+        "pointer": "/phrase/exact_phrase_ids",
+        "projection": "identity"
+      },
+      "expected_total": 1,
+      "basis": "unchanged independent frozen held-out phrase oracle",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_search",
+        "body": {
+          "query": {
+            "match_phrase": {
+              "title": "brown fox"
+            }
+          },
+          "sort": [
+            {
+              "uid": "asc"
+            }
+          ],
+          "size": 128,
+          "track_total_hits": true,
+          "_source": [
+            "uid"
+          ]
+        }
+      }
+    },
+    {
+      "comparison_order": "uid ascending; native logical ID ascending",
+      "projection": [
+        "uid"
+      ],
+      "size": 128,
+      "compare": [
+        "logical_ids",
+        "exact_total",
+        "uid_projection"
+      ],
+      "score_bits_compared": false,
+      "id": "jdiff-v1-held-out-date",
+      "documents_ref": {
+        "path": "fixtures/engine-research/held-out.json",
+        "sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89",
+        "pointer": "/date/documents"
+      },
+      "typed_query": {
+        "kind": "range",
+        "field": "date",
+        "lower_epoch_ms": 1767225600000,
+        "upper_epoch_ms": 1767225600002
+      },
+      "reference_query": {
+        "range": {
+          "date": {
+            "gte": "2026-01-01T00:00:00.000Z",
+            "lte": "2026-01-01T00:00:00.002Z"
+          }
+        }
+      },
+      "expected_ids_ref": {
+        "path": "fixtures/engine-research/held-out.json",
+        "sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89",
+        "pointer": "/date/inclusive_range_ids",
+        "projection": "identity"
+      },
+      "expected_total": 3,
+      "basis": "unchanged independent frozen held-out inclusive signed-epoch-ms oracle",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_search",
+        "body": {
+          "query": {
+            "range": {
+              "date": {
+                "gte": "2026-01-01T00:00:00.000Z",
+                "lte": "2026-01-01T00:00:00.002Z"
+              }
+            }
+          },
+          "sort": [
+            {
+              "uid": "asc"
+            }
+          ],
+          "size": 128,
+          "track_total_hits": true,
+          "_source": [
+            "uid"
+          ]
+        }
+      }
+    }
+  ],
+  "discrimination_controls": [
+    {
+      "id": "jdiff-v1-held-out-phrase-unordered-control",
+      "dataset": "jdiff-v1-held-out-phrase",
+      "typed_query": {
+        "kind": "bool",
+        "must_terms": [
+          {
+            "field": "title",
+            "value": "brown"
+          },
+          {
+            "field": "title",
+            "value": "fox"
+          }
+        ]
+      },
+      "reference_query": {
+        "bool": {
+          "must": [
+            {
+              "term": {
+                "title": "brown"
+              }
+            },
+            {
+              "term": {
+                "title": "fox"
+              }
+            }
+          ]
+        }
+      },
+      "expected_ids_ref": {
+        "path": "fixtures/engine-research/held-out.json",
+        "sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89",
+        "pointer": "/phrase/unsafe_unordered_and_ids",
+        "projection": "uid ascending"
+      },
+      "expected_total": 3,
+      "must_differ_from": "jdiff-v1-held-out-phrase",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_search",
+        "body": {
+          "query": {
+            "bool": {
+              "must": [
+                {
+                  "term": {
+                    "title": "brown"
+                  }
+                },
+                {
+                  "term": {
+                    "title": "fox"
+                  }
+                }
+              ]
+            }
+          },
+          "sort": [
+            {
+              "uid": "asc"
+            }
+          ],
+          "size": 128,
+          "track_total_hits": true,
+          "_source": [
+            "uid"
+          ]
+        }
+      }
+    },
+    {
+      "id": "jdiff-v1-held-out-date-all-control",
+      "dataset": "jdiff-v1-held-out-date",
+      "typed_query": {
+        "kind": "all"
+      },
+      "reference_query": {
+        "match_all": {}
+      },
+      "expected_ids_ref": {
+        "path": "fixtures/engine-research/held-out.json",
+        "sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89",
+        "pointer": "/date/unsafe_match_all_ids",
+        "projection": "uid ascending"
+      },
+      "expected_total": 5,
+      "must_differ_from": "jdiff-v1-held-out-date",
+      "reference_request": {
+        "method": "POST",
+        "path": "/{owned_index}/_search",
+        "body": {
+          "query": {
+            "match_all": {}
+          },
+          "sort": [
+            {
+              "uid": "asc"
+            }
+          ],
+          "size": 128,
+          "track_total_hits": true,
+          "_source": [
+            "uid"
+          ]
+        }
+      }
+    }
+  ],
+  "bounds": {
+    "fixture_bytes": 65536,
+    "request_bytes": 16384,
+    "documents_per_dataset": 128,
+    "fields_per_document": 16,
+    "document_utf8_bytes": 8192,
+    "actors": 4,
+    "reference_seconds": 300,
+    "acknowledgements_bytes": 1048576,
+    "observations_bytes": 1048576
+  },
+  "counts": {
+    "original_search": 14,
+    "original_analyzer": 4,
+    "original_mutation_histories": 11,
+    "original_mutation_steps": 34,
+    "supplement_analyzer": 6,
+    "supplement_search": 3,
+    "supplement_discrimination_controls": 2
+  },
+  "runtime_observations": {
+    "java": "NOT_RUN",
+    "native": "NOT_RUN",
+    "evidence_join": "NOT_RUN"
+  },
+  "provenance_file": "fixtures/engine-research/java-differential-v1.PROVENANCE.json"
+}

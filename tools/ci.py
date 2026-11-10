@@ -214,6 +214,14 @@ def gate(value, results):
         else:
             need(result in {"success", "skipped"}, f"Unexpected result for unselected job {job}: {result}")
 
+    if {"sandbox-x64", "sandbox-arm64"}.issubset(value["selected_jobs"]):
+        differential = runpy.run_path(str(ROOT / "tools/engine_differential.py"))
+        packages = [differential["decode"](results[job]["outputs"].get("differential", "").encode())
+                    for job in ("sandbox-x64", "sandbox-arm64")]
+        expected = differential["source_identity"](ROOT)
+        need(expected["head"] == value["head"], "Stale differential gate checkout")
+        differential["package_matrix"](packages, expected, ROOT)
+
 
 def run(command, root=ROOT, env=None):
     command = COVERAGE["cargo_command"](command)

@@ -1236,7 +1236,6 @@
           ],
           "depends_on": [
             "M19",
-            "M01",
             "M02.09"
           ],
           "owner": "engine/architecture",

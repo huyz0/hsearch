@@ -60,7 +60,7 @@ def research_gate_contract(milestones: dict, tasks: dict) -> None:
     """Retain research boundaries and the explicit prospective trait-start profile."""
     required = {
         "M01.08": {"M01.04", "M01.05", "M01.06", "M01.07", "M19", "M01.09"},
-        "M02.02": {"M19", "M01", "M02.09"},
+        "M02.02": {"M19", "M02.09"},
         "M02.04": {"M01", "M02.10"},
         "M03.02": {"M03.01"},
         "M03.03": {"M03.01", "M19", "M02.08", "M02.05"},
@@ -96,6 +96,9 @@ def research_gate_contract(milestones: dict, tasks: dict) -> None:
     for task_id, dependencies in required.items():
         need(task_id in tasks and dependencies <= set(tasks[task_id]["depends_on"]),
              f"Research acceptance gate missing: {task_id}")
+    need(set(tasks["M02.02"]["depends_on"]) == {"M19", "M02.09"} and
+         len(tasks["M02.02"]["depends_on"]) == 2,
+         "Native engine start profile changed: M02.02")
     need("M01" in milestones["M02"]["depends_on"],
          "Research acceptance gate missing: milestone M02")
     need(set(tasks["M03.02"]["depends_on"]) == {"M03.01"} and

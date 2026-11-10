@@ -5,6 +5,7 @@ import argparse
 from contextlib import contextmanager
 import hashlib
 import json
+import runpy
 import os
 from pathlib import Path
 import re
@@ -657,6 +658,7 @@ class Sandbox:
             info = self.run_container(record, container_id)
             need(info["State"]["Status"] in {"exited", "dead"} and not info["State"]["Running"] and
                  info["State"]["ExitCode"] == int(status), "Workload completion changed; lease retained")
+            execution = self.public_execution(record, info, budget, output_budget) if mode == "check" else None
             logs = self.docker.command("logs", container_id, merge_output=True)
             self.docker.command("container", "rm", container_id)
             need(not self.docker.command("container", "ls", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}").strip(),
@@ -665,6 +667,8 @@ class Sandbox:
             raw = logs.encode()
             result = {"mode": mode, "container_id": container_id, "exit_code": int(status), "encoding": "utf-8-replacement",
                       "output": raw[:output_budget].decode(errors="ignore"), "truncated": len(raw) > output_budget}
+            if execution is not None:
+                result["execution"] = execution
             if stream:
                 print(result["output"], end="", flush=True)
             if result["exit_code"] or result["truncated"]:
@@ -683,8 +687,23 @@ class Sandbox:
         info = self.docker.inspect("container", [container_id])
         need(len(info) == 1 and info[0]["Id"] == container_id, "Run container identity changed")
         assert_owned(info, record["owner"])
+        need(info[0].get("Image") == record["image"], "Run container actual image changed or missing")
         need(info[0]["Config"]["Labels"].get("io.hsearch.namespace") == record["namespace"], "Run container namespace changed")
         return info[0]
+
+    def public_execution(self, record, info, budget, output_budget):
+        """Allowlist actual pre-removal inspect fields; never export Env or mounts."""
+        image = json.loads(self.docker.command("image", "inspect", record["image"]))[0]
+        need(image["Id"] == info["Image"] == record["image"], "Admitted actual image changed")
+        architecture = {"amd64": "x86_64", "arm64": "aarch64"}.get(image["Architecture"])
+        need(architecture is not None and architecture == self.docker.info["Architecture"], "Actual native image architecture changed")
+        config, host, state = info["Config"], info["HostConfig"], info["State"]
+        return {"container_id": info["Id"], "image_id": info["Image"], "architecture": architecture,
+                "engine": self.docker.engine, "user": config["User"], "read_only": host["ReadonlyRootfs"],
+                "network": host["NetworkMode"], "limits": {"cpu_nanos": host["NanoCpus"], "memory": host["Memory"],
+                "memory_swap": host["MemorySwap"], "pids": host["PidsLimit"]},
+                "state": {"status": state["Status"], "running": state["Running"], "exit_code": state["ExitCode"]},
+                "budget": dict(budget), "output_budget": output_budget}
 
     def reconcile(self, namespace):
         """Reconcile only acknowledged container IDs after their worker exited."""
@@ -762,13 +781,31 @@ class Sandbox:
         self.registry.release(namespace)
         # Keep the small owned snapshot/evidence; never recursively delete host source.
 
-    def smoke(self):
+    def smoke(self, evidence_parent=None):
+        differential = runpy.run_path(str(ROOT / "tools/engine_differential.py")) if evidence_parent is not None else None
+        area = differential["evidence_directory"](evidence_parent, self.source_root, self.registry.root) if differential else None
+        before = differential["source_identity"](self.source_root) if differential else None
         namespaces = []
         try:
             first = self.up("smoke-a")
             namespaces.append(first)
             for mode in ("prefetch", "diagnostics", "check", "probe"):
-                self.run(first, mode)
+                try:
+                    result = self.run(first, mode)
+                except WorkloadFailed as error:
+                    if area is not None and mode == "check":
+                        differential["save_public"](area / "failed-check.json", error.result, 2 * 1024**2)
+                    raise
+                if area is not None and mode == "check":
+                    differential["save_public"](area / "check-result.json", result, 2 * 1024**2)
+                    record = self.registry.get(first)
+                    cache = json.loads((self.registry.root / "images" / (image_digest() + ".json")).read_text(encoding="utf-8"))
+                    need(cache["id"] == record["image"], "Smoke admitted image changed")
+                    image = {key: cache[key] for key in ("id", "engine", "build_inputs_sha256", "dockerfile_sha256", "correctness_artifact")}
+                    image["correctness_artifact"] = {key: cache["correctness_artifact"][key] for key in ("architecture", "revision", "archive_sha256", "profile_sha256", "binary_sha256", "version")}
+                    image["architecture"] = result["execution"]["architecture"]
+                    capture = differential["collect_native"](result, before, differential["source_identity"](self.source_root), image, self.source_root)
+                    differential["save_public"](area / "capture.json", capture)
             second = self.up("smoke-b")
             namespaces.append(second)
             self.run(second, "probe")
@@ -787,6 +824,7 @@ class Sandbox:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--evidence-parent", type=Path)
     parser.add_argument("--state-root", type=Path, default=Path(tempfile.gettempdir()) / "hsearch-dev-leases")
     parser.add_argument("command", choices=("image", "up", "run", "down", "status", "smoke"))
     parser.add_argument("target", nargs="?")
@@ -805,7 +843,7 @@ def main():
             need(args.target, "down requires namespace")
             sandbox.down(args.target)
         elif args.command == "smoke":
-            sandbox.smoke()
+            sandbox.smoke(args.evidence_parent)
         else:
             with sandbox.registry.edit() as data:
                 print(json.dumps(data, indent=2))

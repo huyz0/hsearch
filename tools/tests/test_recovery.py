@@ -1,5 +1,6 @@
 """Counterexamples for acknowledged-ID recovery and frozen monitor ownership."""
 import hashlib
+import json
 import os
 from pathlib import Path
 import runpy
@@ -20,6 +21,7 @@ CAPACITY = {"cpu_millis": 8000, "memory_bytes": 16 * GIB, "pids": 2048, "disk_by
 
 class DockerFixture:
     engine, capacity = "engine", CAPACITY
+    info = {"Architecture": "x86_64"}
 
     def __init__(self):
         self.state, self.removed, self.code, self.owner = "created", False, 0, "mine"
@@ -27,6 +29,8 @@ class DockerFixture:
 
     def command(self, *args, **kwargs):
         self.calls.append(args)
+        if args == ("image", "inspect", "image"):
+            return json.dumps([{"Id": "image", "Architecture": "amd64"}])
         if args[0] == "run":
             return str(100 * GIB)
         if args[0] == "create":
@@ -52,8 +56,19 @@ class DockerFixture:
     def inspect(self, kind, names):
         if kind == "volume":
             return [{"Name": name, "Labels": {API["LABEL"]: self.owner, "io.hsearch.namespace": NAMESPACE}} for name in names]
-        return [{"Id": CID, "Config": {"Labels": {API["LABEL"]: self.owner, "io.hsearch.namespace": NAMESPACE}},
-                 "State": {"Status": self.state, "Running": self.state == "running", "ExitCode": self.code}}]
+        info = {"Id": CID, "Image": "image",
+                "Config": {"Labels": {API["LABEL"]: self.owner, "io.hsearch.namespace": NAMESPACE}},
+                "State": {"Status": self.state, "Running": self.state == "running", "ExitCode": self.code}}
+        if hasattr(self, "created"):
+            def option(name):
+                return self.created[self.created.index(name) + 1]
+            info["Config"]["User"] = option("--user")
+            info["HostConfig"] = {
+                "ReadonlyRootfs": "--read-only" in self.created, "NetworkMode": option("--network"),
+                "NanoCpus": int(float(option("--cpus")) * 1_000_000_000),
+                "Memory": int(option("--memory")), "MemorySwap": int(option("--memory-swap")),
+                "PidsLimit": int(option("--pids-limit"))}
+        return [info]
 
 
 @unittest.skipIf(os.name == "nt", "Temporary resource fixtures are qualified in the Linux image")
@@ -123,6 +138,58 @@ class RecoveryControls(unittest.TestCase):
                 self.assertFalse(any("--force" in call for call in docker.calls))
                 with sandbox.registry.edit() as data:
                     self.assertEqual(set(data["leases"]), {NAMESPACE})
+
+    def test_missing_or_changed_actual_image_refuses_before_start_or_removal(self):
+        for operation in ("run", "reconcile"):
+            for image in (None, "changed-image"):
+                with self.subTest(operation=operation, image=image), tempfile.TemporaryDirectory() as directory:
+                    docker = DockerFixture()
+                    sandbox = self.ready(directory, docker)
+                    if operation == "reconcile":
+                        docker.state = "exited"
+                        self.child(sandbox, active=False, pid=os.getpid())
+                    inspect = docker.inspect
+
+                    def changed(kind, names):
+                        info = inspect(kind, names)
+                        if kind == "container":
+                            info[0]["Config"]["Image"] = "image"  # Must not substitute for actual Image.
+                            if image is None:
+                                del info[0]["Image"]
+                            else:
+                                info[0]["Image"] = image
+                        return info
+
+                    with patch.object(docker, "inspect", side_effect=changed):
+                        with self.assertRaisesRegex(Refused, "actual image changed or missing"):
+                            if operation == "run":
+                                sandbox.run(NAMESPACE, "check", stream=False)
+                            else:
+                                sandbox.reconcile(NAMESPACE)
+                    self.assertFalse(docker.removed)
+                    self.assertFalse(any(call[0] == "start" or call[:2] == ("container", "rm")
+                                         for call in docker.calls))
+                    with sandbox.registry.edit() as data:
+                        self.assertTrue(any(item.get("parent") == NAMESPACE for item in data["leases"].values()))
+
+    def test_success_exports_bounded_actual_public_execution_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            docker = DockerFixture()
+            sandbox = self.ready(directory, docker)
+            budget = API["BUILD"]
+            result = sandbox.run(NAMESPACE, "check", output_budget=4096, stream=False)
+            self.assertEqual(result["execution"], {
+                "container_id": CID, "image_id": "image", "architecture": "x86_64", "engine": "engine",
+                "user": "10001:10001", "read_only": True, "network": "none",
+                "limits": {"cpu_nanos": budget["cpu_millis"] * 1_000_000,
+                           "memory": budget["memory_bytes"], "memory_swap": budget["memory_bytes"],
+                           "pids": budget["pids"]},
+                "state": {"status": "exited", "running": False, "exit_code": 0},
+                "budget": budget, "output_budget": 4096})
+            self.assertIn(("image", "inspect", "image"), docker.calls)
+            self.assertFalse(result["truncated"])
+            self.assertLessEqual(len(result["output"].encode()), 4096)
+            self.assertTrue(docker.removed)
 
     def test_output_overflow_cannot_be_reported_as_success(self):
         with tempfile.TemporaryDirectory() as directory:

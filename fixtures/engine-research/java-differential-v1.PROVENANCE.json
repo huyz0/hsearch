@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "format": "hsearch-engine-java-differential-provenance-v1",
+  "status": "source fixture producer only; allocated normal claim; Java/native/evidence join NOT_RUN",
+  "fixture_path": "fixtures/engine-research/java-differential-v1.json",
+  "fixture_sha256": "e56f8bf8ee611a69998bdd1961081a52e8830fd71a9346aeea53d9980c719b2e",
+  "fixture_bytes": 24058,
+  "oracle_source_head": "e5b03529f029682ab176cc6f1fa4281758c807c8",
+  "oracle_provenance": [
+    {
+      "scope": "six analyzer vectors",
+      "source": "crates/engine/tests/adapter_boundaries.rs:319-396",
+      "basis": "Preserved source-derived expectations; not copied native runtime observations."
+    },
+    {
+      "scope": "supplementary phrase",
+      "source": "crates/engine/tests/adapter_boundaries.rs:401-446",
+      "basis": "Preserved independent logical-ID expectation exact; no score comparison."
+    },
+    {
+      "scope": "held-out phrase/date and contrast controls",
+      "path": "fixtures/engine-research/held-out.json",
+      "sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89",
+      "basis": "Original independently frozen oracles unchanged; exact JSON pointers; order projection explicit."
+    },
+    {
+      "scope": "Java scanner",
+      "commit": "64ce863a2bea79c69c19c4d56268c26710ff0ff9",
+      "git_blob": "82203ff65324263dc40ae4c4f2214b7af7cea202",
+      "path": "lucene/core/src/java/org/apache/lucene/analysis/standard/StandardTokenizerImpl.java",
+      "lines": "761-813",
+      "basis": "Prior source inspection cited by frozen CAPABILITIES; Java source not downloaded/reexecuted in this draft."
+    },
+    {
+      "scope": "supplementary lowercase U+10400 -> U+10428",
+      "commit": "6c48f4ed707bf0b15f9b6098de30db8aae6fa40f",
+      "basis": "Prior OpenJDK UnicodeData.txt source citation retained in boundary test; runtime NOT_RUN."
+    }
+  ],
+  "immutable_inputs": [
+    {
+      "path": "fixtures/api/core-v1/documents.json",
+      "sha256": "5d96ef5b991a66d2757bbc8e1bf5feaba02d2a3a29343a6327b88f1d30517f04"
+    },
+    {
+      "path": "fixtures/api/core-v1/schema.json",
+      "sha256": "38e6c912a21e096ea0ff0388c9045bd430a36026f967030bee28d6c2c89f173f"
+    },
+    {
+      "path": "fixtures/api/core-v1/search-cases.json",
+      "sha256": "825496fcf3992caa4357ba869b2282644d42963a26ba26e378bc901fd99466d1"
+    },
+    {
+      "path": "fixtures/api/core-v1/analyzer-cases.json",
+      "sha256": "1d759273809ab7951901e7d0dc3f197881f0e633d1bb324a76aaf59795102756"
+    },
+    {
+      "path": "fixtures/api/core-v1/mutation-cases.json",
+      "sha256": "78450f10dab308e53ac932e658caf5881a160e3d257510779830ba5dfdce789c"
+    },
+    {
+      "path": "fixtures/api/core-v1/profile-cases.json",
+      "sha256": "db09d6a5d8215e9209100df1d0c6f749347399637aba3e45690e4ea7942e8e5d"
+    },
+    {
+      "path": "fixtures/engine-research/held-out.json",
+      "sha256": "fbb144e0c8c0a643caeeca2d05cacd5d78a6720fc0aafcf4483c434fc81ddf89"
+    }
+  ],
+  "reference_pins": {
+    "server_version": "3.9.0",
+    "server_revision": "4ee42a94e87f66fbf1e62a9871b1b87f91e02472",
+    "client_version": "3.2.0",
+    "client_revision": "8991792d3fcdfc221c9aef62d7e82c3d15ff0206",
+    "image_index": "sha256:3b55f6b6249cfdb92b52ee59adc8a266203ba9ef9f5d82544fad6f1af2f3609e",
+    "linux_amd64": "sha256:5c20af6b5cb472a74ba99f663bee3dd03afbeced14b3897b220a87fc75278445",
+    "linux_arm64": "sha256:bbdf65cb3d35c61a8ba495f22c1a42d7d7f0df23412e3419bf1e6cfca3ba4774",
+    "source_license": "Apache-2.0; no dependency source or binary is vendored"
+  },
+  "format_requirements": {
+    "canonical_encoding": "UTF-8 JSON, no duplicate keys/nonfinite numbers; schema/version and exact required keys; external SHA256 over exact bytes.",
+    "case_ids": "Unique separate jdiff-v1- IDs; preserve original case IDs/counts/values and all frozen input bytes.",
+    "tokens": "Exact fields term(str),position(nonnegative int),start_offset/end_offset(nonnegative UTF16 ints); bool is not an integer.",
+    "references": "Only exact immutable paths+SHA256+JSON pointers; resolve and rehash before use; explicit ordering projection only.",
+    "requests": "Fixed POST paths under one trusted owned index, no caller URL; exact strict typed mappings and bounded serialized request bodies.",
+    "evidence": "Consumer must bind actual final producer/consumer head/tree/digest/image/build/architecture/profile and both execution receipts. Fixture SHA alone is no execution or authorization.",
+    "hash_binding": "Provenance binds fixture SHA; package index binds both, avoiding reciprocal/circular file hashes.",
+    "boolean_query": "The contrast IR must_terms lowers to Bool.must only; filter/should/must_not are empty and minimum_should_match=0. No wire conditional-authority semantics."
+  },
+  "observations": {
+    "java": "NOT_RUN",
+    "native": "NOT_RUN",
+    "evidence_join": "NOT_RUN",
+    "fixture_data_present": true,
+    "reference_consumer_implemented": false,
+    "native_consumer_implemented": false
+  },
+  "scope_limits": [
+    "No Java runtime output is used to choose or adjust an oracle.",
+    "No mutation/GET/PIT/bulk/authority/client/full compatibility or task acceptance claim.",
+    "Do not count the six/three/two supplemental families as original14/4/11/34 execution.",
+    "Existing worker/reference/fixture/request/output/resource limits are unchanged.",
+    "Shared consumer integration, both-architecture native/reference runs and source-bound evidence join remain outstanding."
+  ],
+  "authors": [
+    "01a1ab60-4bff-7752-9544-a9eab0fca10a; existing source/oracle contributors retain their original provenance and review exclusions"
+  ],
+  "producer": {
+    "task_id": "M02.02",
+    "owner_session": "01a1ab60-4bff-7752-9544-a9eab0fca10a",
+    "claim": "m02-02-7cdea50ba392",
+    "base_revision": "cae1a298048dc5b8b7cb1d2561a2417a7411aea1",
+    "base_tree": "81bf57cdb1c3093c3e29e14e8620a424b554eef6",
+    "base_source_digest": "610b1f80d4c6583113f86cc457e2ed4049cd6b6182ad83983d5745f14631661b",
+    "packet_sha256": "89060077ee52ce46eab067332eda1df446cc29d3d96b6e19a908577601b029b2",
+    "owned_paths": [
+      "fixtures/engine-research/java-differential-v1.json",
+      "fixtures/engine-research/java-differential-v1.PROVENANCE.json"
+    ],
+    "committer": "designated integrator only"
+  },
+  "oracle_source_files": [
+    {
+      "path": "crates/engine/tests/adapter_boundaries.rs",
+      "sha256": "7c278978859bc31a5e3608dbdfcac52360f486a20c9a17efd00b83e912eedc44"
+    },
+    {
+      "path": "crates/engine/tests/adapter_public.rs",
+      "sha256": "d807ccb6654b2f80e26dba720aa249e14909eefd9d68ca8cc4b973b35d466b51"
+    },
+    {
+      "path": "crates/engine/tests/render_adapter_fixtures.py",
+      "sha256": "fa26a6db539b6148afaa067be6a7b2f213a500321d718be2821d5528978ddbf0"
+    },
+    {
+      "path": "tools/reference.py",
+      "sha256": "a536c08670a497892eda49cb92a5e798ad2ef9c19b8e5a0506dcc5d6891b3261"
+    },
+    {
+      "path": "tools/api_fixtures.py",
+      "sha256": "aa57201d7e4119cdff9de04d5944d88e148d7f4c4dff5c5fb264567d4b3be152"
+    },
+    {
+      "path": "docs/plan/research/native-engine-envelope.json",
+      "sha256": "9805f68b7b172466352249fd3bc632c7c678dd1b612d54fa2e63c0528ac6e496"
+    },
+    {
+      "path": "crates/engine/CAPABILITIES.md",
+      "sha256": "1a25e460629afc2ba9e0104b130d90b723b5a9f3b4a2abba94cf78418ee5989e"
+    }
+  ],
+  "producer_source_files": [
+    {
+      "path": "crates/engine/tests/adapter_boundaries.rs",
+      "sha256": "7c278978859bc31a5e3608dbdfcac52360f486a20c9a17efd00b83e912eedc44"
+    },
+    {
+      "path": "crates/engine/tests/adapter_public.rs",
+      "sha256": "d807ccb6654b2f80e26dba720aa249e14909eefd9d68ca8cc4b973b35d466b51"
+    },
+    {
+      "path": "crates/engine/tests/render_adapter_fixtures.py",
+      "sha256": "fa26a6db539b6148afaa067be6a7b2f213a500321d718be2821d5528978ddbf0"
+    },
+    {
+      "path": "tools/reference.py",
+      "sha256": "a536c08670a497892eda49cb92a5e798ad2ef9c19b8e5a0506dcc5d6891b3261"
+    },
+    {
+      "path": "tools/api_fixtures.py",
+      "sha256": "aa57201d7e4119cdff9de04d5944d88e148d7f4c4dff5c5fb264567d4b3be152"
+    },
+    {
+      "path": "docs/plan/research/native-engine-envelope.json",
+      "sha256": "9805f68b7b172466352249fd3bc632c7c678dd1b612d54fa2e63c0528ac6e496"
+    },
+    {
+      "path": "crates/engine/CAPABILITIES.md",
+      "sha256": "027f4c5e67ee3122dddd78b5e0f89ad696a09455d3968c4e52eab09dd0a5eef6"
+    }
+  ],
+  "review_history_preserved": {
+    "original_base": "992084caa931fc64b1589350453fde9fa0e3a765",
+    "issued": 1,
+    "planned": 2,
+    "hard": 3,
+    "packet_sha256": "e8952dda3868be7361bff22cb8281469a024e7316ad0ee544391ae1c9ba65a28",
+    "blocked_finding_ids": [
+      "AS-M02-02-R1-01",
+      "AS-M02-02-R1-02",
+      "READER_SLOT_RELEASED_BEFORE_NATIVE_READER_DROP",
+      "CLOSE_SUCCESS_WITHOUT_LOCK_RELEASE_ACK"
+    ],
+    "finding_resolution_claimed": false,
+    "full_acceptance_preserved": true,
+    "authors_and_failed_histories_preserved": true
+  }
+}

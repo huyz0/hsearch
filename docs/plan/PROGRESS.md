@@ -1,5 +1,12 @@
 # Progress and handoff
 
+## 8 November 2026: administrative engine integration seed
+
+This separate reversible seed normally merges sealed delivery-v281e3162 and exact paused engine-author checkpointf0f5528. Engine Rust/tests/CAPABILITIES remain exact author bytes; all object/runtime/collector/CI/lock/inventory bodies remain v2 except the already approved engine Lucene production allowance. M02.02 receives only its separately adopted M19/M02.09 start edge and remains planned, with empty evidence/full original contract. Both independent start profiles retain whole-M02/M03/M01, M03 provider/calibration and M02.04/M02.10 boundaries.
+
+The two planning-test files contain an explicitly amended union of both sets of controls; they are new administrative test logic, not byte-identical v2 tests. Final engine increment checks remain unqualified after the retained8GiB cache/target refusal. Preliminary author-reported empty-terms field-validation and stale-checkpoint/retry-history risks remain open, unfixed development issues, not formal independent findings. No claim/resource/native build/test/review/publication occurs in this preparation. PR30/v2 is an unaccepted foundation; final validation awaits its actual qualification/integration or independently complete combined proof. Historical dated snapshots below retain their own scope.
+
+
 ## 8 November 2026: successor delivery preparation adopts actual PR29 main
 
 The [v2 preparation snapshot](evidence/delivery-integration-v2.md) starts from sealed2e2, normally merges actual protected PR29 main0a2ff358 with an initially identical tree, then normally merges corrected4f817522 development policy. M03/M19/M16 contributions, all implementation/Cargo/inventory/CI/collector/test bodies and raw history remain exact v1 bytes. Active engine and M02 repair source/graphs are excluded and untouched.
@@ -51,6 +58,12 @@ The [allowlisted exact-byte projection](evidence/m02-10-history/projection-index
 The [conditional host-context contract](retention-context-native-contract.md) explicitly separates scoped application audit/source/metadata/count budgets from bounded native allocation and unsupported hidden-kernel/physical-I/O/latency or invisible-VM-rewind claims. All original numerical caps, eleven clauses, M17 R3 failures and counters remain. The [combined-source record](evidence/m01-19-qualified-source.md) binds the unchanged nine builder code files and preserves their failure history.
 
 Code-only458c96c completed seven-job CI42432481369, including real conditional tmpfs CPython3.11.2/glibc2.36 positives on x86_64/aarch64 with fixture admission. That is predecessor component evidence, not a pass for this new head or M21 deployed filesystem/persistence/antirollback/CAS/resource authority. Trusted image/build/mount and controlled no-snapshot/no-migration admission remain mandatory. The candidate ledger done is the intended merged state only: this complete source still needs deterministic checks, both counted eligible roles in the same M19 issued0/planned2/hard3 lineage, exact-head native CI/coverage/ci-ok, normal gate and protected integration. M20/M21, M08, whole-M01/product and live-operation authorization remain separate; no actual FFF action is granted.
+
+## 8 November 2026: isolated M02.02 native-engine start seed
+
+The [prospective seed](native-engine-start-policy.md) removes only M02.02's whole-M01 task-start edge, retaining exact dependencies M19/M02.09, planned status and its full adapter contract. Root adopted the one-edge decision under delegated agent-created gate authority. Accepted M02.09 supplies concrete engineering prerequisites; its old research/coverage counts do not qualify a new production adapter. Whole-M02/M01 completion, unqualified M01.08, M02.04/M02.10 and all other tasks/history remain unchanged.
+
+This isolated branch is source preparation only. Root must audit the clean committed seed and actual owner/base/paths before separately admitting a normal development claim. Policy+later code retain the full original992 comparison and normal native x64/ARM/profile/Java/failure/coverage/independent/CI/protected/postmerge qualification; no extra policy-only review packet is issued. No code, dependency, collector/compiler, resource/native/provider/network/FFF or external publication action occurs. The sealed delivery2e2b and every prior candidate stay read-only and are not imported here.
 ## 8 November 2026: retention redesign plan integrated
 
 [M01.18's plan artifact is accepted](evidence/m01-18-integrated.md): reviewed source `3c44380` merged normally through [PR26](https://github.com/huyz0/hsearch/pull/26) as `81bae9b` with the same tree, both R2 nonauthor roles clear, the durable gate passed and all seven PR/main jobs successful. The decomposition, frozen history and verbatim eleven-clause bridge are accepted; M01.19/.20/.21 remain unimplemented and require their own qualification. The factual bookkeeping source needs its own final legal same-M18 R3/checks/integration before successor admission.

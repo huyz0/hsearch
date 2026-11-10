@@ -103,6 +103,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - name: Require every selected job and a successful planner
         env:
           CI_PLAN: ${{ needs.plan.outputs.plan }}

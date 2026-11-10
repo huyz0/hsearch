@@ -6,9 +6,13 @@
     "hsearch-testkit"
   ],
   "non_executable": {
-    "crates/engine/src/lib.rs": {
-      "sha256": "0f819830057f863c2dbadfc74904696b30b5ac327545fcff0a907d04ade7214b",
-      "reason": "Only the pinned revision constant and upstream re-exports; no adapter function body."
+    "crates/engine/src/adapter_tests.rs": {
+      "sha256": "efcd931982e6355a2206ee372e110e2bdec6875d0a3e9b6aa7e79267dcc091f7",
+      "reason": "Only the cfg(test) path module in adapter.rs includes this unit-test/helper file; production library builds exclude it."
+    },
+    "crates/engine/src/directory_tests.rs": {
+      "sha256": "eb9c5c7cec9943b7fecd043587982854fe47d853378f3e510c730b8b0c807454",
+      "reason": "Only the cfg(test) path module in directory.rs includes this unit-test/helper file; production library builds exclude it."
     }
   }
 }
