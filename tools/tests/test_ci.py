@@ -24,6 +24,20 @@ WORKSPACE = {
     "hsearch-testkit": {"path": "crates/testkit/", "dependencies": []}}
 
 
+# Planning controls mock attestation, including read-only protoc authentication.
+# test_native_protoc exercises that real adapter with explicit HOST fixtures.
+def setUpModule():
+    global _protoc_patch
+    _protoc_patch=patch.dict(CI['native'].__globals__,NATIVE_PROTOC={
+        'prepare_for_ci':lambda coverage,environment:(environment,{'scope':'synthetic-HOST'}),
+        'verify':lambda context:None})
+    _protoc_patch.start()
+
+
+def tearDownModule():
+    _protoc_patch.stop()
+
+
 def fixture_coverage():
     """Planning tests replace only native attestation, preserving real command policy."""
     value = dict(CI["COVERAGE"])
@@ -306,6 +320,17 @@ class ResultControls(unittest.TestCase):
         value["coverage_packages"] = []
         with self.assertRaisesRegex(ValueError, "Incomplete full coverage"):
             CI["validate_plan"](value)
+
+    def test_protoc_authentication_failure_stops_before_existing_native_commands(self):
+        value=choose(b"M\0unknown\0");commands=[]
+        def refuse(*args):raise ValueError('unqualified native protoc')
+        with patch.dict(CI['native'].__globals__,output=lambda command:HEAD.encode() if command[0]=='git' else b'{}',
+                        graph=lambda *_args:WORKSPACE,COVERAGE=fixture_coverage(),
+                        qualified_coverage_base=lambda *a:BASE,
+                        run=lambda *args,**kw:commands.append(args),
+                        NATIVE_PROTOC={'prepare_for_ci':refuse,'verify':lambda *a:None}):
+            with self.assertRaisesRegex(ValueError,'native protoc'):CI['native'](value)
+        self.assertEqual(commands,[])
 
     def test_native_full_preserves_release_doctests_and_coverage(self):
         value = choose(b"M\0unknown\0")

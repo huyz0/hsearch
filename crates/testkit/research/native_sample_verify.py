@@ -58,7 +58,7 @@ def verify(root,receipt,binding,scratch):
             'published':sum(row['published'] for row in results),'rejected':sum(row['rejected'] for row in results),'aggregate_counts':summed,
             'elapsed_us':sample['elapsed_us'],'failure':failure,'unsafe_controls':controls,'scales':scale,'retained_files':len(receipt['files']),
             'retained_bytes':receipt['total_bytes'],'decoded_files':receipt['decoded_files'],'decoded_bytes':receipt['decoded_bytes'],
-            'temporal_application':{'status':'pass','contexts':len(orderings),
+            'temporal_application':{'status':'pass','contexts':len(orderings),'context_ids':list(probes),
                 'certified_entries':sum(row['certified_entries']for row in orderings),
                 'application_frames':sum(row['application_frames']for row in orderings),
                 'committed_callbacks':sum(row['committed_callbacks']for row in orderings),

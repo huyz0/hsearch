@@ -73,7 +73,7 @@ jobs:
         if: ${{ inputs.mode == 'native' }}
         run: python3 tools/ci.py native
       - name: Qualify complete source-bound durability campaign
-        if: ${{ inputs.mode == 'native' }}
+        if: ${{ inputs.mode == 'native' && (fromJSON(inputs.plan).full || contains(fromJSON(inputs.plan).packages, 'hsearch-testkit')) }}
         run: python3 tools/native_durability_campaign.py --state-root "${{ runner.temp }}/hsearch-durability-state" --output "${{ runner.temp }}/hsearch-durability-public"
       - name: Preserve only public campaign checkpoints and incomplete outcome
         if: ${{ always() && inputs.mode == 'native' }}
@@ -91,6 +91,7 @@ jobs:
           name: coverage-${{ inputs.runner }}-${{ github.run_id }}
           # Preserve public measurements/manifests, not compiler/dependency binaries.
           path: |
+            ${{ runner.temp }}/hsearch-native-protoc-*/summary.json
             ${{ runner.temp }}/hsearch-coverage-*/summary.json
             ${{ runner.temp }}/hsearch-coverage-*/*/*.json
             ${{ runner.temp }}/hsearch-coverage-*/*/shards/*.json

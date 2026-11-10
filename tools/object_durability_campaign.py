@@ -200,7 +200,7 @@ def verify_export(directory, inputs_value, raw_logs, cid, config):
                  'export_files': index['files']}
     _, oracle = modules()
     result = oracle['verify'](directory, inputs_value['binding'], execution)
-    need(result['object_observations'] == 'verified' and result['execution_kind'] == 'admitted-object' and result['actual_case_records'] == 144,
+    need(result['object_observations'] == 'verified' and result['execution_kind'] == 'admitted-object' and result['actual_case_records'] == 144 and result['case_ids']==['case-%03d'%i for i in range(144)],
          'Independent object matrix incomplete')
     need(inventory(directory) == files, 'Object raw export changed during independent verification')
     proof = {'object_campaign': 'verified', 'binding': inputs_value['binding'], 'execution': execution, 'oracle': result,
@@ -240,19 +240,10 @@ def run_object(sandbox, claim, source, namespace_changed=lambda value: None, pub
     input_path.chmod(0o444)
     sandbox.registry.update(namespace, object_durability_input={'bytes': len(raw), 'sha256': sha(raw)})
     # No Cargo/prefetch/build gate: this is the fixed Python object driver only.
-    try:
-        result = sandbox.run(namespace, 'durability-object', output_budget=config['output_bytes'], stream=False, artifact_directory=output_path, checkpoint=checkpoint, deadline=deadline, checkpoint_context=checkpoint_context)
-    except Exception as error:
-        if public_output is not None and output_path.exists():
-            try:
-                log = snapshot / 'object-worker.log'
-                raw_log = read(log, config['output_bytes'], allow_empty=True) if log.exists() else b'Object worker outcome retained; no qualifying completion.\n'
-                publish(output_path, public_output / 'object144-failed', {'status': 'failed', 'binding': value['binding'],
-                        'scope': 'Partial or failed/unknown object workload; no144 qualification.'}, raw_log)
-            except Exception as copy_error:
-                error.add_note('Object failure export refused; original evidence/worker/lease retained: ' + type(copy_error).__name__)
-        raise
+    result = sandbox.run(namespace, 'durability-object', output_budget=config['output_bytes'], stream=False, artifact_directory=output_path, checkpoint=checkpoint, deadline=deadline, checkpoint_context=checkpoint_context)
     proof = result['object_durability']; source_bookend(sandbox.source_root, value['binding'])
+    deadline.require(20*180)
     sandbox.down(namespace); namespace_changed(None)
     return {'object_cases': 144, 'faults': proof['oracle']['faults'], 'container_id': result['container_id'],
-            'checkpoint': result['checkpoint'], 'target': value['binding']['target']}
+            'checkpoint': result['checkpoint'], 'run_id':value['binding']['run_id'],
+            'case_ids_pointer':'/object_durability/oracle/case_ids', 'target': value['binding']['target']}

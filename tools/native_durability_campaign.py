@@ -228,6 +228,24 @@ def matrix(target):
             for profile in ('dev', 'release') for candidate in CANDIDATES for repetition in (1, 2, 3)]
 
 
+UNSAFE_IDS = ('false-flush-or-advance','send-before-persist','uncommitted-apply','blind-new-identity',
+              'missing-response','forged-state-witness','insufficient-four-voter-quorum')
+
+
+def context_ids():
+    return ['workload-%02d'%i for i in range(18)]+['failure']+[
+        'scale-%02d-%02d'%(groups,i) for groups in (1,4,16) for i in range(groups)]
+
+
+def attempt_plan(target):
+    rows=[{'mode':'prefetch','role':'initial-prefetch'}, {'mode':'check','role':'complete-ordinary'},
+          {'mode':'durability-object','role':'object144'}]
+    for cell in matrix(target):
+        rows.extend([{'mode':'prefetch','role':'fresh-cell-prefetch','cell':cell},
+                     {'mode':'durability-sample','role':'strict-cell','cell':cell}])
+    return [dict(row,event='attempt-%02d'%i) for i,row in enumerate(rows)]
+
+
 def binding(source, image, row, root=ROOT):
     need(source['clean'] is True, 'Campaign requires clean committed source')
     need(digest(read(root / FIXTURE)) == FIXTURE_SHA, 'Frozen durability fixture changed')
@@ -462,13 +480,72 @@ def verify_export(directory, expected):
         result = verifier['verify'](packed, receipt, actual, scratch)
         replay = full40_control(index, decoded)
     need(result['native_complete_sample'] == 'pass' and result['temporal_application']['contexts'] == 40 and
+         result['temporal_application']['context_ids'] == context_ids() and
          result['unsafe_controls']['actual_artifact_negative_controls'] == 'pass' and
-         len(result['unsafe_controls']['controls']) == 7, 'Incomplete strict sample verification')
+         [row['control'] for row in result['unsafe_controls']['controls']] == list(UNSAFE_IDS) and
+         all(row['result']=='refused' for row in result['unsafe_controls']['controls']) and
+         [row['context'] for row in replay['contexts']] == context_ids(), 'Incomplete strict sample verification')
     need(set(p.name for p in directory.iterdir()) == set(originals) and
          all(read(directory / name, allow_empty=name in {'stdout.log', 'stderr.log'}) == content for name, content in originals.items()),
          'Export changed during independent verification')
     return {'binding': actual, 'sample': result, 'full40_unrelated_sync': replay,
             'files': len(paths), 'bytes': sum(p.stat().st_size for p in paths)}
+
+
+def verify_ordinary(result, mode, root):
+    """Recheck the fixed monitor/compile proof before its worker can be removed."""
+    need(mode in {'prefetch','check'}, 'Unknown ordinary campaign mode')
+    execution=result['execution'];budget={'cpu_millis':2000,'memory_bytes':4*1024**3,'pids':256,'disk_bytes':8*1024**3}
+    need(execution['container_id']==result['container_id'] and execution['budget']==budget and
+         execution['user']=='10001:10001' and execution['read_only'] is True and
+         execution['network']==('bridge' if mode=='prefetch' else 'none') and
+         execution['limits']=={'cpu_nanos':2000000000,'memory':4*1024**3,'memory_swap':4*1024**3,'pids':256},
+         'Ordinary worker actual resource/config proof differs')
+    streams=result['raw_streams']
+    need(not streams['stderr'] and len(streams['stdout'])<=512*1024, 'Ordinary Docker diagnostics are not a qualifying child stream')
+    frames=[]
+    for line in streams['stdout'].splitlines():
+        if line.startswith(b'{'):
+            try:frame=decode(line)
+            except ValueError:continue
+            if type(frame) is dict:frames.append(frame)
+    monitors=[row for row in frames if row.get('mode')==mode and 'exit' in row]
+    need(len(monitors)==1,'Exactly one independent ordinary monitor receipt required')
+    monitor=monitors[0]
+    need(monitor['exit']==0 and type(monitor['output_bytes']) is int and 0<=monitor['output_bytes']<=512*1024 and
+         type(monitor['peak_disk_bytes']) is int and 0<=monitor['peak_disk_bytes']<=8*1024**3 and
+         type(monitor['elapsed_seconds']) in (int,float) and 0<=monitor['elapsed_seconds']<=1200,
+         'Ordinary monitor outcome/bound differs')
+    proof={'mode':mode,'monitor':monitor,'host_inspection':'actual-identity-and-resource-bounds'}
+    if mode=='check':
+        validated=[row for row in frames if row.get('compile_entry')=='validated']
+        completed=[row for row in frames if row.get('compile_entry')=='complete']
+        need(len(validated)==len(completed)==1 and validated[0]['action']=='check' and
+             validated[0]['argv']==['cargo','xtask','check'] and completed[0]['action']=='check' and
+             completed[0]['cargo_exit']==0 and completed[0]['tool_postcheck']=='identical',
+             'Missing authenticated ordinary graph/tool/check completion')
+        value=validated[0]
+        for name in ('Cargo.toml','Cargo.lock'):
+            need(value['source'][name]['sha256']==digest(read(root/name)), 'Ordinary source/lock proof changed')
+        need(value['workspace_policy']['sha256']==digest(read(root/'tools/workspace.py')) and
+             value['source_inventory']['sha256']==digest(read(root/'docs/plan/dependencies.json')),
+             'Ordinary graph policy/inventory source changed')
+        policy=runpy.run_path(str(root/'tools/workspace.py'))
+        projection=value['used_validation_projection']
+        policy['validate'](projection,value['production_tree'])
+        expected=policy['inventory'](projection)
+        need(expected==value['inventory_validation_projection'] and
+             read(root/'docs/plan/dependencies.json')==(json.dumps(expected,indent=2)+'\n').encode(),
+             'Ordinary independent graph/license inventory differs')
+        tool=value['tool_association'];target=execution['architecture']+'-unknown-linux-gnu'
+        need(target in PROTOC and tool['native_system']=='Linux' and tool['native_machine']==execution['architecture'] and
+             tool['elf_machine']==(62 if execution['architecture']=='x86_64' else 183) and
+             tool['tool_actual_sha256']==tool['tool_expected_sha256']==PROTOC[target] and
+             tool['archive_proof']['sha256']=='2df9942df2981178a930a72d442de47e2f0df18ad68e50a30f816f1848215ad0',
+             'Ordinary native protoc/archive identity differs')
+        proof.update(graph_policy_sha256=value['workspace_policy']['sha256'],lock_sha256=value['source']['Cargo.lock']['sha256'],
+                     protoc_sha256=tool['tool_actual_sha256'],complete_ordinary_check=True)
+    return proof
 
 
 def publish_export(source, destination):
@@ -516,24 +593,20 @@ def run_campaign(sandbox, claim, source, namespace_changed=lambda value: None, p
         with path.open('xb') as stream: stream.write(raw)
         path.chmod(0o444)
         sandbox.registry.update(namespace, native_durability_input={'bytes': len(raw), 'sha256': digest(raw)})
-        sandbox.run(namespace, 'prefetch', output_budget=512*1024, stream=False, **options)
+        cell_options={**options,'checkpoint_context':{**checkpoint_context,'cell':row}}
+        sandbox.run(namespace, 'prefetch', output_budget=512*1024, stream=False, **cell_options)
         export = sandbox.snapshot(record) / 'durability-evidence'
-        try:
-            result = sandbox.run(namespace, 'durability-sample', output_budget=512*1024, stream=False, artifact_directory=export, **options)
-        except Exception as error:
-            if public_output is not None and export.exists():
-                try:
-                    key = row['candidate'] + '-' + row['profile'] + '-' + str(row['repetition']) + '-failed'
-                    publish_export(export, public_output / key)
-                except Exception as copy_error:
-                    error.add_note('Failed public export refused; original worker/snapshot retained: ' + str(copy_error)[:512])
-            raise
+        result = sandbox.run(namespace, 'durability-sample', output_budget=512*1024, stream=False, artifact_directory=export, **cell_options)
         proof = result['native_durability']
         run_id = proof['binding']['nextest_run_id']; cid = result['container_id']
         need(run_id not in uuids and cid not in cids, 'Reused nextest process or acknowledged worker')
         uuids.add(run_id); cids.add(cid)
         need(task['source_fingerprint'](sandbox.source_root, source['head'], []) == source, 'Source changed during strict sample')
-        results.append({'cell': row, 'container_id': cid, 'checkpoint': result['checkpoint']})
+        results.append({'cell': row, 'container_id': cid, 'nextest_run_id':run_id, 'checkpoint': result['checkpoint'],
+                        'control_ids_pointer':'/native_durability/sample/temporal_application/context_ids',
+                        'unsafe_ids_pointer':'/native_durability/sample/unsafe_controls/controls',
+                        'full40_ids_pointer':'/native_durability/full40_unrelated_sync/contexts'})
+        deadline.require(20*180)
         sandbox.down(namespace)
         namespace_changed(None)
     need(len(results) == 12, 'Incomplete per-architecture native campaign')
@@ -551,10 +624,11 @@ def main():
     output = args.output.absolute()
     need(output.parent.resolve() == output.parent and not output.exists() and not output.is_relative_to(ROOT), 'New external campaign output required')
     output.mkdir(mode=0o700)
+    progress={'stage':'preflight','source_head':None,'plan_sha256':None,'outcome':'unestablished'}
     try:
-        return ci_campaign(args, output)
+        return ci_campaign(args, output, progress)
     except Exception as error:
-        failure = {'status': 'incomplete', 'failure_type': type(error).__name__,
+        failure = {'status': 'incomplete', 'failure_type': type(error).__name__, 'progress':progress,
                    'scope': 'No retry. Successful prefix and unknown/failed worker resources retained.'}
         try:
             with (output / 'failure.json').open('xb') as handle:
@@ -564,12 +638,13 @@ def main():
         raise
 
 
-def ci_campaign(args, output):
+def ci_campaign(args, output, progress):
     # Direct entry is CI-only, using the exact existing selected native job.
     ci = runpy.run_path(str(ROOT / 'tools/ci.py'))
     plan_raw = os.environ['CI_PLAN'].encode()
     need(len(plan_raw) <= 65536, 'Bounded existing CI plan required')
     plan = ci['validate_plan'](decode(plan_raw))
+    progress.update(plan_sha256=digest(plan_raw),source_head=plan['head'])
     need(plan['full'] or 'hsearch-testkit' in plan['packages'], 'Durability campaign not selected')
     task = runpy.run_path(str(ROOT / 'tools/task.py'))
     head = task['git']('rev-parse', 'HEAD', root=ROOT).strip()
@@ -593,19 +668,44 @@ def ci_campaign(args, output):
             'negative_cases': ['Persistence refusal retains resources and successful prefix.'],
             'commands': ['prefetch', 'check'], 'output_budget_bytes': 1024**2,
             'expected_evidence': ['Source-bound bounded raw/proof/journal references; no partial pass.']})
-        sandbox = runpy.run_path(str(ROOT / 'tools/sandbox.py'))['Sandbox'](args.state_root / 'leases')
+        sandbox_api = runpy.run_path(str(ROOT / 'tools/sandbox.py'))
+        sandbox = sandbox_api['Sandbox'](args.state_root / 'leases')
         need(sandbox.docker.info['Architecture'] == platform.machine(), 'CI host/engine architecture differs')
         need(sandbox.docker.info['NCPU'] >= 4 and sandbox.docker.info['MemTotal'] >= 12 * 1024**3 and
              sandbox.registry.free_disk() >= 39 * 1024**3, 'Clean hosted campaign capacity unavailable')
         with sandbox.registry.edit() as registry:
             need(not registry['leases'], 'Existing live or uncertain reservations block campaign preflight')
         claim = store.claim(value)
+        progress.update(stage='image-preparation',claim=claim,outcome='unknown-until-acknowledged')
+        sandbox.docker=sandbox_api['CampaignDockerCalls'](sandbox.docker,clock,store.campaign_docker_charge(claim,owner))
         sandbox.image()
-        store.run(claim, owner, 'prefetch', args.state_root / 'leases', public_output=output, deadline=cutoff)
+        progress.update(stage='initial-prefetch',outcome='unknown-until-acknowledged')
+        prefetch = store.run(claim, owner, 'prefetch', args.state_root / 'leases', public_output=output, deadline=cutoff)
+        progress.update(stage='ordinary-and-complete-campaign',outcome='incomplete-until-full-matrix')
         result = store.run(claim, owner, 'check', args.state_root / 'leases', public_output=output, deadline=cutoff)
     except Exception:
         raise
-    (output / 'campaign.json').write_bytes(encoded(result))
+    record = store.get(claim, owner)
+    journal = checkpoints['Journal'](store, claim, owner, record['campaign']['source'], output, cutoff)
+    references = [decode(read(path/'reference.json', 16384)) for path in sorted(output.iterdir())]
+    need(len(references) == 27 and len({row['container_id'] for row in references}) == 27,
+         'Incomplete or reused campaign attempt inventory')
+    target=result['campaign']['target']
+    actual_attempts=[]
+    for planned,reference in zip(attempt_plan(target),references):
+        journal.verify(reference)
+        need(reference['status'] == 'verified' and reference['event']==planned['event'], 'Failed/reordered prefix cannot qualify a campaign')
+        context=decode(read(output/reference['event']/'manifest.json',16384))['context']
+        need(context['mode']==planned['mode'] and context.get('cell')==planned.get('cell'), 'Campaign attempt/cell identity mismatch')
+        actual_attempts.append({**planned,'container_id':reference['container_id'],'checkpoint':reference})
+    progress.update(stage='complete-one-native-architecture',outcome='all27identity-bound-attempts-verified')
+    final = {'schema':1, 'status':'complete-one-native-architecture', 'prefetch':prefetch, 'check':result,
+             'attempts':actual_attempts, 'other_architecture_coverage_review_provider_acceptance':'separate-required-gates'}
+    final_raw = encoded(final)
+    need(len(final_raw) <= 64*1024, 'Campaign final compact report bound')
+    with (output/'campaign.json').open('xb') as handle:
+        handle.write(final_raw);handle.flush();os.fsync(handle.fileno())
+    checkpoints['sync_directory'](output)
     print(json.dumps({'native_durability_campaign': 'pass', 'samples': 12}))
 
 

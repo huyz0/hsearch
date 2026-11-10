@@ -542,3 +542,92 @@ class ProbePublicExportControls(unittest.TestCase):
             records.pop()
             self.assertEqual(MODULE["export_probe_evidence"](store, claim, "fixture", output), records)
             self.assertEqual((output/"evidence"/(records[0]["sha256"]+".json")).read_bytes(), (folder/(records[0]["sha256"]+".json")).read_bytes())
+
+
+class CampaignDispatchControls(unittest.TestCase):
+    """Synthetic lifecycle dispatch only; no TaskStore claim or real resource."""
+    def fixture(self, root, fail=False):
+        claim='m02-10-'+'a'*12;events=[];source={'clean':True,'head':'b'*40,'digest':'c'*64}
+        row={'packet':{**packet(task='M02.10'),'research_campaign':'durability-v1',
+                       'commands':['prefetch','check'],'output_budget_bytes':1024**2},
+             'packet_sha256':'d'*64,'phase':'allocated','worker':None,'namespace':None,
+             'worktree':str(root/'source'),'evidence':[]}
+        data={'tasks':{claim:row}}
+        store=object.__new__(TaskStore);store.root=root/'state'
+        @contextmanager
+        def edit():yield data
+        store.edit=edit;store.get=lambda *a:copy.deepcopy(data['tasks'][claim])
+        store.fingerprint=lambda row:dict(source)
+        store.append=lambda claim,owner,kind,value:events.append(('append',kind,value))
+        class Journal:
+            def __init__(self,*args):self.output=root/'public';self.deadline=SimpleNamespace(require=lambda seconds:None)
+            def admit_task_reserve(self):events.append(('reserve',))
+            def terminal(self,*args):events.append(('checkpoint',));return {'event':'fixture-reference'}
+            def verify(self,*args):events.append(('verify-checkpoint',))
+        def run(namespace,mode,**options):
+            self.assertEqual(options['output_budget'],512*1024)
+            events.append(('worker',mode))
+            ref=options['checkpoint']({}, {})
+            result={'mode':mode,'exit_code':7 if fail else 0,'checkpoint':ref,'truncated':False,'output':'x'*600000}
+            if fail:raise MODULE['SANDBOX']['WorkloadFailed'](result)
+            return result
+        sandbox=SimpleNamespace(docker=SimpleNamespace(),up=lambda *a,**kw:'hsearch-m02-10-'+'e'*12,run=run,
+                                down=lambda namespace:events.append(('down',namespace)))
+        store.resources=lambda *args:sandbox
+        def campaign(*args,**options):
+            events.append(('campaign',));self.assertTrue(callable(options['checkpoint']))
+            args[3](None)
+            return {'sample_count':12,'scope':'Synthetic dispatch fixture; no native evidence'}
+        def load(path):
+            return {'Journal':Journal} if str(path).endswith('campaign_checkpoint.py') else {'run_campaign':campaign}
+        return store,data,claim,events,source,load
+
+    def test_orchestration_budget_is_charged_in_existing_claim_and_never_resets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            store,data,claim,events,source,load=self.fixture(Path(temporary).resolve())
+            row=data['tasks'][claim];owner=row['packet']['owner_session'];row['campaign_docker_calls']=1023
+            charge=store.campaign_docker_charge(claim,owner)
+            charge();self.assertEqual(row['campaign_docker_calls'],1024)
+            with self.assertRaisesRegex(Refused,'budget exhausted'):charge()
+            self.assertEqual(row['campaign_docker_calls'],1024)
+            with self.assertRaisesRegex(Refused,'owner/lifecycle'):store.campaign_docker_charge(claim,'foreign')()
+            self.assertEqual(row['campaign_docker_calls'],1024)
+
+    def test_prefetch_then_check_checkpoint_before_down_and_compact_final_references(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary).resolve();store,data,claim,events,source,load=self.fixture(root)
+            with patch.object(MODULE['runpy'],'run_path',side_effect=load):
+                store.run(claim,'owner','prefetch',root/'resources',public_output=root/'public',deadline=10000)
+                result=store.run(claim,'owner','check',root/'resources',public_output=root/'public',deadline=10000)
+            self.assertEqual(data['tasks'][claim]['campaign_started_modes'],['prefetch','check'])
+            self.assertEqual(result['campaign']['sample_count'],12)
+            self.assertLess(events.index(('verify-checkpoint',)),next(i for i,e in enumerate(events) if e[0]=='down'))
+            self.assertEqual(data['tasks'][claim]['phase'],'allocated')
+            records=[e[2] for e in events if e[0]=='append']
+            self.assertTrue(all(len(MODULE['encoded'](value))<16384 for value in records))
+            self.assertTrue(all('output' not in value['result'] for value in records))
+
+    def test_missing_prefetch_duplicate_attempt_and_changed_binding_refuse_without_worker(self):
+        for failure in ('missing-prefetch','duplicate','changed-source'):
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary).resolve();store,data,claim,events,source,load=self.fixture(root)
+                with patch.object(MODULE['runpy'],'run_path',side_effect=load):
+                    if failure!='missing-prefetch':store.run(claim,'owner','prefetch',root/'resources',public_output=root/'public',deadline=10000)
+                    before=sum(e[0]=='worker' for e in events)
+                    if failure=='changed-source':source['digest']='f'*64
+                    with self.assertRaises(Refused):
+                        store.run(claim,'owner','prefetch' if failure=='duplicate' else 'check',root/'resources',public_output=root/'public',deadline=10000)
+                    self.assertEqual(sum(e[0]=='worker' for e in events),before)
+
+    def test_failed_command_keeps_interrupted_stage_and_compact_record_without_retry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary).resolve();store,data,claim,events,source,load=self.fixture(root,fail=True)
+            with patch.object(MODULE['runpy'],'run_path',side_effect=load):
+                with self.assertRaises(MODULE['SANDBOX']['WorkloadFailed']):
+                    store.run(claim,'owner','prefetch',root/'resources',public_output=root/'public',deadline=10000)
+            self.assertEqual(data['tasks'][claim]['phase'],'interrupted')
+            self.assertEqual(data['tasks'][claim]['campaign_started_modes'],['prefetch'])
+            failure=[e[2] for e in events if e[:2]==('append','failed-command')][0]
+            self.assertLess(len(MODULE['encoded'](failure)),16384)
+            self.assertNotIn('output',failure['result'])
+            self.assertFalse(any(e[0]=='down' for e in events))

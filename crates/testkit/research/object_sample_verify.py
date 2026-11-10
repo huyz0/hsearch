@@ -439,7 +439,7 @@ def verify(directory,binding,execution):
          and finish['actual_kms_calls']==0,'Whole-command attempt/body/accounting mismatch')
     need(0<=finish['finished_ns']-start['started_ns']<=1_200_000_000_000,'Whole command deadline')
     integer(finish['peak_process_rss_bytes'],1,4*1024**3,'Observed process RSS')
-    return {'object_observations':'verified','execution_kind':binding['execution_kind'],'actual_case_records':144,
+    return {'object_observations':'verified','execution_kind':binding['execution_kind'],'actual_case_records':144,'case_ids':['case-'+str(i).zfill(3) for i in range(144)],
             'offered':sum(c['offered'] for c in case_results),'actual_requests':len(all_ids),'known_sent_body_bytes':sent,
             'response_body_bytes':received,'unknown_sent_attempts':unknown,'faults':faults,'export_bytes':total,
             'directed_http_body_bytes':{'worker_to_rustfs_known':sent,'rustfs_to_worker':received,'uncertain_send_attempts':unknown},

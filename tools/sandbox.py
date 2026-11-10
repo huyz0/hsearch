@@ -12,6 +12,7 @@ import re
 import runpy
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -300,6 +301,83 @@ def freeze_harness(destination):
         script.chmod(0o444)
         hashes[name] = hashlib.sha256(content).hexdigest()
     return hashes
+
+
+class CampaignDockerCalls:
+    """Bound setup/teardown/image calls against the same unreset job clock."""
+    def __init__(self,docker,deadline,charge):
+        self.docker,self.deadline,self.record_charge=docker,deadline,charge
+
+    def __getattr__(self,name):return getattr(self.docker,name)
+
+    def charge(self,args,timeout):
+        key=tuple(args[:2]) if args[0] in {"container","volume","network","image"} else (args[0],)
+        allowed={("build",):600,("wait",):1250,("compose",):150,
+                 **{(name,):180 for name in ("run","create","start","logs")},
+                 **{(kind,action):180 for kind,actions in (
+                     ("container",("inspect","ls","rm")),("volume",("inspect","create","ls","rm")),
+                     ("network",("inspect","ls")),("image",("inspect",))) for action in actions}}
+        need(key in allowed and 0<timeout<=allowed[key],"Unbudgeted campaign orchestration operation")
+        self.deadline.require(timeout+600)
+        self.record_charge()
+
+    def command(self,*args,**kwargs):
+        self.charge(args,kwargs.get("timeout",180))
+        return self.docker.command(*args,**kwargs)
+
+    def inspect(self,kind,names):
+        self.charge((kind,"inspect"),180)
+        return self.docker.inspect(kind,names)
+
+
+class CampaignRunCalls:
+    """Closed worker-path call inventory; timeouts consume the one job clock."""
+    def __init__(self, docker, mode, deadline):
+        need(mode in {"prefetch", "check", "durability-sample", "durability-object"}, "Unknown campaign worker budget")
+        self.docker, self.deadline = docker, deadline
+        self.remaining = {("volume", "inspect"): 1, ("container", "inspect"): 3,
+                          ("run",): 1, ("create",): 1, ("start",): 1, ("wait",): 1,
+                          ("logs",): 1, ("container", "rm"): 1, ("container", "ls"): 1}
+        if mode in {"prefetch", "check"}:
+            self.remaining[("image", "inspect")] = 1
+        if mode == "durability-object":
+            self.remaining[("container", "inspect")] = 6
+            self.remaining[("network", "inspect")] = 2
+            self.remaining[("image", "inspect")] = 2
+        self.limit = dict(self.remaining)
+        self.finalization_seconds = 600
+        self.require_remaining()
+
+    def __getattr__(self, name):
+        return getattr(self.docker, name)
+
+    def require_remaining(self):
+        seconds = sum(count * (1250 if key == ("wait",) else 180) for key, count in self.remaining.items())
+        self.deadline.require(seconds + self.finalization_seconds)
+
+    def charge(self, args, timeout):
+        key = tuple(args[:2]) if args[0] in {"container", "volume", "network", "image"} else (args[0],)
+        need(key in self.remaining and self.remaining[key] > 0, "Unbudgeted campaign Docker operation")
+        need(timeout <= (1250 if key == ("wait",) else 180), "Campaign command timeout exceeds frozen allowance")
+        self.require_remaining()
+        self.remaining[key] -= 1
+
+    def command(self, *args, **kwargs):
+        self.charge(args, kwargs.get("timeout", 180))
+        return self.docker.command(*args, **kwargs)
+
+    def inspect(self, kind, names):
+        self.charge((kind, "inspect"), 180)
+        return self.docker.inspect(kind, names)
+
+    def checkpoint_complete(self):
+        self.finalization_seconds = 0
+
+    def receipt(self):
+        return {"maximum_calls": sum(self.limit.values()),
+                "consumed_calls": sum(self.limit.values()) - sum(self.remaining.values()),
+                "remaining_seconds": sum(count * (1250 if key == ("wait",) else 180) for key, count in self.remaining.items()),
+                "checkpoint_allowance_seconds": self.finalization_seconds}
 
 
 class Sandbox:
@@ -744,6 +822,18 @@ class Sandbox:
                 "state": {"status": state["Status"], "running": state["Running"], "exit_code": state["ExitCode"]}}
 
     def run(self, namespace, mode, *, output_budget=1024**2, stream=True, artifact_directory=None, checkpoint=None, checkpoint_context=None, deadline=None):
+        original = self.docker
+        try:
+            if checkpoint is not None:
+                need(deadline is not None, "Campaign worker requires the shared deadline")
+                self.docker = CampaignRunCalls(original, mode, deadline)
+            return self._run(namespace, mode, output_budget=output_budget, stream=stream,
+                artifact_directory=artifact_directory, checkpoint=checkpoint,
+                checkpoint_context=checkpoint_context, deadline=deadline)
+        finally:
+            self.docker = original
+
+    def _run(self, namespace, mode, *, output_budget, stream, artifact_directory, checkpoint, checkpoint_context, deadline):
         need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build", "coverage", "durability-sample", "durability-object"} | PROBE_MODES, "Unknown sandbox command")
         need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)
@@ -786,7 +876,7 @@ class Sandbox:
             need(callable(checkpoint) and type(checkpoint_context) is dict and deadline is not None,
                  "Trusted campaign checkpoint context required")
             # Full worker wait, bounded Docker finalization and content barrier.
-            deadline.require(1250 + 12 * 180 + 600)
+            self.docker.require_remaining()
         if mode == "navigation-build":
             need(artifact_directory == self.snapshot(record) / "artifacts" and artifact_directory.resolve() == artifact_directory.absolute()
                  and not artifact_directory.exists(), "Navigation artifact output escaped or reused the owned snapshot")
@@ -931,7 +1021,7 @@ class Sandbox:
             execution = self.probe_execution(record, container_id, mode, budget) if mode in PROBE_MODES else None
             need(info["State"]["Status"] in {"exited", "dead"} and not info["State"]["Running"] and
                  info["State"]["ExitCode"] == int(status), "Workload completion changed; lease retained")
-            if mode == "check":
+            if mode == "check" or checkpoint is not None and mode == "prefetch":
                 execution = self.public_execution(record, info, budget, output_budget)
             streams = None
             if mode in PROBE_MODES or checkpoint is not None or native is not None or objects is not None:
@@ -958,7 +1048,7 @@ class Sandbox:
             if objects is not None:
                 self.registry.update(lease_id, object_export_verified=False)
             def export_files():
-                if artifact_directory is None:
+                if checkpoint is None or artifact_directory is None:
                     return {}
                 rows = {}
                 total = 0
@@ -975,9 +1065,13 @@ class Sandbox:
                     need(total <= 32*1024**2, "Campaign export aggregate bound")
                     rows[path.name] = {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
                 return rows
-            admitted_export = export_files()
+            admitted_export = None
             checkpoint_attempted = False
             try:
+                admitted_export = export_files()
+                if checkpoint is not None and mode in {"prefetch", "check"}:
+                    ordinary = runpy.run_path(str(self.source_root/"tools/native_durability_campaign.py"))
+                    result["ordinary_proof"] = ordinary["verify_ordinary"](result, mode, self.source_root)
                 if native is not None:
                     need(int(status) == 0 and not result["truncated"], "Native worker failed or truncated")
                     need(native["read"](input_path, 4096) == input_raw, "Native input changed")
@@ -991,14 +1085,16 @@ class Sandbox:
                     proof = objects["verify_export"](artifact_directory, object_inputs, streams["stdout"], container_id, object_config)
                     proof["authenticated_topology"] = {**object_topology, "worker_cid": container_id}
                     result["object_durability"] = proof
-                need(export_files() == admitted_export, "Campaign export changed across independent oracle")
-                result["export_files"] = admitted_export
+                if checkpoint is not None:
+                    need(export_files() == admitted_export, "Campaign export changed across independent oracle")
+                    result["export_files"] = admitted_export
                 if checkpoint is not None:
                     terminal = self.run_container(record, container_id)["State"]
                     need(not terminal["Running"] and terminal["Status"] in {"exited", "dead"} and
                          terminal["ExitCode"] == int(status), "Checkpoint terminal state changed")
                     context = {**checkpoint_context, "container_id": container_id, "namespace": namespace,
                                "run_lease": lease_id, "mode": mode, "image": record["image"],
+                               "command_budget": self.docker.receipt(),
                                "budget": budget, "harness_hashes": record.get("harness_hashes", {}),
                                "image_inputs_sha256": image_digest(), "config_sha256": record.get("config_sha256"),
                                "terminal": {"running": False, "exit_code": int(status)}}
@@ -1009,15 +1105,20 @@ class Sandbox:
                     barrier["sync_file"](self.registry.path)
                     barrier["sync_directory"](self.registry.root)
                     result["checkpoint"] = reference
+                    self.docker.checkpoint_complete()
             except Exception as error:
                 if checkpoint is not None and not checkpoint_attempted:
                     result["verification_failed"] = True
                     try:
-                        result["export_files"] = export_files()
+                        # Failed/changed exports stay in the original snapshot.
+                        # Retain a bounded failure with exact public-safe logs,
+                        # never publish unverified or unbounded artifact bytes.
+                        result["export_files"] = {}
+                        result["export_status"] = "original-snapshot-retained-unqualified"
                         terminal_context = {**checkpoint_context, "container_id": container_id, "namespace": namespace,
                             "run_lease": lease_id, "mode": mode, "image": record["image"], "budget": budget,
                             "terminal": {"running": False, "exit_code": int(status)}}
-                        checkpoint(terminal_context, result, artifact_directory)
+                        checkpoint(terminal_context, result, None)
                     except Exception as retention_error:
                         error.add_note("Failure checkpoint unavailable; worker and lease retained: " + type(retention_error).__name__)
                 raise
@@ -1075,6 +1176,8 @@ class Sandbox:
             if candidate.get("checkpoint_required"):
                 need(callable(checkpoint_verify) and candidate.get("campaign_checkpoint"),
                      "Campaign checkpoint absent; retain acknowledged worker and lease")
+                need(candidate["campaign_checkpoint"].get("container_id") == container_id,
+                     "Campaign checkpoint belongs to a different worker; retain lease")
                 checkpoint_verify(candidate["campaign_checkpoint"])
             token = secrets.token_hex(12)
             with self.registry.edit() as data:

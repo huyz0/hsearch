@@ -529,7 +529,14 @@ class TaskStore:
                 namespace = candidate["namespace"]
             else:
                 need(namespace is None, "Registered resource lease missing; inspect before resume")
-            recovered = sandbox.reconcile(namespace) if namespace else []
+            recovery_options = {}
+            campaign = record.get("campaign")
+            if campaign is not None:
+                checkpoints = runpy.run_path(str(ROOT / "tools/campaign_checkpoint.py"))
+                journal = checkpoints["Journal"](self, claim, owner, campaign["source"],
+                    Path(campaign["output"]), campaign["deadline"])
+                recovery_options["checkpoint_verify"] = journal.verify
+            recovered = sandbox.reconcile(namespace, **recovery_options) if namespace else []
             self.append(claim, owner, "resume", {"recovered": recovered, "checks_required": True})
             with self.edit() as data:
                 current = data["tasks"][claim]
@@ -543,6 +550,18 @@ class TaskStore:
                     current.update(phase="interrupted", worker=None)
             raise
         return self.context(claim, owner)
+
+    def campaign_docker_charge(self,claim,owner):
+        def charge():
+            with self.edit() as data:
+                row=data["tasks"][claim]
+                need(row["packet"]["task_id"]=="M02.10" and row["packet"].get("research_campaign")=="durability-v1" and
+                     row["packet"]["owner_session"]==owner and row["phase"] in {"allocated","running"},
+                     "Campaign orchestration owner/lifecycle changed")
+                count=row.get("campaign_docker_calls",0)
+                need(type(count) is int and 0<=count<1024,"Campaign1024command budget exhausted; retain resources")
+                row["campaign_docker_calls"]=count+1
+        return charge
 
     def run(self, claim, owner, mode, resource_root, *, public_output=None, deadline=None):
         if mode == "rustfs-capabilities":
@@ -559,13 +578,23 @@ class TaskStore:
                  "Clean source and trusted campaign output/deadline required")
             checkpoints = runpy.run_path(str(ROOT / "tools/campaign_checkpoint.py"))
             journal = checkpoints["Journal"](self, claim, owner, before, public_output, deadline)
+            journal.admit_task_reserve()
         with self.edit() as data:
             current = data["tasks"][claim]
             need(current["phase"] == "allocated" and not handle_live(current["worker"]), "Task worker/lifecycle is busy; resume first")
+            if research:
+                binding = {"source": before, "output": str(journal.output), "deadline": deadline}
+                need(current.get("campaign") in (None, binding), "Campaign source/output/deadline changed")
+                stages = current.get("campaign_started_modes", [])
+                need((mode == "prefetch" and stages == []) or (mode == "check" and stages == ["prefetch"]),
+                     "Campaign stage already attempted or missing prefetch; no automatic retry")
+                current.update(campaign=binding, campaign_started_modes=[*stages, mode])
             current.update(phase="running", worker={"pid": os.getpid(), "identity": SANDBOX["owner_identity"]()}, last_mode=mode)
         completed = False
         try:
             sandbox = self.resources(resource_root, record)
+            if research:
+                sandbox.docker = SANDBOX["CampaignDockerCalls"](sandbox.docker, journal.deadline, self.campaign_docker_charge(claim,owner))
             namespace = record["namespace"]
             if namespace is None:
                 namespace = sandbox.up(record["packet"]["task_id"], task_claim=claim)
@@ -582,6 +611,7 @@ class TaskStore:
                 need(self.fingerprint(record) == before and result.get("checkpoint"),
                      "Ordinary campaign checkpoint/source missing")
                 journal.verify(result["checkpoint"])
+                journal.deadline.require(20*180)
                 sandbox.down(namespace)
                 def changed(value):
                     with self.edit() as data:
@@ -599,9 +629,16 @@ class TaskStore:
             need(before["digest"] == after["digest"], "Worktree changed during validation; result is stale")
             self.append(claim, owner, "command", {"source": before, "result": result})
             completed = True
-            return {"claim": claim, "mode": mode, "exit_code": result["exit_code"], "source": before}
+            answer = {"claim": claim, "mode": mode, "exit_code": result["exit_code"], "source": before}
+            if research:
+                answer["checkpoint"] = result["checkpoint"]
+                if "campaign" in result:
+                    answer["campaign"] = result["campaign"]
+            return answer
         except SANDBOX["WorkloadFailed"] as error:
-            self.append(claim, owner, "failed-command", {"source": before, "result": error.result})
+            failure = ({"checkpoint": error.result.get("checkpoint"), "exit_code": error.result["exit_code"],
+                        "mode": mode} if research else error.result)
+            self.append(claim, owner, "failed-command", {"source": before, "result": failure})
             raise
         finally:
             with self.edit() as data:

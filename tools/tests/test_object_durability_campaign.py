@@ -173,7 +173,7 @@ class ObjectBrokerControls(unittest.TestCase):
                 self.assertEqual(execution['worker_cid'], '1' * 64)
                 self.assertEqual(execution['monitor']['scratch_bytes'], 18 * 1024**3)
                 self.assertEqual(execution['runtime'], receipt['object_runtime'])
-                return {'object_observations': 'verified', 'execution_kind': 'admitted-object', 'actual_case_records': 144}
+                return {'object_observations': 'verified', 'execution_kind': 'admitted-object', 'actual_case_records': 144, 'case_ids':['case-%03d'%i for i in range(144)]}
             with patch.dict(G, modules=lambda: ({}, {'verify': oracle})):
                 raw = M['encoded'](summary) + M['encoded'](receipt)
                 self.assertEqual(M['verify_export'](root, inputs, raw, '1' * 64, c)['object_campaign'], 'verified')

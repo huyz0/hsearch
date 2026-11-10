@@ -16,6 +16,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 COVERAGE_SOURCES = runpy.run_path(str(ROOT / "tools/coverage_sources.py"))
 COVERAGE = runpy.run_path(str(ROOT / "tools/coverage.py"))
+NATIVE_PROTOC = runpy.run_path(str(ROOT / "tools/native_protoc.py"))
 JOBS = ("docs", "linux-x64", "linux-arm64", "sandbox-x64", "sandbox-arm64")
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object"}
 SHA = re.compile(r"[0-9a-f]{40}")
@@ -265,7 +266,11 @@ def native(value):
     coverage["nextest_policy"]()
     tools = coverage["qualified_tools"]()
     environment = coverage["ordinary_environment"](tools)
-    def native_run(command): run(coverage["correctness_command"](tools, command), env=environment)
+    environment, protoc_context = NATIVE_PROTOC["prepare_for_ci"](coverage, environment)
+    def native_run(command):
+        NATIVE_PROTOC["verify"](protoc_context)
+        run(coverage["correctness_command"](tools, command), env=environment)
+        NATIVE_PROTOC["verify"](protoc_context)
     native_run([sys.executable, "tools/rustfs_probe.py", "contract"])
     native_run([sys.executable, "tools/coverage_corpus.py"])
     native_run([sys.executable, "tools/engine_research.py", "check"])

@@ -41,6 +41,43 @@ class CampaignControls(unittest.TestCase):
             'object_cases': 144, 'target': sandbox.docker.info['Architecture'] + '-unknown-linux-gnu'})
         self.object_patch.start(); self.addCleanup(self.object_patch.stop)
 
+    def test_bare_zero_exit_and_changed_ordinary_monitor_cannot_be_a_checkpoint_proof(self):
+        budget={'cpu_millis':2000,'memory_bytes':4*1024**3,'pids':256,'disk_bytes':8*1024**3}
+        execution={'container_id':'a'*64,'budget':budget,'user':'10001:10001','read_only':True,'network':'bridge',
+                   'limits':{'cpu_nanos':2000000000,'memory':4*1024**3,'memory_swap':4*1024**3,'pids':256},'architecture':'x86_64'}
+        monitor={'mode':'prefetch','exit':0,'output_bytes':20,'peak_disk_bytes':100,'elapsed_seconds':1}
+        result={'container_id':'a'*64,'execution':execution,'raw_streams':{'stdout':M['encoded'](monitor),'stderr':b''}}
+        self.assertEqual(M['verify_ordinary'](result,'prefetch',ROOT)['mode'],'prefetch')
+        for failure in ('bare-zero','stderr','duplicate','wrong-limit','missing-compile'):
+            bad=copy.deepcopy(result)
+            if failure=='bare-zero':bad['raw_streams']['stdout']=b'completed\n'
+            if failure=='stderr':bad['raw_streams']['stderr']=b'synthetic warning'
+            if failure=='duplicate':bad['raw_streams']['stdout']*=2
+            if failure=='wrong-limit':bad['execution']['limits']['memory']*=2
+            if failure=='missing-compile':
+                bad['execution']['network']='none';bad['raw_streams']['stdout']=M['encoded'](dict(monitor,mode='check'))
+            with self.subTest(failure=failure),self.assertRaises(ValueError):
+                M['verify_ordinary'](bad,'check' if failure=='missing-compile' else 'prefetch',ROOT)
+
+    def test_twenty_seven_attempts_map_to_named_original_controls_not_counts_alone(self):
+        contexts=['workload-%02d'%i for i in range(18)]+['failure']+[
+            'scale-%02d-%02d'%(g,i) for g in (1,4,16) for i in range(g)]
+        self.assertEqual(M['context_ids'](),contexts)
+        self.assertEqual(len(set(contexts)),40)
+        self.assertEqual(M['UNSAFE_IDS'],('false-flush-or-advance','send-before-persist','uncommitted-apply',
+            'blind-new-identity','missing-response','forged-state-witness','insufficient-four-voter-quorum'))
+        for target in M['TARGETS']:
+            plan=M['attempt_plan'](target)
+            self.assertEqual([r['event'] for r in plan],['attempt-%02d'%i for i in range(27)])
+            self.assertEqual([r['mode'] for r in plan[:3]],['prefetch','check','durability-object'])
+            cells=[r['cell'] for r in plan if r['mode']=='durability-sample']
+            self.assertEqual(cells,M['matrix'](target))
+            for i,cell in enumerate(cells):
+                self.assertEqual(plan[3+i*2]['cell'],cell)
+                self.assertEqual(plan[3+i*2]['mode'],'prefetch')
+                self.assertEqual(plan[4+i*2]['cell'],cell)
+            self.assertEqual((len(cells)*len(contexts),len(cells)*len(M['UNSAFE_IDS'])),(480,84))
+
     def test_exact_twelve_cells_per_architecture_and_fixed_single_candidate_argv(self):
         all_cells = []
         for target in M['TARGETS']:
@@ -269,8 +306,8 @@ class CampaignControls(unittest.TestCase):
             (packed / 'stdout.log').write_bytes(b'NATIVE_DURABILITY_SAMPLE: ' + M['encoded'](sample))
             (packed / 'stderr.log').write_bytes(b'')
             (packed / 'command.json').write_bytes(M['encoded']({'argv': M['sample_command'](M['matrix'](actual['target'])[0]), 'exit_code': 0}))
-            proof = {'native_complete_sample': 'pass', 'temporal_application': {'contexts': 40},
-                     'unsafe_controls': {'actual_artifact_negative_controls': 'pass', 'controls': [{} for _ in range(7)]}}
+            proof = {'native_complete_sample': 'pass', 'temporal_application': {'contexts': 40, 'context_ids':M['context_ids']()},
+                     'unsafe_controls': {'actual_artifact_negative_controls': 'pass', 'controls': [{'control':name,'result':'refused'} for name in M['UNSAFE_IDS']]}}
             with patch.dict(G, modules=lambda: (bundle, dict(verifier, verify=lambda *a: proof))):
                 result = M['verify_export'](packed, expected)
                 self.assertEqual(result['full40_unrelated_sync']['count'], 40)
