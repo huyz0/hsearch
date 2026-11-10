@@ -11,7 +11,9 @@ import re
 import threading
 import time
 
-PROFILE = "rustfs-capabilities-v3"
+PROFILE = "rustfs-capabilities-v4"
+COMPLETION_REPLY = {"http_status_preserved": True, "invalid_descriptor_errors": ("InvalidPart", "InvalidPartOrder"),
+                    "error_body_bytes": 4096, "success_xml_required": True}
 RACE_WITNESS = {"clients": 16, "minimum_started_before_first_completion": 8, "intervals": "half-open"}
 
 CLIENTS, OPERATIONS, ATTEMPTS, ATOMS = 16, 256, 512, 1024
@@ -117,7 +119,7 @@ def plan(binding, *, seed=1729):
          all(re.fullmatch(r"[0-9a-f]{64}", x) for x in binding["digests"]), "digest-binding")
     need(re.fullmatch(r"[0-9a-f]{32}", binding["run"]) and type(binding["platform"]) is int and binding["platform"] in (1, 2) and
          re.fullmatch(r"[a-z0-9][a-z0-9-]{2,62}", binding["bucket"]), "run-binding")
-    value = {"version": 2, "profile": PROFILE, "race_witness": dict(RACE_WITNESS), "binding": binding, "seed": seed, "operations": workload(seed),
+    value = {"version": 2, "profile": PROFILE, "race_witness": dict(RACE_WITNESS), "completion_reply": {**COMPLETION_REPLY, "invalid_descriptor_errors": list(COMPLETION_REPLY["invalid_descriptor_errors"])}, "binding": binding, "seed": seed, "operations": workload(seed),
              "limits": {"clients": CLIENTS, "operations": OPERATIONS, "attempts": ATTEMPTS,
                         "atoms": ATOMS, "wire_bytes": WIRE_BYTES, "diagnostics": DIAGNOSTIC_BYTES,
                         "seconds": 120, "transitions": 100000, "working_bytes": 64*1024**2}}

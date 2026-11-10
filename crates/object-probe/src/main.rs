@@ -52,7 +52,7 @@ fn run(input_root: &Path, argument_count: usize) -> Result<bool, &'static str> {
         })
         .collect();
     println!(
-        "{{\"profile\":\"rustfs-capabilities-v3\",\"ready\":{},\"scenarios\":[\"{}\"],\"transitions\":{}}}",
+        "{{\"profile\":\"rustfs-capabilities-v4\",\"ready\":{},\"scenarios\":[\"{}\"],\"transitions\":{}}}",
         report.ready(),
         names.join("\",\""),
         report.transitions

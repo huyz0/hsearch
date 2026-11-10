@@ -378,6 +378,7 @@ class DiagnosticTransportModel:
                     parts = [(int(p.findtext("PartNumber")), p.findtext("ETag")) for p in descriptor.findall("Part")]
                     if [n for n,_ in parts] != sorted(upload["parts"]) or any(upload["parts"][n][0] != tag for n,tag in parts):
                         status = 400
+                        body = b"<Error><Code>InvalidPartOrder</Code><Message>counterfactual rejection</Message></Error>"
                     else:
                         stored = headers if self.completion_metadata else upload["headers"]
                         status, selected = self.accept(key, stored, [(upload["parts"][n][1], upload["parts"][n][2]) for n,_ in parts])
@@ -467,7 +468,7 @@ class CompleteClientFlowControls(unittest.TestCase):
 class ProspectiveProfileControls(unittest.TestCase):
     def test_plan_freezes_concurrency_criterion_and_rejects_substitution(self):
         value = plan()
-        self.assertEqual(value["profile"], "rustfs-capabilities-v3")
+        self.assertEqual(value["profile"], "rustfs-capabilities-v4")
         self.assertEqual(value["race_witness"], {"clients": 16, "minimum_started_before_first_completion": 8,
                                                 "intervals": "half-open"})
         for field, changed in (("clients", 8), ("minimum_started_before_first_completion", 7),
@@ -479,6 +480,128 @@ class ProspectiveProfileControls(unittest.TestCase):
         altered = dict(value, profile="rustfs-capabilities-v2")
         with self.assertRaisesRegex(ValueError, "plan-not-fixed-matrix"):
             HISTORY.validate_plan(altered)
+
+
+class CompletionInterpretationControls(unittest.TestCase):
+    @staticmethod
+    def client_call(action, status, body):
+        class Reply:
+            def attempt(self, *_args, **_kwargs):
+                return {"status": status, "body": body, "error": "", "boundary": "reply",
+                        "request_bytes": 1024, "response_bytes": len(body), "response_wire_bytes": len(body)+128,
+                        "digest": hashlib.sha256(body).hexdigest(), "etag": "", "version": "version"}
+        client = CLIENT.Client(plan(), Reply())
+        client.uploads[115] = "upload"
+        client.parts.update({(115, 1): "first", (115, 2): "last"})
+        spec = next(row for row in client.plan["operations"] if row["action"] == action)
+        return client.call(spec)
+
+    def test_both_actual_http_statuses_can_carry_the_closed_rejection(self):
+        for status in (200, 400):
+            for code in ("InvalidPart", "InvalidPartOrder"):
+                body = ("<Error><Code>"+code+"</Code><Message>foreign-private-message</Message></Error>").encode()
+                event = self.client_call("complete-invalid", status, body)
+                self.assertEqual(event["status"], status)
+                self.assertEqual(event["boundary"], "reply")
+                self.assertEqual(event["error"], "")
+                self.assertTrue(event["auxiliary"].endswith("|completion-error:"+code))
+                self.assertEqual(event["received"], len(body))
+                self.assertEqual(event["digest"], hashlib.sha256(body).hexdigest())
+                self.assertNotIn("foreign-private-message", repr(event))
+
+    def test_success_body_is_not_relabelled_as_an_expected_rejection(self):
+        body = b'<CompleteMultipartUploadResult><ETag>"actual-success"</ETag></CompleteMultipartUploadResult>'
+        event = self.client_call("complete-invalid", 200, body)
+        self.assertEqual(event["status"], 200)
+        self.assertEqual(event["etag"], '"actual-success"')
+        self.assertTrue(event["auxiliary"].endswith("|completion-success"))
+        self.assertEqual(event["error"], "")
+        valid = self.client_call("complete", 200, body)
+        self.assertEqual(valid["etag"], '"actual-success"')
+        self.assertNotIn("|completion-", valid["auxiliary"])
+        conflict = self.client_call("complete-invalid", 400, body)
+        self.assertEqual(conflict["status"], 400)
+        self.assertEqual(conflict["error"], "completion-status-body-conflict")
+
+    def test_expected_provider_error_is_distinct_from_capture_refusal(self):
+        rejected = self.client_call("complete", 200, b"<Error><Code>InvalidPart</Code></Error>")
+        self.assertEqual(rejected["error"], "completion-rejected-InvalidPart")
+        for raw in (b"", b"<broken", b"<Other><ETag>tag</ETag></Other>",
+                    b"<CompleteMultipartUploadResult/>",
+                    b"<CompleteMultipartUploadResult><ETag>a</ETag><ETag>b</ETag></CompleteMultipartUploadResult>",
+                    b"<CompleteMultipartUploadResult><Error><Code>InvalidPart</Code></Error></CompleteMultipartUploadResult>",
+                    b"<Error><Code>InvalidPart</Code><ETag>fake</ETag></Error>",
+                    b"<Error><Message><Code>InvalidPart</Code></Message></Error>",
+                    b"<Error><Code>InvalidPart</Code><Code>InvalidPartOrder</Code></Error>",
+                    b"<Error><Code>private-unknown-code</Code></Error>",
+                    b'<!DOCTYPE r [<!ENTITY x "private">]><Error><Code>&x;</Code></Error>'):
+            event = self.client_call("complete-invalid", 200, raw)
+            self.assertEqual(event["status"], 200)
+            self.assertTrue(event["error"])
+            self.assertNotIn("|completion-error:", event["auxiliary"])
+            self.assertNotIn("private-unknown-code", repr(event))
+
+    def test_embedded_error_ceiling_is_independent_of_success_xml_ceiling(self):
+        prefix = b"<Error><Code>InvalidPart</Code><Message>"
+        suffix = b"</Message></Error>"
+        for size, accepted in ((4096, True), (4097, False)):
+            raw = prefix + b"x"*(size-len(prefix)-len(suffix)) + suffix
+            event = self.client_call("complete-invalid", 200, raw)
+            self.assertEqual(event["status"], 200)
+            self.assertEqual(event["received"], size)
+            if accepted:
+                self.assertEqual(event["error"], "")
+                self.assertTrue(event["auxiliary"].endswith("|completion-error:InvalidPart"))
+            else:
+                self.assertEqual(event["error"], "completion-error-body-bound")
+                self.assertNotIn("|completion-error:", event["auxiliary"])
+
+    def test_new_plan_freezes_reply_policy_without_mutable_constant_aliases(self):
+        value = plan()
+        self.assertEqual(value["completion_reply"], {"http_status_preserved": True,
+                         "invalid_descriptor_errors": ["InvalidPart", "InvalidPartOrder"],
+                         "error_body_bytes": 4096, "success_xml_required": True})
+        value["completion_reply"]["invalid_descriptor_errors"].append("AccessDenied")
+        with self.assertRaisesRegex(ValueError, "plan-not-fixed-matrix"):
+            HISTORY.validate_plan(value)
+        for field, changed in (("http_status_preserved", False), ("error_body_bytes", 16384),
+                               ("success_xml_required", False)):
+            value = plan(); value["completion_reply"][field] = changed
+            with self.assertRaisesRegex(ValueError, "plan-not-fixed-matrix"):
+                HISTORY.validate_plan(value)
+        value = plan(); value["profile"] = "rustfs-capabilities-v3"
+        with self.assertRaisesRegex(ValueError, "plan-not-fixed-matrix"):
+            HISTORY.validate_plan(value)
+
+
+class ErrorResponseBudgetControls(unittest.TestCase):
+    transport = TransportControls.transport
+    call = TransportControls.call
+
+    def test_range_error_body_uses_error_cap_and_keeps_actual_416(self):
+        body = b"<Error><Code>InvalidRange</Code></Error>"
+        raw = b"HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: "+str(len(body)).encode()+b"\r\n\r\n"+body
+        result = self.call(raw, response_limit=1)
+        self.assertEqual((result["status"], result["error"], result["boundary"]), (416, "", "reply"))
+        self.assertEqual(result["response_bytes"], len(body))
+        self.assertEqual(result["body"], body)
+        self.assertEqual(result["digest"], hashlib.sha256(body).hexdigest())
+        self.assertGreater(result["response_wire_bytes"], len(body))
+        success = self.call(raw.replace(b"416 Range Not Satisfiable", b"206 Partial Content"), response_limit=1)
+        self.assertEqual(success["error"], "response-size")
+
+    def test_error_cap_is_not_increased_by_large_success_limit(self):
+        body = b"x"*4097
+        raw = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 4097\r\n\r\n"+body
+        result = self.call(raw, response_limit=16384)
+        self.assertEqual(result["status"], 400)
+        self.assertEqual(result["error"], "response-size")
+        self.assertEqual(result["body"], b"")
+        body = b"SECRET-FIXTURE"
+        raw = b"HTTP/1.1 400 Bad Request\r\nContent-Length: "+str(len(body)).encode()+b"\r\n\r\n"+body
+        result = self.call(raw, response_limit=1)
+        self.assertEqual(result["error"], "secret-bearing-response")
+        self.assertNotIn("SECRET-FIXTURE", repr(result))
 
 
 if __name__ == "__main__":

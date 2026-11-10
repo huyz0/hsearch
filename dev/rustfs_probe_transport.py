@@ -123,7 +123,7 @@ def digest_payload(seed, length, offset=0):
     return result.hexdigest()
 
 
-def bounded_xml(raw):
+def bounded_xml(raw, *, parents=False):
     """Admit raw bytes, element count/depth and aggregate text before retaining."""
     need(type(raw) is bytes and len(raw) <= XML_BYTES, "xml-byte-bound")
     parser = expat.ParserCreate(namespace_separator="}")
@@ -146,7 +146,7 @@ def bounded_xml(raw):
 
     def end(_name):
         name, chunks = stack.pop()
-        fields.append((name, "".join(chunks)))
+        fields.append((name, "".join(chunks), stack[-1][0] if stack else "") if parents else (name, "".join(chunks)))
 
     def forbidden(*_args):
         raise Refused("xml-entity-or-dtd")
@@ -160,6 +160,31 @@ def bounded_xml(raw):
     except expat.ExpatError:
         raise Refused("xml-malformed") from None
     return fields
+
+
+def completion_reply(raw):
+    """Classify bounded completion XML without retaining foreign error text."""
+    fields = bounded_xml(raw, parents=True)
+    need(bool(fields), "completion-result-shape")
+    errors = [value for name, value, _ in fields if name == "Error"]
+    etags = [value for name, value, _ in fields if name == "ETag"]
+    codes = [value for name, value, _ in fields if name == "Code"]
+    root = fields[-1][0]
+    if root == "Error":
+        need(len(raw) <= ERROR_BYTES, "completion-error-body-bound")
+        need(len(errors) == 1 and len(codes) == 1 and not etags and
+             all((name == "Error" and not parent) or
+                 (parent == "Error" and name in {"Code", "Message", "Resource", "RequestId", "HostId", "Key", "BucketName"})
+                 for name, _, parent in fields), "completion-error-shape")
+        # Only predeclared invalid-descriptor errors can prove this negative.
+        # Unknown errors remain unavailable proof, never accepted completion.
+        need(codes[0] in ("InvalidPart", "InvalidPartOrder"), "completion-error-code-unsupported")
+        return "error", codes[0]
+    need(root == "CompleteMultipartUploadResult" and not errors and not codes and len(etags) == 1 and
+         sum(name == root for name, _, _ in fields) == 1 and
+         all(parent == root for name, _, parent in fields if name != root),
+         "completion-result-shape")
+    return "success", token(etags[0])
 
 
 def canonical_query(query):
@@ -298,7 +323,7 @@ class Transport:
                 lower[name] = value
             need(not 300 <= status < 400 and not lower.get("content-encoding") and
                  lower.get("transfer-encoding", "").lower() in ("", "chunked"), "redirect-or-encoding")
-            cap = min(response_limit, ERROR_BYTES) if status >= 400 else response_limit
+            cap = ERROR_BYTES if status >= 400 else response_limit
             declared = lower.get("content-length")
             if declared is not None:
                 need(declared.isdecimal() and (int(declared) <= cap or method == "HEAD" and int(declared) <= MAX_BODY), "response-size")
@@ -318,7 +343,7 @@ class Transport:
                 received += len(chunk)
                 need(received <= cap, "response-overflow")
                 digest_response.update(chunk)
-                if cap <= XML_BYTES and status < 400:
+                if cap <= XML_BYTES:
                     collected.extend(chunk)
             if method != "HEAD" and declared is not None:
                 need(received == int(declared), "response-short-read")

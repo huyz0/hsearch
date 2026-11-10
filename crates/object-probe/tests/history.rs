@@ -1363,3 +1363,65 @@ fn partial_race_cohort_retains_all_clients_winner_and_readback_obligations() {
         assert_eq!(status(&plan, &before_winner), Status::Failed);
     }
 }
+
+#[test]
+fn invalid_completion_requires_a_descriptor_bound_rejection_not_http200_alone() {
+    use hsearch_object_probe::multipart;
+    let (plan, capture) = multipart_state_fixture();
+    for status in [200, 400] {
+        for code in ["InvalidPart", "InvalidPartOrder"] {
+            let mut rejected = capture.clone();
+            for id in [120, 121] {
+                let event = v2_event(&mut rejected, id);
+                event.status = status;
+                event
+                    .auxiliary
+                    .push_str(&format!("|completion-error:{code}"));
+            }
+            assert!(multipart::verify(&plan, &rejected));
+        }
+    }
+    for (status, suffix, error) in [
+        (200, "", ""),
+        (200, "|completion-success", ""),
+        (200, "|completion-error:AccessDenied", ""),
+        (503, "|completion-error:InvalidPart", ""),
+        (200, "|completion-error:InvalidPart", "xml-malformed"),
+        (400, "|completion-success", ""),
+    ] {
+        let mut changed = capture.clone();
+        let event = v2_event(&mut changed, 121);
+        event.status = status;
+        event.auxiliary.push_str(suffix);
+        event.error = error.into();
+        assert!(!multipart::verify(&plan, &changed));
+    }
+    let mut changed = capture.clone();
+    v2_event(&mut changed, 121).auxiliary =
+        "foreign-descriptor|completion-error:InvalidPart".into();
+    assert!(!multipart::verify(&plan, &changed));
+    let mut changed = plan.clone();
+    changed
+        .specifications
+        .iter_mut()
+        .find(|s| s.id == 121)
+        .unwrap()
+        .offset = 3;
+    assert!(!multipart::verify(&changed, &capture));
+}
+
+#[test]
+fn expected_embedded_rejection_is_not_generic_transport_or_capture_failure() {
+    use hsearch_object_probe::eligibility::Status;
+    let (plan, mut capture) = v2_scope(5);
+    for id in [120, 121] {
+        let event = v2_event(&mut capture, id);
+        event.status = 200;
+        event
+            .auxiliary
+            .push_str("|completion-error:InvalidPartOrder");
+    }
+    assert_eq!(v2_status(&plan, &capture, 5), Status::Supported);
+    v2_event(&mut capture, 121).error = "xml-malformed".into();
+    assert_eq!(v2_status(&plan, &capture, 5), Status::Inconclusive);
+}

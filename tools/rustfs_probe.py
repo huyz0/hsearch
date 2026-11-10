@@ -248,6 +248,7 @@ def qualify(context):
     context.append("rustfs-checker-build", build)
     transport_hash = digest((ROOT / "dev/rustfs_probe_transport.py").read_bytes())
     fixed_program = digest(canonical({"profile": PROFILE, "race_witness": HISTORY["RACE_WITNESS"],
+                                      "completion_reply": HISTORY["COMPLETION_REPLY"],
                                       "operations": HISTORY["workload"]()}))
     value = HISTORY["plan"]({"digests": [identity["source_sha256"], transport_hash, build["sha256"],
                               digest(identity["server_image"].encode()), identity["config_sha256"],

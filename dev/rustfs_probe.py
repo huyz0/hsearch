@@ -16,7 +16,7 @@ import time
 from xml.sax.saxutils import escape
 
 from rustfs_probe_history import Recorder, WIRE_BYTES, canonical, plan_wire, validate_plan
-from rustfs_probe_transport import Refused as TransportRefused, Transport, bounded_xml, digest_payload, token, need
+from rustfs_probe_transport import Refused as TransportRefused, Transport, bounded_xml, completion_reply, digest_payload, token, need
 
 
 class Client:
@@ -178,9 +178,23 @@ class Client:
                                                              16*1024**2 if action == "resolve" else 16384),
                                              barrier=barrier, suppress=spec["fault"] == "suppress",
                                              disconnect=spec["fault"] == "disconnect", cancel=self.cancel)
+            # Keep actual HTTP status. A completion error can arrive inside200;
+            # its closed semantic tag is distinct from parser/transport refusal.
+            if action in ("complete", "complete-invalid") and result["status"] in (200, 400) and not result.get("error"):
+                kind, detail = completion_reply(result["body"])
+                if kind == "error":
+                    if action == "complete-invalid":
+                        auxiliary += "|completion-error:" + detail
+                    else:
+                        result["error"] = "completion-rejected-" + detail
+                else:
+                    need(result["status"] == 200, "completion-status-body-conflict")
+                    result["etag"] = detail
+                    if action == "complete-invalid":
+                        auxiliary += "|completion-success"
             # A complete multipart API can report an error inside HTTP200.
             # Parse only bounded XML; never relay its foreign error text.
-            if action in ("init", "complete", "parts", "uploads", "versions") and result["status"] < 300:
+            if action in ("init", "parts", "uploads", "versions") and result["status"] < 300:
                 fields = bounded_xml(result["body"])
                 if action in ("parts", "uploads", "versions"):
                     need([v for n,v in fields if n == "IsTruncated"] == ["false"], "list-result-truncated")
@@ -191,10 +205,6 @@ class Client:
                     auxiliary = values[0]
                     token(auxiliary)
                     self.uploads[spec["id"]] = auxiliary
-                elif action == "complete":
-                    etags = [value for name, value in fields if name == "ETag"]
-                    need(len(etags) == 1, "completion-etag")
-                    result["etag"] = token(etags[0])
                 elif action == "versions":
                     need(not any(name == "IsTruncated" and value != "false" for name, value in fields), "version-list-truncated")
                     keys = [value for name, value in fields if name == "Key"]

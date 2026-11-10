@@ -122,13 +122,43 @@ pub fn verify(plan: &CapturePlan, capture: &Capture) -> bool {
                 completed += 1;
             }
             "complete-invalid" => {
-                let Some((_, _, terminal)) = uploads.get(&spec.parent) else {
+                let Some((_, parts, terminal)) = uploads.get(&spec.parent) else {
                     return false;
                 };
+                let mut descriptor = Vec::new();
+                for (number, part) in parts {
+                    let Some(actual) = event(capture, part.id) else {
+                        return false;
+                    };
+                    let tag: String = actual.etag.bytes().map(|b| format!("{b:02x}")).collect();
+                    descriptor.push(format!("{number}:{tag}"));
+                }
+                if descriptor.len() < 2 {
+                    return false;
+                }
+                match spec.offset {
+                    1 => descriptor.reverse(),
+                    2 => descriptor.insert(0, descriptor[0].clone()),
+                    _ => return false,
+                }
+                let descriptor = descriptor.join(";");
+                let suffix = observed.auxiliary.strip_prefix(&descriptor);
+                // Preserve legacy HTTP400 counterfactual frames. Fresh clients
+                // parse both400 and200 and append only closed semantic errors.
+                let rejected = observed.status == 400 && suffix == Some("")
+                    || matches!(observed.status, 200 | 400)
+                        && matches!(
+                            suffix,
+                            Some(
+                                "|completion-error:InvalidPart"
+                                    | "|completion-error:InvalidPartOrder"
+                            )
+                        );
                 if *terminal
-                    || observed.status != 400
+                    || !rejected
                     || observed.boundary != "reply"
                     || observed.condition != "*"
+                    || !observed.error.is_empty()
                 {
                     return false;
                 }

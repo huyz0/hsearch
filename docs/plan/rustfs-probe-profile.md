@@ -66,6 +66,51 @@ same-object-copy expected-version extension is not assumed to be a general PUT
 VersionId CAS. These are source references, not runtime evidence or proof that
 the pinned image satisfies the full public contract.
 
+## Completion replies and raw-provider limits
+
+The prospective `rustfs-capabilities-v4` plan retains the v3 race criterion and
+freezes completion-reply interpretation in the plan JSON and program digest.
+Both valid and deliberately invalid CompleteMultipartUpload calls parse bounded
+XML. Actual HTTP status, body digest, body length and HTTP byte counts remain
+unchanged. HTTP200 alone does not establish completion: S3 can return an Error
+XML document after starting a200 response. A success requires the expected root
+and one admitted ETag. An error must have the Error root and one direct Code;
+only the closed InvalidPart/InvalidPartOrder codes can prove a predeclared
+invalid-descriptor rejection. The recorded auxiliary tag binds that parsed
+classification to the exact sent reversed/duplicate descriptor. A parsed success
+on the invalid request still fails its required negative case. Unknown error
+codes, malformed/nested/duplicate fields and parsing/transport refusals do not
+become acceptance or an expected rejection. Foreign error messages are discarded.
+
+The checker retains original HTTP400 counterfactual frames as legacy controls.
+Fresh v4 captures parse both HTTP400 and HTTP200 and record the closed semantic
+error tag; unparsed or unrecognized responses carry a refusal. These are
+source-bound normalized parser observations, like the existing list fields,
+not independently reconstructed raw XML. The b6f operation121 capture retained
+no raw XML, so its digest/length cannot establish whether that old HTTP200 was
+success or embedded error. No old result is reinterpreted or qualified here.
+[S3 completion response semantics](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html).
+
+Error responses have their existing independent4096-byte ceiling, including a
+416 returned for a one-byte range. Successful range payloads retain their exact
+selected-byte cap. Oversized, short, secret-bearing or malformed error responses
+refuse; the success payload size never expands the error budget. This repairs
+the earlier coupling that refused ordinary bounded416 XML before recording it.
+
+The native contract still requires global request-envelope identity, immutable
+replay identity across ABA and completion-envelope binding. Raw S3 conditional
+writes arbitrate a key's current representation; caller request-ID metadata is
+not a global deduplication service, and If-Match compares ETag rather than
+VersionId. Initiation metadata does not atomically bind a later completion's
+ordered descriptor. Operations41,89/110 and149 probe those stronger required
+native semantics; a mismatch does not by itself show a violation of the bare S3
+API. Qualified native authority/immutable-object protocols would need their own
+implementation and evidence. Those protocols are not supplied by this client
+repair, and the required failures/readiness constraints remain.
+[S3 conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html),
+[PutObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html),
+[ETag semantics](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity-upload.html#UsingMD5).
+
 ## Bounds and framing
 
 The original ceilings remain16 clients,256 operations,512 attempt/refusal
