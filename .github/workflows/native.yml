@@ -28,12 +28,19 @@ jobs:
     runs-on: ${{ inputs.runner }}
     outputs:
       differential: ${{ steps.differential.outputs.differential }}
-    timeout-minutes: 25
+    timeout-minutes: ${{ inputs.mode == 'native' && 330 || 40 }}
     env:
       CARGO_BUILD_JOBS: '2'
       CARGO_TERM_COLOR: always
       CI_PLAN: ${{ inputs.plan }}
     steps:
+      - name: Start fixed campaign orchestration clock
+        if: ${{ inputs.mode == 'native' }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import time
+          print('HSEARCH_CAMPAIGN_DEADLINE=' + str(time.monotonic() + 315 * 60))
+          PY
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.head }}
@@ -65,6 +72,18 @@ jobs:
       - name: Qualify selected packages in debug, release, doctests and coverage
         if: ${{ inputs.mode == 'native' }}
         run: python3 tools/ci.py native
+      - name: Qualify complete source-bound durability campaign
+        if: ${{ inputs.mode == 'native' }}
+        run: python3 tools/native_durability_campaign.py --state-root "${{ runner.temp }}/hsearch-durability-state" --output "${{ runner.temp }}/hsearch-durability-public"
+      - name: Preserve only public campaign checkpoints and incomplete outcome
+        if: ${{ always() && inputs.mode == 'native' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2, MIT, node24
+        with:
+          name: durability-${{ inputs.runner }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/hsearch-durability-public
+          retention-days: 3
+          include-hidden-files: false
+          if-no-files-found: warn
       - name: Preserve source-bound native coverage evidence
         if: ${{ always() && inputs.mode == 'native' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2, MIT, node24

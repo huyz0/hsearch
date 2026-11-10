@@ -544,12 +544,21 @@ class TaskStore:
             raise
         return self.context(claim, owner)
 
-    def run(self, claim, owner, mode, resource_root):
+    def run(self, claim, owner, mode, resource_root, *, public_output=None, deadline=None):
         if mode == "rustfs-capabilities":
             return self.rustfs_capabilities(claim, owner, resource_root)
         record = self.get(claim, owner)
         need(mode in record["packet"]["commands"] or mode == "compile" and "check" in record["packet"]["commands"], "Command is outside task packet")
+        research = record["packet"].get("research_campaign") == "durability-v1"
+        need(not research or record["packet"]["task_id"] == "M02.10", "Campaign fixed to M02.10")
+        need(research or public_output is None and deadline is None, "Unexpected campaign output/deadline")
         before = self.fingerprint(record)
+        journal = None
+        if research:
+            need(before["clean"] and public_output is not None and deadline is not None,
+                 "Clean source and trusted campaign output/deadline required")
+            checkpoints = runpy.run_path(str(ROOT / "tools/campaign_checkpoint.py"))
+            journal = checkpoints["Journal"](self, claim, owner, before, public_output, deadline)
         with self.edit() as data:
             current = data["tasks"][claim]
             need(current["phase"] == "allocated" and not handle_live(current["worker"]), "Task worker/lifecycle is busy; resume first")
@@ -562,7 +571,30 @@ class TaskStore:
                 namespace = sandbox.up(record["packet"]["task_id"], task_claim=claim)
                 with self.edit() as data:
                     data["tasks"][claim]["namespace"] = namespace
-            result = sandbox.run(namespace, mode, output_budget=max(4096, record["packet"]["output_budget_bytes"] // 2), stream=False)
+            options = {} if journal is None else {
+                "checkpoint": journal.terminal,
+                "checkpoint_context": {"claim": claim, "packet_sha256": record["packet_sha256"], "source": before},
+                "deadline": journal.deadline}
+            result = sandbox.run(namespace, mode,
+                output_budget=512*1024 if research else max(4096, record["packet"]["output_budget_bytes"] // 2),
+                stream=False, **options)
+            if research and mode == "check":
+                need(self.fingerprint(record) == before and result.get("checkpoint"),
+                     "Ordinary campaign checkpoint/source missing")
+                journal.verify(result["checkpoint"])
+                sandbox.down(namespace)
+                def changed(value):
+                    with self.edit() as data:
+                        data["tasks"][claim]["namespace"] = value
+                changed(None)
+                controller = runpy.run_path(str(Path(record["worktree"])/"tools/native_durability_campaign.py"))
+                campaign = controller["run_campaign"](sandbox, claim, before, changed, public_output,
+                    checkpoint=journal.terminal, deadline=journal.deadline,
+                    checkpoint_context={"claim": claim, "packet_sha256": record["packet_sha256"], "source": before})
+                result = {"mode": mode, "exit_code": 0, "checkpoint": result["checkpoint"], "campaign": campaign}
+            elif research:
+                result = {"mode": mode, "exit_code": result["exit_code"], "checkpoint": result["checkpoint"]}
+
             after = self.fingerprint(record)
             need(before["digest"] == after["digest"], "Worktree changed during validation; result is stale")
             self.append(claim, owner, "command", {"source": before, "result": result})

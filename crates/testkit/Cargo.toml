@@ -9,3 +9,12 @@ description = "Test-only hsearch contract helpers"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+openraft.workspace = true
+raft.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+protobuf.workspace = true
+slog.workspace = true

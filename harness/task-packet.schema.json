@@ -108,6 +108,9 @@
         "minLength": 1,
         "maxLength": 2048
       }
+    },
+    "research_campaign": {
+      "const": "durability-v1"
     }
   }
 }

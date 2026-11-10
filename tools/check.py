@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COVERAGE = runpy.run_path(str(ROOT / "tools/coverage.py"))
 DIFFERENTIAL = runpy.run_path(str(ROOT / "tools/engine_differential.py"))
 CHECKS = [
+    [sys.executable, "tools/durability_research.py", "check"],
     [sys.executable, "tools/rustfs_probe.py", "contract"],
     [sys.executable, "tools/api_contract.py", "check"],
     [sys.executable, "tools/engine_research.py", "check"],

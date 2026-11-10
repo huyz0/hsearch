@@ -27,6 +27,31 @@ EXTERNAL = {name: ({"lucene-analysis", "lucene-codecs", "lucene-index", "lucene-
                    if name == "hsearch-engine" else set()) for name in LAYERS}
 TEST_FEATURES = {"test-util", "test-support", "asserting"}
 
+OPENRAFT_REV = "8815cdba2826f74e848acef361ad03f93bb1c3f8"
+RAFT_REV = "10c6e9db6792b85c81784e44fc278f895d5f0ab0"
+RESEARCH_PINS = {
+    "openraft": ("0.9.25", "git+https://github.com/databendlabs/openraft?rev=" + OPENRAFT_REV + "#" + OPENRAFT_REV),
+    "openraft-macros": ("0.9.25", "git+https://github.com/databendlabs/openraft?rev=" + OPENRAFT_REV + "#" + OPENRAFT_REV),
+    "raft": ("0.7.0", "git+https://github.com/tikv/raft-rs?rev=" + RAFT_REV + "#" + RAFT_REV),
+    "raft-proto": ("0.7.0", "git+https://github.com/tikv/raft-rs?rev=" + RAFT_REV + "#" + RAFT_REV),
+}
+RESEARCH_DIRECT = {
+    "openraft": (None, {"serde", "storage-v2"}, False),
+    "raft": (None, {"protobuf-codec"}, False),
+    "serde": ("=1.0.228", {"derive"}, True),
+    "serde_json": ("=1.0.145", set(), True),
+    "tokio": ("=1.48.0", {"rt-multi-thread", "sync", "time", "macros"}, False),
+    "protobuf": ("=2.28.0", set(), True),
+    "slog": ("=2.8.2", set(), True),
+}
+RESEARCH_FORBIDDEN = TEST_FEATURES | {"bench", "bt", "loosen-follower-log-revert", "singlethreaded", "failpoints"}
+RESEARCH_FEATURES = {
+    "openraft": {"serde", "storage-v2"},
+    "openraft-macros": set(),
+    "raft": {"bytes", "protobuf-codec"},
+    "raft-proto": {"bytes", "protobuf-codec"},
+}
+
 
 class PolicyError(ValueError):
     """A dependency graph violates the declared ownership policy."""
@@ -65,6 +90,17 @@ def validate(metadata, production_tree):
         for dep in package["dependencies"]:
             target = dep["name"]
             dev = dep["kind"] == "dev"
+            if target in RESEARCH_DIRECT or target in RESEARCH_PINS:
+                need(target in RESEARCH_DIRECT and name == "hsearch-testkit" and dev, f"Research dependency outside testkit dev target: {name} -> {target}")
+                requirement, features, defaults = RESEARCH_DIRECT[target]
+                need(dep.get("rename") is None and dep.get("target") is None and dep.get("optional") is False and
+                     set(dep["features"]) == features and dep["uses_default_features"] is defaults,
+                     f"Research dependency declaration changed: {target}")
+                if target in RESEARCH_PINS:
+                    need(dep["source"] == RESEARCH_PINS[target][1].split("#")[0], f"Research declaration pin changed: {target}")
+                else:
+                    need(dep["req"] == requirement and dep["source"] == "registry+https://github.com/rust-lang/crates.io-index",
+                         f"Research registry requirement changed: {target}")
             if target.startswith("lucene-"):
                 need(name == "hsearch-engine", f"Only engine owns Lucene dependencies: {name}")
             if target in names:
@@ -97,9 +133,24 @@ def validate(metadata, production_tree):
 
     for name in graph:
         walk(name)
+    need({dep["name"] for dep in owned["hsearch-testkit"]["dependencies"]} == set(RESEARCH_DIRECT),
+         "Research direct dependency inventory changed")
+    research_packages = [p for p in packages.values() if p["name"] in RESEARCH_PINS]
+    need(len(research_packages) == len(RESEARCH_PINS) and
+         {p["name"] for p in research_packages} == set(RESEARCH_PINS),
+         "Research resolved package inventory changed")
     engines = [p for p in packages.values() if p["name"] == "lucene-store"]
     need(len(engines) == 1, "Exactly one pinned lucene-store must resolve")
     for package in packages.values():
+        if package["name"] in RESEARCH_PINS:
+            version, source = RESEARCH_PINS[package["name"]]
+            need(package["version"] == version and package["source"] == source,
+                 f"Incorrect research pin: {package['name']}")
+            node = nodes.get(package["id"])
+            need(node is not None and not RESEARCH_FORBIDDEN.intersection(node["features"]),
+                 f"Research test instrumentation selected: {package['name']}")
+            need(set(node["features"]) == RESEARCH_FEATURES[package["name"]],
+                 f"Research feature union changed: {package['name']}")
         if package["name"].startswith("lucene-"):
             need(package["source"] == ENGINE_SOURCE, f"Incorrect engine pin: {package['name']}")
             node = nodes.get(package["id"])
@@ -110,6 +161,9 @@ def validate(metadata, production_tree):
                  f"Missing upstream license declaration: {package['name']}")
     for forbidden in ("hsearch-testkit", *sorted(TEST_FEATURES)):
         need(forbidden not in production_tree, f"Release dependency/feature leak: {forbidden}")
+    for forbidden in (*sorted(RESEARCH_DIRECT), "raft-proto", "openraft-macros", "protobuf-build"):
+        need(not any(line.split(" v", 1)[0] == forbidden for line in production_tree.splitlines()),
+             f"Research package entered production closure: {forbidden}")
 
 
 def cargo(*args):
@@ -232,6 +286,38 @@ def selftest(data, tree):
     else:
         raise PolicyError("Unowned path mislabeled as workspace in inventory")
     controls.append("unowned path inventory")
+    case("research wrong git pin", "Incorrect research pin",
+         lambda d, p: p["raft"].update(source="git+unreviewed"))
+    case("research outside testkit", "outside testkit dev",
+         lambda d, p: edge(p, "hsearch-observe", "openraft", "dev"))
+    case("research default features", "declaration changed",
+         lambda d, p: next(x for x in p["hsearch-testkit"]["dependencies"] if x["name"] == "raft").update(uses_default_features=True))
+    case("research extra feature", "declaration changed",
+         lambda d, p: next(x for x in p["hsearch-testkit"]["dependencies"] if x["name"] == "openraft").update(features=["serde", "storage-v2", "bench"]))
+    case("research floating registry", "registry requirement changed",
+         lambda d, p: next(x for x in p["hsearch-testkit"]["dependencies"] if x["name"] == "serde").update(req="^1.0.228"))
+    case("research target conditional", "declaration changed",
+         lambda d, p: next(x for x in p["hsearch-testkit"]["dependencies"] if x["name"] == "raft").update(target="cfg(unix)"))
+    case("research alias substitution", "declaration changed",
+         lambda d, p: next(x for x in p["hsearch-testkit"]["dependencies"] if x["name"] == "raft").update(rename="other_raft"))
+    case("research resolved instrumentation", "Research test instrumentation",
+         lambda d, p: resolved_test_feature(d, p, "openraft", "loosen-follower-log-revert"))
+    case("research transitive production leak", "Research package entered production",
+         lambda d, p: None, altered_tree=tree + "\nraft-proto v0.7.0\n")
+    case("research normal edge", "outside testkit dev",
+         lambda d, p: next(x for x in p["hsearch-testkit"]["dependencies"] if x["name"] == "raft").update(kind=None))
+    case("research build edge", "outside testkit dev",
+         lambda d, p: next(x for x in p["hsearch-testkit"]["dependencies"] if x["name"] == "raft").update(kind="build"))
+    case("research optional substitution", "declaration changed",
+         lambda d, p: next(x for x in p["hsearch-testkit"]["dependencies"] if x["name"] == "raft").update(optional=True))
+    case("research declaration wrong git source", "declaration pin changed",
+         lambda d, p: next(x for x in p["hsearch-testkit"]["dependencies"] if x["name"] == "raft").update(source="git+unreviewed"))
+    case("research unexpected feature union", "Research feature union changed",
+         lambda d, p: resolved_test_feature(d, p, "openraft", "default"))
+    case("research missing required feature", "Research feature union changed",
+         lambda d, p: next(n for n in d["resolve"]["nodes"] if n["id"] == p["raft"]["id"]).update(features=["protobuf-codec"]))
+    case("research macros direct outside boundary", "outside testkit dev",
+         lambda d, p: edge(p, "hsearch-observe", "openraft-macros", "dev"))
     print(f"PASS: {len(controls)} dependency-policy negative controls: {', '.join(controls)}")
 
 

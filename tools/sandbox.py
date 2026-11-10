@@ -24,7 +24,8 @@ GIB = 1024**3
 LABEL = "io.hsearch.owner"
 NAMESPACE = re.compile(r"hsearch-[a-z0-9-]{1,25}-[0-9a-f]{12}\Z")
 VOLUMES = ("ca", "server", "client", "credentials", "data", "cargo", "target")
-HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py", "install_correctness.py", "coverage_entry.py")
+HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py", "install_correctness.py", "coverage_entry.py", "compile_entry.py")
+OBJECT = {"cpu_millis": 2000, "memory_bytes": 4 * 1024**3, "pids": 256, "disk_bytes": 18 * 1024**3}
 PROBE_HARNESS = ("rustfs_probe.py", "rustfs_probe_transport.py", "rustfs_probe_history.py")
 PROBE_CLIENT = {"rustfs-capabilities-before", "rustfs-capabilities-after"}
 PROBE_MODES = PROBE_CLIENT | {"probe-checker-build", "probe-history-check"}
@@ -276,7 +277,7 @@ def assert_owned(objects, owner):
 
 def image_digest():
     inputs = {name: hashlib.sha256((ROOT / "dev" / name).read_bytes()).hexdigest()
-              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json", "correctness-tools.json", "install_navigation.py", "install_correctness.py", "coverage_entry.py", "execute.py")}
+              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json", "correctness-tools.json", "install_navigation.py", "install_correctness.py", "coverage_entry.py", "execute.py", "compile_entry.py")}
     inputs["assembly_controller"] = hashlib.sha256((ROOT / "tools/sandbox.py").read_bytes()).hexdigest()
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
 
@@ -742,11 +743,50 @@ class Sandbox:
                 "user": config["User"], "read_only": True, "network": network, "budget": budget,
                 "state": {"status": state["Status"], "running": state["Running"], "exit_code": state["ExitCode"]}}
 
-    def run(self, namespace, mode, *, output_budget=1024**2, stream=True, artifact_directory=None):
-        need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build", "coverage"} | PROBE_MODES, "Unknown sandbox command")
+    def run(self, namespace, mode, *, output_budget=1024**2, stream=True, artifact_directory=None, checkpoint=None, checkpoint_context=None, deadline=None):
+        need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build", "coverage", "durability-sample", "durability-object"} | PROBE_MODES, "Unknown sandbox command")
         need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)
         need(record.get("source") == str(self.source_root) and record["engine"] == self.docker.engine and record["phase"] == "ready", "Namespace unavailable in this worktree/engine")
+        native = None
+        objects = None
+        if mode == "durability-object":
+            objects = runpy.run_path(str(self.source_root / "tools/object_durability_campaign.py"))
+            need(objects["BUDGET"] == OBJECT, "Object broker envelope differs")
+            need(output_budget >= 512 * 1024, "Object broker requires its fixed512KiB diagnostic profile")
+            output_budget = min(output_budget, 512 * 1024)
+            need(artifact_directory == self.snapshot(record) / "object-evidence" and
+                 artifact_directory.resolve() == artifact_directory.absolute() and not artifact_directory.exists(),
+                 "Object output escaped or reused its owned snapshot")
+            object_input_path = self.snapshot(record) / "object-binding.json"
+            object_raw = objects["read"](object_input_path, 65536)
+            need(record.get("object_durability_input") == {"bytes": len(object_raw), "sha256": hashlib.sha256(object_raw).hexdigest()},
+                 "Object input was not prepared by the owner")
+            object_inputs = objects["decode"](object_raw)
+            object_config = objects["worker_config"](record, self.source_root, self.harness(record), object_input_path, artifact_directory)
+            object_config["target"] = self.docker.info["Architecture"] + "-unknown-linux-gnu"
+            objects["validate_inputs"](object_inputs, record, object_config, self.images["rustfs"], self.source_root)
+            objects["source_bookend"](self.source_root, object_inputs["binding"])
+        if mode == "durability-sample":
+            native = runpy.run_path(str(self.source_root / "tools/native_durability_campaign.py"))
+            need(artifact_directory == self.snapshot(record) / "durability-evidence" and
+                 artifact_directory.resolve() == artifact_directory.absolute() and not artifact_directory.exists(),
+                 "Native output escaped or reused its owned snapshot")
+            input_path = self.snapshot(record) / "durability-binding.json"
+            input_raw = native["read"](input_path, 4096)
+            need(record.get("native_durability_input") == {"bytes": len(input_raw), "sha256": hashlib.sha256(input_raw).hexdigest()},
+                 "Native input was not prepared by the owner")
+            native_binding = native["decode"](input_raw)
+            native["validate_input"](native_binding)
+            need(native_binding["image"] == record["image"] and
+                 native_binding["target"] == self.docker.info["Architecture"] + "-unknown-linux-gnu", "Native image/target binding")
+        need(mode not in {"durability-sample", "durability-object"} or checkpoint is not None,
+             "Durability workers require trusted pre-disposal checkpoint")
+        if checkpoint is not None:
+            need(callable(checkpoint) and type(checkpoint_context) is dict and deadline is not None,
+                 "Trusted campaign checkpoint context required")
+            # Full worker wait, bounded Docker finalization and content barrier.
+            deadline.require(1250 + 12 * 180 + 600)
         if mode == "navigation-build":
             need(artifact_directory == self.snapshot(record) / "artifacts" and artifact_directory.resolve() == artifact_directory.absolute()
                  and not artifact_directory.exists(), "Navigation artifact output escaped or reused the owned snapshot")
@@ -774,7 +814,7 @@ class Sandbox:
                 need(count == pin["bytes"] and digest.hexdigest() == pin["sha256"] and
                      (before.st_ino, before.st_size, before.st_mtime_ns) == (after.st_ino, after.st_size, after.st_mtime_ns),
                      "Coverage input snapshot changed")
-        else:
+        elif mode not in {"durability-sample", "durability-object"}:
             need(artifact_directory is None, "Unexpected artifact output mount")
         harness = self.harness(record)
         probe_directory = None
@@ -790,7 +830,7 @@ class Sandbox:
             assert_owned(volumes, record["owner"])
             need(all(item["Labels"].get("io.hsearch.namespace") == namespace for item in volumes), "Task volume namespace changed")
         lease_id = self.namespace("run")
-        budget = PROBE if mode == "probe" or mode in PROBE_CLIENT else BUILD
+        budget = OBJECT if objects is not None else PROBE if mode == "probe" or mode in PROBE_CLIENT else BUILD
         with self.registry.edit() as data:
             need(data["leases"][namespace]["phase"] == "ready", "Namespace lifecycle is busy")
             need(not any(x.get("parent") == namespace for x in data["leases"].values()), "Mutable cache/target is already leased")
@@ -803,10 +843,23 @@ class Sandbox:
                 "--user", "10001:10001", "--cpus", str(budget["cpu_millis"] / 1000), "--memory", str(budget["memory_bytes"]), "--pids-limit", str(budget["pids"]), "--read-only",
                 "--memory-swap", str(budget["memory_bytes"]),
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,nosuid,nodev,size=67108864",
-                "--network", "bridge" if mode in {"prefetch", "navigation-build"} else (namespace + "-net" if mode == "probe" else "none"),
+                "--network", "bridge" if mode in {"prefetch", "navigation-build"} else (namespace + "-net" if mode in {"probe", "durability-object"} else "none"),
                 "--mount", f"type=bind,source={self.source_root},target=/workspace,readonly",
                 "--mount", f"type=bind,source={harness},target=/harness,readonly", "--mount", f"type=volume,source={namespace}-cargo,target=/cargo",
                 "--mount", f"type=volume,source={namespace}-target,target=/target"]
+        if objects is not None:
+            # The object driver gets no compiler caches or writable source.
+            args = args[:args.index("--mount")]
+            args += ["--mount", f"type=bind,source={self.source_root},target=/workspace,readonly",
+                     "--mount", f"type=bind,source={harness},target=/harness,readonly",
+                     "--mount", f"type=bind,source={object_input_path},target=/object-input/binding.json,readonly",
+                     "--mount", f"type=bind,source={artifact_directory},target=/object-output",
+                     "--mount", f"type=volume,source={namespace}-client,target=/certs,readonly,volume-nocopy",
+                     "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly,volume-nocopy",
+                     "--mount", f"type=volume,source={namespace}-data,target=/object-store-accounting,readonly,volume-nocopy"]
+        if native is not None:
+            args += ["--mount", f"type=bind,source={artifact_directory},target=/durability-evidence",
+                     "--mount", f"type=bind,source={input_path},target=/durability-binding.json,readonly"]
         if mode in PROBE_MODES:
             # Rebuild the fixed profile's mounts, rather than hiding prefilled
             # writable build caches from its disk monitor.
@@ -840,13 +893,13 @@ class Sandbox:
             args += ["--mount", f"type=volume,source={namespace}-client,target=/certs,readonly",
                      "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly", record["image"], "python3", "/harness/probe.py", namespace]
         else:
-            args += [record["image"], "python3", "/harness/execute.py", mode, "--disk-bytes", str(BUILD["disk_bytes"]),
+            args += [record["image"], "python3", "/harness/execute.py", mode, "--disk-bytes", str(budget["disk_bytes"]),
                      "--timeout", "120" if mode in PROBE_CLIENT else "1200", "--output-bytes", str(output_budget)]
             if mode in PROBE_CLIENT:
                 index = args.index("--disk-bytes")+1
                 args[index] = str(PROBE["disk_bytes"])
         backend_known, workload_attempted = False, False
-        self.registry.update(lease_id, protocol=2, phase="reserved", container_name=container, mode=mode, owner_active=True)
+        self.registry.update(lease_id, protocol=2, phase="reserved", container_name=container, mode=mode, owner_active=True, checkpoint_required=checkpoint is not None)
         try:
             free = self.backend_free(record, container + "-admission", data_volumes=True)
             backend_known = True
@@ -859,11 +912,18 @@ class Sandbox:
             container_id = self.docker.command(*args).strip()
             need(re.fullmatch(r"[0-9a-f]{64}", container_id), "Uncertain container-create identity; lease retained")
             self.registry.update(lease_id, phase="created", container_id=container_id)
-            self.run_container(record, container_id)
+            created_info = self.run_container(record, container_id)
+            if native is not None:
+                native["verify_container"](created_info, record, self.source_root, harness, input_path, artifact_directory)
+            if objects is not None:
+                object_topology = objects["verify_topology"](self, record)
+                objects["verify_container"](created_info, record, object_config)
             if mode in PROBE_MODES:
                 self.probe_execution(record, container_id, mode, budget)
             self.registry.update(lease_id, phase="starting")
             self.docker.command("start", container_id)
+            if objects is not None:
+                objects["verify_container"](self.run_container(record, container_id), record, object_config, require_endpoint=True)
             self.registry.update(lease_id, phase="running")
             status = self.docker.command("wait", container_id, timeout=1250).strip()
             need(re.fullmatch(r"[0-9]{1,3}", status), "Unknown workload outcome; lease retained")
@@ -874,7 +934,7 @@ class Sandbox:
             if mode == "check":
                 execution = self.public_execution(record, info, budget, output_budget)
             streams = None
-            if mode in PROBE_MODES:
+            if mode in PROBE_MODES or checkpoint is not None or native is not None or objects is not None:
                 streams = self.docker.command("logs", container_id, output_bytes=output_budget, raw_streams=True)
                 raw = streams["stdout"]
                 try:
@@ -884,10 +944,6 @@ class Sandbox:
                     logs, encoding = raw.decode("utf-8", errors="replace"), "invalid-utf8-retained"
             else:
                 logs = self.docker.command("logs", container_id, merge_output=True)
-            self.docker.command("container", "rm", container_id)
-            need(not self.docker.command("container", "ls", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}").strip(),
-                 "Completed container removal uncertain; lease retained")
-            self.registry.release(lease_id)
             raw = logs.encode() if streams is None else streams["stdout"]
             result = {"mode": mode, "container_id": container_id, "exit_code": int(status), "encoding": "utf-8-replacement",
                       "output": raw[:output_budget].decode(errors="ignore"), "truncated": len(raw) > output_budget}
@@ -897,6 +953,78 @@ class Sandbox:
                     child_stream_semantics="stdout-and-stderr-merged-by-monitor")
             if execution is not None:
                 result["execution"] = execution
+            if native is not None:
+                self.registry.update(lease_id, native_export_verified=False)
+            if objects is not None:
+                self.registry.update(lease_id, object_export_verified=False)
+            def export_files():
+                if artifact_directory is None:
+                    return {}
+                rows = {}
+                total = 0
+                for path in artifact_directory.iterdir():
+                    need(len(rows) < 256 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", path.name), "Campaign export inventory bound")
+                    before = path.lstat()
+                    need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size <= 1024**2,
+                         "Campaign export file type/link/size")
+                    with path.open("rb") as handle:
+                        raw = handle.read(1024**2 + 1)
+                    after = path.lstat()
+                    need(len(raw) == before.st_size and before == after, "Campaign export changed during binding")
+                    total += len(raw)
+                    need(total <= 32*1024**2, "Campaign export aggregate bound")
+                    rows[path.name] = {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+                return rows
+            admitted_export = export_files()
+            checkpoint_attempted = False
+            try:
+                if native is not None:
+                    need(int(status) == 0 and not result["truncated"], "Native worker failed or truncated")
+                    need(native["read"](input_path, 4096) == input_raw, "Native input changed")
+                    native["verify_container"](info, record, self.source_root, harness, input_path, artifact_directory)
+                    result["native_durability"] = native["verify_export"](artifact_directory, native_binding)
+                if objects is not None:
+                    need(int(status) == 0 and not result["truncated"], "Object worker failed or truncated")
+                    need(objects["read"](object_input_path, 65536) == object_raw and
+                         objects["verify_topology"](self, record) == object_topology, "Object input/topology changed")
+                    objects["verify_container"](info, record, object_config)
+                    proof = objects["verify_export"](artifact_directory, object_inputs, streams["stdout"], container_id, object_config)
+                    proof["authenticated_topology"] = {**object_topology, "worker_cid": container_id}
+                    result["object_durability"] = proof
+                need(export_files() == admitted_export, "Campaign export changed across independent oracle")
+                result["export_files"] = admitted_export
+                if checkpoint is not None:
+                    terminal = self.run_container(record, container_id)["State"]
+                    need(not terminal["Running"] and terminal["Status"] in {"exited", "dead"} and
+                         terminal["ExitCode"] == int(status), "Checkpoint terminal state changed")
+                    context = {**checkpoint_context, "container_id": container_id, "namespace": namespace,
+                               "run_lease": lease_id, "mode": mode, "image": record["image"],
+                               "budget": budget, "harness_hashes": record.get("harness_hashes", {}),
+                               "image_inputs_sha256": image_digest(), "config_sha256": record.get("config_sha256"),
+                               "terminal": {"running": False, "exit_code": int(status)}}
+                    checkpoint_attempted = True
+                    reference = checkpoint(context, result, artifact_directory)
+                    self.registry.update(lease_id, campaign_checkpoint=reference)
+                    barrier = runpy.run_path(str(ROOT / "tools/campaign_checkpoint.py"))
+                    barrier["sync_file"](self.registry.path)
+                    barrier["sync_directory"](self.registry.root)
+                    result["checkpoint"] = reference
+            except Exception as error:
+                if checkpoint is not None and not checkpoint_attempted:
+                    result["verification_failed"] = True
+                    try:
+                        result["export_files"] = export_files()
+                        terminal_context = {**checkpoint_context, "container_id": container_id, "namespace": namespace,
+                            "run_lease": lease_id, "mode": mode, "image": record["image"], "budget": budget,
+                            "terminal": {"running": False, "exit_code": int(status)}}
+                        checkpoint(terminal_context, result, artifact_directory)
+                    except Exception as retention_error:
+                        error.add_note("Failure checkpoint unavailable; worker and lease retained: " + type(retention_error).__name__)
+                raise
+            self.docker.command("container", "rm", container_id)
+            need(not self.docker.command("container", "ls", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}").strip(),
+                 "Completed container removal uncertain; lease retained")
+            self.registry.release(lease_id)
             if stream:
                 print(result["output"], end="", flush=True)
             if result["exit_code"] or result["truncated"]:
@@ -933,7 +1061,7 @@ class Sandbox:
                 "state": {"status": state["Status"], "running": state["Running"], "exit_code": state["ExitCode"]},
                 "budget": dict(budget), "output_budget": output_budget}
 
-    def reconcile(self, namespace):
+    def reconcile(self, namespace, *, checkpoint_verify=None):
         """Reconcile only acknowledged container IDs after their worker exited."""
         record = self.registry.get(namespace)
         need(record["source"] == str(self.source_root) and record["engine"] == self.docker.engine, "Foreign recovery namespace")
@@ -944,6 +1072,10 @@ class Sandbox:
             container_id = candidate.get("container_id", "")
             need(candidate.get("protocol") == 2 and isinstance(container_id, str) and re.fullmatch(r"[0-9a-f]{64}", container_id),
                  "Uncertain unacknowledged create cannot be reclaimed")
+            if candidate.get("checkpoint_required"):
+                need(callable(checkpoint_verify) and candidate.get("campaign_checkpoint"),
+                     "Campaign checkpoint absent; retain acknowledged worker and lease")
+                checkpoint_verify(candidate["campaign_checkpoint"])
             token = secrets.token_hex(12)
             with self.registry.edit() as data:
                 current = data["leases"][lease_id]

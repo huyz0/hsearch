@@ -20,6 +20,15 @@ lucene-index = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a
 lucene-search = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a208544fb36ecd95932e89cd8bc5618", default-features = false }
 lucene-store = { git = "https://github.com/huyz0/lucene-rust", rev = "46e280bc2a208544fb36ecd95932e89cd8bc5618", default-features = false }
 
+# Coordinator research: testkit dev targets only; exact retained pins.
+openraft = { git="https://github.com/databendlabs/openraft", rev="8815cdba2826f74e848acef361ad03f93bb1c3f8", default-features=false, features=["serde","storage-v2"] }
+raft = { git="https://github.com/tikv/raft-rs", rev="10c6e9db6792b85c81784e44fc278f895d5f0ab0", default-features=false, features=["protobuf-codec"] }
+serde = { version="=1.0.228", features=["derive"] }
+serde_json = "=1.0.145"
+tokio = { version="=1.48.0", default-features=false, features=["rt-multi-thread","sync","time","macros"] }
+protobuf = "=2.28.0"
+slog = "=2.8.2"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"

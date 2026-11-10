@@ -5,6 +5,10 @@ import ctypes
 import hashlib
 import json
 import os
+import platform
+import re
+import ssl
+import stat
 from pathlib import Path
 import signal
 import selectors
@@ -13,10 +17,12 @@ import subprocess
 import sys
 import time
 
-COMMANDS = {"coverage": ["python3", "/harness/coverage_entry.py"], "prefetch": ["cargo", "fetch", "--locked"], "check": ["cargo", "xtask", "check"],
+COMMANDS = {"coverage": ["python3", "/harness/coverage_entry.py"], "prefetch": ["cargo", "fetch", "--locked"], "check": ["python3", "/harness/compile_entry.py", "check"],
             "compile": ["cargo", "check", "--locked", "--offline", "--workspace", "--all-targets", "--all-features"],
             "navigation-build": ["python3", "/harness/install_navigation.py"]}
 COMMANDS.update({
+    "durability-sample": ["python3", "/harness/compile_entry.py", "durability-sample"],
+    "durability-object": ["python3", "/workspace/crates/testkit/research/object_workload.py"],
     "probe-checker-build": ["cargo", "build", "--locked", "--offline", "--release", "--package", "hsearch-object-probe"],
     "rustfs-capabilities-before": ["python3", "/harness/rustfs_probe.py", "before-restart"],
     "rustfs-capabilities-after": ["python3", "/harness/rustfs_probe.py", "after-restart"],
@@ -27,6 +33,10 @@ PROBE_PROFILE = PROBE_CLIENT | {"probe-checker-build", "probe-history-check"}
 
 
 def writable_paths(mode):
+    if mode == "durability-object":
+        return ("/object-output", "/tmp")
+    if mode == "durability-sample":
+        return ("/cargo", "/target", "/durability-evidence")
     if mode in PROBE_CLIENT or mode == "probe-history-check":
         return ("/tmp",)
     if mode == "probe-checker-build":
@@ -139,7 +149,36 @@ def diagnostics():
     print(json.dumps({"uid": os.getuid(), "architecture": platform.machine(), "versions": versions, "cgroup_limits": caps}))
 
 
+def object_mount_inventory(public_root=Path('/certs'), secret_root=Path('/run/secrets')):
+    """Validate only this development profile; never emit credential contents."""
+    def files(root, expected):
+        if root.resolve() != root or root.is_symlink() or {p.name for p in root.iterdir()} != expected:
+            raise RuntimeError('Object public/credential volume inventory differs')
+        result = {}
+        for name in expected:
+            path = root / name; info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or not 0 < info.st_size <= 16384:
+                raise RuntimeError('Object public/credential file type or size differs')
+            with path.open('rb') as stream: raw = stream.read(16385)
+            if len(raw) != info.st_size or len(raw) > 16384:
+                raise RuntimeError('Object public/credential file changed')
+            result[name] = raw
+        return result
+    certs = files(public_root, {'ca.crt', 'wrong-ca.crt'})
+    for raw in certs.values():
+        if b'PRIVATE KEY' in raw:
+            raise RuntimeError('Object worker cannot mount private keys')
+        ssl.PEM_cert_to_DER_cert(raw.decode('ascii'))
+    credentials = files(secret_root, {'access', 'secret'})
+    if not re.fullmatch(b'hs[a-f0-9]{24}', credentials['access']) or not re.fullmatch(b'[a-f0-9]{64}', credentials['secret']):
+        raise RuntimeError('Object worker requires isolated development credentials')
+    return True
+
+
 def run(mode, disk_bytes, timeout, output_bytes=1024**2):
+    object_mode = mode == 'durability-object'
+    if object_mode and (disk_bytes != 18 * 1024**3 or timeout != 1200 or not 4096 <= output_bytes <= 1024**2):
+        raise RuntimeError('Object action requires the original distinct18GiB/1200s envelope')
     if mode in PROBE_CLIENT:
         if disk_bytes != 1024**2 or timeout > 120 or output_bytes < 768*1024+4096:
             raise RuntimeError("Fixed client profile/framing budget mismatch")
@@ -147,6 +186,21 @@ def run(mode, disk_bytes, timeout, output_bytes=1024**2):
     else:
         effective = verify_limits(2000, 4 * 1024**3, 256)
     writable = writable_paths(mode)
+    object_fields = {}; dataset_peak = 0
+    if object_mode:
+        if os.getuid() != 10001 or os.getgid() != 10001:
+            raise RuntimeError('Object monitor requires the owned guest identity')
+        object_mount_inventory()
+        with Path('/object-input/binding.json').open('rb') as stream: input_raw = stream.read(65537)
+        if not 0 < len(input_raw) <= 65536:
+            raise RuntimeError('Object input bound')
+        object_fields = {'object_input_sha256': hashlib.sha256(input_raw).hexdigest(), 'object_mount_inventory': True,
+                         'object_runtime': {'uid': os.getuid(), 'gid': os.getgid(), 'architecture': platform.machine(), 'caps': effective,
+                                            'clock': 'monotonic_ns', 'scratch_bytes': 18 * 1024**3,
+                                            'scratch_proof': 'requires independent outer aggregate-mount monitor'}}
+        dataset_peak = usage(('/object-store-accounting',))
+        if dataset_peak > 10 * 1024**3:
+            raise RuntimeError('Object dataset exceeds its separate10GiB accounting bound')
     reserve = int(os.environ.get("HSEARCH_BACKEND_RESERVE_BYTES", "0"))
     if reserve and (reserve < 10 * 1024**3 or min(shutil.disk_usage(path).free for path in writable) < reserve):
         raise RuntimeError("Actual task volume reserve is unavailable")
@@ -173,6 +227,10 @@ def run(mode, disk_bytes, timeout, output_bytes=1024**2):
                 peak = max(peak, usage(writable))
                 if peak > disk_bytes:
                     raise RuntimeError("Declared cache/target disk budget exceeded")
+                if object_mode:
+                    dataset_peak = max(dataset_peak, usage(('/object-store-accounting',)))
+                    if dataset_peak > 10 * 1024**3:
+                        raise RuntimeError('Object dataset exceeds its separate10GiB accounting bound')
                 next_sample = time.monotonic() + 0.5
             if time.monotonic() - started > timeout:
                 raise RuntimeError("Development command deadline exceeded")
@@ -189,6 +247,8 @@ def run(mode, disk_bytes, timeout, output_bytes=1024**2):
         child.wait(timeout=3)
         receipt = {"mode": mode, "exit": child.returncode, "elapsed_seconds": round(time.monotonic() - started, 2),
                    "peak_disk_bytes": peak, "output_bytes": emitted}
+        if object_mode:
+            receipt.update(object_fields, peak_dataset_bytes=dataset_peak)
         if mode == "probe-checker-build" and child.returncode == 0:
             receipt["checker"] = checker_attestation()
         if mode in PROBE_PROFILE:
