@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/testkit", "xtask"]
+members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/object-probe", "crates/testkit", "xtask"]
 default-members = ["crates/types", "crates/observe", "crates/engine", "crates/object"]
 
 [workspace.package]

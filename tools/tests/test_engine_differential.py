@@ -395,6 +395,7 @@ def literal_linux_check_commands():
     """Independent Linux guest transcript, not derived from command reconstruction."""
     commands = [
         '/usr/bin/python3 crates/engine/tests/render_adapter_fixtures.py --root /workspace --check --formatter /qualified/bin/rustfmt',
+        '/usr/bin/python3 tools/rustfs_probe.py contract',
         '/usr/bin/python3 tools/api_contract.py check',
         '/usr/bin/python3 tools/engine_research.py check',
         '/usr/bin/python3 tools/workspace.py check',
@@ -409,7 +410,7 @@ def literal_linux_check_commands():
         '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --package hsearch-engine --all-features --test adapter_java_supplement --release --profile hsearch --no-tests=fail --success-output immediate',
         '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --package hsearch-observe --all-features --profile hsearch --no-tests=fail -E test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension) --success-output immediate',
         '/qualified/nextest nextest run --config /workspace/harness/cargo-correctness.toml --locked --offline --package hsearch-observe --all-features --release --profile hsearch --no-tests=fail -E test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension) --success-output immediate',
-        'cargo --config /workspace/harness/cargo-correctness.toml build --locked --offline --release --package hsearch-engine --package hsearch-observe --package hsearch-object',
+        'cargo --config /workspace/harness/cargo-correctness.toml build --locked --offline --release --package hsearch-engine --package hsearch-observe --package hsearch-object --package hsearch-object-probe',
         '/usr/bin/python3 docs/plan/tools/plan.py check',
         '/usr/bin/python3 docs/plan/tools/plan.py selftest',
         '/usr/bin/python3 docs/plan/tools/cost_model.py --selftest',
@@ -437,7 +438,7 @@ class PosixGuestCommandControls(unittest.TestCase):
     def test_complete_linux_guest_transcript_is_host_independent(self):
         tools = {'cargo_compiler': '/qualified/bin/rustc', 'python_executable': '/usr/bin/python3', 'nextest_executable': '/qualified/nextest'}
         expected = literal_linux_check_commands()
-        self.assertEqual(len(expected), 27)
+        self.assertEqual(len(expected), 28)
         self.assertEqual(D['qualified_commands'](tools, ROOT), expected)
         self.assertTrue(all('\\' not in command for command in expected))
 
@@ -445,14 +446,14 @@ class PosixGuestCommandControls(unittest.TestCase):
         for target in D['TARGETS']:
             result, source, image, _ = literal_linux_observation(target)
             capture = D['collect_native'](result, source, source, image, ROOT)
-            self.assertEqual(capture['manifest']['commands']['count'], 27)
+            self.assertEqual(capture['manifest']['commands']['count'], 28)
             self.assertEqual(capture['manifest']['commands']['sha256'], D['digest'](literal_linux_check_commands()))
             self.assertEqual([n['profile'] for n in capture['native']], ['dev', 'release'])
 
     def test_backslash_linux_raw_checks_and_manifest_proof_refuse(self):
         result, source, image, _ = literal_linux_observation()
         capture = D['collect_native'](result, source, source, image, ROOT)
-        for index, name in ((0, 'rustfmt'), (5, 'cargo-fmt'), (6, 'cargo-clippy')):
+        for index, name in ((0, 'rustfmt'), (6, 'cargo-fmt'), (7, 'cargo-clippy')):
             linux_path = '/qualified/bin/' + name
             windows_path = '\\qualified\\bin\\' + name
             observed = dict(result, output=result['output'].replace(linux_path, windows_path))

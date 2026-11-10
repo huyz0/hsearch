@@ -77,6 +77,11 @@ jobs:
             ${{ runner.temp }}/hsearch-coverage-*/*/shards/*.json
             ${{ runner.temp }}/hsearch-coverage-*/*/logs-*/*.json
             ${{ runner.temp }}/hsearch-coverage-*/*/logs-*/*.stderr
+            ${{ runner.temp }}/hsearch-checker-coverage-*/summary.json
+            ${{ runner.temp }}/hsearch-checker-coverage-*/*/*.json
+            ${{ runner.temp }}/hsearch-checker-coverage-*/*/shards/*.json
+            ${{ runner.temp }}/hsearch-checker-coverage-*/*/logs-*/*.json
+            ${{ runner.temp }}/hsearch-checker-coverage-*/*/logs-*/*.stderr
           retention-days: 3
           include-hidden-files: false
           if-no-files-found: warn
@@ -108,3 +113,16 @@ jobs:
           retention-days: 3
           include-hidden-files: false
           if-no-files-found: error
+      - name: Qualify complete pinned-image capability matrix through ordinary task dispatch
+        if: ${{ inputs.mode == 'sandbox' }}
+        run: python3 tools/rustfs_probe.py qualify
+      - name: Preserve public capability histories and first failures
+        if: ${{ always() && inputs.mode == 'sandbox' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2, MIT, node24
+        with:
+          name: rustfs-capabilities-${{ inputs.runner }}-${{ github.run_id }}
+          # Exact public exporter output only. Job registry/snapshots hold TLS keys.
+          path: ${{ runner.temp }}/hsearch-rustfs-capabilities
+          retention-days: 3
+          include-hidden-files: false
+          if-no-files-found: warn

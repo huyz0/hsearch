@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COVERAGE = runpy.run_path(str(ROOT / "tools/coverage.py"))
 DIFFERENTIAL = runpy.run_path(str(ROOT / "tools/engine_differential.py"))
 CHECKS = [
+    [sys.executable, "tools/rustfs_probe.py", "contract"],
     [sys.executable, "tools/api_contract.py", "check"],
     [sys.executable, "tools/engine_research.py", "check"],
     [sys.executable, "tools/workspace.py", "check"],
@@ -26,7 +27,7 @@ CHECKS = [
     # Retain actual target/profile layout receipts using the same attested test actor and policy.
     ['cargo', 'nextest', 'run', '--locked', '--offline', '--package', 'hsearch-observe', '--all-features', '--profile', 'hsearch', '--no-tests=fail', '-E', 'test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension)', '--success-output', 'immediate'],
     ['cargo', 'nextest', 'run', '--locked', '--offline', '--package', 'hsearch-observe', '--all-features', '--release', '--profile', 'hsearch', '--no-tests=fail', '-E', 'test(=incarnation_is_lossless_diagnostic_identity_and_never_a_metric_dimension)', '--success-output', 'immediate'],
-    ["cargo", "build", "--locked", "--offline", "--release", "--package", "hsearch-engine", "--package", "hsearch-observe", "--package", "hsearch-object"],
+    ["cargo", "build", "--locked", "--offline", "--release", "--package", "hsearch-engine", "--package", "hsearch-observe", "--package", "hsearch-object", "--package", "hsearch-object-probe"],
     [sys.executable, "docs/plan/tools/plan.py", "check"],
     [sys.executable, "docs/plan/tools/plan.py", "selftest"],
     [sys.executable, "docs/plan/tools/cost_model.py", "--selftest"],

@@ -166,7 +166,7 @@ class WorktreeControls(unittest.TestCase):
 
     def test_evidence_content_binding_budget_and_exact_context_bytes(self):
         claim = self.claim()
-        identity = self.store.append(claim, "fixture-owner", "note", {"text": "héllo ✨"})
+        identity = self.store.append(claim, "fixture-owner", "note", {"text": "hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©llo ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨"})
         context = self.store.context(claim, "fixture-owner")
         self.assertEqual(context["context_bytes"], len(MODULE["encoded"](context)))
         self.assertTrue(context["token_count_is_estimate"])
@@ -333,3 +333,212 @@ class WorktreeControls(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProbeDispatchControls(unittest.TestCase):
+    """HOST lifecycle/accounting controls, never native/provider qualification."""
+    def fixture(self, area):
+        claim = "m03-02-"+"a"*12
+        row = {"packet": {**packet(task="M03.02"), "commands": ["rustfs-capabilities"],
+                          "output_budget_bytes": 2*1024**2},
+               "packet_sha256": "b"*64, "branch": "codex/task/"+claim,
+               "worktree": str(area/"source"), "namespace": None,
+               "phase": "allocated", "worker": None, "evidence": []}
+        data = {"tasks": {claim: row}, "resource_root": None}
+        store = object.__new__(TaskStore)
+        store.root = area/"task"
+        store.root.mkdir()
+        @contextmanager
+        def edit():
+            changed = copy.deepcopy(data)
+            yield changed
+            data.clear()
+            data.update(changed)
+        store.edit = edit
+        store.get = lambda _claim, _owner: copy.deepcopy(data["tasks"][claim])
+        return store, data, claim
+
+    def test_input_reservation_is_charged_before_publication_and_bad_sizes_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store, data, claim = self.fixture(Path(directory))
+            for invalid in (True, -1, 1024**2+1):
+                with self.subTest(size=invalid), self.assertRaises(Refused):
+                    store.append(claim, "fixture-owner", "input", {}, retained_input_bytes=invalid)
+            store.append(claim, "fixture-owner", "input", {"sha256": "a"*64}, retained_input_bytes=1024)
+            self.assertEqual(data["tasks"][claim]["probe_retained_input_bytes"], 1024)
+            self.assertEqual(len(data["tasks"][claim]["evidence"]), 1)
+            data["tasks"][claim]["probe_retained_input_bytes"] = 64*1024**2-1
+            before = copy.deepcopy(data)
+            with self.assertRaisesRegex(Refused, "Combined"):
+                store.append(claim, "fixture-owner", "input", {})
+            self.assertEqual(data, before)
+
+    def test_physical_orphan_bytes_are_counted_and_redirected_slots_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            area = Path(directory)
+            store, data, claim = self.fixture(area)
+            registry = MODULE["SANDBOX"]["Registry"](area/"resources")
+            namespace = "hsearch-m03-02-"+"b"*12
+            row = data["tasks"][claim]
+            row.update(namespace=namespace, probe_active=True)
+            data["resource_root"] = str(registry.root)
+            with registry.edit() as resources:
+                resources["leases"][namespace] = {"task_claim": claim, "source": row["worktree"], "snapshot_schema": 2}
+            slot = registry.root/"snapshots"/namespace/"rustfs-probe-inputs"/"rustfs-capabilities-before"
+            slot.mkdir(parents=True)
+            (slot/"orphan.json").write_bytes(b"x"*1500)
+            self.assertEqual(store.retained_probe_inputs(row, registry.root), 1500)
+            store.append(claim, "fixture-owner", "input", {}, retained_input_bytes=100)
+            self.assertEqual(data["tasks"][claim]["probe_retained_input_bytes"], 1600)
+            (slot/"nested").mkdir()
+            with self.assertRaisesRegex(Refused, "Unknown retained"):
+                store.append(claim, "fixture-owner", "input", {})
+
+    def test_fixed_dispatch_rejects_wrong_task_small_packet_and_duplicate_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store, data, claim = self.fixture(Path(directory))
+            row = data["tasks"][claim]
+            store.fingerprint = lambda _record: {"clean": True}
+            for key, value in (("task_id", "M03.01"), ("output_budget_bytes", 16384)):
+                old = row["packet"][key]
+                row["packet"][key] = value
+                with self.subTest(field=key), self.assertRaisesRegex(Refused, "outside"):
+                    store.rustfs_capabilities(claim, "fixture-owner", Path(directory))
+                row["packet"][key] = old
+            row["probe_active"] = True
+            with self.assertRaisesRegex(Refused, "already attempted"):
+                store.rustfs_capabilities(claim, "fixture-owner", Path(directory))
+
+    def test_known_failed_child_is_retained_before_controller_receives_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            area = Path(directory)
+            store, data, claim = self.fixture(area)
+            row = data["tasks"][claim]
+            source = area/"source"
+            source.mkdir()
+            (source/"Cargo.lock").write_bytes(b"fixture")
+            row["namespace"] = "hsearch-m03-02-"+"b"*12
+            lease = {"task_claim": claim, "source": str(source), "resource_protocol": 2,
+                     "snapshot_schema": 2, "image": "sha256:"+"c"*64, "phase": "ready", "config_sha256": "d"*64}
+            resources = {"leases": {row["namespace"]: lease}}
+            @contextmanager
+            def registry_edit():
+                yield resources
+            registry = SimpleNamespace(get=lambda _namespace: lease, edit=registry_edit)
+            failure = {"mode": "probe-checker-build", "exit_code": 1, "truncated": False, "output": "first failure"}
+            def failed_run(*_args, **_kwargs):
+                raise MODULE["SANDBOX"]["WorkloadFailed"](failure)
+            sandbox = SimpleNamespace(registry=registry, run=failed_run,
+                docker=SimpleNamespace(info={"Architecture": "x86_64"}),
+                probe_storage=lambda _ns: ({"Image": "sha256:"+"e"*64, "Id": "f"*64},
+                    {"config_sha256": "1"*64, "volume": "fixture-volume"}))
+            store.resources = lambda *_args: sandbox
+            store.fingerprint = lambda _record: {"clean": True, "source_tree_sha256": "2"*64}
+            retained = []
+            store.append = lambda _claim, _owner, kind, value, **_kw: retained.append((kind, value))
+            def qualify(context):
+                self.assertEqual(context.run("probe-checker-build"), failure)
+                self.assertEqual(retained[0][0], "failed-command")
+                import base64
+                self.assertEqual(base64.b64decode(retained[0][1]["result"]["output_base64"]), b"first failure")
+                raise Refused("stop on first build failure")
+            controller = {"ProfileContext": runpy.run_path(str(Path(__file__).resolve().parents[1]/"rustfs_probe.py"))["ProfileContext"],
+                          "qualify": qualify}
+            with patch.dict(TaskStore.rustfs_capabilities.__globals__["runpy"].__dict__, run_path=lambda _path: controller):
+                with self.assertRaisesRegex(Refused, "first build failure"):
+                    store.rustfs_capabilities(claim, "fixture-owner", area/"resources")
+            self.assertEqual(data["tasks"][claim]["phase"], "interrupted")
+            self.assertIsNone(data["tasks"][claim]["worker"])
+            self.assertTrue(data["tasks"][claim]["probe_active"])
+
+
+class ProbeEvidenceFramingControls(unittest.TestCase):
+    def test_worst_case_control_output_is_lossless_and_fits_original_packet(self):
+        import base64
+        raw = "\x00"*(1024**2)
+        result = {"output": raw, "mode": "rustfs-capabilities-before", "exit_code": 1,
+                  "truncated": False, "encoding": "utf-8-replacement"}
+        self.assertGreater(len(MODULE["encoded"](result)), 2*1024**2)
+        stored = MODULE["probe_evidence_result"](result, 1024**2)
+        self.assertEqual(base64.b64decode(stored["output_base64"]), raw.encode())
+        self.assertEqual(stored["output_sha256"], hashlib.sha256(raw.encode()).hexdigest())
+        self.assertLess(len(MODULE["encoded"]({"source": {"digest": "a"*64}, "result": stored})), 2*1024**2)
+        self.assertEqual(result["output"], raw)
+        with self.assertRaisesRegex(Refused, "admitted output"):
+            MODULE["probe_evidence_result"](result, 1024**2-1)
+
+
+class RawProbeOutputControls(unittest.TestCase):
+    def result(self, stdout, stderr):
+        return {"output": stdout.decode("utf-8", errors="replace"),
+                "raw_streams": {"stdout": stdout, "stderr": stderr},
+                "output_protocol": "rustfs-raw-streams-v1", "exit_code": 1, "truncated": False}
+
+    def test_exact_both_pipes_control_and_non_utf8_bytes_share_one_packet_bound(self):
+        streams = {"stdout": b"\x00\xff"*(256*1024), "stderr": b"\x80\n"*(256*1024)}
+        result = self.result(**streams)
+        stored = MODULE["probe_evidence_result"](result, 1024**2)
+        self.assertEqual(MODULE["decode_probe_output"](stored), streams)
+        self.assertLess(len(MODULE["encoded"]({"result": stored, "source": {"digest": "a"*64}})), 2*1024**2)
+        self.assertEqual(result["raw_streams"], streams)
+        with self.assertRaisesRegex(Refused, "admitted output"):
+            MODULE["probe_evidence_result"](result, 1024**2-1)
+        corrupted = copy.deepcopy(stored)
+        corrupted["output_streams"]["stderr"]["sha256"] = "0"*64
+        with self.assertRaisesRegex(Refused, "binding changed"):
+            MODULE["decode_probe_output"](corrupted)
+
+    def test_raw_capture_preserves_both_os_pipes_and_refuses_aggregate_overflow(self):
+        code = "import os;os.write(1,b'out\\x00\\xff');os.write(2,b'err\\x80\\n')"
+        capture = MODULE["SANDBOX"]["bounded_capture"]
+        streams = capture([sys.executable, "-B", "-c", code], timeout=10, limit=10, raw_streams=True)
+        self.assertEqual(streams, {"stdout": b"out\x00\xff", "stderr": b"err\x80\n"})
+        with self.assertRaisesRegex(Refused, "output exceeds bound"):
+            capture([sys.executable, "-B", "-c", code], timeout=10, limit=9, raw_streams=True)
+
+    def test_encoded_secret_cannot_bypass_decoded_nested_public_export_checks(self):
+        for secret in (b"Authorization: bearer PRIVATE", b"X-Amz-Credential=PRIVATE", b"actual-fixture-secret"):
+            stored = MODULE["probe_evidence_result"](self.result(b"safe", b"\xff"+secret+b"\x00"), 1024)
+            self.assertNotIn(secret.decode(), MODULE["encoded"](stored).decode())
+            with self.assertRaisesRegex(Refused, "Secret-bearing"):
+                MODULE["require_public_probe_output"]({"nested": [stored]}, forbidden=(b"actual-fixture-secret",))
+        MODULE["require_public_probe_output"](MODULE["probe_evidence_result"](self.result(b"safe\x00", b"\xff"), 1024))
+
+    def test_legacy_failed_packet_remains_immutable_and_truthfully_decoded_utf8(self):
+        legacy = MODULE["probe_evidence_result"]({"output": "legacy\x00UTF8", "encoding": "utf-8-replacement"}, 1024)
+        packet = {"source": {"head": "a"*40}, "result": legacy}
+        frozen = MODULE["encoded"](packet)
+        self.assertEqual(legacy["output_representation"], "base64-of-utf8-output")
+        self.assertEqual(MODULE["decode_probe_output"](legacy), {"stdout": b"legacy\x00UTF8", "stderr": b""})
+        self.assertEqual(MODULE["encoded"](packet), frozen)
+        bad = copy.deepcopy(legacy)
+        bad["output_sha256"] = "0"*64
+        with self.assertRaisesRegex(Refused, "binding changed"):
+            MODULE["decode_probe_output"](bad)
+
+
+class ProbePublicExportControls(unittest.TestCase):
+    def test_last_encoded_secret_refuses_before_first_public_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private = root/"private"
+            output = root/"public"
+            output.mkdir()
+            claim = "m03-02-"+"a"*12
+            folder = private/"evidence"/claim
+            folder.mkdir(parents=True)
+            safe = MODULE["probe_evidence_result"]({"output": "safe"}, 1024)
+            secret = MODULE["probe_evidence_result"]({"output": "Authorization: PRIVATE-FIXTURE"}, 1024)
+            records = []
+            for value in (safe, secret):
+                raw = MODULE["encoded"]({"result": value})
+                digest = hashlib.sha256(raw).hexdigest()
+                (folder/(digest+".json")).write_bytes(raw)
+                records.append({"sha256": digest, "bytes": len(raw)})
+            store = SimpleNamespace(root=private, evidence=lambda *_args: records)
+            with self.assertRaisesRegex(Refused, "Secret-bearing"):
+                MODULE["export_probe_evidence"](store, claim, "fixture", output)
+            self.assertEqual(list(output.iterdir()), [])
+            records.pop()
+            self.assertEqual(MODULE["export_probe_evidence"](store, claim, "fixture", output), records)
+            self.assertEqual((output/"evidence"/(records[0]["sha256"]+".json")).read_bytes(), (folder/(records[0]["sha256"]+".json")).read_bytes())

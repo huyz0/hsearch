@@ -18,6 +18,7 @@ LAYERS = {
     "hsearch-observe": {"hsearch-types"},
     "hsearch-engine": set(),
     "hsearch-object": set(),
+    "hsearch-object-probe": set(),
     "hsearch-testkit": set(),
     "xtask": set(),
 }
@@ -78,6 +79,7 @@ def validate(metadata, production_tree):
                              f"Resolved workspace identity mismatch: {name} -> {target}")
             if not dev:
                 need(target in LAYERS[name] | EXTERNAL[name], f"Forbidden layer edge: {name} -> {target}")
+            need(not (name in PRODUCTION and target == "hsearch-object-probe"), "Diagnostic checker has a production inbound edge")
             if name in PRODUCTION and not dev:
                 need(target != "hsearch-testkit", f"Testkit leaked into production: {name}")
                 need(not TEST_FEATURES.intersection(dep["features"]), f"Test feature in production: {name}")

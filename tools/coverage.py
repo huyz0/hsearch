@@ -310,10 +310,17 @@ def package_inventory(runner, requested, *, metadata=None):
     need(policy["schema_version"] == 1 and type(policy["minimum_percent"]) is int and policy["minimum_percent"] == 90,
          "Invalid coverage floor policy")
     excluded = set(policy["development_packages"])
-    need(excluded == {"xtask", "hsearch-testkit"} and excluded.issubset(packages), "Unknown development exclusion")
+    need(excluded == {"xtask", "hsearch-testkit", "hsearch-object-probe"} and excluded.issubset(packages), "Unknown development exclusion")
     production = set(packages) - excluded
+    diagnostic = policy.get("diagnostic_packages")
+    need(type(diagnostic) is dict and set(diagnostic) == {"hsearch-object-probe"} and
+         diagnostic["hsearch-object-probe"]["minimum_percent"] == 90 and
+         diagnostic["hsearch-object-probe"]["separate_from_production"] is True,
+         "Unknown diagnostic coverage policy")
     selected = sorted(requested or production)
-    need(selected and len(selected) == len(set(selected)) and set(selected).issubset(production), "Unknown coverage package scope")
+    diagnostic_only = selected == ["hsearch-object-probe"]
+    need(selected and len(selected) == len(set(selected)) and
+         (diagnostic_only or set(selected).issubset(production)), "Unknown or mixed coverage package scope")
     root_manifest = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
     need(root_manifest["workspace"]["lints"]["rust"]["unsafe_code"] == "forbid", "Workspace unsafe policy weakened")
     for name in selected:
@@ -685,6 +692,14 @@ def collect(directory, base, profile, requested):
     non_executable = {name: assertion for name, assertion in policy["non_executable"].items() if name in sources}
     proof = source_proof(base, sources)
     changed = proof_changes(proof)
+    # Keep exact missing maps reviewable even when the unchanged gate refuses
+    # before context.json is published. No absent executable map is exempted.
+    save(runner.root / "baseline-source-inventory.json", {
+        "source": before, "packages": selected, "native_reports": baseline_reports,
+        "production_artifacts": production_artifacts,
+        "sources": {path: {**metadata, "mapped_lines": len(baseline.get(path, {})),
+                    "non_executable_assertion": non_executable.get(path)} for path, metadata in sources.items()},
+        "missing_without_assertion": sorted(path for path in sources if not baseline.get(path) and path not in non_executable)})
     # Apply denominator/missing-map checks before running tests; zero counts are intentionally not a pass here.
     GATE["evaluate"](sources, baseline, {}, changed, non_executable, selected)
     raw_inventory = runner.command(nextest_command(tools, "list", *flags, "--message-format=json"))
@@ -759,22 +774,22 @@ def merge(directory):
     need({path.name for path in shard_directory.iterdir()} == expected, "Unexpected or incomplete shard manifest set")
     shards = [load(shard_directory / name) for name in sorted(expected, key=lambda name: int(name.split(".")[0]))]
     profiles = INPUT["validate_shards"](runner.root, context, shards)
-    runtime, runtime_reports = {}, []
-    if profiles:
-        merged = runner.root / ("merged-" + uuid.uuid4().hex[:12] + ".profdata")
-        runner.command([str(llvm / "llvm-profdata"), "merge", "--sparse", "--num-threads=2", *profiles, "-o", merged])
-        binary_paths = [runner.root / value["artifact"]["path"] for value in context["binaries"].values()]
-        text = runner.command(native_export_command(llvm, binary_paths, profile_path=merged))
-        sources = dict(context["sources"])
-        tracked = tracked_paths()
-        runtime = normalize_report(text, sources, packages, selected, tracked, runtime=True, external_roots=external_roots, report_bindings=runtime_reports, export_profile="files")
-        need(sources == context["sources"], "Runtime introduced an unbound production source")
     map_objects = []
     for record in context["production_objects"]:
         path = runner.root / record["path"]
         sections = runner.command([str(llvm / "llvm-objdump"), "--section-headers", path], limit=1024**2)
         if "__llvm_covmap" in sections or "__llvm_covfun" in sections:
             map_objects.append(path)
+    runtime, runtime_reports = {}, []
+    if profiles:
+        merged = runner.root / ("merged-" + uuid.uuid4().hex[:12] + ".profdata")
+        runner.command([str(llvm / "llvm-profdata"), "merge", "--sparse", "--num-threads=2", *profiles, "-o", merged])
+        binary_paths = [runner.root / value["artifact"]["path"] for value in context["binaries"].values()]
+        text = runner.command(native_export_command(llvm, [*binary_paths, *map_objects], profile_path=merged))
+        sources = dict(context["sources"])
+        tracked = tracked_paths()
+        runtime = normalize_report(text, sources, packages, selected, tracked, runtime=True, external_roots=external_roots, report_bindings=runtime_reports, export_profile="files")
+        need(sources == context["sources"], "Runtime introduced an unbound production source")
     baseline, baseline_reports = {}, []
     if map_objects:
         text = runner.command(native_export_command(llvm, map_objects))

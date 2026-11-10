@@ -228,7 +228,7 @@ class GuestControls(unittest.TestCase):
             self.guest["bounded"]([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.1)
 
     def test_acknowledged_cli_error_details_have_utf8_byte_bounds(self):
-        error = self.guest["CliFailure"]({"exit_code": 1, "stdout": "雪" * 2000, "stderr": "λ" * 2000})
+        error = self.guest["CliFailure"]({"exit_code": 1, "stdout": "é›ª" * 2000, "stderr": "Î»" * 2000})
         for stream in ("stdout", "stderr"):
             self.assertLessEqual(len(error.details[stream + "_head"].encode()), 1024)
             self.assertTrue(error.details[stream + "_truncated"])
@@ -277,6 +277,16 @@ except RuntimeError as error: print(str(error))
             else:
                 self.fail("Owned query descendant outlived deadline cleanup")
 
+
+
+class CapabilityHarnessSeparationControls(unittest.TestCase):
+    def test_new_fixed_probe_does_not_replace_navigation_or_generic_smoke(self):
+        self.assertEqual(BASE["PROBE"]["disk_bytes"], 1024**2)
+        self.assertIn("probe.py", BASE["HARNESS_FILES"])
+        self.assertNotIn("probe.py", BASE["PROBE_HARNESS"])
+        self.assertEqual(set(BASE["PROBE_HARNESS"]), {"rustfs_probe.py", "rustfs_probe_transport.py", "rustfs_probe_history.py"})
+        self.assertEqual(BASE["BUILD"], {"cpu_millis": 2000, "memory_bytes": 4*1024**3, "pids": 256, "disk_bytes": 8*1024**3})
+        self.assertTrue({"rustfs-capabilities-before", "rustfs-capabilities-after"} <= BASE["PROBE_MODES"])
 
 if __name__ == "__main__":
     unittest.main()
