@@ -9,9 +9,9 @@ pub mod checker;
 pub mod codec;
 pub mod model;
 
-/// Same-volume restart model.
-pub mod restart;
-/// Upload/part/completion model.
-pub mod multipart;
 /// Complete required capability eligibility.
 pub mod eligibility;
+/// Upload/part/completion model.
+pub mod multipart;
+/// Same-volume restart model.
+pub mod restart;

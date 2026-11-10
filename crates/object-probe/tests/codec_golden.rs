@@ -168,31 +168,46 @@ END	0	2
 "#;
 #[test]
 fn sha256_fips_vectors_and_independent_selected_bytes() {
-    fn hex(raw:&[u8])->String {raw.iter().map(|b|format!("{b:02x}")).collect()}
-    assert_eq!(hex(&codec::sha256(b"")),"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    assert_eq!(hex(&codec::sha256(b"abc")),"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    assert_eq!(hex(&codec::payload_digest(&[(7,27,255)]).unwrap()),"cc0e850bcc04b7bff70451c64b965d4962e72be580edecc43f2a9f964cb0d228");
-    assert_ne!(codec::payload_digest(&[(7,27,255)]),codec::payload_digest(&[(7,1000,0)]));
+    fn hex(raw: &[u8]) -> String {
+        raw.iter().map(|b| format!("{b:02x}")).collect()
+    }
+    assert_eq!(
+        hex(&codec::sha256(b"")),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        hex(&codec::sha256(b"abc")),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert_eq!(
+        hex(&codec::payload_digest(&[(7, 27, 255)]).unwrap()),
+        "cc0e850bcc04b7bff70451c64b965d4962e72be580edecc43f2a9f964cb0d228"
+    );
+    assert_ne!(
+        codec::payload_digest(&[(7, 27, 255)]),
+        codec::payload_digest(&[(7, 1000, 0)])
+    );
 }
 #[test]
 fn independently_encoded_plan_and_partial_capture_round_trip_without_readiness() {
-    let plan=codec::decode_plan_v2(PLAN).unwrap();
-    assert_eq!(plan.specifications.len(),154);
-    let capture=codec::decode_capture_v2(CAPTURE,codec::sha256(PLAN)).unwrap();
-    assert_eq!(capture.events.len(),2);
-    assert!(!eligibility::evaluate(&plan,&capture,"{}").ready());
-    assert!(codec::decode_capture_v2(CAPTURE,[1;32]).is_err());
-    assert!(codec::decode_plan_v2(&PLAN[..PLAN.len()-1]).is_err());
-    let mut trailing=CAPTURE.to_vec();trailing.extend_from_slice(b"FORGED\n");
-    assert!(codec::decode_capture_v2(&trailing,codec::sha256(PLAN)).is_err());
+    let plan = codec::decode_plan_v2(PLAN).unwrap();
+    assert_eq!(plan.specifications.len(), 154);
+    let capture = codec::decode_capture_v2(CAPTURE, codec::sha256(PLAN)).unwrap();
+    assert_eq!(capture.events.len(), 2);
+    assert!(!eligibility::evaluate(&plan, &capture, "{}").ready());
+    assert!(codec::decode_capture_v2(CAPTURE, [1; 32]).is_err());
+    assert!(codec::decode_plan_v2(&PLAN[..PLAN.len() - 1]).is_err());
+    let mut trailing = CAPTURE.to_vec();
+    trailing.extend_from_slice(b"FORGED\n");
+    assert!(codec::decode_capture_v2(&trailing, codec::sha256(PLAN)).is_err());
 }
 #[test]
 fn malformed_and_oversized_fields_refuse_before_opaque_copy() {
-    assert!(codec::unhex("A0",256).is_err());
-    assert!(codec::unhex("0",256).is_err());
-    assert!(codec::unhex(&"a".repeat(514),256).is_err());
-    assert!(codec::decode_plan_v2(&vec![b'a';65537]).is_err());
-    assert!(codec::payload_digest(&[(1,16*1024*1024+1,0)]).is_err());
+    assert!(codec::unhex("A0", 256).is_err());
+    assert!(codec::unhex("0", 256).is_err());
+    assert!(codec::unhex(&"a".repeat(514), 256).is_err());
+    assert!(codec::decode_plan_v2(&vec![b'a'; 65537]).is_err());
+    assert!(codec::payload_digest(&[(1, 16 * 1024 * 1024 + 1, 0)]).is_err());
 }
 
 // Counterfactual contract-model fixture with synthetic coordinates, not provider evidence.
@@ -669,16 +684,34 @@ END	1	154
 const RESTART: &str = r#"{"after_boot":"2222222222222222222222222222222222222222222222222222222222222222","after_cid":"3333333333333333333333333333333333333333333333333333333333333333","after_config":"3333333333333333333333333333333333333333333333333333333333333333","after_image":"3333333333333333333333333333333333333333333333333333333333333333","after_volume":"3333333333333333333333333333333333333333333333333333333333333333","before_boot":"1111111111111111111111111111111111111111111111111111111111111111","before_cid":"3333333333333333333333333333333333333333333333333333333333333333","before_config":"3333333333333333333333333333333333333333333333333333333333333333","before_image":"3333333333333333333333333333333333333333333333333333333333333333","before_volume":"3333333333333333333333333333333333333333333333333333333333333333"}"#;
 #[test]
 fn complete_counterfactual_matrix_has_a_model_witness_not_provider_qualification() {
-    let plan=codec::decode_plan_v2(FULL_PLAN).unwrap();
-    let capture=codec::decode_capture_v2(FULL_CAPTURE,codec::sha256(FULL_PLAN)).unwrap();
-    let report=eligibility::evaluate(&plan,&capture,RESTART);
-    assert!(report.ready(),"{report:?}");
-    let mut forged=capture.clone();
-    let replay=plan.specifications.iter().find(|s|s.action=="replay").unwrap();
-    forged.events.iter_mut().find(|e|e.id==replay.id).unwrap().version="second-accepted-version".into();
-    assert!(!eligibility::evaluate(&plan,&forged,RESTART).ready());
-    let mut changed=capture.clone();
-    let range=plan.specifications.iter().find(|s|s.action=="range" && s.scenario==3).unwrap();
-    changed.events.iter_mut().find(|e|e.id==range.id).unwrap().digest=[0;32];
-    assert!(!eligibility::evaluate(&plan,&changed,RESTART).ready());
+    let plan = codec::decode_plan_v2(FULL_PLAN).unwrap();
+    let capture = codec::decode_capture_v2(FULL_CAPTURE, codec::sha256(FULL_PLAN)).unwrap();
+    let report = eligibility::evaluate(&plan, &capture, RESTART);
+    assert!(report.ready(), "{report:?}");
+    let mut forged = capture.clone();
+    let replay = plan
+        .specifications
+        .iter()
+        .find(|s| s.action == "replay")
+        .unwrap();
+    forged
+        .events
+        .iter_mut()
+        .find(|e| e.id == replay.id)
+        .unwrap()
+        .version = "second-accepted-version".into();
+    assert!(!eligibility::evaluate(&plan, &forged, RESTART).ready());
+    let mut changed = capture.clone();
+    let range = plan
+        .specifications
+        .iter()
+        .find(|s| s.action == "range" && s.scenario == 3)
+        .unwrap();
+    changed
+        .events
+        .iter_mut()
+        .find(|e| e.id == range.id)
+        .unwrap()
+        .digest = [0; 32];
+    assert!(!eligibility::evaluate(&plan, &changed, RESTART).ready());
 }

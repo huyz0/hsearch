@@ -60,7 +60,10 @@ pub struct Atom {
 }
 impl fmt::Debug for Atom {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Atom").field("kind", &self.kind).field("bytes", &self.bytes.len()).finish()
+        f.debug_struct("Atom")
+            .field("kind", &self.kind)
+            .field("bytes", &self.bytes.len())
+            .finish()
     }
 }
 
@@ -165,7 +168,10 @@ impl Action {
         }
     }
     pub(crate) fn mutation(self) -> Option<Mutation> {
-        match self { Self::Write(m) | Self::Resolve(m) => Some(m), _ => None }
+        match self {
+            Self::Write(m) | Self::Resolve(m) => Some(m),
+            _ => None,
+        }
     }
 }
 /// Observed result. A timeout-as-rollback variant deliberately does not exist.
@@ -319,9 +325,14 @@ pub struct History {
 }
 impl fmt::Debug for History {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("History").field("scenario", &self.scenario).field("complete", &self.complete)
-            .field("operations", &self.operations.len()).field("attempts", &self.attempts.len())
-            .field("atoms", &self.atoms.len()).field("errors", &self.errors.len()).finish()
+        f.debug_struct("History")
+            .field("scenario", &self.scenario)
+            .field("complete", &self.complete)
+            .field("operations", &self.operations.len())
+            .field("attempts", &self.attempts.len())
+            .field("atoms", &self.atoms.len())
+            .field("errors", &self.errors.len())
+            .finish()
     }
 }
 /// Independent intended race membership, not a driver winner count.
@@ -393,63 +404,120 @@ pub enum Invalid {
     Continuation,
 }
 impl fmt::Display for Invalid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{self:?}") }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 impl std::error::Error for Invalid {}
 
 impl History {
     pub(crate) fn atom(&self, id: AtomId, kind: AtomKind) -> Result<(), Invalid> {
-        if self.atoms.get(usize::from(id)).is_some_and(|a| a.kind == kind) { Ok(()) } else { Err(Invalid::Shape) }
+        if self
+            .atoms
+            .get(usize::from(id))
+            .is_some_and(|a| a.kind == kind)
+        {
+            Ok(())
+        } else {
+            Err(Invalid::Shape)
+        }
     }
     fn object(&self, o: ObjectId) -> Result<(), Invalid> {
-        self.atom(o.bucket, AtomKind::Bucket)?; self.atom(o.key, AtomKind::Key)
+        self.atom(o.bucket, AtomKind::Bucket)?;
+        self.atom(o.key, AtomKind::Key)
     }
     fn payload(p: Payload) -> Result<(), Invalid> {
-        if p.length <= 16 * 1024 * 1024 { Ok(()) } else { Err(Invalid::Bound) }
+        if p.length <= 16 * 1024 * 1024 {
+            Ok(())
+        } else {
+            Err(Invalid::Bound)
+        }
     }
     fn version(&self, v: Version) -> Result<(), Invalid> {
-        self.atom(v.token, AtomKind::Token)?; self.atom(v.metadata, AtomKind::Metadata)?; Self::payload(v.payload)
+        self.atom(v.token, AtomKind::Token)?;
+        self.atom(v.metadata, AtomKind::Metadata)?;
+        Self::payload(v.payload)
     }
     fn mutation(&self, m: Mutation) -> Result<(), Invalid> {
-        self.object(m.object)?; self.atom(m.request, AtomKind::Request)?; self.atom(m.metadata, AtomKind::Metadata)?;
-        if let Precondition::Matches(t) = m.precondition { self.atom(t, AtomKind::Token)?; }
+        self.object(m.object)?;
+        self.atom(m.request, AtomKind::Request)?;
+        self.atom(m.metadata, AtomKind::Metadata)?;
+        if let Precondition::Matches(t) = m.precondition {
+            self.atom(t, AtomKind::Token)?;
+        }
         Self::payload(m.payload)
     }
     fn span(s: Span) -> Result<(), Invalid> {
-        if s.start.micros > HISTORY_MICROS || s.start.order > 4096 { return Err(Invalid::Bound); }
+        if s.start.micros > HISTORY_MICROS || s.start.order > 4096 {
+            return Err(Invalid::Bound);
+        }
         if let Some(e) = s.end {
-            if e.order > 4096 || e.micros > HISTORY_MICROS { return Err(Invalid::Bound); }
-            if e.order <= s.start.order || e.micros < s.start.micros { return Err(Invalid::Order); }
+            if e.order > 4096 || e.micros > HISTORY_MICROS {
+                return Err(Invalid::Bound);
+            }
+            if e.order <= s.start.order || e.micros < s.start.micros {
+                return Err(Invalid::Order);
+            }
         }
         Ok(())
     }
     /// Bound and type-check input without asserting completeness or semantics.
     pub fn validate(&self) -> Result<(), Invalid> {
-        if self.atoms.len() > MAX_ATOMS || self.operations.len() > MAX_OPERATIONS || self.attempts.len() > MAX_ATTEMPTS
-            || self.races.len() > 16 || self.errors.len() > MAX_ATTEMPTS || self.scenario_receipt.len() > RECEIPT_BYTES - 512
-            || usize::from(self.declared_operations) > MAX_OPERATIONS || usize::from(self.declared_attempts) > MAX_ATTEMPTS
-            || self.physical_attempts > self.declared_attempts { return Err(Invalid::Bound); }
-        if !matches!(self.binding.platform, 1 | 2) { return Err(Invalid::Binding); }
-        let mut bytes = 0usize; let mut unique = BTreeSet::new();
+        if self.atoms.len() > MAX_ATOMS
+            || self.operations.len() > MAX_OPERATIONS
+            || self.attempts.len() > MAX_ATTEMPTS
+            || self.races.len() > 16
+            || self.errors.len() > MAX_ATTEMPTS
+            || self.scenario_receipt.len() > RECEIPT_BYTES - 512
+            || usize::from(self.declared_operations) > MAX_OPERATIONS
+            || usize::from(self.declared_attempts) > MAX_ATTEMPTS
+            || self.physical_attempts > self.declared_attempts
+        {
+            return Err(Invalid::Bound);
+        }
+        if !matches!(self.binding.platform, 1 | 2) {
+            return Err(Invalid::Binding);
+        }
+        let mut bytes = 0usize;
+        let mut unique = BTreeSet::new();
         for a in &self.atoms {
-            if a.bytes.len() > a.kind.bound() || (a.bytes.is_empty() && a.kind != AtomKind::Metadata) || !unique.insert(a) {
+            if a.bytes.len() > a.kind.bound()
+                || (a.bytes.is_empty() && a.kind != AtomKind::Metadata)
+                || !unique.insert(a)
+            {
                 return Err(Invalid::Shape);
             }
             bytes = bytes.checked_add(a.bytes.len() + 3).ok_or(Invalid::Bound)?;
-            if bytes > DICTIONARY_BYTES { return Err(Invalid::Bound); }
+            if bytes > DICTIONARY_BYTES {
+                return Err(Invalid::Bound);
+            }
         }
         bytes = 0;
         for e in &self.errors {
-            if e.len() > 4096 { return Err(Invalid::Bound); }
+            if e.len() > 4096 {
+                return Err(Invalid::Bound);
+            }
             bytes = bytes.checked_add(e.len() + 2).ok_or(Invalid::Bound)?;
-            if bytes > ERROR_BYTES { return Err(Invalid::Bound); }
+            if bytes > ERROR_BYTES {
+                return Err(Invalid::Bound);
+            }
         }
-        let mut ids = BTreeSet::new(); let mut stamps = Vec::with_capacity((MAX_OPERATIONS + MAX_ATTEMPTS) * 2 + 16);
+        let mut ids = BTreeSet::new();
+        let mut stamps = Vec::with_capacity((MAX_OPERATIONS + MAX_ATTEMPTS) * 2 + 16);
         for o in &self.operations {
-            if o.id == 0 || usize::from(o.id) > MAX_OPERATIONS || !ids.insert(o.id) || o.client >= 16
-                || o.span.end.is_some() != o.outcome.is_some() { return Err(Invalid::Shape); }
-            Self::span(o.span)?; stamps.push(o.span.start);
-            if let Some(e) = o.span.end { stamps.push(e); }
+            if o.id == 0
+                || usize::from(o.id) > MAX_OPERATIONS
+                || !ids.insert(o.id)
+                || o.client >= 16
+                || o.span.end.is_some() != o.outcome.is_some()
+            {
+                return Err(Invalid::Shape);
+            }
+            Self::span(o.span)?;
+            stamps.push(o.span.start);
+            if let Some(e) = o.span.end {
+                stamps.push(e);
+            }
             self.object(o.action.object())?;
             match o.action {
                 Action::Write(m) | Action::Resolve(m) => self.mutation(m)?,
@@ -457,19 +525,28 @@ impl History {
                 Action::Head(_) => {}
             }
             match o.outcome {
-                Some(Outcome::Receipt(r)) => { self.atom(r.request, AtomKind::Request)?; self.version(r.version)?; }
+                Some(Outcome::Receipt(r)) => {
+                    self.atom(r.request, AtomKind::Request)?;
+                    self.version(r.version)?;
+                }
                 Some(Outcome::Head(v)) => self.version(v)?,
                 Some(Outcome::Range { token, length, .. }) => {
                     self.atom(token, AtomKind::Token)?;
-                    if length > 16 * 1024 * 1024 { return Err(Invalid::Bound); }
+                    if length > 16 * 1024 * 1024 {
+                        return Err(Invalid::Bound);
+                    }
                 }
                 _ => {}
             }
         }
         for o in &self.operations {
             for p in &self.operations {
-                if p.client == o.client && p.span.start.order < o.span.start.order
-                    && p.span.end.is_none_or(|e| e.order >= o.span.start.order) { return Err(Invalid::Order); }
+                if p.client == o.client
+                    && p.span.start.order < o.span.start.order
+                    && p.span.end.is_none_or(|e| e.order >= o.span.start.order)
+                {
+                    return Err(Invalid::Order);
+                }
             }
             // Omitting a continuation label cannot authorize a blind retry.
             if let Action::Write(m) = o.action {
@@ -484,45 +561,90 @@ impl History {
                 }
             }
             if let Some(id) = o.continuation_of {
-                let p = self.operations.iter().find(|p| p.id == id).ok_or(Invalid::Continuation)?;
-                if p.span.end.is_none_or(|e| e.order >= o.span.start.order) || o.action.mutation().is_none()
+                let p = self
+                    .operations
+                    .iter()
+                    .find(|p| p.id == id)
+                    .ok_or(Invalid::Continuation)?;
+                if p.span.end.is_none_or(|e| e.order >= o.span.start.order)
+                    || o.action.mutation().is_none()
                     || o.action.mutation() != p.action.mutation()
-                    || (p.outcome == Some(Outcome::UnknownOutcome) && matches!(o.action, Action::Write(_))) {
+                    || (p.outcome == Some(Outcome::UnknownOutcome)
+                        && matches!(o.action, Action::Write(_)))
+                {
                     return Err(Invalid::Continuation);
                 }
             }
         }
-        let mut ids = BTreeSet::new(); let mut physical = 0u16;
+        let mut ids = BTreeSet::new();
+        let mut physical = 0u16;
         for a in &self.attempts {
-            if a.id == 0 || usize::from(a.id) > MAX_ATTEMPTS || !ids.insert(a.id)
-                || a.error.is_some_and(|i| usize::from(i) >= self.errors.len()) { return Err(Invalid::Shape); }
-            Self::span(a.span)?; stamps.push(a.span.start);
-            if let Some(e) = a.span.end { stamps.push(e); }
-            let o = self.operations.iter().find(|o| o.id == a.operation).ok_or(Invalid::Shape)?;
-            if a.span.start.order < o.span.start.order || a.span.start.micros < o.span.start.micros
-                || o.span.end.zip(a.span.end).is_some_and(|(x,y)| y.order > x.order || y.micros > x.micros)
-                || (o.span.end.is_some() && a.span.end.is_none()) { return Err(Invalid::Order); }
-            let reply = matches!(a.boundary, Boundary::ReplyReceived | Boundary::ReplySuppressed);
-            if reply != a.status.is_some() || a.status.is_some_and(|s| !(200..=599).contains(&s))
-                || (a.boundary == Boundary::NotTransmitted && (a.request_bytes != 0 || a.response_bytes != 0)) {
+            if a.id == 0
+                || usize::from(a.id) > MAX_ATTEMPTS
+                || !ids.insert(a.id)
+                || a.error.is_some_and(|i| usize::from(i) >= self.errors.len())
+            {
                 return Err(Invalid::Shape);
             }
-            if a.boundary != Boundary::NotTransmitted { physical += 1; }
+            Self::span(a.span)?;
+            stamps.push(a.span.start);
+            if let Some(e) = a.span.end {
+                stamps.push(e);
+            }
+            let o = self
+                .operations
+                .iter()
+                .find(|o| o.id == a.operation)
+                .ok_or(Invalid::Shape)?;
+            if a.span.start.order < o.span.start.order
+                || a.span.start.micros < o.span.start.micros
+                || o.span
+                    .end
+                    .zip(a.span.end)
+                    .is_some_and(|(x, y)| y.order > x.order || y.micros > x.micros)
+                || (o.span.end.is_some() && a.span.end.is_none())
+            {
+                return Err(Invalid::Order);
+            }
+            let reply = matches!(
+                a.boundary,
+                Boundary::ReplyReceived | Boundary::ReplySuppressed
+            );
+            if reply != a.status.is_some()
+                || a.status.is_some_and(|s| !(200..=599).contains(&s))
+                || (a.boundary == Boundary::NotTransmitted
+                    && (a.request_bytes != 0 || a.response_bytes != 0))
+            {
+                return Err(Invalid::Shape);
+            }
+            if a.boundary != Boundary::NotTransmitted {
+                physical += 1;
+            }
         }
-        if physical != self.physical_attempts { return Err(Invalid::Shape); }
+        if physical != self.physical_attempts {
+            return Err(Invalid::Shape);
+        }
         let mut races = BTreeSet::new();
         for r in &self.races {
             stamps.push(r.released);
-            if r.id == 0 || !races.insert(r.id) || r.released.micros > HISTORY_MICROS || r.released.order > 4096 {
+            if r.id == 0
+                || !races.insert(r.id)
+                || r.released.micros > HISTORY_MICROS
+                || r.released.order > 4096
+            {
                 return Err(Invalid::Shape);
             }
         }
         stamps.sort_by_key(|s| s.order);
-        if stamps.windows(2).any(|w| w[0].order == w[1].order || w[0].micros > w[1].micros) { return Err(Invalid::Order); }
+        if stamps
+            .windows(2)
+            .any(|w| w[0].order == w[1].order || w[0].micros > w[1].micros)
+        {
+            return Err(Invalid::Order);
+        }
         Ok(())
     }
 }
-
 
 /// Version-two operation fixed before capture. Parent references name actual
 /// producing operations, never predicted provider tokens.

@@ -1,16 +1,54 @@
 //! Required-matrix completeness, real race overlap and decisive negative cases.
-use hsearch_object_probe::{eligibility::{self, Status}, model::*};
+use hsearch_object_probe::{
+    eligibility::{self, Status},
+    model::*,
+};
 
 fn race(winners: usize, overlap: bool) -> (CapturePlan, Capture) {
     let run = "0".repeat(32);
-    let mut plan = CapturePlan { binding: Binding { digests: [[0; 32]; 7], run: [0; 16], platform: 1 }, bucket: "bucket".into(), specifications: Vec::new() };
-    let mut capture = Capture { complete: true, attempts: 16, ..Capture::default() };
+    let mut plan = CapturePlan {
+        binding: Binding {
+            digests: [[0; 32]; 7],
+            run: [0; 16],
+            platform: 1,
+        },
+        bucket: "bucket".into(),
+        specifications: Vec::new(),
+    };
+    let mut capture = Capture {
+        complete: true,
+        attempts: 16,
+        ..Capture::default()
+    };
     for i in 0..16u16 {
-        plan.specifications.push(Specification { id: i+1, scenario: 0, client: i as u8, action: "create".into(), key: "key".into(), race: 1, length: 1, ..Specification::default() });
-        capture.events.push(CaptureEvent { id: i+1, attempt: i+1, start: if overlap { u64::from(i) } else { u64::from(i)*2 },
-            end: if overlap { 100 } else { u64::from(i)*2+1 }, status: if usize::from(i)<winners { 200 } else { 412 },
-            boundary: "reply".into(), sent: 100, request: format!("{run}-{}", i+1), condition: "*".into(),
-            etag: format!("tag-{i}"), version: format!("version-{i}"), ..CaptureEvent::default() });
+        plan.specifications.push(Specification {
+            id: i + 1,
+            scenario: 0,
+            client: i as u8,
+            action: "create".into(),
+            key: "key".into(),
+            race: 1,
+            length: 1,
+            ..Specification::default()
+        });
+        capture.events.push(CaptureEvent {
+            id: i + 1,
+            attempt: i + 1,
+            start: if overlap {
+                u64::from(i)
+            } else {
+                u64::from(i) * 2
+            },
+            end: if overlap { 100 } else { u64::from(i) * 2 + 1 },
+            status: if usize::from(i) < winners { 200 } else { 412 },
+            boundary: "reply".into(),
+            sent: 100,
+            request: format!("{run}-{}", i + 1),
+            condition: "*".into(),
+            etag: format!("tag-{i}"),
+            version: format!("version-{i}"),
+            ..CaptureEvent::default()
+        });
     }
     (plan, capture)
 }
