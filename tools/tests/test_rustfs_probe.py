@@ -464,5 +464,22 @@ class CompleteClientFlowControls(unittest.TestCase):
         self.assertTrue(final.endswith(b"END\t1\t154\n"))
 
 
+class ProspectiveProfileControls(unittest.TestCase):
+    def test_plan_freezes_concurrency_criterion_and_rejects_substitution(self):
+        value = plan()
+        self.assertEqual(value["profile"], "rustfs-capabilities-v3")
+        self.assertEqual(value["race_witness"], {"clients": 16, "minimum_started_before_first_completion": 8,
+                                                "intervals": "half-open"})
+        for field, changed in (("clients", 8), ("minimum_started_before_first_completion", 7),
+                               ("intervals", "closed")):
+            altered = dict(value, race_witness=dict(value["race_witness"]))
+            altered["race_witness"][field] = changed
+            with self.assertRaisesRegex(ValueError, "plan-not-fixed-matrix"):
+                HISTORY.validate_plan(altered)
+        altered = dict(value, profile="rustfs-capabilities-v2")
+        with self.assertRaisesRegex(ValueError, "plan-not-fixed-matrix"):
+            HISTORY.validate_plan(altered)
+
+
 if __name__ == "__main__":
     unittest.main()

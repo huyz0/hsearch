@@ -17,7 +17,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 HISTORY = runpy.run_path(str(ROOT / "dev/rustfs_probe_history.py"))
-PROFILE = "rustfs-capabilities-v2"
+PROFILE = HISTORY["PROFILE"]
 MODES = ("probe-checker-build", "rustfs-capabilities-before", "rustfs-capabilities-after", "probe-history-check")
 LIMITS = {"clients": 16, "operations": 256, "attempts": 512, "atoms": 1024,
           "wire_bytes": 704*1024, "diagnostics": 64*1024, "seconds": 120,
@@ -247,7 +247,8 @@ def qualify(context):
          re.fullmatch(r"[0-9a-f]{64}", build["sha256"]), "checker-build-binding")
     context.append("rustfs-checker-build", build)
     transport_hash = digest((ROOT / "dev/rustfs_probe_transport.py").read_bytes())
-    fixed_program = digest(canonical(HISTORY["workload"]()))
+    fixed_program = digest(canonical({"profile": PROFILE, "race_witness": HISTORY["RACE_WITNESS"],
+                                      "operations": HISTORY["workload"]()}))
     value = HISTORY["plan"]({"digests": [identity["source_sha256"], transport_hash, build["sha256"],
                               digest(identity["server_image"].encode()), identity["config_sha256"],
                               identity["topology_sha256"], fixed_program],

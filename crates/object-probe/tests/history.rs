@@ -1,5 +1,5 @@
 //! Synthetic markers below are equality fixtures, not hashes of provider data.
-//! Source intent only: compiler and test execution have not been authorized.
+//! Counterfactual controls do not establish real provider qualification.
 use hsearch_object_probe::{
     checker::{Inconclusive, Limits, Verdict, check},
     codec,
@@ -707,4 +707,659 @@ fn omitted_continuation_label_cannot_authorize_blind_retry() {
     add(&mut h, Action::Write(m), Outcome::UnknownOutcome);
     add(&mut h, Action::Write(m), receipt(m, 6));
     assert_eq!(h.validate(), Err(Invalid::Continuation));
+}
+
+#[path = "codec_golden.rs"]
+mod v2_golden;
+
+fn v2_scope(area: u8) -> (CapturePlan, Capture) {
+    let mut plan = codec::decode_plan_v2(v2_golden::FULL_PLAN).unwrap();
+    let mut capture =
+        codec::decode_capture_v2(v2_golden::FULL_CAPTURE, codec::sha256(v2_golden::FULL_PLAN))
+            .unwrap();
+    plan.specifications.retain(|s| s.scenario == area);
+    v2_recount(&plan, &mut capture);
+    (plan, capture)
+}
+fn v2_recount(plan: &CapturePlan, capture: &mut Capture) {
+    capture
+        .events
+        .retain(|e| plan.specifications.iter().any(|s| s.id == e.id));
+    capture.attempts = u16::try_from(capture.events.len()).unwrap();
+    for (index, event) in capture.events.iter_mut().enumerate() {
+        event.attempt = u16::try_from(index + 1).unwrap();
+    }
+}
+fn v2_event(capture: &mut Capture, id: u16) -> &mut CaptureEvent {
+    capture.events.iter_mut().find(|e| e.id == id).unwrap()
+}
+fn v2_id(plan: &CapturePlan, action: &str) -> u16 {
+    plan.specifications
+        .iter()
+        .find(|s| s.action == action)
+        .unwrap()
+        .id
+}
+fn v2_status(
+    plan: &CapturePlan,
+    capture: &Capture,
+    area: usize,
+) -> hsearch_object_probe::eligibility::Status {
+    hsearch_object_probe::eligibility::evaluate(plan, capture, v2_golden::RESTART).scenarios[area]
+}
+
+#[test]
+fn malformed_version_inventory_is_missing_proof_not_a_negative_commit_receipt() {
+    use hsearch_object_probe::eligibility::Status;
+    let (plan, capture) = v2_scope(2);
+    assert_eq!(v2_status(&plan, &capture, 2), Status::Supported);
+    let versions = v2_id(&plan, "versions");
+    let mut malformed = vec![
+        "not-json".to_string(),
+        "[unquoted]".into(),
+        "[\"unterminated]".into(),
+        "[\"\"]".into(),
+        "[\"null\"]".into(),
+        "[\"same\",\"same\"]".into(),
+        "[\"bad\\q\"]".into(),
+        "[\"line\nfeed\"]".into(),
+        "[\"one\";\"two\"]".into(),
+        format!("[\"{}\"]", "v".repeat(257)),
+    ];
+    malformed.push(format!(
+        "[{}]",
+        (0..17)
+            .map(|i| format!("\"v-{i}\""))
+            .collect::<Vec<_>>()
+            .join(",")
+    ));
+    for raw in malformed {
+        let mut changed = capture.clone();
+        v2_event(&mut changed, versions).auxiliary = raw;
+        assert_eq!(v2_status(&plan, &changed, 2), Status::Inconclusive);
+    }
+}
+
+#[test]
+fn escaped_opaque_versions_can_resolve_without_treating_them_as_hashes() {
+    use hsearch_object_probe::eligibility::Status;
+    let (plan, mut capture) = v2_scope(2);
+    let original = v2_event(&mut capture, v2_id(&plan, "create"))
+        .version
+        .clone();
+    let replacement = "opaque-\"quote\\slash";
+    for event in &mut capture.events {
+        if event.version == original {
+            event.version = replacement.into();
+        }
+        if event.selected == original {
+            event.selected = replacement.into();
+        }
+        event.auxiliary = event
+            .auxiliary
+            .replace(&format!("{original:?}"), &format!("{replacement:?}"));
+    }
+    assert_eq!(v2_status(&plan, &capture, 2), Status::Supported);
+}
+
+#[test]
+fn resolution_binds_original_envelope_selected_version_length_and_bytes() {
+    use hsearch_object_probe::eligibility::Status;
+    let (plan, capture) = v2_scope(2);
+    let id = v2_id(&plan, "resolve");
+    let corruptions: [fn(&mut CaptureEvent); 6] = [
+        |e| e.condition = "other-condition".into(),
+        |e| e.selected = "foreign-version".into(),
+        |e| e.version = "different-receipt".into(),
+        |e| e.metadata = "other-envelope".into(),
+        |e| e.received += 1,
+        |e| e.digest[0] ^= 1,
+    ];
+    for change in corruptions {
+        let mut changed = capture.clone();
+        change(v2_event(&mut changed, id));
+        assert_eq!(v2_status(&plan, &changed, 2), Status::Failed);
+    }
+    let mut unbound = plan.clone();
+    unbound
+        .specifications
+        .iter_mut()
+        .find(|s| s.id == id)
+        .unwrap()
+        .parent = 39;
+    let mut changed = capture.clone();
+    v2_event(&mut changed, id).request = format!("{}-39", "22".repeat(16));
+    assert_eq!(v2_status(&unbound, &changed, 2), Status::Failed);
+}
+
+#[test]
+fn failed_resolve_and_invented_missing_version_head_do_not_prove_noncommit() {
+    use hsearch_object_probe::eligibility::Status;
+    let (plan, capture) = v2_scope(2);
+    let mut unavailable = capture.clone();
+    v2_event(&mut unavailable, v2_id(&plan, "resolve")).status = 404;
+    assert_eq!(v2_status(&plan, &unavailable, 2), Status::Inconclusive);
+    let absent = plan
+        .specifications
+        .iter()
+        .find(|s| s.action == "resolve-head" && s.offset == 15)
+        .unwrap()
+        .id;
+    let mut invented = capture.clone();
+    let event = v2_event(&mut invented, absent);
+    event.status = 404;
+    event.boundary = "reply".into();
+    event.sent = 1;
+    assert_eq!(v2_status(&plan, &invented, 2), Status::Failed);
+    let mut wrong = capture.clone();
+    v2_event(&mut wrong, v2_id(&plan, "resolve-head")).selected = "unlisted-version".into();
+    assert_eq!(v2_status(&plan, &wrong, 2), Status::Failed);
+}
+
+#[test]
+fn actual_mutation_conflicts_and_unsupported_responses_have_distinct_meaning() {
+    use hsearch_object_probe::eligibility::Status;
+    let (plan, capture) = v2_scope(2);
+    let create = v2_id(&plan, "create");
+    for failure in 0..3 {
+        let mut changed = capture.clone();
+        let event = v2_event(&mut changed, create);
+        match failure {
+            0 => event.boundary = "reply".into(),
+            1 => {
+                event.condition = "unconditional".into();
+            }
+            _ => {
+                event.sent = 0;
+            }
+        }
+        assert_eq!(v2_status(&plan, &changed, 2), Status::Failed);
+    }
+    let reuse = v2_id(&plan, "reuse-id");
+    for (status, expected) in [
+        (200, Status::Failed),
+        (404, Status::Inconclusive),
+        (503, Status::Inconclusive),
+    ] {
+        let mut changed = capture.clone();
+        v2_event(&mut changed, reuse).status = status;
+        assert_eq!(v2_status(&plan, &changed, 2), expected);
+    }
+    let mut changed = capture.clone();
+    v2_event(&mut changed, reuse).error = "provider-envelope-missing".into();
+    v2_event(&mut changed, v2_id(&plan, "resolve")).status = 503;
+    assert_eq!(v2_status(&plan, &changed, 2), Status::Failed);
+}
+
+#[test]
+fn exact_version_reads_refuse_wrong_metadata_lengths_ranges_and_stale_success() {
+    use hsearch_object_probe::eligibility::Status;
+    let (plan, capture) = v2_scope(3);
+    assert_eq!(v2_status(&plan, &capture, 3), Status::Supported);
+    let head = v2_id(&plan, "head");
+    let corruptions: [fn(&mut CaptureEvent); 4] = [
+        |e| e.head_length = None,
+        |e| e.etag = "foreign-tag".into(),
+        |e| e.metadata = "foreign-envelope".into(),
+        |e| e.status = 404,
+    ];
+    for change in corruptions {
+        let mut changed = capture.clone();
+        change(v2_event(&mut changed, head));
+        assert_eq!(v2_status(&plan, &changed, 3), Status::Failed);
+    }
+    let range = v2_id(&plan, "range");
+    let mut wrong = capture.clone();
+    v2_event(&mut wrong, range).selected = "newer-version".into();
+    assert_eq!(v2_status(&plan, &wrong, 3), Status::Failed);
+    let invalid = plan
+        .specifications
+        .iter()
+        .find(|s| s.action == "range" && s.range_length == 1)
+        .unwrap()
+        .id;
+    let mut wrong = capture.clone();
+    v2_event(&mut wrong, invalid).status = 206;
+    assert_eq!(v2_status(&plan, &wrong, 3), Status::Failed);
+    let mut wrong = capture.clone();
+    v2_event(&mut wrong, v2_id(&plan, "stale-update")).status = 200;
+    assert_eq!(v2_status(&plan, &wrong, 3), Status::Failed);
+    let mut wrong = capture.clone();
+    v2_event(&mut wrong, v2_id(&plan, "replay")).condition = "new-condition".into();
+    assert_eq!(v2_status(&plan, &wrong, 3), Status::Failed);
+}
+
+#[test]
+fn race_readback_cannot_substitute_a_loser_or_claim_two_winners() {
+    use hsearch_object_probe::eligibility::Status;
+    let (plan, capture) = v2_scope(0);
+    assert_eq!(v2_status(&plan, &capture, 0), Status::Supported);
+    let head = v2_id(&plan, "race-head");
+    let range = v2_id(&plan, "race-range");
+    for failure in 0..4 {
+        let mut changed = capture.clone();
+        match failure {
+            0 => v2_event(&mut changed, head).head_length = None,
+            1 => v2_event(&mut changed, head).metadata = "loser-envelope".into(),
+            2 => v2_event(&mut changed, range).digest[0] ^= 1,
+            _ => {
+                let losing = plan
+                    .specifications
+                    .iter()
+                    .find(|s| {
+                        s.action == "create"
+                            && capture
+                                .events
+                                .iter()
+                                .any(|e| e.id == s.id && e.status == 412)
+                    })
+                    .unwrap()
+                    .id;
+                let event = v2_event(&mut changed, losing);
+                event.status = 200;
+                event.etag = "loser-tag".into();
+                event.version = "loser-version".into();
+            }
+        }
+        assert_eq!(v2_status(&plan, &changed, 0), Status::Failed);
+    }
+}
+
+fn multipart_state_fixture() -> (CapturePlan, Capture) {
+    let (mut plan, mut capture) = v2_scope(5);
+    // These controls isolate upload state. Dedicated range tests verify bytes.
+    plan.specifications.retain(|s| s.action != "range");
+    v2_recount(&plan, &mut capture);
+    (plan, capture)
+}
+
+#[test]
+fn multipart_identity_part_bounds_and_missing_evidence_cannot_complete() {
+    use hsearch_object_probe::multipart;
+    let (plan, capture) = multipart_state_fixture();
+    assert!(multipart::verify(&plan, &capture));
+    let init = v2_id(&plan, "init");
+    for value in [String::new(), "x".repeat(257)] {
+        let mut changed = capture.clone();
+        v2_event(&mut changed, init).auxiliary = value;
+        assert!(!multipart::verify(&plan, &changed));
+    }
+    let inits: Vec<_> = plan
+        .specifications
+        .iter()
+        .filter(|s| s.action == "init")
+        .map(|s| s.id)
+        .collect();
+    let mut duplicate = capture.clone();
+    let identity = v2_event(&mut duplicate, inits[0]).auxiliary.clone();
+    v2_event(&mut duplicate, inits[1]).auxiliary = identity;
+    assert!(!multipart::verify(&plan, &duplicate));
+    for number in [0, 17] {
+        let mut wrong = plan.clone();
+        wrong
+            .specifications
+            .iter_mut()
+            .find(|s| s.action == "part")
+            .unwrap()
+            .offset = number;
+        assert!(!multipart::verify(&wrong, &capture));
+    }
+    let mut missing = capture.clone();
+    missing.events.retain(|e| e.id != init);
+    assert!(!multipart::verify(&plan, &missing));
+    let mut missing_parts = plan.clone();
+    missing_parts
+        .specifications
+        .retain(|s| !(s.parent == init && matches!(s.action.as_str(), "part" | "parts")));
+    assert!(!multipart::verify(&missing_parts, &capture));
+}
+
+#[test]
+fn multipart_part_inventory_and_completion_use_the_final_replacement() {
+    use hsearch_object_probe::multipart;
+    let (plan, capture) = multipart_state_fixture();
+    let parts = v2_id(&plan, "parts");
+    let listing = capture
+        .events
+        .iter()
+        .find(|e| e.id == parts)
+        .unwrap()
+        .auxiliary
+        .clone();
+    for raw in [
+        "PartNumber:31".to_string(),
+        listing.replacen("PartNumber:", "PartNumber", 1),
+        listing.replacen("PartNumber:", "Other:", 1),
+        listing.replacen("PartNumber:31", "PartNumber:zz", 1),
+        listing.replacen("ETag:", "ETag:zz", 1),
+        listing.replacen("Size:35323432383830", "Size:31", 1),
+    ] {
+        let mut changed = capture.clone();
+        v2_event(&mut changed, parts).auxiliary = raw;
+        assert!(!multipart::verify(&plan, &changed));
+    }
+    let mut unavailable = capture.clone();
+    v2_event(&mut unavailable, parts).status = 404;
+    assert!(!multipart::verify(&plan, &unavailable));
+    let completion = v2_id(&plan, "complete");
+    let mut changed = capture.clone();
+    let stale = v2_event(&mut changed, 117).etag.clone();
+    let current = v2_event(&mut changed, 118).etag.clone();
+    let hex = |raw: &str| raw.bytes().map(|b| format!("{b:02x}")).collect::<String>();
+    let original = v2_event(&mut changed, completion).auxiliary.clone();
+    v2_event(&mut changed, completion).auxiliary = original.replace(&hex(&current), &hex(&stale));
+    assert!(!multipart::verify(&plan, &changed));
+    let mut changed = capture.clone();
+    v2_event(&mut changed, completion).condition.clear();
+    assert!(!multipart::verify(&plan, &changed));
+}
+
+#[test]
+fn aborted_uploads_and_foreign_orphans_cannot_be_reused_as_task_evidence() {
+    use hsearch_object_probe::multipart;
+    let (plan, capture) = multipart_state_fixture();
+    let uploads = v2_id(&plan, "uploads");
+    for raw in [
+        "Key:zz;UploadId:00",
+        "Wrong:00;UploadId:00",
+        "Key:00;Wrong:00",
+        "Key:00;UploadId:00",
+        "Key:00;UploadId:zz",
+        "Key:00",
+    ] {
+        let mut changed = capture.clone();
+        v2_event(&mut changed, uploads).auxiliary = raw.into();
+        assert!(!multipart::verify(&plan, &changed));
+    }
+    let mut retained = capture.clone();
+    let before = v2_event(&mut retained, uploads).auxiliary.clone();
+    v2_event(&mut retained, 154).auxiliary = before;
+    assert!(!multipart::verify(&plan, &retained));
+    let mut wrong = capture.clone();
+    v2_event(&mut wrong, 128).status = 200;
+    assert!(!multipart::verify(&plan, &wrong));
+    let mut reused = plan.clone();
+    let mut part = reused
+        .specifications
+        .iter()
+        .find(|s| s.id == 126)
+        .unwrap()
+        .clone();
+    part.id = 155;
+    part.offset = 2;
+    part.length = 4096;
+    reused.specifications.push(part);
+    let mut changed = capture.clone();
+    let mut event = v2_event(&mut changed, 126).clone();
+    event.id = 155;
+    event.attempt = 39;
+    event.start = 2_000_000;
+    event.end = 2_000_100;
+    event.sent = 4160;
+    event.request = format!("{}-155", "22".repeat(16));
+    changed.events.push(event);
+    changed.attempts = 39;
+    assert!(!multipart::verify(&reused, &changed));
+}
+
+#[test]
+fn multipart_range_oracle_refuses_empty_excess_and_overflowed_extents() {
+    use hsearch_object_probe::multipart;
+    let part = Specification {
+        length: 1,
+        ..Specification::default()
+    };
+    assert!(multipart::range_digest(&[], 0, 1).is_none());
+    assert!(multipart::range_digest(&[&part], 0, 0).is_none());
+    assert!(multipart::range_digest(&[&part; 17], 0, 1).is_none());
+    let huge = Specification {
+        length: u64::MAX,
+        ..Specification::default()
+    };
+    assert!(multipart::range_digest(&[&huge, &part], 0, 1).is_none());
+}
+
+#[test]
+fn same_volume_restart_requires_canonical_host_receipt_and_all_three_records() {
+    use hsearch_object_probe::restart;
+    let (plan, capture) = v2_scope(4);
+    assert!(restart::verify(&plan, &capture, v2_golden::RESTART));
+    for raw in ["", "[]", "{}", "{unquoted}", "{\"key\":64}"] {
+        assert!(!restart::verify(&plan, &capture, raw));
+    }
+    let duplicate = v2_golden::RESTART.replacen("after_boot", "before_boot", 1);
+    let nonhex = v2_golden::RESTART.replacen(&"2".repeat(64), &"g".repeat(64), 1);
+    for raw in [duplicate, nonhex, "x".repeat(1025)] {
+        assert!(!restart::verify(&plan, &capture, &raw));
+    }
+    for id in [111, 112, 113] {
+        let mut missing = capture.clone();
+        missing.events.retain(|e| e.id != id);
+        assert!(!restart::verify(&plan, &missing, v2_golden::RESTART));
+    }
+    let mut duplicate = plan.clone();
+    duplicate.specifications.push(
+        plan.specifications
+            .iter()
+            .find(|s| s.action == "restart")
+            .unwrap()
+            .clone(),
+    );
+    assert!(!restart::verify(&duplicate, &capture, v2_golden::RESTART));
+    let mut missing_head = plan.clone();
+    missing_head.specifications.retain(|s| s.action != "head");
+    assert!(!restart::verify(
+        &missing_head,
+        &capture,
+        v2_golden::RESTART
+    ));
+}
+
+#[test]
+fn restart_cannot_accept_guest_io_or_an_unversioned_original() {
+    use hsearch_object_probe::restart;
+    let (plan, capture) = v2_scope(4);
+    let corruptions: [fn(&mut CaptureEvent); 4] = [
+        |e| e.sent = 1,
+        |e| e.received = 1,
+        |e| e.status = 200,
+        |e| e.boundary = "reply".into(),
+    ];
+    for change in corruptions {
+        let mut changed = capture.clone();
+        change(v2_event(&mut changed, 112));
+        assert!(!restart::verify(&plan, &changed, v2_golden::RESTART));
+    }
+    for version in ["", "null"] {
+        let mut changed = capture.clone();
+        v2_event(&mut changed, 111).version = version.into();
+        assert!(!restart::verify(&plan, &changed, v2_golden::RESTART));
+    }
+}
+
+#[test]
+fn typed_capture_error_budgets_clock_bounds_and_continuation_origin_are_checked() {
+    let mut h = created();
+    h.errors = vec![vec![b'x'; 4096]; 33];
+    assert_eq!(h.validate(), Err(Invalid::Bound));
+    for bad_stamp in [
+        Stamp {
+            order: 4097,
+            micros: 1,
+        },
+        Stamp {
+            order: 1,
+            micros: HISTORY_MICROS + 1,
+        },
+    ] {
+        let mut h = created();
+        h.operations[0].span.start = bad_stamp;
+        assert_eq!(h.validate(), Err(Invalid::Bound));
+    }
+    let mut h = created();
+    h.operations[0].span.end.as_mut().unwrap().micros = HISTORY_MICROS + 1;
+    assert_eq!(h.validate(), Err(Invalid::Bound));
+    let mut h = created();
+    h.attempts[0].operation = 255;
+    assert_eq!(h.validate(), Err(Invalid::Shape));
+    let mut h = created();
+    let m = mutation(4, 2, Precondition::Matches(6));
+    add(&mut h, Action::Resolve(m), receipt(m, 7));
+    h.operations[1].continuation_of = Some(255);
+    assert_eq!(h.validate(), Err(Invalid::Continuation));
+    assert_eq!(Invalid::Continuation.to_string(), "Continuation");
+}
+
+// Keep the successful call in the initial cohort so every rejection can be
+// linearized after its write, even when later clients miss the first reply.
+fn v3_race_cohort(area: u8, count: usize) -> (CapturePlan, Capture) {
+    let (plan, mut capture) = v2_scope(area);
+    let mut ids: Vec<_> = plan
+        .specifications
+        .iter()
+        .filter(|s| s.race != 0)
+        .map(|s| s.id)
+        .collect();
+    let winner = capture
+        .events
+        .iter()
+        .find(|e| ids.contains(&e.id) && e.status == 200)
+        .unwrap()
+        .id;
+    ids.retain(|id| *id != winner);
+    ids.insert(0, winner);
+    let base = capture
+        .events
+        .iter()
+        .filter(|e| ids.contains(&e.id))
+        .map(|e| e.start)
+        .min()
+        .unwrap();
+    for (index, id) in ids.iter().enumerate() {
+        let event = v2_event(&mut capture, *id);
+        event.start = base
+            + if index < count {
+                index as u64
+            } else {
+                100 + index as u64
+            };
+        event.end = base + if index == 0 { 100 } else { 200 + index as u64 };
+    }
+    (plan, capture)
+}
+
+#[test]
+fn prospective_create_and_update_require_eight_starts_before_first_completion() {
+    use hsearch_object_probe::eligibility::Status;
+    for area in [0, 1] {
+        for (count, expected) in [
+            (1, Status::Inconclusive),
+            (7, Status::Inconclusive),
+            (8, Status::Supported),
+            (16, Status::Supported),
+        ] {
+            let (plan, capture) = v3_race_cohort(area, count);
+            assert_eq!(v2_status(&plan, &capture, usize::from(area)), expected);
+        }
+        let (plan, mut capture) = v3_race_cohort(area, 8);
+        let first_end = plan
+            .specifications
+            .iter()
+            .filter(|s| s.race != 0)
+            .map(|s| capture.events.iter().find(|e| e.id == s.id).unwrap().end)
+            .min()
+            .unwrap();
+        let eighth = plan
+            .specifications
+            .iter()
+            .filter(|s| s.race != 0)
+            .find(|s| {
+                capture
+                    .events
+                    .iter()
+                    .any(|e| e.id == s.id && e.start + 93 == first_end)
+            })
+            .unwrap()
+            .id;
+        v2_event(&mut capture, eighth).start = first_end;
+        assert_eq!(
+            v2_status(&plan, &capture, usize::from(area)),
+            Status::Inconclusive
+        );
+    }
+}
+
+#[test]
+fn partial_race_cohort_retains_all_clients_winner_and_readback_obligations() {
+    use hsearch_object_probe::eligibility::Status;
+    for area in [0, 1] {
+        let (plan, capture) = v3_race_cohort(area, 8);
+        let ids: Vec<_> = plan
+            .specifications
+            .iter()
+            .filter(|s| s.race != 0)
+            .map(|s| s.id)
+            .collect();
+        let loser = capture
+            .events
+            .iter()
+            .find(|e| ids.contains(&e.id) && e.status == 412)
+            .unwrap()
+            .id;
+        let winner = capture
+            .events
+            .iter()
+            .find(|e| ids.contains(&e.id) && e.status == 200)
+            .unwrap()
+            .id;
+        let status = |p: &CapturePlan, c: &Capture| v2_status(p, c, usize::from(area));
+        let mut duplicate = plan.clone();
+        let client = duplicate
+            .specifications
+            .iter()
+            .find(|s| s.id == winner)
+            .unwrap()
+            .client;
+        duplicate
+            .specifications
+            .iter_mut()
+            .find(|s| s.id == loser)
+            .unwrap()
+            .client = client;
+        assert_eq!(status(&duplicate, &capture), Status::Failed);
+        let mut missing = capture.clone();
+        missing.events.retain(|e| e.id != loser);
+        assert_eq!(status(&plan, &missing), Status::Inconclusive);
+        let mut missing = plan.clone();
+        missing.specifications.retain(|s| s.id != loser);
+        let mut reduced = capture.clone();
+        v2_recount(&missing, &mut reduced);
+        assert_eq!(status(&missing, &reduced), Status::Inconclusive);
+        let mut twice = capture.clone();
+        let event = v2_event(&mut twice, loser);
+        event.status = 200;
+        event.etag = "second-tag".into();
+        event.version = "second-version".into();
+        assert_eq!(status(&plan, &twice), Status::Failed);
+        let mut absent = capture.clone();
+        v2_event(&mut absent, winner).status = 412;
+        assert_eq!(status(&plan, &absent), Status::Failed);
+        let mut corrupt = capture.clone();
+        v2_event(&mut corrupt, v2_id(&plan, "race-range")).digest[0] ^= 1;
+        assert_eq!(status(&plan, &corrupt), Status::Failed);
+        let mut reversed = capture.clone();
+        let start = v2_event(&mut reversed, loser).start;
+        v2_event(&mut reversed, loser).end = start - 1;
+        assert_eq!(status(&plan, &reversed), Status::Inconclusive);
+        let mut empty = capture.clone();
+        let start = v2_event(&mut empty, loser).start;
+        v2_event(&mut empty, loser).end = start;
+        assert_eq!(status(&plan, &empty), Status::Inconclusive);
+        let mut before_winner = capture.clone();
+        let start = v2_event(&mut before_winner, winner).start;
+        let event = v2_event(&mut before_winner, loser);
+        event.start = start - 2;
+        event.end = start;
+        assert_eq!(status(&plan, &before_winner), Status::Failed);
+    }
 }

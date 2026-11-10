@@ -515,15 +515,15 @@ pub fn evaluate(plan: &CapturePlan, capture: &Capture, restart: &str) -> Report 
             .filter(|s| s.race == race)
             .collect();
         let mut clients = 0u16;
-        let mut latest = 0;
         let mut earliest = u64::MAX;
         let mut winners = 0;
+        let mut winner_start = None;
         let mut uncertain = false;
         if group.len() != 16 {
             report.scenarios[area] = Status::Inconclusive;
             continue;
         }
-        for spec in group {
+        for spec in &group {
             report.transitions += 1;
             let Some(event) = observed(capture, spec.id) else {
                 return incomplete();
@@ -531,7 +531,8 @@ pub fn evaluate(plan: &CapturePlan, capture: &Capture, restart: &str) -> Report 
             if spec.action != action || clients & (1 << spec.client) != 0 {
                 report.scenarios[area] = Status::Failed;
             }
-            if event.sent == 0
+            if event.start >= event.end
+                || event.sent == 0
                 || event.boundary != "reply"
                 || !matches!(event.status, 200 | 201 | 204 | 409 | 412)
             {
@@ -541,12 +542,30 @@ pub fn evaluate(plan: &CapturePlan, capture: &Capture, restart: &str) -> Report 
                 }
             }
             clients |= 1 << spec.client;
-            latest = latest.max(event.start);
             earliest = earliest.min(event.end);
             winners += u16::from(successful(event));
+            if successful(event) {
+                winner_start = Some(event.start);
+            }
         }
-        if (clients != u16::MAX || latest >= earliest) && report.scenarios[area] != Status::Failed {
+        // Half-open captured calls must establish a cohort before any reply.
+        // All sixteen clients still contribute to winner and integrity checks.
+        let concurrent = group
+            .iter()
+            .filter(|spec| observed(capture, spec.id).is_some_and(|event| event.start < earliest))
+            .count();
+        if (clients != u16::MAX || concurrent < 8) && report.scenarios[area] != Status::Failed {
             report.scenarios[area] = Status::Inconclusive;
+        }
+        // A rejected conditional write must be orderable after the sole winner.
+        // The former all-client intersection implied this; a partial cohort does not.
+        if let Some(start) = winner_start
+            && group.iter().any(|spec| {
+                observed(capture, spec.id)
+                    .is_some_and(|event| matches!(event.status, 409 | 412) && event.end <= start)
+            })
+        {
+            report.scenarios[area] = Status::Failed;
         }
         if winners > 1 || winners == 0 && !uncertain {
             report.scenarios[area] = Status::Failed;
