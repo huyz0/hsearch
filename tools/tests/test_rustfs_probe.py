@@ -143,6 +143,19 @@ class TransportControls(unittest.TestCase):
         self.assertEqual(disconnected["status"], 0)
         self.assertEqual(disconnected["response_bytes"], 0)
 
+    def test_hex_secret_in_valid_envelope_is_refused_before_hex_recording(self):
+        secret = "a"*64  # Same shape as dev/init.py token_hex(32).
+        raw = ("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nETag: opaque\r\n"
+               "x-amz-meta-request: admitted-request\r\nx-amz-meta-envelope: "+secret+
+               "\r\nx-amz-meta-caller: probe-caller-v2\r\n\r\n").encode()
+        value = self.transport()
+        value.secret = secret
+        with patch.object(Connection, "response_raw", raw):
+            result = value.attempt("GET", "hsearch-probe-test", "key", [], {})
+        self.assertEqual(result["error"], "secret-bearing-response")
+        self.assertNotIn(secret, repr(result))
+        self.assertEqual(result["metadata"], "")
+
     def test_xml_and_secret_bearing_values_are_refused_before_recording(self):
         for raw in (b'<!DOCTYPE r [<!ENTITY e "x">]><r>&e;</r>', b"<a>"*13+b"x"+b"</a>"*13, b"<a>"+b"x"*17000+b"</a>"):
             with self.subTest(size=len(raw)), self.assertRaises(TRANSPORT.Refused):

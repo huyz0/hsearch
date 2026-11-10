@@ -325,6 +325,10 @@ class Transport:
             boundary = "reply-suppressed" if suppress else "reply"
             sensitive = (self.access.encode(), self.secret.encode(), b"Authorization", b"X-Amz-Credential")
             need(not any(value in bytes(collected) for value in sensitive), "secret-bearing-response")
+            recorded_headers = ("etag", "x-amz-version-id", "x-amz-meta-request",
+                                "x-amz-meta-envelope", "x-amz-meta-caller", "content-range")
+            need(not any(value.decode() in lower.get(name, "") for name in recorded_headers for value in sensitive),
+                 "secret-bearing-response")
             for name, dest in [("etag", "etag"), ("x-amz-version-id", "version"),
                                ("x-amz-meta-request", "metadata"), ("content-range", "content_range")]:
                 if name in lower:
