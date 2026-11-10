@@ -11,6 +11,9 @@ import re
 import threading
 import time
 
+PROFILE = "rustfs-capabilities-v3"
+RACE_WITNESS = {"clients": 16, "minimum_started_before_first_completion": 8, "intervals": "half-open"}
+
 CLIENTS, OPERATIONS, ATTEMPTS, ATOMS = 16, 256, 512, 1024
 WIRE_BYTES, DIAGNOSTIC_BYTES = 704 * 1024, 64 * 1024
 TOTAL_BYTES = WIRE_BYTES + DIAGNOSTIC_BYTES
@@ -114,7 +117,7 @@ def plan(binding, *, seed=1729):
          all(re.fullmatch(r"[0-9a-f]{64}", x) for x in binding["digests"]), "digest-binding")
     need(re.fullmatch(r"[0-9a-f]{32}", binding["run"]) and type(binding["platform"]) is int and binding["platform"] in (1, 2) and
          re.fullmatch(r"[a-z0-9][a-z0-9-]{2,62}", binding["bucket"]), "run-binding")
-    value = {"version": 2, "binding": binding, "seed": seed, "operations": workload(seed),
+    value = {"version": 2, "profile": PROFILE, "race_witness": dict(RACE_WITNESS), "binding": binding, "seed": seed, "operations": workload(seed),
              "limits": {"clients": CLIENTS, "operations": OPERATIONS, "attempts": ATTEMPTS,
                         "atoms": ATOMS, "wire_bytes": WIRE_BYTES, "diagnostics": DIAGNOSTIC_BYTES,
                         "seconds": 120, "transitions": 100000, "working_bytes": 64*1024**2}}

@@ -14,13 +14,31 @@ values; ETag equality is not a body checksum or immutable generation identity.
 
 | Area | Captured operations and independent check |
 | --- | --- |
-| Create/update | Two16-client barriers, actual overlapping send/reply intervals, exact signed conditions, one legal winner and retained contents. Serialized sends, unconditional overwrite and two successors cannot pass. |
+| Create/update | Two16-client barriers, at least8 actual calls started before the first completion in each race, exact signed conditions, one legal winner and retained contents. Serialized sends, unconditional overwrite and two successors cannot pass. |
 | Lost responses | A complete reply intentionally withheld from the caller and a distinct socket-close-after-send case. Every version listing, exact-version HEAD and payload read is an explicit planned attempt. A miss, truncated listing, failed read or delayed acceptance stays inconclusive. |
 | Identity | Internal request identity and full original envelope are signed metadata on the mutation. The envelope covers bucket/key, whole body digest, caller metadata, original condition, upload identity and ordered completion descriptor where applicable. Internal identity metadata is segregated from caller metadata. A historical matching object alone does not establish replay safety or changed-ID rejection. |
 | Version/range/ABA | Independent selected-byte hashes, old versions after updates and ABA, invalid ranges, an exact original replay after ABA and a fresh request with a stale original version condition. Repeated ETags never establish exact VersionId CAS. |
 | Restart | Known client removal before the host restart hook; actual CID/image/config/data-volume equality, changed boot identity, original metadata and exact-version bytes after restart. No socket enters the guest. This is process restart, not power-loss durability. |
 | Multipart | Initiation identities; ordered parts and replacement of a repeated part; explicit reversed and duplicate completion descriptors; correct completion; selected bytes across part boundaries; abort/NoSuchUpload; lost completion; retained orphan visibility and scoped abort/list cleanup. Required descriptor identity is not inferred from identical final bytes or initiation metadata. |
 | Eligibility | Six separately reported supported/failed/inconclusive areas. Missing, truncated, unsupported, unimplemented, exhausted or illegal required evidence returns nonzero readiness. No scenario is optional. |
+
+
+The prospective `rustfs-capabilities-v3` profile requires all16 distinct clients
+and at least8 starts strictly before the earliest completion, using actual
+half-open HTTP call intervals. Equal start/completion timestamps do not overlap.
+Both create and update races retain exact single-winner, retained-content,
+condition, identity and integrity checks across all16 clients. Missing clients,
+invalid timestamps, sequential calls and cohorts smaller than8 cannot qualify.
+This measures a many-client race without requiring all16 intervals to share one
+instant, which is sensitive to scheduling after barrier release. It changes no
+atomicity requirement, client count, sample count, cell count or resource cap.
+
+The criterion is frozen in the plan JSON and the program digest alongside the
+profile and all operations before capture. Source and checker hashes also bind
+the evaluator. Binary framing remains version two. Old d846 x64 evidence stays
+incomplete under its original all16 common-intersection criterion; it is not
+reinterpreted by this profile. Fresh captures and full qualification are required.
+No timestamps are padded or rewritten and no completion is delayed to pass.
 
 ## Provider evidence versus diagnostic limitations
 
