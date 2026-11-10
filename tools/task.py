@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from contextlib import contextmanager
 import hashlib
 import json
@@ -32,6 +33,19 @@ REGISTRY_BYTES = 64 * 1024**2
 
 def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def probe_evidence_result(result, output_budget):
+    """Preserve full bounded child output without JSON control-byte expansion."""
+    need(type(result) is dict and type(result.get("output")) is str,
+         "Profile result output unavailable")
+    raw = result["output"].encode("utf-8")
+    need(len(raw) <= output_budget, "Profile result exceeds admitted output budget")
+    public = {key: value for key, value in result.items() if key != "output"}
+    public.update(output_base64=base64.b64encode(raw).decode("ascii"),
+                  output_sha256=hashlib.sha256(raw).hexdigest(), output_bytes=len(raw),
+                  output_representation="base64-of-utf8-output")
+    return public
 
 
 def validate_schema(value, schema, location="packet"):
@@ -559,9 +573,11 @@ class TaskStore:
                     # Known failures are retained before dependent decoding. No
                     # retry, unknown cleanup or replacement attempt is allowed.
                     result = error.result
-                    append("failed-command", {"source": before, "result": result})
+                    append("failed-command", {"source": before, "result": probe_evidence_result(
+                        result, record["packet"]["output_budget_bytes"]//2)})
                 else:
-                    append("command", {"source": before, "result": result})
+                    append("command", {"source": before, "result": probe_evidence_result(
+                        result, record["packet"]["output_budget_bytes"]//2)})
                 need(self.fingerprint(record) == before, "Profile source changed during execution")
                 return result
             server, storage = sandbox.probe_storage(namespace)

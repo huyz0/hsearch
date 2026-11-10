@@ -166,7 +166,7 @@ class WorktreeControls(unittest.TestCase):
 
     def test_evidence_content_binding_budget_and_exact_context_bytes(self):
         claim = self.claim()
-        identity = self.store.append(claim, "fixture-owner", "note", {"text": "hÃƒÂ©llo Ã¢Å“Â¨"})
+        identity = self.store.append(claim, "fixture-owner", "note", {"text": "hÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©llo ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“Ãƒâ€šÃ‚Â¨"})
         context = self.store.context(claim, "fixture-owner")
         self.assertEqual(context["context_bytes"], len(MODULE["encoded"](context)))
         self.assertTrue(context["token_count_is_estimate"])
@@ -439,6 +439,8 @@ class ProbeDispatchControls(unittest.TestCase):
             def qualify(context):
                 self.assertEqual(context.run("probe-checker-build"), failure)
                 self.assertEqual(retained[0][0], "failed-command")
+                import base64
+                self.assertEqual(base64.b64decode(retained[0][1]["result"]["output_base64"]), b"first failure")
                 raise Refused("stop on first build failure")
             controller = {"ProfileContext": runpy.run_path(str(Path(__file__).resolve().parents[1]/"rustfs_probe.py"))["ProfileContext"],
                           "qualify": qualify}
@@ -448,3 +450,19 @@ class ProbeDispatchControls(unittest.TestCase):
             self.assertEqual(data["tasks"][claim]["phase"], "interrupted")
             self.assertIsNone(data["tasks"][claim]["worker"])
             self.assertTrue(data["tasks"][claim]["probe_active"])
+
+
+class ProbeEvidenceFramingControls(unittest.TestCase):
+    def test_worst_case_control_output_is_lossless_and_fits_original_packet(self):
+        import base64
+        raw = "\x00"*(1024**2)
+        result = {"output": raw, "mode": "rustfs-capabilities-before", "exit_code": 1,
+                  "truncated": False, "encoding": "utf-8-replacement"}
+        self.assertGreater(len(MODULE["encoded"](result)), 2*1024**2)
+        stored = MODULE["probe_evidence_result"](result, 1024**2)
+        self.assertEqual(base64.b64decode(stored["output_base64"]), raw.encode())
+        self.assertEqual(stored["output_sha256"], hashlib.sha256(raw.encode()).hexdigest())
+        self.assertLess(len(MODULE["encoded"]({"source": {"digest": "a"*64}, "result": stored})), 2*1024**2)
+        self.assertEqual(result["output"], raw)
+        with self.assertRaisesRegex(Refused, "admitted output"):
+            MODULE["probe_evidence_result"](result, 1024**2-1)

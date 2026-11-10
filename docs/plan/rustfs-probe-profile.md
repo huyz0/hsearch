@@ -101,7 +101,11 @@ Internal build/client/checker modes cannot be selected as arbitrary public task
 commands. Input publication reserves actual bytes before writing a phase slot;
 all retained slots, partial/orphan files and evidence share the existing64MiB
 claim ceiling. Repeated profile dispatch refuses rather than replaying an
-unknown or already attempted campaign.
+unknown or already attempted campaign. Primary profile command evidence stores
+its bounded output as base64 plus SHA-256, before dependent decoding. This keeps
+worst-case control characters within the original packet instead of letting JSON
+escaping exceed it. The validator still receives the original output unchanged;
+malformed or oversized framing continues to refuse.
 
 The hosted entrypoint requires selected sandbox jobs and an exact clean head,
 creates its normal claim in job-local state and uses the job's shared registry.
