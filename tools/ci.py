@@ -258,7 +258,7 @@ def native(value):
         need(set(value["packages"]).issubset(workspace), "Unknown selected package")
         need(value["coverage_packages"] == sorted(closure(value["packages"], workspace) & PRODUCTION),
              "Incomplete selected coverage scope")
-    need(set(workspace) - {"xtask", "hsearch-testkit"} == PRODUCTION,
+    need(set(workspace) - {"xtask", "hsearch-testkit", "hsearch-object-probe"} == PRODUCTION,
          "Actual production coverage ownership requires a reviewed CI policy update")
     base = qualified_coverage_base(value["base"], value["head"]) if value["coverage_packages"] else None
     coverage = COVERAGE
@@ -266,6 +266,7 @@ def native(value):
     tools = coverage["qualified_tools"]()
     environment = coverage["ordinary_environment"](tools)
     def native_run(command): run(coverage["correctness_command"](tools, command), env=environment)
+    native_run([sys.executable, "tools/rustfs_probe.py", "contract"])
     native_run([sys.executable, "tools/coverage_corpus.py"])
     native_run([sys.executable, "tools/engine_research.py", "check"])
     native_run([sys.executable, "tools/workspace.py", "check"])
@@ -295,6 +296,14 @@ def native(value):
         destination = Path(os.environ["CARGO_TARGET_DIR"]).absolute().parent / ("hsearch-coverage-" + uuid.uuid4().hex)
         native_run([sys.executable, "tools/coverage.py", "run", "--base", base, "--output", str(destination),
              *[part for name in value["coverage_packages"] for part in ("--package", name)]])
+
+    # Diagnostic code has its own output/denominator. It never contributes
+    # lines to the production aggregate or replaces any required native suite.
+    if value["full"] or "hsearch-object-probe" in value["packages"]:
+        checker_base = qualified_coverage_base(value["base"], value["head"])
+        destination = Path(os.environ["CARGO_TARGET_DIR"]).absolute().parent / ("hsearch-checker-coverage-" + uuid.uuid4().hex)
+        native_run([sys.executable, "tools/coverage.py", "run", "--base", checker_base, "--output", str(destination),
+                    "--package", "hsearch-object-probe"])
 
 
 def main():

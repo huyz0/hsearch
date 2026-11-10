@@ -3,7 +3,8 @@
   "minimum_percent": 90,
   "development_packages": [
     "xtask",
-    "hsearch-testkit"
+    "hsearch-testkit",
+    "hsearch-object-probe"
   ],
   "non_executable": {
     "crates/engine/src/adapter_tests.rs": {
@@ -13,6 +14,13 @@
     "crates/engine/src/directory_tests.rs": {
       "sha256": "eb9c5c7cec9943b7fecd043587982854fe47d853378f3e510c730b8b0c807454",
       "reason": "Only the cfg(test) path module in directory.rs includes this unit-test/helper file; production library builds exclude it."
+    }
+  },
+  "diagnostic_packages": {
+    "hsearch-object-probe": {
+      "minimum_percent": 90,
+      "separate_from_production": true,
+      "scope": "All handwritten checker library/binary paths, dev/release and native architectures. No blanket binary exclusion."
     }
   }
 }

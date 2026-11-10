@@ -100,3 +100,54 @@ class CoverageInputControls(unittest.TestCase):
             changed["bytes"] = True
             with self.assertRaises(ValueError):
                 INPUT["check_record"](root, changed)
+
+
+class DiagnosticCoverageInputControls(unittest.TestCase):
+    def test_diagnostic_binary_uses_same_actual_source_profile_and_shard_admission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            context, shards = fixture(root)
+            context["binaries"]["hsearch-object-probe"] = context["binaries"].pop("fixture")
+            shards[0].update(binary_id="hsearch-object-probe", context=copy.deepcopy(context),
+                             context_sha256=INPUT["context_digest"](context))
+            self.assertEqual(INPUT["validate_shards"](root, context, shards), [root / "profiles/0/data.profraw"])
+            shards[0]["context"]["source"]["head"] = "f"*40
+            with self.assertRaises(ValueError):
+                INPUT["validate_shards"](root, context, shards)
+
+    def test_diagnostic_policy_does_not_change_production_floor_or_zero_line_rules(self):
+        import json
+        policy = json.loads((Path(__file__).resolve().parents[2] / "harness/coverage-policy.json").read_bytes())
+        self.assertEqual(policy["minimum_percent"], 90)
+        self.assertEqual(set(policy["development_packages"]), {"xtask", "hsearch-testkit", "hsearch-object-probe"})
+        self.assertTrue(policy["diagnostic_packages"]["hsearch-object-probe"]["separate_from_production"])
+        self.assertEqual(policy["diagnostic_packages"]["hsearch-object-probe"]["minimum_percent"], 90)
+
+
+class DiagnosticCollectorScopeControls(unittest.TestCase):
+    def test_exact_diagnostic_scope_stays_separate_and_mixed_or_relaxed_policy_refuses(self):
+        import json
+        import tomllib
+        from unittest.mock import patch
+        root = Path(__file__).resolve().parents[2]
+        collector = runpy.run_path(str(root/"tools/coverage.py"))
+        packages = []
+        for manifest in (root/"crates").glob("*/Cargo.toml"):
+            name = tomllib.loads(manifest.read_text())["package"]["name"]
+            packages.append({"id": name, "name": name, "manifest_path": str(manifest), "targets": [{"kind": ["lib"]}]})
+        packages.append({"id": "xtask", "name": "xtask", "manifest_path": str(root/"xtask/Cargo.toml"), "targets": []})
+        metadata = {"workspace_members": [p["id"] for p in packages], "packages": packages}
+        inventory = collector["package_inventory"]
+        _packages, production, _policy, _external = inventory(None, [], metadata=metadata)
+        self.assertNotIn("hsearch-object-probe", production)
+        self.assertIn("hsearch-engine", production)
+        self.assertEqual(inventory(None, ["hsearch-object-probe"], metadata=metadata)[1], ["hsearch-object-probe"])
+        for scope in (["hsearch-engine", "hsearch-object-probe"], ["xtask"], ["hsearch-object-probe"]*2):
+            with self.subTest(scope=scope), self.assertRaises(ValueError):
+                inventory(None, scope, metadata=metadata)
+        policy = json.loads((root/"harness/coverage-policy.json").read_bytes())
+        for changed in (dict(policy, minimum_percent=89), dict(policy, development_packages=policy["development_packages"]+["hsearch-engine"]),
+                        dict(policy, diagnostic_packages={"hsearch-object-probe": {"minimum_percent": 89, "separate_from_production": True}})):
+            with patch.dict(inventory.__globals__, load=lambda _path: changed):
+                with self.assertRaises(ValueError):
+                    inventory(None, [], metadata=metadata)

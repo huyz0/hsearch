@@ -2,6 +2,7 @@
 """Run known development checks within the surrounding container's resource caps."""
 import argparse
 import ctypes
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,67 @@ import time
 COMMANDS = {"coverage": ["python3", "/harness/coverage_entry.py"], "prefetch": ["cargo", "fetch", "--locked"], "check": ["cargo", "xtask", "check"],
             "compile": ["cargo", "check", "--locked", "--offline", "--workspace", "--all-targets", "--all-features"],
             "navigation-build": ["python3", "/harness/install_navigation.py"]}
+COMMANDS.update({
+    "probe-checker-build": ["cargo", "build", "--locked", "--offline", "--release", "--package", "hsearch-object-probe"],
+    "rustfs-capabilities-before": ["python3", "/harness/rustfs_probe.py", "before-restart"],
+    "rustfs-capabilities-after": ["python3", "/harness/rustfs_probe.py", "after-restart"],
+    "probe-history-check": ["/probe-checker/release/hsearch-object-probe"],
+})
+PROBE_CLIENT = {"rustfs-capabilities-before", "rustfs-capabilities-after"}
+PROBE_PROFILE = PROBE_CLIENT | {"probe-checker-build", "probe-history-check"}
+
+
+def writable_paths(mode):
+    if mode in PROBE_CLIENT or mode == "probe-history-check":
+        return ("/tmp",)
+    if mode == "probe-checker-build":
+        return ("/cargo", "/target", "/tmp")
+    if mode == "navigation-build":
+        return ("/cargo", "/target", "/navigation-output")
+    if mode == "coverage":
+        return ("/cargo", "/target", "/coverage-evidence")
+    return ("/cargo", "/target")
+
+
+def verify_checker():
+    path = Path("/probe-checker/release/hsearch-object-probe")
+    before = path.stat()
+    expected = os.environ.get("HSEARCH_CHECKER_SHA256", "")
+    if path.resolve() != path.absolute() or not path.is_file() or not 0 < before.st_size <= 64*1024**2 or len(expected) != 64:
+        raise RuntimeError("Read-only checker input is not attested")
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(65536):
+            digest.update(chunk)
+    after = path.stat()
+    if digest.hexdigest() != expected or (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
+        raise RuntimeError("Read-only checker bytes changed")
+
+
+def checker_attestation():
+    """Monitor-owned build proof; never run a compiler in the client profile."""
+    import platform
+    path = Path("/target/release/hsearch-object-probe")
+    before = path.stat()
+    if path.resolve() != path.absolute() or not path.is_file() or not 0 < before.st_size <= 64*1024**2:
+        raise RuntimeError("Checker output is not a bounded regular build artifact")
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(65536):
+            digest.update(chunk)
+    after = path.stat()
+    if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
+        raise RuntimeError("Checker build artifact changed while attesting")
+    config_path = Path("/probe-input/config.json")
+    if config_path.stat().st_size > 65536:
+        raise RuntimeError("Checker source admission exceeds bound")
+    config = json.loads(config_path.read_bytes())
+    toolchain = subprocess.check_output(["rustc", "--version"], timeout=10).decode().strip()
+    if not toolchain.startswith("rustc 1.97.1 ") or platform.machine() not in ("x86_64", "aarch64"):
+        raise RuntimeError("Checker toolchain/architecture does not match the pinned profile")
+    return {"sha256": digest.hexdigest(), "bytes": before.st_size, "toolchain": toolchain,
+            "architecture": platform.machine(), "source_sha256": config["source_sha256"],
+            "lock_sha256": hashlib.sha256(Path("/workspace/Cargo.lock").read_bytes()).hexdigest()}
 
 
 def verify_limits(cpu_millis, memory_bytes, pids, *, limits=None, uid=None):
@@ -78,9 +140,13 @@ def diagnostics():
 
 
 def run(mode, disk_bytes, timeout, output_bytes=1024**2):
-    verify_limits(2000, 4 * 1024**3, 256)
-    writable = (("/cargo", "/target", "/navigation-output") if mode == "navigation-build" else
-                ("/cargo", "/target", "/coverage-evidence") if mode == "coverage" else ("/cargo", "/target"))
+    if mode in PROBE_CLIENT:
+        if disk_bytes != 1024**2 or timeout > 120 or output_bytes < 768*1024+4096:
+            raise RuntimeError("Fixed client profile/framing budget mismatch")
+        effective = verify_limits(500, 256*1024**2, 64)
+    else:
+        effective = verify_limits(2000, 4 * 1024**3, 256)
+    writable = writable_paths(mode)
     reserve = int(os.environ.get("HSEARCH_BACKEND_RESERVE_BYTES", "0"))
     if reserve and (reserve < 10 * 1024**3 or min(shutil.disk_usage(path).free for path in writable) < reserve):
         raise RuntimeError("Actual task volume reserve is unavailable")
@@ -91,6 +157,8 @@ def run(mode, disk_bytes, timeout, output_bytes=1024**2):
     # or ptrace its counters through /proc while sharing its unprivileged UID.
     if ctypes.CDLL(None, use_errno=True).prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE=0
         raise RuntimeError("Could not isolate the command monitor")
+    if mode in PROBE_CLIENT or mode == "probe-history-check":
+        verify_checker()
     started = time.monotonic()
     child = subprocess.Popen(COMMANDS[mode], start_new_session=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     selector = selectors.DefaultSelector()
@@ -119,8 +187,15 @@ def run(mode, disk_bytes, timeout, output_bytes=1024**2):
                 sys.stdout.buffer.write(chunk)
                 sys.stdout.buffer.flush()
         child.wait(timeout=3)
-        print(json.dumps({"mode": mode, "exit": child.returncode, "elapsed_seconds": round(time.monotonic() - started, 2),
-                          "peak_disk_bytes": peak, "output_bytes": emitted}))
+        receipt = {"mode": mode, "exit": child.returncode, "elapsed_seconds": round(time.monotonic() - started, 2),
+                   "peak_disk_bytes": peak, "output_bytes": emitted}
+        if mode == "probe-checker-build" and child.returncode == 0:
+            receipt["checker"] = checker_attestation()
+        if mode in PROBE_PROFILE:
+            receipt["effective_limits"] = effective
+            print("\nHPMONITOR2\t" + json.dumps(receipt, sort_keys=True), flush=True)
+        else:
+            print(json.dumps(receipt))
         return child.returncode if child.returncode >= 0 else 1
     finally:
         selector.close()

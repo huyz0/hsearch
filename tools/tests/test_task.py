@@ -166,7 +166,7 @@ class WorktreeControls(unittest.TestCase):
 
     def test_evidence_content_binding_budget_and_exact_context_bytes(self):
         claim = self.claim()
-        identity = self.store.append(claim, "fixture-owner", "note", {"text": "héllo ✨"})
+        identity = self.store.append(claim, "fixture-owner", "note", {"text": "hÃƒÂ©llo Ã¢Å“Â¨"})
         context = self.store.context(claim, "fixture-owner")
         self.assertEqual(context["context_bytes"], len(MODULE["encoded"](context)))
         self.assertTrue(context["token_count_is_estimate"])
@@ -333,3 +333,118 @@ class WorktreeControls(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProbeDispatchControls(unittest.TestCase):
+    """HOST lifecycle/accounting controls, never native/provider qualification."""
+    def fixture(self, area):
+        claim = "m03-02-"+"a"*12
+        row = {"packet": {**packet(task="M03.02"), "commands": ["rustfs-capabilities"],
+                          "output_budget_bytes": 2*1024**2},
+               "packet_sha256": "b"*64, "branch": "codex/task/"+claim,
+               "worktree": str(area/"source"), "namespace": None,
+               "phase": "allocated", "worker": None, "evidence": []}
+        data = {"tasks": {claim: row}, "resource_root": None}
+        store = object.__new__(TaskStore)
+        store.root = area/"task"
+        store.root.mkdir()
+        @contextmanager
+        def edit():
+            changed = copy.deepcopy(data)
+            yield changed
+            data.clear()
+            data.update(changed)
+        store.edit = edit
+        store.get = lambda _claim, _owner: copy.deepcopy(data["tasks"][claim])
+        return store, data, claim
+
+    def test_input_reservation_is_charged_before_publication_and_bad_sizes_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store, data, claim = self.fixture(Path(directory))
+            for invalid in (True, -1, 1024**2+1):
+                with self.subTest(size=invalid), self.assertRaises(Refused):
+                    store.append(claim, "fixture-owner", "input", {}, retained_input_bytes=invalid)
+            store.append(claim, "fixture-owner", "input", {"sha256": "a"*64}, retained_input_bytes=1024)
+            self.assertEqual(data["tasks"][claim]["probe_retained_input_bytes"], 1024)
+            self.assertEqual(len(data["tasks"][claim]["evidence"]), 1)
+            data["tasks"][claim]["probe_retained_input_bytes"] = 64*1024**2-1
+            before = copy.deepcopy(data)
+            with self.assertRaisesRegex(Refused, "Combined"):
+                store.append(claim, "fixture-owner", "input", {})
+            self.assertEqual(data, before)
+
+    def test_physical_orphan_bytes_are_counted_and_redirected_slots_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            area = Path(directory)
+            store, data, claim = self.fixture(area)
+            registry = MODULE["SANDBOX"]["Registry"](area/"resources")
+            namespace = "hsearch-m03-02-"+"b"*12
+            row = data["tasks"][claim]
+            row.update(namespace=namespace, probe_active=True)
+            data["resource_root"] = str(registry.root)
+            with registry.edit() as resources:
+                resources["leases"][namespace] = {"task_claim": claim, "source": row["worktree"], "snapshot_schema": 2}
+            slot = registry.root/"snapshots"/namespace/"rustfs-probe-inputs"/"rustfs-capabilities-before"
+            slot.mkdir(parents=True)
+            (slot/"orphan.json").write_bytes(b"x"*1500)
+            self.assertEqual(store.retained_probe_inputs(row, registry.root), 1500)
+            store.append(claim, "fixture-owner", "input", {}, retained_input_bytes=100)
+            self.assertEqual(data["tasks"][claim]["probe_retained_input_bytes"], 1600)
+            (slot/"nested").mkdir()
+            with self.assertRaisesRegex(Refused, "Unknown retained"):
+                store.append(claim, "fixture-owner", "input", {})
+
+    def test_fixed_dispatch_rejects_wrong_task_small_packet_and_duplicate_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store, data, claim = self.fixture(Path(directory))
+            row = data["tasks"][claim]
+            store.fingerprint = lambda _record: {"clean": True}
+            for key, value in (("task_id", "M03.01"), ("output_budget_bytes", 16384)):
+                old = row["packet"][key]
+                row["packet"][key] = value
+                with self.subTest(field=key), self.assertRaisesRegex(Refused, "outside"):
+                    store.rustfs_capabilities(claim, "fixture-owner", Path(directory))
+                row["packet"][key] = old
+            row["probe_active"] = True
+            with self.assertRaisesRegex(Refused, "already attempted"):
+                store.rustfs_capabilities(claim, "fixture-owner", Path(directory))
+
+    def test_known_failed_child_is_retained_before_controller_receives_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            area = Path(directory)
+            store, data, claim = self.fixture(area)
+            row = data["tasks"][claim]
+            source = area/"source"
+            source.mkdir()
+            (source/"Cargo.lock").write_bytes(b"fixture")
+            row["namespace"] = "hsearch-m03-02-"+"b"*12
+            lease = {"task_claim": claim, "source": str(source), "resource_protocol": 2,
+                     "snapshot_schema": 2, "image": "sha256:"+"c"*64, "phase": "ready", "config_sha256": "d"*64}
+            resources = {"leases": {row["namespace"]: lease}}
+            @contextmanager
+            def registry_edit():
+                yield resources
+            registry = SimpleNamespace(get=lambda _namespace: lease, edit=registry_edit)
+            failure = {"mode": "probe-checker-build", "exit_code": 1, "truncated": False, "output": "first failure"}
+            def failed_run(*_args, **_kwargs):
+                raise MODULE["SANDBOX"]["WorkloadFailed"](failure)
+            sandbox = SimpleNamespace(registry=registry, run=failed_run,
+                docker=SimpleNamespace(info={"Architecture": "x86_64"}),
+                probe_storage=lambda _ns: ({"Image": "sha256:"+"e"*64, "Id": "f"*64},
+                    {"config_sha256": "1"*64, "volume": "fixture-volume"}))
+            store.resources = lambda *_args: sandbox
+            store.fingerprint = lambda _record: {"clean": True, "source_tree_sha256": "2"*64}
+            retained = []
+            store.append = lambda _claim, _owner, kind, value, **_kw: retained.append((kind, value))
+            def qualify(context):
+                self.assertEqual(context.run("probe-checker-build"), failure)
+                self.assertEqual(retained[0][0], "failed-command")
+                raise Refused("stop on first build failure")
+            controller = {"ProfileContext": runpy.run_path(str(Path(__file__).resolve().parents[1]/"rustfs_probe.py"))["ProfileContext"],
+                          "qualify": qualify}
+            with patch.dict(TaskStore.rustfs_capabilities.__globals__["runpy"].__dict__, run_path=lambda _path: controller):
+                with self.assertRaisesRegex(Refused, "first build failure"):
+                    store.rustfs_capabilities(claim, "fixture-owner", area/"resources")
+            self.assertEqual(data["tasks"][claim]["phase"], "interrupted")
+            self.assertIsNone(data["tasks"][claim]["worker"])
+            self.assertTrue(data["tasks"][claim]["probe_active"])

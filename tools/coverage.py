@@ -310,10 +310,17 @@ def package_inventory(runner, requested, *, metadata=None):
     need(policy["schema_version"] == 1 and type(policy["minimum_percent"]) is int and policy["minimum_percent"] == 90,
          "Invalid coverage floor policy")
     excluded = set(policy["development_packages"])
-    need(excluded == {"xtask", "hsearch-testkit"} and excluded.issubset(packages), "Unknown development exclusion")
+    need(excluded == {"xtask", "hsearch-testkit", "hsearch-object-probe"} and excluded.issubset(packages), "Unknown development exclusion")
     production = set(packages) - excluded
+    diagnostic = policy.get("diagnostic_packages")
+    need(type(diagnostic) is dict and set(diagnostic) == {"hsearch-object-probe"} and
+         diagnostic["hsearch-object-probe"]["minimum_percent"] == 90 and
+         diagnostic["hsearch-object-probe"]["separate_from_production"] is True,
+         "Unknown diagnostic coverage policy")
     selected = sorted(requested or production)
-    need(selected and len(selected) == len(set(selected)) and set(selected).issubset(production), "Unknown coverage package scope")
+    diagnostic_only = selected == ["hsearch-object-probe"]
+    need(selected and len(selected) == len(set(selected)) and
+         (diagnostic_only or set(selected).issubset(production)), "Unknown or mixed coverage package scope")
     root_manifest = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
     need(root_manifest["workspace"]["lints"]["rust"]["unsafe_code"] == "forbid", "Workspace unsafe policy weakened")
     for name in selected:

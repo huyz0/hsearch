@@ -1,0 +1,14 @@
+[package]
+name = "hsearch-object-probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Private bounded RustFS capability history checker"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+hsearch-object = { path = "../object" }

@@ -314,7 +314,38 @@ class TaskStore:
         self.append(claim, value["owner_session"], "allocation", {"base": revision, "worktree": str(worktree)})
         return claim
 
-    def append(self, claim, owner, kind, value):
+    def retained_probe_inputs(self, record, resource_root):
+        """Count actual retained slots, including unpublished partial/orphan files."""
+        if record["namespace"] is None:
+            return 0
+        need(resource_root is not None, "Probe input registry unavailable")
+        registry = SANDBOX["Registry"](Path(resource_root))
+        lease = registry.get(record["namespace"])
+        need(lease.get("task_claim") == record["branch"].removeprefix("codex/task/")
+             and lease.get("source") == record["worktree"] and lease.get("snapshot_schema") == 2,
+             "Probe retained input owner changed")
+        root = guarded(registry.root, "snapshots", record["namespace"], "rustfs-probe-inputs")
+        if not root.exists():
+            return 0
+        need(root.is_dir() and not root.is_symlink(), "Probe retained input root changed")
+        total, count = 0, 0
+        for directory in root.iterdir():
+            count += 1
+            need(count <= 32 and directory.name in SANDBOX["PROBE_MODES"] and directory.is_dir()
+                 and not directory.is_symlink(), "Unknown retained probe input slot")
+            for path in directory.iterdir():
+                count += 1
+                info = path.lstat()
+                need(count <= 32 and stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                     and not path.is_symlink() and info.st_size <= 704*1024,
+                     "Unknown retained probe input file")
+                total += info.st_size
+                need(total <= 64*1024**2, "Retained probe input storage bound exceeded")
+        return total
+
+    def append(self, claim, owner, kind, value, *, retained_input_bytes=0):
+        need(type(retained_input_bytes) is int and 0 <= retained_input_bytes <= 1024**2,
+             "Retained input reservation exceeds bound")
         record = self.get(claim, owner)
         content = encoded(value)
         need(len(content) <= record["packet"]["output_budget_bytes"], "Evidence exceeds task byte budget")
@@ -337,8 +368,21 @@ class TaskStore:
                 stored_count += 1
                 stored_bytes += artifact.stat().st_size
                 need(stored_count <= 1000 and stored_bytes <= 64 * 1024**2, "Evidence artifact storage bound exceeded")
+            # Reserve before input publication. Count physical partial slots too;
+            # a small wrapper/hash cannot pay for retained histories or plans.
+            reserved = current.get("probe_retained_input_bytes", 0)
+            need(type(reserved) is int and 0 <= reserved <= 64*1024**2,
+                 "Invalid retained input reservation")
+            observed = self.retained_probe_inputs(current, data.get("resource_root")) if (
+                reserved or retained_input_bytes or current.get("probe_active")) else 0
+            retained = max(reserved, observed) + retained_input_bytes
             # Count orphan files from interrupted writes too. Admission and blob
             # publication share the registry lock with cleanup and other appends.
+            new_content_bytes = 0 if path.exists() else len(content)
+            need(max(stored_bytes + new_content_bytes, sum(item["bytes"] for item in current["evidence"])) + retained <= 64*1024**2,
+                 "Combined task evidence and retained inputs exceed bound")
+            if retained:
+                current["probe_retained_input_bytes"] = retained
             if path.exists():
                 need(path.stat().st_size == len(content) and path.read_bytes() == content, "Evidence digest collision/corruption")
             else:
@@ -437,6 +481,8 @@ class TaskStore:
         return self.context(claim, owner)
 
     def run(self, claim, owner, mode, resource_root):
+        if mode == "rustfs-capabilities":
+            return self.rustfs_capabilities(claim, owner, resource_root)
         record = self.get(claim, owner)
         need(mode in record["packet"]["commands"] or mode == "compile" and "check" in record["packet"]["commands"], "Command is outside task packet")
         before = self.fingerprint(record)
@@ -461,6 +507,88 @@ class TaskStore:
         except SANDBOX["WorkloadFailed"] as error:
             self.append(claim, owner, "failed-command", {"source": before, "result": error.result})
             raise
+        finally:
+            with self.edit() as data:
+                data["tasks"][claim].update(phase="allocated" if completed else "interrupted", worker=None)
+
+    def rustfs_capabilities(self, claim, owner, resource_root):
+        """Dispatch the fixed complete profile through the existing owned topology.
+
+        No internal profile mode is a public arbitrary command. A first unknown
+        child/restart retains the interrupted claim and its resource charges.
+        """
+        record = self.get(claim, owner)
+        need(record["packet"]["task_id"] == "M03.02" and
+             "rustfs-capabilities" in record["packet"]["commands"] and
+             record["packet"]["output_budget_bytes"] >= 2*1024**2,
+             "Fixed capability profile outside task packet")
+        before = self.fingerprint(record)
+        need(before["clean"], "Capability qualification requires a clean source")
+        with self.edit() as data:
+            current = data["tasks"][claim]
+            need(current["phase"] == "allocated" and not handle_live(current["worker"])
+                 and not current.get("probe_active"), "Capability profile already attempted or task busy")
+            current.update(phase="running", probe_active=True, worker={"pid": os.getpid(),
+                           "identity": SANDBOX["owner_identity"]()}, last_mode="rustfs-capabilities")
+        completed = False
+        try:
+            sandbox = self.resources(resource_root, record)
+            namespace = record["namespace"]
+            if namespace is None:
+                namespace = sandbox.up(record["packet"]["task_id"], task_claim=claim)
+                with self.edit() as data:
+                    data["tasks"][claim]["namespace"] = namespace
+            lease = sandbox.registry.get(namespace)
+            need(lease.get("task_claim") == claim and lease.get("source") == record["worktree"] and
+                 lease.get("resource_protocol") == 2 and lease.get("snapshot_schema") == 2,
+                 "Fixed capability topology binding changed")
+            controller = runpy.run_path(str(Path(record["worktree"]) / "tools/rustfs_probe.py"))
+            def append(kind, value, *, retained_input_bytes=0):
+                return self.append(claim, owner, kind, value, retained_input_bytes=retained_input_bytes)
+            def released():
+                with sandbox.registry.edit() as data:
+                    return data["leases"][namespace]["phase"] == "ready" and not any(
+                        item.get("parent") == namespace for item in data["leases"].values())
+            def run(mode):
+                need(mode in SANDBOX["PROBE_MODES"] and released(), "Profile mode or child unavailable")
+                need(self.fingerprint(record) == before, "Profile source changed before execution")
+                try:
+                    result = sandbox.run(namespace, mode,
+                        output_budget=record["packet"]["output_budget_bytes"]//2, stream=False)
+                except SANDBOX["WorkloadFailed"] as error:
+                    # Known failures are retained before dependent decoding. No
+                    # retry, unknown cleanup or replacement attempt is allowed.
+                    result = error.result
+                    append("failed-command", {"source": before, "result": result})
+                else:
+                    append("command", {"source": before, "result": result})
+                need(self.fingerprint(record) == before, "Profile source changed during execution")
+                return result
+            server, storage = sandbox.probe_storage(namespace)
+            platform = {"x86_64": 1, "aarch64": 2}.get(sandbox.docker.info["Architecture"])
+            need(platform is not None, "Unsupported native capability architecture")
+            identity = {"claim": claim, "owner": owner, "packet_sha256": record["packet_sha256"],
+                "source_sha256": before["source_tree_sha256"], "image": lease["image"],
+                "server_image": server["Image"], "server_cid": server["Id"],
+                "server_config_sha256": storage["config_sha256"],
+                "volume_sha256": hashlib.sha256(storage["volume"].encode()).hexdigest(),
+                "lock_sha256": hashlib.sha256((Path(record["worktree"])/"Cargo.lock").read_bytes()).hexdigest(),
+                "config_sha256": storage["config_sha256"], "topology_sha256": lease["config_sha256"],
+                "platform": platform, "namespace": namespace, "bucket": "hsearch-probe-"+claim[-12:],
+                "output_budget": record["packet"]["output_budget_bytes"]}
+            def source():
+                need(self.fingerprint(record) == before, "Capability source binding changed")
+                return dict(identity)
+            context = controller["ProfileContext"](source_callback=source, append_callback=append,
+                run_callback=run, inputs_callback=lambda mode, files, build:
+                    sandbox.prepare_probe_inputs(namespace, mode, files, identity, build),
+                restart_callback=lambda: sandbox.restart_probe_storage(namespace,
+                    lambda intent: append("rustfs-restart-intent", intent)),
+                released_callback=released, budgets={"BUILD": SANDBOX["BUILD"], "PROBE": SANDBOX["PROBE"]})
+            report = controller["qualify"](context)
+            completed = True
+            return {"claim": claim, "mode": "rustfs-capabilities", "source": before,
+                    "report": report, "exit_code": 0, "readiness_exit_code": 0 if report["ready"] else 1}
         finally:
             with self.edit() as data:
                 data["tasks"][claim].update(phase="allocated" if completed else "interrupted", worker=None)
@@ -495,6 +623,66 @@ class TaskStore:
         return {"claim": claim, "phase": "closed", "branch_retained": record["branch"], "evidence_retained": True}
 
 
+def qualify_rustfs_capabilities():
+    """Hosted fixed-profile entrypoint with ordinary task ownership and evidence.
+
+    RUNNER_TEMP selects the job-local state, never a different local resource
+    pool. The normal claim/admission predicates and child lifecycle still apply.
+    Public artifacts contain charged evidence only, never the TLS snapshot.
+    """
+    need(sys.platform == "linux" and os.environ.get("GITHUB_ACTIONS") == "true",
+         "Hosted Linux capability entrypoint required; use an admitted task run elsewhere")
+    temporary = Path(os.environ["RUNNER_TEMP"]).absolute()
+    need(temporary.is_dir() and temporary.resolve() == temporary, "Job temporary root redirected")
+    output = guarded(temporary, "hsearch-rustfs-capabilities")
+    need(not output.exists(), "First capability outcome already exists")
+    output.mkdir(mode=0o700)
+    store = TaskStore(guarded(temporary, "hsearch-capability-tasks"))
+    head = git("rev-parse", "HEAD").strip()
+    need(source_fingerprint(ROOT, head, ["crates/object-probe"])["clean"], "Hosted source is dirty")
+    plan = json.loads(os.environ["CI_PLAN"])
+    need(plan.get("head") == head and set(("sandbox-x64", "sandbox-arm64")).issubset(plan.get("selected_jobs", [])), "Hosted capability selection/head mismatch")
+    owner = "rustfs-"+os.environ["GITHUB_RUN_ID"]+"-"+os.environ["GITHUB_JOB"]
+    task = ledger_tasks()["M03.02"]
+    value = packet({"schema_version": 1, "task_id": "M03.02", "goal": task["goal"],
+        "base_revision": head, "owner_session": owner, "owned_paths": ["crates/object-probe"],
+        "assumptions": ["Fixed diagnostic matrix; required capability failure blocks production readiness."],
+        "acceptance": task["definition_of_done"], "negative_cases": ["Unknown, truncated or unsupported proof never passes eligibility."],
+        "commands": ["prefetch", "rustfs-capabilities"], "output_budget_bytes": 2*1024**2,
+        "expected_evidence": ["Exact source, actual capped deployment, complete recorded matrix and independent checker."]})
+    claim = store.claim(value)
+    resources = guarded(temporary, "hsearch-leases")
+    outcome = {"claim": claim, "head": head, "investigation_complete": False, "ready": False}
+    try:
+        store.run(claim, owner, "prefetch", resources)
+        result = store.run(claim, owner, "rustfs-capabilities", resources)
+        report = result["report"]
+        need("inconclusive" not in report["scenarios"], "Capability investigation remains inconclusive")
+        outcome.update(investigation_complete=True, ready=report["ready"], report=report)
+        # A complete measured negative is an honest investigation result, with
+        # readiness still false. Unknown/partial evidence never reaches here.
+        store.append(claim, owner, "rustfs-investigation", outcome)
+        store.cleanup(claim, owner, resources)
+        return 0
+    except BaseException as error:
+        outcome["failure_type"] = type(error).__name__
+        raise
+    finally:
+        references = store.evidence(claim, owner)
+        need(sum(item["bytes"] for item in references) <= 64*1024**2, "Public evidence bound exceeded")
+        evidence = output / "evidence"
+        evidence.mkdir(mode=0o700)
+        for item in references:
+            source = guarded(store.root, "evidence", claim, item["sha256"]+".json")
+            destination = evidence / source.name
+            if not destination.exists():
+                with destination.open("xb") as target:
+                    target.write(source.read_bytes())
+        SANDBOX["atomic_json"](output/"summary.json", {**outcome, "evidence": references,
+            "qualification": "Real hosted observations only; no release or whole-product acceptance"})
+        print(encoded(outcome).decode())
+
+
 def main():
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument("--state-root", type=Path, default=argparse.SUPPRESS)
@@ -517,7 +705,7 @@ def main():
         command.add_argument("claim")
         command.add_argument("--owner", required=True)
         if action == "run":
-            command.add_argument("mode", choices=("prefetch", "diagnostics", "check", "compile", "probe"))
+            command.add_argument("mode", choices=("prefetch", "diagnostics", "check", "compile", "probe", "rustfs-capabilities"))
     context = groups.add_parser("context", parents=[shared])
     context.add_argument("claim")
     context.add_argument("--owner", required=True)

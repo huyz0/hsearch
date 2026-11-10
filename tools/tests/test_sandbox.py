@@ -457,6 +457,58 @@ class ResourceCapabilityControls(unittest.TestCase):
             spawn.assert_not_called()
 
 
+
+class FixedCapabilityProfileControls(unittest.TestCase):
+    def execution(self):
+        import types
+        namespace = "hsearch-probe-123456789abc"
+        record = {"owner": "mine", "namespace": namespace, "image": "image"}
+        sandbox = object.__new__(MODULE["Sandbox"])
+        sandbox.source_root = Path("/source")
+        sandbox.harness = lambda _record: Path("/frozen")
+        sandbox.probe_input_directory = lambda _record, _mode: Path("/inputs")
+        mounts = [{"Type": "bind", "Source": str(source), "Destination": destination, "RW": False}
+                  for source, destination in [(sandbox.source_root, "/workspace"), (Path("/frozen"), "/harness"), (Path("/inputs"), "/probe-input")]]
+        mounts += [{"Type": "volume", "Name": namespace+"-"+suffix, "Destination": destination, "RW": False}
+                   for suffix, destination in [("target", "/probe-checker"), ("client", "/certs"), ("credentials", "/run/secrets")]]
+        info = {"Id": "a"*64, "Image": "image", "Config": {"User": "10001:10001", "Labels": {MODULE["LABEL"]: "mine", "io.hsearch.namespace": namespace}},
+                "HostConfig": {"NanoCpus": 500000000, "Memory": 256*1024**2, "MemorySwap": 256*1024**2,
+                               "PidsLimit": 64, "ReadonlyRootfs": True, "NetworkMode": namespace+"-net",
+                               "Tmpfs": {"/tmp": "rw,nosuid,nodev,size=1048576"}},
+                "Mounts": mounts, "State": {"Status": "exited", "Running": False, "ExitCode": 0}}
+        sandbox.docker = types.SimpleNamespace(engine="engine", inspect=lambda *_: [info],
+                          command=lambda *_: json.dumps([{"Id": "image", "Architecture": "amd64"}]))
+        return sandbox, record, info
+
+    def test_fixed_client_has_no_writable_build_cache_or_compiler(self):
+        execute = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))
+        self.assertEqual(execute["writable_paths"]("rustfs-capabilities-before"), ("/tmp",))
+        self.assertEqual(execute["writable_paths"]("probe-history-check"), ("/tmp",))
+        self.assertEqual(execute["writable_paths"]("probe-checker-build"), ("/cargo", "/target", "/tmp"))
+        self.assertNotIn("cargo", execute["COMMANDS"]["rustfs-capabilities-before"])
+        self.assertEqual(execute["COMMANDS"]["probe-history-check"], ["/probe-checker/release/hsearch-object-probe"])
+        valid = {"cpu.max": "50000 100000", "memory.max": str(256*1024**2), "memory.swap.max": "0", "pids.max": "64"}
+        execute["verify_limits"](500, 256*1024**2, 64, limits=valid, uid=10001)
+        for key, value in [("cpu.max", "max 100000"), ("memory.max", "max"), ("memory.swap.max", "1"), ("pids.max", "65")]:
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                execute["verify_limits"](500, 256*1024**2, 64, limits={**valid,key:value}, uid=10001)
+
+    def test_actual_profile_inspect_binds_image_source_volumes_and_caps(self):
+        sandbox, record, info = self.execution()
+        result = sandbox.probe_execution(record, "a"*64, "rustfs-capabilities-before", MODULE["PROBE"])
+        self.assertEqual(result["image_id"], "image")
+        self.assertEqual(result["budget"]["disk_bytes"], 1024**2)
+        for change in (lambda x: x.pop("Image"),
+                       lambda x: x["Config"].update(User="0:0"),
+                       lambda x: x["HostConfig"].update(MemorySwap=-1),
+                       lambda x: x["Mounts"][0].update(Source="/foreign"),
+                       lambda x: x["Mounts"][3].update(RW=True),
+                       lambda x: x["Mounts"][4].update(Name="foreign-client")):
+            sandbox, record, info = self.execution()
+            change(info)
+            with self.assertRaises(Refused):
+                sandbox.probe_execution(record, "a"*64, "rustfs-capabilities-before", MODULE["PROBE"])
+
 if __name__ == "__main__":
     unittest.main()
 
