@@ -1,5 +1,7 @@
 # Bootstrap development
 
+Current component status: [M02.02's bounded native embedding/lifecycle adapter](evidence/m02-02-integrated.md) is qualified and integrated through PR31, with final R2, gate and all seven postmerge jobs successful. [M03.01's typed traits and memory/fault conformance](evidence/m03-01-qualified-source.md) were accepted through PR30. These are internal component profiles, not a running search service, HTTP/SDK compatibility, provider durability, whole M01/M02/M03 or release acceptance. Earlier preparation and pending statements retain their historical source scope.
+
 Current factual reconciliation: [M01.15 operational incident disposition](evidence/m01-15-incident-disposition.md) and [M02.09 bounded research acceptance](evidence/m02-09-integrated.md) cite actual original reviewed/integrated qualification. Historical draft/open statements below describe earlier stages. The historical ARM cause remains unconfirmed; M01.08 remains separately unqualified. [M01.16's original factual artifact is qualified](evidence/m01-16-integrated.md) through PR23 and its actual R1/gate/PR/main evidence. The later factual status follow-up retains its own exact-head review, checks and integration obligations.
 
 
@@ -7,7 +9,7 @@ M02.09's [explicit compact exporter/context4 draft](research/native-engine-cover
 
 Current status: [complete M13 native-report successor accepted](evidence/m01-13-integrated.md). Context3/versioned JSON3.1 physical segments and independently rederived raw native receipts are authoritative. Earlier prototype/review/pending stages below are historical provenance; original failed gates remain frozen. M08.01's [typed contract/facade is accepted](evidence/m08-01-integrated.md); SDK/exporter/runtime remain unimplemented.
 
-This checkout contains the integrated M01.01 workspace bootstrap and M01.02 [local sandbox](sandbox.md), and integrated M01.06 [impact CI](impact-ci.md). It is not a running search store. The [task ledger](tasks.json) retains all later product and qualification obligations. The bootstrap defines checkpoint relationships, an observation trait, a pinned engine boundary and a development entrypoint. The combined M03.01 candidate adds bounded object/conditional-metadata traits and a nonpersistent memory/fault double; it has no node binary, network service or production persisted format. Its proposed ledger done is not current acceptance; see the [exact predecessor evidence and pending final qualification](evidence/m03-01-qualified-source.md).
+This checkout contains the integrated M01.01 workspace bootstrap and M01.02 [local sandbox](sandbox.md), and integrated M01.06 [impact CI](impact-ci.md). It is not a running search store. The [task ledger](tasks.json) retains all later product and qualification obligations. The bootstrap defines checkpoint relationships, an observation trait, a pinned engine boundary and a development entrypoint. M03.01's accepted component adds bounded object/conditional-metadata traits and a nonpersistent memory/fault double; it has no node binary, network service or production persisted format. See the [actual PR30 qualification and retained predecessor history](evidence/m03-01-qualified-source.md).
 
 ## Run the implemented checks
 
@@ -32,7 +34,7 @@ This freezes a clean source bundle and runs both profiles with pinned Rust/LLVM/
 
 ## Dependency ownership
 
-`hsearch-types` has no dependencies. `hsearch-observe` imports types only. `hsearch-engine` is the sole direct Lucene consumer, pinned to `46e280bc2a208544fb36ecd95932e89cd8bc5618`; it currently exposes whole-file inputs for compile/slice contract checks only. This is not the remote-reader spike or a search adapter. Testkit is reached only through a dev dependency and excluded from the default build and production dependency closure.
+`hsearch-types` has no dependencies. `hsearch-observe` imports types only. `hsearch-engine` is the sole direct Lucene consumer, pinned to `46e280bc2a208544fb36ecd95932e89cd8bc5618`. Its bounded native embedding/lifecycle adapter and selected internal query/operator profile are now qualified; see [M02.02 integration](evidence/m02-02-integrated.md) and [capabilities](https://github.com/huyz0/hsearch/blob/656b790b94b87507717165cf4aa1930a7fb5d9ae/crates/engine/CAPABILITIES.md). This does not implement the remote-reader spike or a network search service. Testkit is reached only through a dev dependency and excluded from the default build and production dependency closure.
 
 ```sh
 cargo xtask policy
@@ -58,9 +60,13 @@ M01.05's [independent review gate](review-gates.md) is integrated with [complete
 
 M01.12's [source-proof coverage integration](coverage.md) and M01.13's native physical-report successor are accepted with complete [final evidence](evidence/m01-13-integrated.md). M01.11 is accepted independently. All original failed gates and issued review histories remain preserved; composite acceptance never clears the original M07 implementation gate.
 
+Historical M02.09 dependency-admission snapshot before the native adapter, retained for that source phase (current M02.02 dependencies and qualification are recorded above):
+
 M02.09 native experiments require the complete resolved Lucene graph (including the dev embedding crates) to omit test-util, test-support and asserting. The policy checks all-feature metadata nodes and the normal/build production tree; its original18negative controls remain, with4additional feature-leak controls. Index/search/analysis/codecs remain research dev dependencies, production store-only. Complete ordinary suites still run, followed by three additional fresh-process repetitions for each native experiment in dev and release; strict sandbox build/diagnostic workers now enforce256PIDs. No research completion follows until finalsource/nativebotharch/coverage/independentreview/fullCI acceptance.
 
 M02.09 resource-qualified repetitions execute only through the owned capped sandbox check workers on both native architectures: three fresh runs for each dev/release profile, with the frozen source-build, CPU, RAM, PID, scratch, deadline and retained-output limits. The complete ordinary native CI tests, doctests, lint and production coverage remain required. That bare-host stage does not schedule the additional framed research repetitions and supplies no bounded-resource proof. The CI verifier must reject such frames there and require every strict capped sandbox repetition; ordinary tests cannot substitute for this matrix.
+
+Historical M03.01 combined-candidate validation snapshot, superseded by the actual PR30 status above:
 
 M03.01's combined source preserves the exact BB crate/workspace/CI/collector bodies. BB local x64 dev/release coverage and native reuse-CLI controls are predecessor evidence; full new-head ordinary/native ARM/hosted/independent/protected qualification remains pending. `cargo test --locked --offline --package hsearch-object --all-features` exercises the memory/fault contract under normal admitted build resources; use the matching release command for that profile. A host command example is not resource permission or an observed pass. M03.02 starts only after really accepted M03.01; whole-M03/M01 and M03.03/M02.05 calibration gates remain.
 

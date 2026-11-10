@@ -1,5 +1,13 @@
 # M03.01 combined trait source and prospective start policy
 
+## Accepted M03.01 status: 9 November 2026
+
+M03.01 completed acceptance for its declared typed traits and memory/fault conformance through [PR30](https://github.com/huyz0/hsearch/pull/30). The final reviewed source was `81e31623c36a4b92382c1bbba0711c9958400698`, with tree `b01cfcb0f60587836aae01898c4adbdbf242ed0a`. It was merged through the protected branch as `5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123`, with the reviewed tree unchanged. Both final R2 roles were clear, with no M03.01 findings. The normal M03.01 gate passed, and all seven jobs in [postmerge run 42458087463](https://github.com/huyz0/hsearch/actions/runs/42458087463) completed successfully. The original formal review base remains `992084caa931fc64b1589350453fde9fa0e3a765`. Two rounds have been issued out of two planned, with a hard ceiling of three. All earlier packets and failures are retained.
+
+Acceptance covers the ObjectBackend and MetadataStore typed traits and memory/fault conformance. It does not qualify RustFS or other providers, persistence or durability, a runtime or service, fleet, whole M01 or M03, or release. The later M03.02 artifact and controller source, actual archive transport, and final Linux, native, Docker, coverage and CI qualification remain separate and unqualified. The candidate and pending-review statements below describe their original source phases; they do not override this completed acceptance. Existing task dependencies, scope and later acceptance boundaries remain unchanged.
+
+## Historical candidate status
+
 Status: **combined policy/code candidate, pending exact-final-source qualification and integration**. The candidate M03.01 ledger done is intended merged status only, not current acceptance. The admitted development route permitted a normal claim from an audited legitimate committed seed without a separate policy merge. Both code claims are now normally closed; this administrative final integration preserves their code, ancestry, authors and failures. The complete policy and nonempty code still need counted final-source reviews, ordinary/native CI/coverage and protected integration before acceptance. See the [pending qualification record](evidence/m03-01-qualified-source.md); no future review, CI or merge result is asserted.
 
 The accepted [M01.14 research plan](evidence/m01-14-integrated.md) deliberately retained whole-M01 product-start gates. That was the prior delivery policy, not a storage correctness dependency. This prospective revision changes only the start of M03.01, the downstream M03.02 start gate and the baseline goal's framing. The historical M14 record, reports and failures remain unchanged.
