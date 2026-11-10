@@ -121,6 +121,30 @@ class RecoveryControls(unittest.TestCase):
             {"kind": "run", "parent": NAMESPACE, "protocol": 2, "phase": "running", "container_id": CID,
              "pid": pid, "process_identity": identity, "owner_active": active})
 
+    def test_campaign_recovery_needs_exact_worker_checkpoint_and_never_reruns(self):
+        for outcome in ('absent','wrong-worker','changed-public','verified'):
+            with self.subTest(outcome=outcome),tempfile.TemporaryDirectory() as directory:
+                docker=DockerFixture();docker.state='exited'
+                sandbox=self.ready(directory,docker);self.child(sandbox,active=False)
+                reference={'container_id':CID,'event':'attempt-00'}
+                with sandbox.registry.edit() as data:
+                    data['leases']['run-claim']['checkpoint_required']=True
+                    if outcome!='absent':
+                        data['leases']['run-claim']['campaign_checkpoint']=dict(reference,container_id=('b'*64 if outcome=='wrong-worker' else CID))
+                calls=[]
+                def verify(value):
+                    calls.append(value)
+                    if outcome=='changed-public':raise ValueError('public checkpoint changed')
+                if outcome=='verified':
+                    result=sandbox.reconcile(NAMESPACE,checkpoint_verify=verify)
+                    self.assertEqual(len(result),1);self.assertTrue(docker.removed)
+                    self.assertEqual(calls,[reference])
+                else:
+                    with self.assertRaises((Refused,ValueError)):sandbox.reconcile(NAMESPACE,checkpoint_verify=verify)
+                    self.assertFalse(docker.removed)
+                    with sandbox.registry.edit() as data:self.assertIn('run-claim',data['leases'])
+                self.assertFalse(any(command[0] in {'create','start'} for command in docker.calls))
+
     def test_success_and_known_failure_remove_exact_id_without_force(self):
         for code in (0, 7):
             with tempfile.TemporaryDirectory() as directory:

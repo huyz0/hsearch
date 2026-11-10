@@ -9,8 +9,10 @@ import runpy
 import os
 from pathlib import Path
 import re
+import runpy
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -23,7 +25,11 @@ GIB = 1024**3
 LABEL = "io.hsearch.owner"
 NAMESPACE = re.compile(r"hsearch-[a-z0-9-]{1,25}-[0-9a-f]{12}\Z")
 VOLUMES = ("ca", "server", "client", "credentials", "data", "cargo", "target")
-HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py", "install_correctness.py", "coverage_entry.py")
+HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py", "install_correctness.py", "coverage_entry.py", "compile_entry.py")
+OBJECT = {"cpu_millis": 2000, "memory_bytes": 4 * 1024**3, "pids": 256, "disk_bytes": 18 * 1024**3}
+PROBE_HARNESS = ("rustfs_probe.py", "rustfs_probe_transport.py", "rustfs_probe_history.py")
+PROBE_CLIENT = {"rustfs-capabilities-before", "rustfs-capabilities-after"}
+PROBE_MODES = PROBE_CLIENT | {"probe-checker-build", "probe-history-check"}
 BUILD = {"cpu_millis": 2000, "memory_bytes": 4 * GIB, "pids": 256, "disk_bytes": 8 * GIB}
 NAVIGATION = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 4 * GIB}
 STORAGE = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 10 * GIB}
@@ -181,7 +187,7 @@ class Registry:
             del data["leases"][namespace]
 
 
-def bounded_capture(command, *, timeout, limit):
+def bounded_capture(command, *, timeout, limit, raw_streams=False, capture_status=False):
     """Bound both host pipes before decoding untrusted guest output."""
     child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     captured, failed, overflow = {}, [], threading.Event()
@@ -215,8 +221,11 @@ def bounded_capture(command, *, timeout, limit):
             reader.join(timeout=3)
     need(not any(reader.is_alive() for reader in readers) and not failed, "Docker exec pipe completion uncertain")
     need(not overflow.is_set() and sum(map(len, captured.values())) <= limit, "Docker exec output exceeds bound; inspect owned resources")
+    if capture_status:
+        need(raw_streams, "Status capture requires raw streams")
+        return {"exit_code": child.returncode, "streams": {"stdout": captured["out"], "stderr": captured["err"]}}
     need(child.returncode == 0, "Docker exec failed; operation outcome requires inspection")
-    return captured["out"].decode("utf-8", errors="strict")
+    return {"stdout": captured["out"], "stderr": captured["err"]} if raw_streams else captured["out"].decode("utf-8", errors="strict")
 
 
 class Docker:
@@ -233,13 +242,15 @@ class Docker:
         self.capacity = {"cpu_millis": min(8000, max(1000, (self.info["NCPU"] - 1) * 1000)),
                          "memory_bytes": min(16 * GIB, self.info["MemTotal"] // 2), "pids": 2048, "disk_bytes": 40 * GIB}
 
-    def command(self, *args, stream=False, timeout=180, input_text=None, merge_output=False, output_bytes=None):
+    def command(self, *args, stream=False, timeout=180, input_text=None, merge_output=False, output_bytes=None, raw_streams=False, capture_status=False):
+        need(not raw_streams or output_bytes is not None, "Raw Docker output requires a bounded capture")
+        need(not capture_status or raw_streams, "Docker status capture requires raw pipes")
         prefix = ["docker"] + (["--context", self.context] if hasattr(self, "context") else [])
         try:
             if output_bytes is not None:
                 need(not stream and input_text is None and not merge_output and 0 < output_bytes <= 1024**2,
                      "Invalid bounded Docker exec profile")
-                return bounded_capture([*prefix, *args], timeout=timeout, limit=output_bytes)
+                return bounded_capture([*prefix, *args], timeout=timeout, limit=output_bytes, raw_streams=raw_streams, capture_status=capture_status)
             options = {} if stream else ({"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT} if merge_output else {"capture_output": True})
             result = subprocess.run([*prefix, *args], text=True, errors="replace", input=input_text, timeout=timeout, **options)
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -267,7 +278,7 @@ def assert_owned(objects, owner):
 
 def image_digest():
     inputs = {name: hashlib.sha256((ROOT / "dev" / name).read_bytes()).hexdigest()
-              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json", "correctness-tools.json", "install_navigation.py", "install_correctness.py", "coverage_entry.py", "execute.py")}
+              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json", "correctness-tools.json", "install_navigation.py", "install_correctness.py", "coverage_entry.py", "execute.py", "compile_entry.py")}
     inputs["assembly_controller"] = hashlib.sha256((ROOT / "tools/sandbox.py").read_bytes()).hexdigest()
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
 
@@ -279,7 +290,7 @@ def freeze_harness(destination):
     # itself must be traversable by UID 10001 even under a host umask of 077.
     destination.chmod(0o755)
     hashes = {}
-    for name in HARNESS_FILES:
+    for name in (*HARNESS_FILES, *PROBE_HARNESS):
         content = (ROOT / "dev" / name).read_bytes()
         need(len(content) < 65536, "Trusted harness script exceeds bound")
         script = destination / name
@@ -290,6 +301,83 @@ def freeze_harness(destination):
         script.chmod(0o444)
         hashes[name] = hashlib.sha256(content).hexdigest()
     return hashes
+
+
+class CampaignDockerCalls:
+    """Bound setup/teardown/image calls against the same unreset job clock."""
+    def __init__(self,docker,deadline,charge):
+        self.docker,self.deadline,self.record_charge=docker,deadline,charge
+
+    def __getattr__(self,name):return getattr(self.docker,name)
+
+    def charge(self,args,timeout):
+        key=tuple(args[:2]) if args[0] in {"container","volume","network","image"} else (args[0],)
+        allowed={("build",):600,("wait",):1250,("compose",):150,
+                 **{(name,):180 for name in ("run","create","start","logs")},
+                 **{(kind,action):180 for kind,actions in (
+                     ("container",("inspect","ls","rm")),("volume",("inspect","create","ls","rm")),
+                     ("network",("inspect","ls")),("image",("inspect",))) for action in actions}}
+        need(key in allowed and 0<timeout<=allowed[key],"Unbudgeted campaign orchestration operation")
+        self.deadline.require(timeout+600)
+        self.record_charge()
+
+    def command(self,*args,**kwargs):
+        self.charge(args,kwargs.get("timeout",180))
+        return self.docker.command(*args,**kwargs)
+
+    def inspect(self,kind,names):
+        self.charge((kind,"inspect"),180)
+        return self.docker.inspect(kind,names)
+
+
+class CampaignRunCalls:
+    """Closed worker-path call inventory; timeouts consume the one job clock."""
+    def __init__(self, docker, mode, deadline):
+        need(mode in {"prefetch", "check", "durability-sample", "durability-object"}, "Unknown campaign worker budget")
+        self.docker, self.deadline = docker, deadline
+        self.remaining = {("volume", "inspect"): 1, ("container", "inspect"): 3,
+                          ("run",): 1, ("create",): 1, ("start",): 1, ("wait",): 1,
+                          ("logs",): 1, ("container", "rm"): 1, ("container", "ls"): 1}
+        if mode in {"prefetch", "check"}:
+            self.remaining[("image", "inspect")] = 1
+        if mode == "durability-object":
+            self.remaining[("container", "inspect")] = 6
+            self.remaining[("network", "inspect")] = 2
+            self.remaining[("image", "inspect")] = 2
+        self.limit = dict(self.remaining)
+        self.finalization_seconds = 600
+        self.require_remaining()
+
+    def __getattr__(self, name):
+        return getattr(self.docker, name)
+
+    def require_remaining(self):
+        seconds = sum(count * (1250 if key == ("wait",) else 180) for key, count in self.remaining.items())
+        self.deadline.require(seconds + self.finalization_seconds)
+
+    def charge(self, args, timeout):
+        key = tuple(args[:2]) if args[0] in {"container", "volume", "network", "image"} else (args[0],)
+        need(key in self.remaining and self.remaining[key] > 0, "Unbudgeted campaign Docker operation")
+        need(timeout <= (1250 if key == ("wait",) else 180), "Campaign command timeout exceeds frozen allowance")
+        self.require_remaining()
+        self.remaining[key] -= 1
+
+    def command(self, *args, **kwargs):
+        self.charge(args, kwargs.get("timeout", 180))
+        return self.docker.command(*args, **kwargs)
+
+    def inspect(self, kind, names):
+        self.charge((kind, "inspect"), 180)
+        return self.docker.inspect(kind, names)
+
+    def checkpoint_complete(self):
+        self.finalization_seconds = 0
+
+    def receipt(self):
+        return {"maximum_calls": sum(self.limit.values()),
+                "consumed_calls": sum(self.limit.values()) - sum(self.remaining.values()),
+                "remaining_seconds": sum(count * (1250 if key == ("wait",) else 180) for key, count in self.remaining.items()),
+                "checkpoint_allowance_seconds": self.finalization_seconds}
 
 
 class Sandbox:
@@ -314,10 +402,13 @@ class Sandbox:
             need(self.source_root == ROOT, "Legacy harness cannot adopt a worker worktree")
             return ROOT / "dev"
         path = self.snapshot(record) / "harness"
-        need(path.resolve() == path.absolute() and set(item.name for item in path.iterdir()) == set(HARNESS_FILES),
+        declared = self.registry.get(record["namespace"])["harness_hashes"]
+        roster = set(declared)
+        need(roster in (set(HARNESS_FILES), set(HARNESS_FILES) | set(PROBE_HARNESS)) and
+             path.resolve() == path.absolute() and set(item.name for item in path.iterdir()) == roster,
              "Frozen harness path/content changed")
         hashes = {}
-        for name in HARNESS_FILES:
+        for name in sorted(roster):
             script = path / name
             need(not script.is_symlink() and script.stat().st_size < 65536, "Frozen harness script changed")
             hashes[name] = hashlib.sha256(script.read_bytes()).hexdigest()
@@ -564,11 +655,228 @@ class Sandbox:
         need(hashlib.sha256(path.read_bytes()).hexdigest() == current["config_sha256"], "Owned Compose snapshot changed")
         return self.docker.command("compose", "--project-name", record["namespace"], "--file", str(path), *args, timeout=150)
 
-    def run(self, namespace, mode, *, output_budget=1024**2, stream=True, artifact_directory=None):
-        need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build", "coverage"}, "Unknown sandbox command")
+    def probe_storage(self, namespace):
+        """Inspect the actual owned pinned server without exposing Config/Env."""
+        record = self.registry.get(namespace)
+        need(record.get("source") == str(self.source_root) and record["engine"] == self.docker.engine and
+             record.get("task_claim") and record.get("resource_protocol") == 2, "Probe storage owner/source unavailable")
+        info = self.docker.inspect("container", record["containers"])
+        assert_owned(info, record["owner"])
+        servers = [item for item in info if item["Config"]["Labels"].get("com.docker.compose.service") == "rustfs"]
+        need(len(servers) == 1 and servers[0]["Id"] in record["containers"], "Probe storage CID changed")
+        server = servers[0]
+        state = server.get("State", {})
+        need(state.get("Running") is True and state.get("Status") == "running" and type(state.get("Pid")) is int
+             and state["Pid"] > 0, "Probe server is not a known running process")
+        need(server["Config"]["Labels"].get("io.hsearch.namespace") == namespace, "Probe storage namespace changed")
+        pinned = json.loads(self.docker.command("image", "inspect", self.images["rustfs"]))
+        need(len(pinned) == 1 and pinned[0].get("Id") == server.get("Image") and
+             any(value.rsplit("@", 1)[-1] == self.images["rustfs"].rsplit("@", 1)[-1]
+                 for value in pinned[0].get("RepoDigests", [])), "Probe actual server does not match pinned image")
+        data = [m for m in server.get("Mounts", []) if m.get("Destination") == "/data"]
+        need(len(data) == 1 and data[0].get("Name") == namespace+"-data" and data[0].get("Type") == "volume"
+             and data[0].get("RW") is True, "Probe storage data volume changed")
+        networks = server.get("NetworkSettings", {}).get("Networks", {})
+        need(namespace+"-net" in networks and networks[namespace+"-net"].get("NetworkID") == record["network"]
+             and not any(server["NetworkSettings"].get("Ports", {}).values())
+             and not server.get("HostConfig", {}).get("PortBindings"), "Probe private server network changed")
+        expected = {"image": server["Image"], "cid": server["Id"], "owner": record["owner"], "namespace": namespace,
+                    "volume": data[0]["Name"], "config_sha256": hashlib.sha256(json.dumps(server["Config"], sort_keys=True,
+                    separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()}
+        return server, expected
+
+    def restart_probe_storage(self, namespace, persist_intent, persist_observation):
+        """One normal restart of the exact known server, after known child release.
+
+        persist_intent is the normal charged evidence callback. Unknown outcomes
+        retain a busy topology/intent; no automatic repair or forced cleanup.
+        """
+        before, expected = self.probe_storage(namespace)
+        token = secrets.token_hex(16)
+        persist_intent({"operation": "same-volume-restart", "token": token, "cid": expected["cid"],
+                        "image": expected["image"], "config_sha256": expected["config_sha256"],
+                        "volume_sha256": hashlib.sha256(expected["volume"].encode()).hexdigest()})
+        with self.registry.edit() as data:
+            record = data["leases"][namespace]
+            need(record["phase"] == "ready" and not record.get("probe_restart_pending") and
+                 not any(value.get("parent") == namespace for value in data["leases"].values()),
+                 "Probe restart requires exclusive topology and released child")
+            record.update(phase="probe-restarting", probe_restart_pending=True, probe_restart_token=token)
+        version = self.docker.command("version", "--format", "{{.Client.Version}}", output_bytes=1024).strip()
+        need(0 < len(version.encode()) <= 128, "Probe restart CLI version unavailable")
+        response = self.docker.command("restart", "--timeout", "10", expected["cid"],
+                                       timeout=60, output_bytes=4096, raw_streams=True, capture_status=True)
+        # Persist exact bounded returned bytes before parsing them. Neither a
+        # warning nor a successful CLI exit can replace the exact CID proof.
+        persist_observation({"client_version": version, "expected_cid": expected["cid"],
+                             "streams": response["streams"], "exit_code": response["exit_code"],
+                             "command": "restart --timeout 10"})
+        need(response["exit_code"] == 0 and response["streams"]["stdout"].strip() == expected["cid"].encode("ascii"),
+             "Probe restart outcome unknown; intent and charges retained")
+        after, _actual = self.probe_storage(namespace)
+        controller = runpy.run_path(str(ROOT / "tools/rustfs_probe.py"))
+        controller["restart_receipt"](before, after, expected)
+        with self.registry.edit() as data:
+            current = data["leases"][namespace]
+            need(current.get("probe_restart_token") == token and current.get("probe_restart_pending") is True,
+                 "Probe restart owner changed")
+            current.update(phase="ready", probe_restart_pending=False)
+        return before, after, expected
+
+    def prepare_probe_inputs(self, namespace, mode, files, binding, build=None):
+        """Prepare one authenticated fixed-profile input slot, never arbitrary mounts.
+
+        Called only by the normal source/packet/evidence callback integration.
+        All public bytes must first be admitted by its charged evidence callback.
+        """
+        need(mode in PROBE_MODES and type(files) is dict and type(binding) is dict, "Invalid fixed probe input")
+        record = self.registry.get(namespace)
+        need(record.get("source") == str(self.source_root) and record.get("phase") == "ready"
+             and record.get("task_claim") == binding.get("claim") and binding.get("owner")
+             and record.get("resource_protocol") == 2, "Probe task/source ownership changed")
+        required = ({"config.json"} if mode == "probe-checker-build" else
+                    {"config.json", "plan.wire"} if mode.endswith("before") else
+                    {"config.json", "plan.wire", "prior.history"} if mode.endswith("after") else
+                    {"plan.wire", "capture.history", "restart.json", "admission.sha256"})
+        need(set(files) == required and sum(len(raw) for raw in files.values()) <= 1024**2, "Probe input roster/aggregate changed")
+        if mode != "probe-checker-build":
+            need(type(build) is dict and build.get("source_sha256") == binding.get("source_sha256") and
+                 re.fullmatch(r"[a-f0-9]{64}", build.get("sha256", "")), "Checker attestation unavailable")
+        root = self.snapshot(record) / "rustfs-probe-inputs"
+        need(root.resolve() == root.absolute() and not root.is_symlink(), "Probe input path redirected")
+        root.mkdir(exist_ok=True, mode=0o755)
+        directory = root / mode
+        need(not directory.exists(), "Probe phase slot already used; retain first outcome")
+        directory.mkdir(mode=0o755)
+        pins = {}
+        for name, raw in files.items():
+            cap = 704*1024 if name.endswith(".history") else 65536 if name in {"config.json", "plan.wire"} else 1024
+            need(type(raw) is bytes and 0 < len(raw) <= cap, "Probe input exceeds fixed file bound")
+            path = directory / name
+            with path.open("xb") as output:
+                output.write(raw)
+                output.flush()
+                os.fsync(output.fileno())
+            path.chmod(0o444)
+            pins[name] = {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+        current = dict(record.get("rustfs_probe_inputs", {}))
+        need(mode not in current, "Probe input receipt already published")
+        current[mode] = {"pins": pins, "binding": binding, "build": build}
+        self.registry.update(namespace, rustfs_probe_inputs=current)
+        return {"bytes": sum(pin["bytes"] for pin in pins.values()), "pins": pins}
+
+    def probe_input_directory(self, record, mode):
+        receipt = record.get("rustfs_probe_inputs", {}).get(mode)
+        need(type(receipt) is dict and receipt["binding"]["claim"] == record.get("task_claim"), "Probe inputs not source-admitted")
+        directory = self.snapshot(record) / "rustfs-probe-inputs" / mode
+        need(directory.resolve() == directory.absolute() and not directory.is_symlink() and
+             set(p.name for p in directory.iterdir()) == set(receipt["pins"]), "Probe input roster redirected/changed")
+        for name, pin in receipt["pins"].items():
+            path = directory / name
+            need(not path.is_symlink() and path.is_file() and path.stat().st_nlink == 1 and
+                 path.stat().st_size == pin["bytes"] <= 704*1024, "Probe input type/extent changed")
+            need(hashlib.sha256(path.read_bytes()).hexdigest() == pin["sha256"], "Probe input bytes changed")
+        return directory
+
+    def probe_execution(self, record, container_id, mode, budget):
+        info = self.run_container(record, container_id)
+        need(info.get("Image") == record["image"], "Probe actual image changed or missing")
+        config, host = info.get("Config", {}), info.get("HostConfig", {})
+        network = record["namespace"]+"-net" if mode in PROBE_CLIENT else "none"
+        expected = {"NanoCpus": budget["cpu_millis"]*1000000, "Memory": budget["memory_bytes"],
+                    "MemorySwap": budget["memory_bytes"], "PidsLimit": budget["pids"], "ReadonlyRootfs": True,
+                    "NetworkMode": network}
+        need(config.get("User") == "10001:10001" and all(host.get(k) == v for k, v in expected.items()), "Probe actual isolation/limits changed")
+        expected_tmp = "rw,nosuid,nodev,size="+str(1024**2 if mode in PROBE_CLIENT else 67108864)
+        need(host.get("Tmpfs", {}) == {"/tmp": expected_tmp}, "Probe fixed writable tmpfs changed")
+        writable = {m.get("Destination") for m in info.get("Mounts", []) if m.get("RW")}
+        need(writable <= ({"/cargo", "/target", "/tmp"} if mode == "probe-checker-build" else {"/tmp"}), "Probe has undeclared writable mount")
+        mounts = info.get("Mounts", [])
+        destinations = [m.get("Destination") for m in mounts]
+        expected_ro = {"/workspace", "/harness", "/probe-input"}
+        expected_ro |= set() if mode == "probe-checker-build" else {"/probe-checker"}
+        if mode in PROBE_CLIENT:
+            expected_ro |= {"/certs", "/run/secrets"}
+        allowed = expected_ro | ({"/cargo", "/target", "/tmp"} if mode == "probe-checker-build" else {"/tmp"})
+        need(len(destinations) == len(set(destinations)) and set(destinations) <= allowed and
+             expected_ro <= set(destinations) and all(not m.get("RW") for m in mounts if m.get("Destination") in expected_ro),
+             "Probe fixed mount roster/read-only proof changed")
+        sources = {"/workspace": self.source_root, "/harness": self.harness(record),
+                   "/probe-input": self.probe_input_directory(record, mode)}
+        for destination, source in sources.items():
+            selected = next(m for m in mounts if m["Destination"] == destination)
+            need(selected.get("Type") == "bind" and selected.get("Source") == str(source),
+                 "Probe actual source/harness/input bind changed")
+        for suffix, destination in (("target", "/probe-checker"), ("client", "/certs"), ("credentials", "/run/secrets")):
+            if destination in expected_ro:
+                selected = next(m for m in mounts if m["Destination"] == destination)
+                need(selected.get("Type") == "volume" and selected.get("Name") == record["namespace"]+"-"+suffix,
+                     "Probe exact read-only volume changed")
+        images = json.loads(self.docker.command("image", "inspect", record["image"]))
+        need(len(images) == 1 and images[0].get("Id") == record["image"] and
+             images[0].get("Architecture") in {"amd64", "arm64"}, "Probe image/platform identity changed")
+        state = info["State"]
+        return {"container_id": container_id, "image_id": info["Image"], "engine": self.docker.engine,
+                "architecture": "x86_64" if images[0]["Architecture"] == "amd64" else "aarch64",
+                "user": config["User"], "read_only": True, "network": network, "budget": budget,
+                "state": {"status": state["Status"], "running": state["Running"], "exit_code": state["ExitCode"]}}
+
+    def run(self, namespace, mode, *, output_budget=1024**2, stream=True, artifact_directory=None, checkpoint=None, checkpoint_context=None, deadline=None):
+        original = self.docker
+        try:
+            if checkpoint is not None:
+                need(deadline is not None, "Campaign worker requires the shared deadline")
+                self.docker = CampaignRunCalls(original, mode, deadline)
+            return self._run(namespace, mode, output_budget=output_budget, stream=stream,
+                artifact_directory=artifact_directory, checkpoint=checkpoint,
+                checkpoint_context=checkpoint_context, deadline=deadline)
+        finally:
+            self.docker = original
+
+    def _run(self, namespace, mode, *, output_budget, stream, artifact_directory, checkpoint, checkpoint_context, deadline):
+        need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build", "coverage", "durability-sample", "durability-object"} | PROBE_MODES, "Unknown sandbox command")
         need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)
         need(record.get("source") == str(self.source_root) and record["engine"] == self.docker.engine and record["phase"] == "ready", "Namespace unavailable in this worktree/engine")
+        native = None
+        objects = None
+        if mode == "durability-object":
+            objects = runpy.run_path(str(self.source_root / "tools/object_durability_campaign.py"))
+            need(objects["BUDGET"] == OBJECT, "Object broker envelope differs")
+            need(output_budget >= 512 * 1024, "Object broker requires its fixed512KiB diagnostic profile")
+            output_budget = min(output_budget, 512 * 1024)
+            need(artifact_directory == self.snapshot(record) / "object-evidence" and
+                 artifact_directory.resolve() == artifact_directory.absolute() and not artifact_directory.exists(),
+                 "Object output escaped or reused its owned snapshot")
+            object_input_path = self.snapshot(record) / "object-binding.json"
+            object_raw = objects["read"](object_input_path, 65536)
+            need(record.get("object_durability_input") == {"bytes": len(object_raw), "sha256": hashlib.sha256(object_raw).hexdigest()},
+                 "Object input was not prepared by the owner")
+            object_inputs = objects["decode"](object_raw)
+            object_config = objects["worker_config"](record, self.source_root, self.harness(record), object_input_path, artifact_directory)
+            object_config["target"] = self.docker.info["Architecture"] + "-unknown-linux-gnu"
+            objects["validate_inputs"](object_inputs, record, object_config, self.images["rustfs"], self.source_root)
+            objects["source_bookend"](self.source_root, object_inputs["binding"])
+        if mode == "durability-sample":
+            native = runpy.run_path(str(self.source_root / "tools/native_durability_campaign.py"))
+            need(artifact_directory == self.snapshot(record) / "durability-evidence" and
+                 artifact_directory.resolve() == artifact_directory.absolute() and not artifact_directory.exists(),
+                 "Native output escaped or reused its owned snapshot")
+            input_path = self.snapshot(record) / "durability-binding.json"
+            input_raw = native["read"](input_path, 4096)
+            need(record.get("native_durability_input") == {"bytes": len(input_raw), "sha256": hashlib.sha256(input_raw).hexdigest()},
+                 "Native input was not prepared by the owner")
+            native_binding = native["decode"](input_raw)
+            native["validate_input"](native_binding)
+            need(native_binding["image"] == record["image"] and
+                 native_binding["target"] == self.docker.info["Architecture"] + "-unknown-linux-gnu", "Native image/target binding")
+        need(mode not in {"durability-sample", "durability-object"} or checkpoint is not None,
+             "Durability workers require trusted pre-disposal checkpoint")
+        if checkpoint is not None:
+            need(callable(checkpoint) and type(checkpoint_context) is dict and deadline is not None,
+                 "Trusted campaign checkpoint context required")
+            # Full worker wait, bounded Docker finalization and content barrier.
+            self.docker.require_remaining()
         if mode == "navigation-build":
             need(artifact_directory == self.snapshot(record) / "artifacts" and artifact_directory.resolve() == artifact_directory.absolute()
                  and not artifact_directory.exists(), "Navigation artifact output escaped or reused the owned snapshot")
@@ -596,9 +904,15 @@ class Sandbox:
                 need(count == pin["bytes"] and digest.hexdigest() == pin["sha256"] and
                      (before.st_ino, before.st_size, before.st_mtime_ns) == (after.st_ino, after.st_size, after.st_mtime_ns),
                      "Coverage input snapshot changed")
-        else:
+        elif mode not in {"durability-sample", "durability-object"}:
             need(artifact_directory is None, "Unexpected artifact output mount")
         harness = self.harness(record)
+        probe_directory = None
+        if mode in PROBE_MODES:
+            need(record.get("snapshot_schema") == 2 and record.get("resource_protocol") == 2 and
+                 all((harness/name).is_file() for name in PROBE_HARNESS) and
+                 output_budget >= 768*1024+4096, "Fixed probe source/framing unavailable")
+            probe_directory = self.probe_input_directory(record, mode)
         if record.get("resource_protocol") == 2:
             expected = {f"{namespace}-{suffix}" for suffix in VOLUMES}
             volumes = self.docker.inspect("volume", sorted(expected))
@@ -606,7 +920,7 @@ class Sandbox:
             assert_owned(volumes, record["owner"])
             need(all(item["Labels"].get("io.hsearch.namespace") == namespace for item in volumes), "Task volume namespace changed")
         lease_id = self.namespace("run")
-        budget = PROBE if mode == "probe" else BUILD
+        budget = OBJECT if objects is not None else PROBE if mode == "probe" or mode in PROBE_CLIENT else BUILD
         with self.registry.edit() as data:
             need(data["leases"][namespace]["phase"] == "ready", "Namespace lifecycle is busy")
             need(not any(x.get("parent") == namespace for x in data["leases"].values()), "Mutable cache/target is already leased")
@@ -619,10 +933,46 @@ class Sandbox:
                 "--user", "10001:10001", "--cpus", str(budget["cpu_millis"] / 1000), "--memory", str(budget["memory_bytes"]), "--pids-limit", str(budget["pids"]), "--read-only",
                 "--memory-swap", str(budget["memory_bytes"]),
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,nosuid,nodev,size=67108864",
-                "--network", "bridge" if mode in {"prefetch", "navigation-build"} else (namespace + "-net" if mode == "probe" else "none"),
+                "--network", "bridge" if mode in {"prefetch", "navigation-build"} else (namespace + "-net" if mode in {"probe", "durability-object"} else "none"),
                 "--mount", f"type=bind,source={self.source_root},target=/workspace,readonly",
                 "--mount", f"type=bind,source={harness},target=/harness,readonly", "--mount", f"type=volume,source={namespace}-cargo,target=/cargo",
                 "--mount", f"type=volume,source={namespace}-target,target=/target"]
+        if objects is not None:
+            # The object driver gets no compiler caches or writable source.
+            args = args[:args.index("--mount")]
+            args += ["--mount", f"type=bind,source={self.source_root},target=/workspace,readonly",
+                     "--mount", f"type=bind,source={harness},target=/harness,readonly",
+                     "--mount", f"type=bind,source={object_input_path},target=/object-input/binding.json,readonly",
+                     "--mount", f"type=bind,source={artifact_directory},target=/object-output",
+                     "--mount", f"type=volume,source={namespace}-client,target=/certs,readonly,volume-nocopy",
+                     "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly,volume-nocopy",
+                     "--mount", f"type=volume,source={namespace}-data,target=/object-store-accounting,readonly,volume-nocopy"]
+        if native is not None:
+            args += ["--mount", f"type=bind,source={artifact_directory},target=/durability-evidence",
+                     "--mount", f"type=bind,source={input_path},target=/durability-binding.json,readonly"]
+        if mode in PROBE_MODES:
+            # Rebuild the fixed profile's mounts, rather than hiding prefilled
+            # writable build caches from its disk monitor.
+            first_mount = args.index("--mount")
+            args = args[:first_mount]
+            tmpfs = args.index("--tmpfs") + 1
+            args[tmpfs] = "/tmp:rw,nosuid,nodev,size=" + str(1024**2 if mode in PROBE_CLIENT else 67108864)
+            network_index = args.index("--network") + 1
+            args[network_index] = namespace+"-net" if mode in PROBE_CLIENT else "none"
+            args += ["--env", "PYTHONDONTWRITEBYTECODE=1",
+                     "--mount", f"type=bind,source={self.source_root},target=/workspace,readonly",
+                     "--mount", f"type=bind,source={harness},target=/harness,readonly",
+                     "--mount", f"type=bind,source={probe_directory},target=/probe-input,readonly"]
+            if mode == "probe-checker-build":
+                args += ["--mount", f"type=volume,source={namespace}-cargo,target=/cargo",
+                         "--mount", f"type=volume,source={namespace}-target,target=/target"]
+            else:
+                args += ["--mount", f"type=volume,source={namespace}-target,target=/probe-checker,readonly"]
+                receipt = record["rustfs_probe_inputs"][mode]
+                args += ["--env", "HSEARCH_CHECKER_SHA256=" + receipt["build"]["sha256"]]
+            if mode in PROBE_CLIENT:
+                args += ["--mount", f"type=volume,source={namespace}-client,target=/certs,readonly",
+                         "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly"]
         if mode == "navigation-build":
             args += ["--mount", f"type=bind,source={artifact_directory},target=/navigation-output"]
         if mode == "coverage":
@@ -633,10 +983,13 @@ class Sandbox:
             args += ["--mount", f"type=volume,source={namespace}-client,target=/certs,readonly",
                      "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly", record["image"], "python3", "/harness/probe.py", namespace]
         else:
-            args += [record["image"], "python3", "/harness/execute.py", mode, "--disk-bytes", str(BUILD["disk_bytes"]),
-                     "--timeout", "1200", "--output-bytes", str(output_budget)]
+            args += [record["image"], "python3", "/harness/execute.py", mode, "--disk-bytes", str(budget["disk_bytes"]),
+                     "--timeout", "120" if mode in PROBE_CLIENT else "1200", "--output-bytes", str(output_budget)]
+            if mode in PROBE_CLIENT:
+                index = args.index("--disk-bytes")+1
+                args[index] = str(PROBE["disk_bytes"])
         backend_known, workload_attempted = False, False
-        self.registry.update(lease_id, protocol=2, phase="reserved", container_name=container, mode=mode, owner_active=True)
+        self.registry.update(lease_id, protocol=2, phase="reserved", container_name=container, mode=mode, owner_active=True, checkpoint_required=checkpoint is not None)
         try:
             free = self.backend_free(record, container + "-admission", data_volumes=True)
             backend_known = True
@@ -649,26 +1002,130 @@ class Sandbox:
             container_id = self.docker.command(*args).strip()
             need(re.fullmatch(r"[0-9a-f]{64}", container_id), "Uncertain container-create identity; lease retained")
             self.registry.update(lease_id, phase="created", container_id=container_id)
-            self.run_container(record, container_id)
+            created_info = self.run_container(record, container_id)
+            if native is not None:
+                native["verify_container"](created_info, record, self.source_root, harness, input_path, artifact_directory)
+            if objects is not None:
+                object_topology = objects["verify_topology"](self, record)
+                objects["verify_container"](created_info, record, object_config)
+            if mode in PROBE_MODES:
+                self.probe_execution(record, container_id, mode, budget)
             self.registry.update(lease_id, phase="starting")
             self.docker.command("start", container_id)
+            if objects is not None:
+                objects["verify_container"](self.run_container(record, container_id), record, object_config, require_endpoint=True)
             self.registry.update(lease_id, phase="running")
             status = self.docker.command("wait", container_id, timeout=1250).strip()
             need(re.fullmatch(r"[0-9]{1,3}", status), "Unknown workload outcome; lease retained")
             info = self.run_container(record, container_id)
+            execution = self.probe_execution(record, container_id, mode, budget) if mode in PROBE_MODES else None
             need(info["State"]["Status"] in {"exited", "dead"} and not info["State"]["Running"] and
                  info["State"]["ExitCode"] == int(status), "Workload completion changed; lease retained")
-            execution = self.public_execution(record, info, budget, output_budget) if mode == "check" else None
-            logs = self.docker.command("logs", container_id, merge_output=True)
+            if mode == "check" or checkpoint is not None and mode == "prefetch":
+                execution = self.public_execution(record, info, budget, output_budget)
+            streams = None
+            if mode in PROBE_MODES or checkpoint is not None or native is not None or objects is not None:
+                streams = self.docker.command("logs", container_id, output_bytes=output_budget, raw_streams=True)
+                raw = streams["stdout"]
+                try:
+                    logs = raw.decode("utf-8", errors="strict")
+                    encoding = "utf-8-strict"
+                except UnicodeError:
+                    logs, encoding = raw.decode("utf-8", errors="replace"), "invalid-utf8-retained"
+            else:
+                logs = self.docker.command("logs", container_id, merge_output=True)
+            raw = logs.encode() if streams is None else streams["stdout"]
+            result = {"mode": mode, "container_id": container_id, "exit_code": int(status), "encoding": "utf-8-replacement",
+                      "output": raw[:output_budget].decode(errors="ignore"), "truncated": len(raw) > output_budget}
+            if streams is not None:
+                result.update(output=logs, encoding=encoding, raw_streams=streams,
+                    output_protocol="rustfs-raw-streams-v1", stderr_bytes=len(streams["stderr"]),
+                    child_stream_semantics="stdout-and-stderr-merged-by-monitor")
+            if execution is not None:
+                result["execution"] = execution
+            if native is not None:
+                self.registry.update(lease_id, native_export_verified=False)
+            if objects is not None:
+                self.registry.update(lease_id, object_export_verified=False)
+            def export_files():
+                if checkpoint is None or artifact_directory is None:
+                    return {}
+                rows = {}
+                total = 0
+                for path in artifact_directory.iterdir():
+                    need(len(rows) < 256 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", path.name), "Campaign export inventory bound")
+                    before = path.lstat()
+                    need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size <= 1024**2,
+                         "Campaign export file type/link/size")
+                    with path.open("rb") as handle:
+                        raw = handle.read(1024**2 + 1)
+                    after = path.lstat()
+                    need(len(raw) == before.st_size and before == after, "Campaign export changed during binding")
+                    total += len(raw)
+                    need(total <= 32*1024**2, "Campaign export aggregate bound")
+                    rows[path.name] = {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+                return rows
+            admitted_export = None
+            checkpoint_attempted = False
+            try:
+                admitted_export = export_files()
+                if checkpoint is not None and mode in {"prefetch", "check"}:
+                    ordinary = runpy.run_path(str(self.source_root/"tools/native_durability_campaign.py"))
+                    result["ordinary_proof"] = ordinary["verify_ordinary"](result, mode, self.source_root)
+                if native is not None:
+                    need(int(status) == 0 and not result["truncated"], "Native worker failed or truncated")
+                    need(native["read"](input_path, 4096) == input_raw, "Native input changed")
+                    native["verify_container"](info, record, self.source_root, harness, input_path, artifact_directory)
+                    result["native_durability"] = native["verify_export"](artifact_directory, native_binding)
+                if objects is not None:
+                    need(int(status) == 0 and not result["truncated"], "Object worker failed or truncated")
+                    need(objects["read"](object_input_path, 65536) == object_raw and
+                         objects["verify_topology"](self, record) == object_topology, "Object input/topology changed")
+                    objects["verify_container"](info, record, object_config)
+                    proof = objects["verify_export"](artifact_directory, object_inputs, streams["stdout"], container_id, object_config)
+                    proof["authenticated_topology"] = {**object_topology, "worker_cid": container_id}
+                    result["object_durability"] = proof
+                if checkpoint is not None:
+                    need(export_files() == admitted_export, "Campaign export changed across independent oracle")
+                    result["export_files"] = admitted_export
+                if checkpoint is not None:
+                    terminal = self.run_container(record, container_id)["State"]
+                    need(not terminal["Running"] and terminal["Status"] in {"exited", "dead"} and
+                         terminal["ExitCode"] == int(status), "Checkpoint terminal state changed")
+                    context = {**checkpoint_context, "container_id": container_id, "namespace": namespace,
+                               "run_lease": lease_id, "mode": mode, "image": record["image"],
+                               "command_budget": self.docker.receipt(),
+                               "budget": budget, "harness_hashes": record.get("harness_hashes", {}),
+                               "image_inputs_sha256": image_digest(), "config_sha256": record.get("config_sha256"),
+                               "terminal": {"running": False, "exit_code": int(status)}}
+                    checkpoint_attempted = True
+                    reference = checkpoint(context, result, artifact_directory)
+                    self.registry.update(lease_id, campaign_checkpoint=reference)
+                    barrier = runpy.run_path(str(ROOT / "tools/campaign_checkpoint.py"))
+                    barrier["sync_file"](self.registry.path)
+                    barrier["sync_directory"](self.registry.root)
+                    result["checkpoint"] = reference
+                    self.docker.checkpoint_complete()
+            except Exception as error:
+                if checkpoint is not None and not checkpoint_attempted:
+                    result["verification_failed"] = True
+                    try:
+                        # Failed/changed exports stay in the original snapshot.
+                        # Retain a bounded failure with exact public-safe logs,
+                        # never publish unverified or unbounded artifact bytes.
+                        result["export_files"] = {}
+                        result["export_status"] = "original-snapshot-retained-unqualified"
+                        terminal_context = {**checkpoint_context, "container_id": container_id, "namespace": namespace,
+                            "run_lease": lease_id, "mode": mode, "image": record["image"], "budget": budget,
+                            "terminal": {"running": False, "exit_code": int(status)}}
+                        checkpoint(terminal_context, result, None)
+                    except Exception as retention_error:
+                        error.add_note("Failure checkpoint unavailable; worker and lease retained: " + type(retention_error).__name__)
+                raise
             self.docker.command("container", "rm", container_id)
             need(not self.docker.command("container", "ls", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}").strip(),
                  "Completed container removal uncertain; lease retained")
             self.registry.release(lease_id)
-            raw = logs.encode()
-            result = {"mode": mode, "container_id": container_id, "exit_code": int(status), "encoding": "utf-8-replacement",
-                      "output": raw[:output_budget].decode(errors="ignore"), "truncated": len(raw) > output_budget}
-            if execution is not None:
-                result["execution"] = execution
             if stream:
                 print(result["output"], end="", flush=True)
             if result["exit_code"] or result["truncated"]:
@@ -705,7 +1162,7 @@ class Sandbox:
                 "state": {"status": state["Status"], "running": state["Running"], "exit_code": state["ExitCode"]},
                 "budget": dict(budget), "output_budget": output_budget}
 
-    def reconcile(self, namespace):
+    def reconcile(self, namespace, *, checkpoint_verify=None):
         """Reconcile only acknowledged container IDs after their worker exited."""
         record = self.registry.get(namespace)
         need(record["source"] == str(self.source_root) and record["engine"] == self.docker.engine, "Foreign recovery namespace")
@@ -716,6 +1173,12 @@ class Sandbox:
             container_id = candidate.get("container_id", "")
             need(candidate.get("protocol") == 2 and isinstance(container_id, str) and re.fullmatch(r"[0-9a-f]{64}", container_id),
                  "Uncertain unacknowledged create cannot be reclaimed")
+            if candidate.get("checkpoint_required"):
+                need(callable(checkpoint_verify) and candidate.get("campaign_checkpoint"),
+                     "Campaign checkpoint absent; retain acknowledged worker and lease")
+                need(candidate["campaign_checkpoint"].get("container_id") == container_id,
+                     "Campaign checkpoint belongs to a different worker; retain lease")
+                checkpoint_verify(candidate["campaign_checkpoint"])
             token = secrets.token_hex(12)
             with self.registry.edit() as data:
                 current = data["leases"][lease_id]
@@ -748,6 +1211,7 @@ class Sandbox:
         with self.registry.edit() as data:
             need(not any(x.get("parent") == namespace for x in data["leases"].values()), "Cleanup refused: active or uncertain run lease")
             current = data["leases"][namespace]
+            need(not current.get("probe_restart_pending"), "Cleanup refused: unknown probe restart retained")
             need(current["phase"] in {"starting", "ready", "failed", "stopping"}, "Unknown namespace lifecycle")
             if current["phase"] in {"starting", "stopping"}:
                 identity = owner_identity(current["pid"])

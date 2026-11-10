@@ -24,6 +24,20 @@ WORKSPACE = {
     "hsearch-testkit": {"path": "crates/testkit/", "dependencies": []}}
 
 
+# Planning controls mock attestation, including read-only protoc authentication.
+# test_native_protoc exercises that real adapter with explicit HOST fixtures.
+def setUpModule():
+    global _protoc_patch
+    _protoc_patch=patch.dict(CI['native'].__globals__,NATIVE_PROTOC={
+        'prepare_for_ci':lambda coverage,environment:(environment,{'scope':'synthetic-HOST'}),
+        'verify':lambda context:None})
+    _protoc_patch.start()
+
+
+def tearDownModule():
+    _protoc_patch.stop()
+
+
 def fixture_coverage():
     """Planning tests replace only native attestation, preserving real command policy."""
     value = dict(CI["COVERAGE"])
@@ -307,6 +321,17 @@ class ResultControls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Incomplete full coverage"):
             CI["validate_plan"](value)
 
+    def test_protoc_authentication_failure_stops_before_existing_native_commands(self):
+        value=choose(b"M\0unknown\0");commands=[]
+        def refuse(*args):raise ValueError('unqualified native protoc')
+        with patch.dict(CI['native'].__globals__,output=lambda command:HEAD.encode() if command[0]=='git' else b'{}',
+                        graph=lambda *_args:WORKSPACE,COVERAGE=fixture_coverage(),
+                        qualified_coverage_base=lambda *a:BASE,
+                        run=lambda *args,**kw:commands.append(args),
+                        NATIVE_PROTOC={'prepare_for_ci':refuse,'verify':lambda *a:None}):
+            with self.assertRaisesRegex(ValueError,'native protoc'):CI['native'](value)
+        self.assertEqual(commands,[])
+
     def test_native_full_preserves_release_doctests_and_coverage(self):
         value = choose(b"M\0unknown\0")
         commands = []
@@ -507,6 +532,43 @@ class BoundedResearchSchedulingControls(unittest.TestCase):
         self.assertEqual(attempted[-1], ordinary[0])
         self.assertEqual(sum("--no-fail-fast" in command for command in attempted), 1)
         self.assertFalse(any("--test" in command or "-E" in command for command in attempted))
+
+
+class DiagnosticCheckerSelectionControls(unittest.TestCase):
+    def workspace(self):
+        value = copy.deepcopy(WORKSPACE)
+        value["hsearch-object-probe"] = {"path": "crates/object-probe/", "dependencies": ["hsearch-object"]}
+        return value
+
+    def test_diagnostic_dev_edge_retains_reverse_consumers_and_production_denominators(self):
+        workspace = self.workspace()
+        value = CI["select"]([{"status": "M", "paths": ["crates/object/src/lib.rs"]}], workspace, OWNERSHIP, base=BASE, head=HEAD)
+        self.assertEqual(value["packages"], ["hsearch-object", "hsearch-object-probe"])
+        self.assertEqual(value["coverage_packages"], ["hsearch-object"])
+        self.assertNotIn("hsearch-object-probe", CI["PRODUCTION"])
+        own = CI["select"]([{"status": "M", "paths": ["crates/object-probe/src/checker.rs"]}], workspace, OWNERSHIP, base=BASE, head=HEAD)
+        self.assertEqual(own["packages"], ["hsearch-object-probe"])
+        self.assertEqual(own["coverage_packages"], ["hsearch-object"])
+
+    def test_checker_coverage_is_separate_and_cannot_replace_native_or_production_checks(self):
+        workspace = self.workspace()
+        value = CI["select"]([], workspace, OWNERSHIP, base=BASE, head=HEAD, fallback="shared profile")
+        commands = []
+        replacements = {"output": lambda command, **_kwargs: HEAD.encode() if command[0] == "git" else b"{}", "graph": lambda *_args: workspace,
+                        "qualified_coverage_base": lambda *_args: BASE, "COVERAGE": fixture_coverage(),
+                        "run": lambda command, **_kwargs: commands.append(command)}
+        with patch.dict(CI["native"].__globals__, replacements), patch.dict(os.environ, {"CARGO_TARGET_DIR": "/owned/target"}):
+            CI["native"](value)
+        reports = [command for command in commands if len(command)>2 and command[1:3] == ["tools/coverage.py", "run"]]
+        self.assertEqual(len(reports), 2)
+        checker = next(command for command in reports if command[-1] == "hsearch-object-probe")
+        production = next(command for command in reports if command is not checker)
+        self.assertEqual([checker[i+1] for i,v in enumerate(checker[:-1]) if v == "--package"], ["hsearch-object-probe"])
+        self.assertEqual(set(production[i+1] for i,v in enumerate(production[:-1]) if v == "--package"), CI["PRODUCTION"])
+        self.assertNotEqual(checker[checker.index("--output")+1], production[production.index("--output")+1])
+        tests = [command for command in commands if "nextest" in command and "run" in command and "-E" not in command]
+        self.assertTrue(any("--release" in command for command in tests))
+        self.assertTrue(any("--release" not in command for command in tests))
 
 if __name__ == "__main__":
     unittest.main()

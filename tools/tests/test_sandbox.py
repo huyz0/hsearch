@@ -457,6 +457,58 @@ class ResourceCapabilityControls(unittest.TestCase):
             spawn.assert_not_called()
 
 
+
+class FixedCapabilityProfileControls(unittest.TestCase):
+    def execution(self):
+        import types
+        namespace = "hsearch-probe-123456789abc"
+        record = {"owner": "mine", "namespace": namespace, "image": "image"}
+        sandbox = object.__new__(MODULE["Sandbox"])
+        sandbox.source_root = Path("/source")
+        sandbox.harness = lambda _record: Path("/frozen")
+        sandbox.probe_input_directory = lambda _record, _mode: Path("/inputs")
+        mounts = [{"Type": "bind", "Source": str(source), "Destination": destination, "RW": False}
+                  for source, destination in [(sandbox.source_root, "/workspace"), (Path("/frozen"), "/harness"), (Path("/inputs"), "/probe-input")]]
+        mounts += [{"Type": "volume", "Name": namespace+"-"+suffix, "Destination": destination, "RW": False}
+                   for suffix, destination in [("target", "/probe-checker"), ("client", "/certs"), ("credentials", "/run/secrets")]]
+        info = {"Id": "a"*64, "Image": "image", "Config": {"User": "10001:10001", "Labels": {MODULE["LABEL"]: "mine", "io.hsearch.namespace": namespace}},
+                "HostConfig": {"NanoCpus": 500000000, "Memory": 256*1024**2, "MemorySwap": 256*1024**2,
+                               "PidsLimit": 64, "ReadonlyRootfs": True, "NetworkMode": namespace+"-net",
+                               "Tmpfs": {"/tmp": "rw,nosuid,nodev,size=1048576"}},
+                "Mounts": mounts, "State": {"Status": "exited", "Running": False, "ExitCode": 0}}
+        sandbox.docker = types.SimpleNamespace(engine="engine", inspect=lambda *_: [info],
+                          command=lambda *_: json.dumps([{"Id": "image", "Architecture": "amd64"}]))
+        return sandbox, record, info
+
+    def test_fixed_client_has_no_writable_build_cache_or_compiler(self):
+        execute = runpy.run_path(str(Path(MODULE["ROOT"]) / "dev/execute.py"))
+        self.assertEqual(execute["writable_paths"]("rustfs-capabilities-before"), ("/tmp",))
+        self.assertEqual(execute["writable_paths"]("probe-history-check"), ("/tmp",))
+        self.assertEqual(execute["writable_paths"]("probe-checker-build"), ("/cargo", "/target", "/tmp"))
+        self.assertNotIn("cargo", execute["COMMANDS"]["rustfs-capabilities-before"])
+        self.assertEqual(execute["COMMANDS"]["probe-history-check"], ["/probe-checker/release/hsearch-object-probe"])
+        valid = {"cpu.max": "50000 100000", "memory.max": str(256*1024**2), "memory.swap.max": "0", "pids.max": "64"}
+        execute["verify_limits"](500, 256*1024**2, 64, limits=valid, uid=10001)
+        for key, value in [("cpu.max", "max 100000"), ("memory.max", "max"), ("memory.swap.max", "1"), ("pids.max", "65")]:
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                execute["verify_limits"](500, 256*1024**2, 64, limits={**valid,key:value}, uid=10001)
+
+    def test_actual_profile_inspect_binds_image_source_volumes_and_caps(self):
+        sandbox, record, info = self.execution()
+        result = sandbox.probe_execution(record, "a"*64, "rustfs-capabilities-before", MODULE["PROBE"])
+        self.assertEqual(result["image_id"], "image")
+        self.assertEqual(result["budget"]["disk_bytes"], 1024**2)
+        for change in (lambda x: x.pop("Image"),
+                       lambda x: x["Config"].update(User="0:0"),
+                       lambda x: x["HostConfig"].update(MemorySwap=-1),
+                       lambda x: x["Mounts"][0].update(Source="/foreign"),
+                       lambda x: x["Mounts"][3].update(RW=True),
+                       lambda x: x["Mounts"][4].update(Name="foreign-client")):
+            sandbox, record, info = self.execution()
+            change(info)
+            with self.assertRaises(Refused):
+                sandbox.probe_execution(record, "a"*64, "rustfs-capabilities-before", MODULE["PROBE"])
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -517,3 +569,96 @@ class ActualImageProjectionControls(unittest.TestCase):
             sb.smoke()
             self.assertEqual(calls, [('run', 'smoke-a', mode) for mode in ('prefetch', 'diagnostics', 'check', 'probe')] +
                 [('run', 'smoke-b', 'probe'), ('down', 'smoke-a'), ('run', 'smoke-b', 'probe'), ('down', 'smoke-b')])
+
+
+class ProbeRestartResponseControls(unittest.TestCase):
+    """Synthetic CLI response/state controls, never a real Docker restart."""
+    def fixture(self, response, exit_code=0):
+        import hashlib
+        from contextlib import contextmanager
+        from types import SimpleNamespace
+        namespace = "hsearch-probe-123456789abc"
+        cid = "a"*64
+        config = {"Labels": {"io.hsearch.owner": "fixture", "io.hsearch.namespace": namespace}}
+        expected = {"image": "sha256:"+"b"*64, "cid": cid, "owner": "fixture", "namespace": namespace,
+                    "volume": namespace+"-data", "config_sha256": hashlib.sha256(json.dumps(config,sort_keys=True,separators=(',',':')).encode()).hexdigest()}
+        before = {"Id": cid, "Image": expected["image"], "Config": config,
+                  "Mounts": [{"Destination": "/data", "Name": expected["volume"], "Type": "volume", "RW": True}],
+                  "State": {"Running": True, "Pid": 100, "StartedAt": "before"}}
+        after = copy.deepcopy(before)
+        after["State"].update(Pid=101, StartedAt="after")
+        data = {"leases": {namespace: {"phase": "ready"}}}
+        @contextmanager
+        def edit():
+            yield data
+        calls = []
+        def command(*args, **kwargs):
+            calls.append(args)
+            if args[0] == "version":return "29.1.3\n"
+            self.assertEqual(args, ("restart", "--timeout", "10", cid))
+            self.assertEqual(kwargs, {"timeout":60, "output_bytes":4096, "raw_streams":True, "capture_status":True})
+            return {"exit_code":exit_code, "streams":response}
+        reads = []
+        def storage(_namespace):
+            reads.append(_namespace)
+            return (before if len(reads)==1 else after), expected
+        sandbox = object.__new__(MODULE["Sandbox"])
+        sandbox.registry = SimpleNamespace(edit=edit)
+        sandbox.docker = SimpleNamespace(command=command)
+        sandbox.probe_storage = storage
+        return sandbox, namespace, data, calls, reads
+
+    def test_exact_stdout_and_separate_warning_preserve_strict_state_proof(self):
+        response = {"stdout": ("a"*64+"\n").encode(), "stderr": b"synthetic warning\n"}
+        sandbox, ns, data, calls, reads = self.fixture(response)
+        events = []
+        before, after, expected = sandbox.restart_probe_storage(ns,
+            lambda value:events.append(("intent",value)), lambda value:events.append(("response",value)))
+        self.assertEqual([kind for kind,_ in events], ["intent", "response"])
+        self.assertEqual(events[1][1]["streams"], response)
+        self.assertEqual(events[1][1]["client_version"], "29.1.3")
+        self.assertEqual(len(reads), 2)
+        self.assertFalse(data["leases"][ns]["probe_restart_pending"])
+        self.assertEqual(data["leases"][ns]["phase"], "ready")
+
+    def test_warning_on_stdout_wrong_cid_or_nonutf8_remains_unknown_after_raw_retention(self):
+        for stdout in (b"synthetic warning\n"+("a"*64+"\n").encode(), ("c"*64+"\n").encode(), b"\xff"):
+            response = {"stdout":stdout, "stderr":b"diagnostic\x00\xff"}
+            sandbox, ns, data, calls, reads = self.fixture(response)
+            events = []
+            with self.subTest(stdout=stdout), self.assertRaisesRegex(Refused, "outcome unknown"):
+                sandbox.restart_probe_storage(ns, lambda value:events.append(("intent",value)),
+                    lambda value:events.append(("response",value)))
+            self.assertEqual(events[1][1]["streams"], response)
+            self.assertEqual(len(reads), 1)
+            self.assertTrue(data["leases"][ns]["probe_restart_pending"])
+            self.assertEqual(data["leases"][ns]["phase"], "probe-restarting")
+
+    def test_nonzero_exit_with_exact_cid_retains_response_and_pending_intent(self):
+        response = {"stdout":("a"*64+"\n").encode(), "stderr":b"synthetic error\n"}
+        sandbox, ns, data, calls, reads = self.fixture(response, exit_code=7)
+        events = []
+        with self.assertRaisesRegex(Refused, "outcome unknown"):
+            sandbox.restart_probe_storage(ns, lambda value:events.append(("intent",value)),
+                lambda value:events.append(("response",value)))
+        self.assertEqual(events[1][1]["exit_code"], 7)
+        self.assertEqual(events[1][1]["streams"], response)
+        self.assertEqual(len(reads), 1)
+        self.assertTrue(data["leases"][ns]["probe_restart_pending"])
+        self.assertEqual(data["leases"][ns]["phase"], "probe-restarting")
+
+    def test_observation_persistence_failure_cannot_clear_intent(self):
+        sandbox, ns, data, calls, reads = self.fixture({"stdout":("a"*64+"\n").encode(),"stderr":b""})
+        def refuse(_value):raise OSError("synthetic evidence failure")
+        with self.assertRaises(OSError):sandbox.restart_probe_storage(ns, lambda _value:None, refuse)
+        self.assertTrue(data["leases"][ns]["probe_restart_pending"])
+        self.assertEqual(data["leases"][ns]["phase"], "probe-restarting")
+
+
+class BoundedCliStatusControls(unittest.TestCase):
+    def test_nonzero_status_preserves_exact_both_pipes_without_claiming_operation_failure(self):
+        command = [sys.executable, "-B", "-c", "import os;os.write(1,b'x');os.write(2,b'\\xff');raise SystemExit(7)"]
+        result = MODULE["bounded_capture"](command, timeout=10, limit=2, raw_streams=True, capture_status=True)
+        self.assertEqual(result, {"exit_code":7,"streams":{"stdout":b"x","stderr":b"\xff"}})
+        with self.assertRaisesRegex(Refused, "Docker exec failed"):
+            MODULE["bounded_capture"](command, timeout=10, limit=2, raw_streams=True)
