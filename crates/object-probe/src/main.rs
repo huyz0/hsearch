@@ -95,10 +95,8 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let root = std::env::temp_dir().join(format!(
-                "hsearch-checker-{}-{nonce}",
-                std::process::id()
-            ));
+            let root = std::env::temp_dir()
+                .join(format!("hsearch-checker-{}-{nonce}", std::process::id()));
             fs::create_dir(&root).unwrap();
             Self(root)
         }
@@ -169,7 +167,10 @@ mod tests {
         input.write("small", b"abc");
         assert_eq!(bounded(&path, 2), Err("input-bound"));
         assert_eq!(bounded(&path, 3).unwrap(), b"abc");
-        assert_eq!(bounded(&input.0.join("missing"), 3), Err("input-unavailable"));
+        assert_eq!(
+            bounded(&input.0.join("missing"), 3),
+            Err("input-unavailable")
+        );
         #[cfg(unix)]
         {
             let link = input.0.join("link");

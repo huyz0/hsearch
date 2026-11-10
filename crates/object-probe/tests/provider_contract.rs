@@ -29,5 +29,8 @@ fn actual_checker_cli_refuses_arguments_without_reflecting_them() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    assert_eq!(output.stderr, b"rustfs-checker-refused:fixed-profile-only\n");
+    assert_eq!(
+        output.stderr,
+        b"rustfs-checker-refused:fixed-profile-only\n"
+    );
 }
