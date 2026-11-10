@@ -569,3 +569,96 @@ class ActualImageProjectionControls(unittest.TestCase):
             sb.smoke()
             self.assertEqual(calls, [('run', 'smoke-a', mode) for mode in ('prefetch', 'diagnostics', 'check', 'probe')] +
                 [('run', 'smoke-b', 'probe'), ('down', 'smoke-a'), ('run', 'smoke-b', 'probe'), ('down', 'smoke-b')])
+
+
+class ProbeRestartResponseControls(unittest.TestCase):
+    """Synthetic CLI response/state controls, never a real Docker restart."""
+    def fixture(self, response, exit_code=0):
+        import hashlib
+        from contextlib import contextmanager
+        from types import SimpleNamespace
+        namespace = "hsearch-probe-123456789abc"
+        cid = "a"*64
+        config = {"Labels": {"io.hsearch.owner": "fixture", "io.hsearch.namespace": namespace}}
+        expected = {"image": "sha256:"+"b"*64, "cid": cid, "owner": "fixture", "namespace": namespace,
+                    "volume": namespace+"-data", "config_sha256": hashlib.sha256(json.dumps(config,sort_keys=True,separators=(',',':')).encode()).hexdigest()}
+        before = {"Id": cid, "Image": expected["image"], "Config": config,
+                  "Mounts": [{"Destination": "/data", "Name": expected["volume"], "Type": "volume", "RW": True}],
+                  "State": {"Running": True, "Pid": 100, "StartedAt": "before"}}
+        after = copy.deepcopy(before)
+        after["State"].update(Pid=101, StartedAt="after")
+        data = {"leases": {namespace: {"phase": "ready"}}}
+        @contextmanager
+        def edit():
+            yield data
+        calls = []
+        def command(*args, **kwargs):
+            calls.append(args)
+            if args[0] == "version":return "29.1.3\n"
+            self.assertEqual(args, ("restart", "--timeout", "10", cid))
+            self.assertEqual(kwargs, {"timeout":60, "output_bytes":4096, "raw_streams":True, "capture_status":True})
+            return {"exit_code":exit_code, "streams":response}
+        reads = []
+        def storage(_namespace):
+            reads.append(_namespace)
+            return (before if len(reads)==1 else after), expected
+        sandbox = object.__new__(MODULE["Sandbox"])
+        sandbox.registry = SimpleNamespace(edit=edit)
+        sandbox.docker = SimpleNamespace(command=command)
+        sandbox.probe_storage = storage
+        return sandbox, namespace, data, calls, reads
+
+    def test_exact_stdout_and_separate_warning_preserve_strict_state_proof(self):
+        response = {"stdout": ("a"*64+"\n").encode(), "stderr": b"synthetic warning\n"}
+        sandbox, ns, data, calls, reads = self.fixture(response)
+        events = []
+        before, after, expected = sandbox.restart_probe_storage(ns,
+            lambda value:events.append(("intent",value)), lambda value:events.append(("response",value)))
+        self.assertEqual([kind for kind,_ in events], ["intent", "response"])
+        self.assertEqual(events[1][1]["streams"], response)
+        self.assertEqual(events[1][1]["client_version"], "29.1.3")
+        self.assertEqual(len(reads), 2)
+        self.assertFalse(data["leases"][ns]["probe_restart_pending"])
+        self.assertEqual(data["leases"][ns]["phase"], "ready")
+
+    def test_warning_on_stdout_wrong_cid_or_nonutf8_remains_unknown_after_raw_retention(self):
+        for stdout in (b"synthetic warning\n"+("a"*64+"\n").encode(), ("c"*64+"\n").encode(), b"\xff"):
+            response = {"stdout":stdout, "stderr":b"diagnostic\x00\xff"}
+            sandbox, ns, data, calls, reads = self.fixture(response)
+            events = []
+            with self.subTest(stdout=stdout), self.assertRaisesRegex(Refused, "outcome unknown"):
+                sandbox.restart_probe_storage(ns, lambda value:events.append(("intent",value)),
+                    lambda value:events.append(("response",value)))
+            self.assertEqual(events[1][1]["streams"], response)
+            self.assertEqual(len(reads), 1)
+            self.assertTrue(data["leases"][ns]["probe_restart_pending"])
+            self.assertEqual(data["leases"][ns]["phase"], "probe-restarting")
+
+    def test_nonzero_exit_with_exact_cid_retains_response_and_pending_intent(self):
+        response = {"stdout":("a"*64+"\n").encode(), "stderr":b"synthetic error\n"}
+        sandbox, ns, data, calls, reads = self.fixture(response, exit_code=7)
+        events = []
+        with self.assertRaisesRegex(Refused, "outcome unknown"):
+            sandbox.restart_probe_storage(ns, lambda value:events.append(("intent",value)),
+                lambda value:events.append(("response",value)))
+        self.assertEqual(events[1][1]["exit_code"], 7)
+        self.assertEqual(events[1][1]["streams"], response)
+        self.assertEqual(len(reads), 1)
+        self.assertTrue(data["leases"][ns]["probe_restart_pending"])
+        self.assertEqual(data["leases"][ns]["phase"], "probe-restarting")
+
+    def test_observation_persistence_failure_cannot_clear_intent(self):
+        sandbox, ns, data, calls, reads = self.fixture({"stdout":("a"*64+"\n").encode(),"stderr":b""})
+        def refuse(_value):raise OSError("synthetic evidence failure")
+        with self.assertRaises(OSError):sandbox.restart_probe_storage(ns, lambda _value:None, refuse)
+        self.assertTrue(data["leases"][ns]["probe_restart_pending"])
+        self.assertEqual(data["leases"][ns]["phase"], "probe-restarting")
+
+
+class BoundedCliStatusControls(unittest.TestCase):
+    def test_nonzero_status_preserves_exact_both_pipes_without_claiming_operation_failure(self):
+        command = [sys.executable, "-B", "-c", "import os;os.write(1,b'x');os.write(2,b'\\xff');raise SystemExit(7)"]
+        result = MODULE["bounded_capture"](command, timeout=10, limit=2, raw_streams=True, capture_status=True)
+        self.assertEqual(result, {"exit_code":7,"streams":{"stdout":b"x","stderr":b"\xff"}})
+        with self.assertRaisesRegex(Refused, "Docker exec failed"):
+            MODULE["bounded_capture"](command, timeout=10, limit=2, raw_streams=True)

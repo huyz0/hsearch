@@ -20,3 +20,14 @@ fn unknown_retry_borrows_every_original_field_without_a_replacement_identity() {
         _ => panic!("unknown mutation must resolve the unchanged envelope"),
     }
 }
+
+#[test]
+fn actual_checker_cli_refuses_arguments_without_reflecting_them() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hsearch-object-probe"))
+        .arg("private-input-must-not-be-reflected")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(output.stderr, b"rustfs-checker-refused:fixed-profile-only\n");
+}

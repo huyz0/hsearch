@@ -185,7 +185,7 @@ class Registry:
             del data["leases"][namespace]
 
 
-def bounded_capture(command, *, timeout, limit, raw_streams=False):
+def bounded_capture(command, *, timeout, limit, raw_streams=False, capture_status=False):
     """Bound both host pipes before decoding untrusted guest output."""
     child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     captured, failed, overflow = {}, [], threading.Event()
@@ -219,6 +219,9 @@ def bounded_capture(command, *, timeout, limit, raw_streams=False):
             reader.join(timeout=3)
     need(not any(reader.is_alive() for reader in readers) and not failed, "Docker exec pipe completion uncertain")
     need(not overflow.is_set() and sum(map(len, captured.values())) <= limit, "Docker exec output exceeds bound; inspect owned resources")
+    if capture_status:
+        need(raw_streams, "Status capture requires raw streams")
+        return {"exit_code": child.returncode, "streams": {"stdout": captured["out"], "stderr": captured["err"]}}
     need(child.returncode == 0, "Docker exec failed; operation outcome requires inspection")
     return {"stdout": captured["out"], "stderr": captured["err"]} if raw_streams else captured["out"].decode("utf-8", errors="strict")
 
@@ -237,14 +240,15 @@ class Docker:
         self.capacity = {"cpu_millis": min(8000, max(1000, (self.info["NCPU"] - 1) * 1000)),
                          "memory_bytes": min(16 * GIB, self.info["MemTotal"] // 2), "pids": 2048, "disk_bytes": 40 * GIB}
 
-    def command(self, *args, stream=False, timeout=180, input_text=None, merge_output=False, output_bytes=None, raw_streams=False):
+    def command(self, *args, stream=False, timeout=180, input_text=None, merge_output=False, output_bytes=None, raw_streams=False, capture_status=False):
         need(not raw_streams or output_bytes is not None, "Raw Docker output requires a bounded capture")
+        need(not capture_status or raw_streams, "Docker status capture requires raw pipes")
         prefix = ["docker"] + (["--context", self.context] if hasattr(self, "context") else [])
         try:
             if output_bytes is not None:
                 need(not stream and input_text is None and not merge_output and 0 < output_bytes <= 1024**2,
                      "Invalid bounded Docker exec profile")
-                return bounded_capture([*prefix, *args], timeout=timeout, limit=output_bytes, raw_streams=raw_streams)
+                return bounded_capture([*prefix, *args], timeout=timeout, limit=output_bytes, raw_streams=raw_streams, capture_status=capture_status)
             options = {} if stream else ({"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT} if merge_output else {"capture_output": True})
             result = subprocess.run([*prefix, *args], text=True, errors="replace", input=input_text, timeout=timeout, **options)
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -602,7 +606,7 @@ class Sandbox:
                     separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()}
         return server, expected
 
-    def restart_probe_storage(self, namespace, persist_intent):
+    def restart_probe_storage(self, namespace, persist_intent, persist_observation):
         """One normal restart of the exact known server, after known child release.
 
         persist_intent is the normal charged evidence callback. Unknown outcomes
@@ -619,8 +623,17 @@ class Sandbox:
                  not any(value.get("parent") == namespace for value in data["leases"].values()),
                  "Probe restart requires exclusive topology and released child")
             record.update(phase="probe-restarting", probe_restart_pending=True, probe_restart_token=token)
-        response = self.docker.command("restart", "--time", "10", expected["cid"], timeout=60).strip()
-        need(response == expected["cid"], "Probe restart outcome unknown; intent and charges retained")
+        version = self.docker.command("version", "--format", "{{.Client.Version}}", output_bytes=1024).strip()
+        need(0 < len(version.encode()) <= 128, "Probe restart CLI version unavailable")
+        response = self.docker.command("restart", "--timeout", "10", expected["cid"],
+                                       timeout=60, output_bytes=4096, raw_streams=True, capture_status=True)
+        # Persist exact bounded returned bytes before parsing them. Neither a
+        # warning nor a successful CLI exit can replace the exact CID proof.
+        persist_observation({"client_version": version, "expected_cid": expected["cid"],
+                             "streams": response["streams"], "exit_code": response["exit_code"],
+                             "command": "restart --timeout 10"})
+        need(response["exit_code"] == 0 and response["streams"]["stdout"].strip() == expected["cid"].encode("ascii"),
+             "Probe restart outcome unknown; intent and charges retained")
         after, _actual = self.probe_storage(namespace)
         controller = runpy.run_path(str(ROOT / "tools/rustfs_probe.py"))
         controller["restart_receipt"](before, after, expected)

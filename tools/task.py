@@ -658,11 +658,19 @@ class TaskStore:
             def source():
                 need(self.fingerprint(record) == before, "Capability source binding changed")
                 return dict(identity)
+            def restart_observation(value):
+                streams = value["streams"]
+                evidence = probe_evidence_result({"output": streams["stdout"].decode("utf-8", errors="replace"),
+                    "raw_streams": streams, "operation": "same-volume-restart-response",
+                    "client_version": value["client_version"], "expected_cid": value["expected_cid"],
+                    "command": value["command"], "exit_code": value["exit_code"]}, 4096)
+                require_public_probe_output(evidence)
+                append("rustfs-restart-response", evidence)
             context = controller["ProfileContext"](source_callback=source, append_callback=append,
                 run_callback=run, inputs_callback=lambda mode, files, build:
                     sandbox.prepare_probe_inputs(namespace, mode, files, identity, build),
                 restart_callback=lambda: sandbox.restart_probe_storage(namespace,
-                    lambda intent: append("rustfs-restart-intent", intent)),
+                    lambda intent: append("rustfs-restart-intent", intent), restart_observation),
                 released_callback=released, budgets={"BUILD": SANDBOX["BUILD"], "PROBE": SANDBOX["PROBE"]})
             report = controller["qualify"](context)
             completed = True

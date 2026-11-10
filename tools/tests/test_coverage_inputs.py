@@ -151,3 +151,25 @@ class DiagnosticCollectorScopeControls(unittest.TestCase):
             with patch.dict(inventory.__globals__, load=lambda _path: changed):
                 with self.assertRaises(ValueError):
                     inventory(None, [], metadata=metadata)
+
+
+class CheckerDeclarationAuditControls(unittest.TestCase):
+    def test_declaration_sha_is_bound_and_executable_main_still_requires_instrumentation(self):
+        import hashlib
+        import json
+        root = Path(__file__).resolve().parents[2]
+        lib, main = "crates/object-probe/src/lib.rs", "crates/object-probe/src/main.rs"
+        policy = json.loads((root/"harness/coverage-policy.json").read_bytes())
+        assertion = policy["non_executable"][lib]
+        self.assertEqual(assertion["sha256"], hashlib.sha256((root/lib).read_bytes()).hexdigest())
+        self.assertNotIn(main, policy["non_executable"])
+        gate = runpy.run_path(str(root/"tools/coverage_gate.py"))
+        sources = {path:{"crate":"hsearch-object-probe", "sha256":hashlib.sha256((root/path).read_bytes()).hexdigest(),
+                         "line_count":len((root/path).read_text().splitlines())} for path in (lib, main)}
+        with self.assertRaisesRegex(ValueError, "Missing instrumentation"):
+            gate["evaluate"](sources, {}, {}, {}, {lib:assertion}, ["hsearch-object-probe"])
+        report = gate["evaluate"](sources, {main:{1:0}}, {main:{1:1}}, {}, {lib:assertion}, ["hsearch-object-probe"])
+        self.assertTrue(report["passed"])
+        stale = dict(assertion, sha256="0"*64)
+        with self.assertRaisesRegex(ValueError, "Missing instrumentation"):
+            gate["evaluate"](sources, {main:{1:0}}, {}, {}, {lib:stale}, ["hsearch-object-probe"])
