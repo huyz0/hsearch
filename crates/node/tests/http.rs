@@ -317,6 +317,34 @@ fn bulk_items_fail_alone_and_limits_are_one_over_refused() {
 }
 
 #[test]
+fn an_overlong_id_fails_alone_and_a_repeat_create_is_refused() {
+    let (store, dir) = (store(), Scratch::new("ids"));
+    let node = start(&store, &dir);
+    let addr = node.addr;
+    assert_eq!(call(addr, "PUT", "/orders", MAPPING).0, 200);
+    let long = format!(
+        "{{\"index\":{{\"_id\":\"{}\"}}}}\n{{\"title\":\"t\",\"tag\":\"a\",\"n\":1,\"ok\":true,\"at\":1}}\n",
+        "i".repeat(257)
+    );
+    let body = [doc(1), long, doc(2)].concat();
+    let (status, out) = call(addr, "POST", "/orders/_bulk", &body);
+    assert_eq!(status, 200);
+    let statuses: Vec<u64> = out["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| {
+            i.as_object().unwrap().values().next().unwrap()["status"]
+                .as_u64()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(statuses, vec![201, 400, 201]);
+    assert_eq!(call(addr, "PUT", "/orders", MAPPING).0, 400);
+    node.shutdown();
+}
+
+#[test]
 fn only_loopback_may_be_bound_without_saying_so() {
     let (store, dir) = (store(), Scratch::new("bind"));
     let node = Arc::new(Node::new(Arc::clone(&store), dir.0.clone()));

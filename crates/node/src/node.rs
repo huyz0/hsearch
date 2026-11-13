@@ -28,7 +28,30 @@ struct Entry {
 pub struct Node<S> {
     store: Arc<S>,
     data_dir: PathBuf,
-    indexes: Mutex<HashMap<String, Arc<Entry>>>,
+    indexes: Mutex<HashMap<String, Slot>>,
+}
+
+/// One index's place in the node. The map lock is held only to find or add a
+/// slot; the slot's own lock is held across the store I/O of opening it, so a
+/// cold index never blocks another.
+type Slot = Arc<Mutex<Option<Arc<Entry>>>>;
+
+fn poisoned() -> ApiError {
+    ApiError::new(500, "internal_exception", "node state poisoned")
+}
+
+/// A writer that stopped for good and must be reopened from the store.
+fn stopped(error: &hsearch_index::Error) -> bool {
+    use hsearch_index::Error::{AppliedFailed, Closed, Fenced, Poisoned};
+    matches!(error, Fenced | Poisoned | Closed | AppliedFailed)
+}
+
+/// The write path's identity bound, checked per item so one bad id fails alone.
+fn check_id(id: &str) -> Result<(), ApiError> {
+    if id.is_empty() || id.len() > 256 {
+        return Err(ApiError::bad("_id must be 1-256 bytes"));
+    }
+    Ok(())
 }
 
 /// Index names follow the write path's rule, checked here for a clear error.
@@ -70,16 +93,50 @@ impl<S: MetadataStore + 'static> Node<S> {
         self.data_dir.join(name)
     }
 
+    fn slot(&self, name: &str) -> Result<Slot, ApiError> {
+        let mut map = self.indexes.lock().map_err(|_| poisoned())?;
+        Ok(Arc::clone(map.entry(name.to_string()).or_default()))
+    }
+
+    /// Drop a slot that holds nothing, so probing unknown names cannot grow the map.
+    fn forget_empty(&self, name: &str, slot: &Slot) {
+        if let Ok(mut map) = self.indexes.lock() {
+            let empty = slot.lock().map(|g| g.is_none()).unwrap_or(false);
+            if empty && map.get(name).is_some_and(|s| Arc::ptr_eq(s, slot)) {
+                map.remove(name);
+            }
+        }
+    }
+
+    /// Forget an entry whose writer stopped, so the next request reopens it.
+    fn evict(&self, name: &str, entry: &Arc<Entry>) {
+        if let Ok(slot) = self.slot(name)
+            && let Ok(mut guard) = slot.lock()
+            && guard.as_ref().is_some_and(|e| Arc::ptr_eq(e, entry))
+        {
+            *guard = None;
+        }
+    }
+
     /// The open index, rebuilding it from the store on first use after a restart.
     fn entry(&self, name: &str) -> Result<Arc<Entry>, ApiError> {
         valid_index(name)?;
-        let mut indexes = self
-            .indexes
-            .lock()
-            .map_err(|_| ApiError::new(500, "internal_exception", "node state poisoned"))?;
-        if let Some(entry) = indexes.get(name) {
-            return Ok(Arc::clone(entry));
+        let slot = self.slot(name)?;
+        let opened = {
+            let mut guard = slot.lock().map_err(|_| poisoned())?;
+            if let Some(entry) = &*guard {
+                return Ok(Arc::clone(entry));
+            }
+            self.open(name)
+                .inspect(|entry| *guard = Some(Arc::clone(entry)))
+        };
+        if opened.is_err() {
+            self.forget_empty(name, &slot);
         }
+        opened
+    }
+
+    fn open(&self, name: &str) -> Result<Arc<Entry>, ApiError> {
         let mapping = Mapping::decode(&hsearch_index::get_mapping(&*self.store, name)?)?;
         let index = Index::open(
             Arc::clone(&self.store),
@@ -87,27 +144,74 @@ impl<S: MetadataStore + 'static> Node<S> {
             mapping.schema()?,
             &self.scratch(name),
         )?;
-        let entry = Arc::new(Entry { index, mapping });
-        indexes.insert(name.to_string(), Arc::clone(&entry));
-        Ok(entry)
+        Ok(Arc::new(Entry { index, mapping }))
     }
 
-    /// `PUT /{index}`.
+    /// `PUT /{index}`. The root is created first and the mapping second; a
+    /// retry that finds a root without a mapping finishes the creation.
     pub fn create(&self, name: &str, body: &Value) -> Result<Value, ApiError> {
         valid_index(name)?;
         let mapping = Mapping::parse(body)?;
         let schema = mapping.schema()?;
-        let mut indexes = self
-            .indexes
-            .lock()
-            .map_err(|_| ApiError::new(500, "internal_exception", "node state poisoned"))?;
-        if indexes.contains_key(name) {
-            return Err(hsearch_index::Error::Exists.into());
+        let slot = self.slot(name)?;
+        let created = {
+            let mut guard = slot.lock().map_err(|_| poisoned())?;
+            if guard.is_some() {
+                return Err(hsearch_index::Error::Exists.into());
+            }
+            let index = match Index::create(
+                Arc::clone(&self.store),
+                name,
+                schema.clone(),
+                &self.scratch(name),
+            ) {
+                Ok(index) => Ok(index),
+                Err(hsearch_index::Error::Exists) => {
+                    match hsearch_index::get_mapping(&*self.store, name) {
+                        Err(hsearch_index::Error::NotFound) => {
+                            Index::open(Arc::clone(&self.store), name, schema, &self.scratch(name))
+                        }
+                        _ => Err(hsearch_index::Error::Exists),
+                    }
+                }
+                Err(error) => Err(error),
+            };
+            index.map_err(ApiError::from).and_then(|index| {
+                hsearch_index::put_mapping(&*self.store, name, &mapping.encode())?;
+                *guard = Some(Arc::new(Entry { index, mapping }));
+                Ok(())
+            })
+        };
+        if created.is_err() {
+            self.forget_empty(name, &slot);
         }
-        let index = Index::create(Arc::clone(&self.store), name, schema, &self.scratch(name))?;
-        hsearch_index::put_mapping(&*self.store, name, &mapping.encode())?;
-        indexes.insert(name.to_string(), Arc::new(Entry { index, mapping }));
+        created?;
         Ok(json!({"acknowledged": true, "shards_acknowledged": true, "index": name}))
+    }
+
+    /// One write, bisecting a refused chunk so a bad item fails alone.
+    fn write(
+        &self,
+        name: &str,
+        entry: &Arc<Entry>,
+        ops: &[Op],
+        wait: Wait,
+    ) -> Vec<Result<hsearch_index::ItemResult, ApiError>> {
+        match entry.index.bulk(ops.to_vec(), wait) {
+            Ok(results) => results.into_iter().map(Ok).collect(),
+            Err(hsearch_index::Error::Invalid) if ops.len() > 1 => {
+                let (left, right) = ops.split_at(ops.len() / 2);
+                let mut out = self.write(name, entry, left, wait);
+                out.extend(self.write(name, entry, right, wait));
+                out
+            }
+            Err(error) => {
+                if stopped(&error) {
+                    self.evict(name, entry);
+                }
+                vec![Err(ApiError::from(error)); ops.len()]
+            }
+        }
     }
 
     /// `POST /_bulk` and `POST /{index}/_bulk`.
@@ -133,6 +237,9 @@ impl<S: MetadataStore + 'static> Node<S> {
                 let item = &items[j];
                 let verdict = match (&entry, &item.work) {
                     (Err(e), _) | (_, Err(e)) => Err(e.clone()),
+                    (Ok(_), Ok(_)) if check_id(&item.id).is_err() => {
+                        Err(check_id(&item.id).unwrap_err())
+                    }
                     (Ok(entry), Ok((Action::Delete, _))) => {
                         let _ = entry;
                         Ok(Op::Delete {
@@ -157,25 +264,14 @@ impl<S: MetadataStore + 'static> Node<S> {
                 j += 1;
             }
             if let (Ok(entry), false) = (&entry, ops.is_empty()) {
-                match entry.index.bulk(ops, wait) {
-                    Ok(results) => {
-                        for (slot, result) in slots.iter().zip(results) {
-                            responses[*slot] =
-                                Some(item_result(&items[*slot].action, name, &result));
+                for (slot, result) in slots.iter().zip(self.write(name, entry, &ops, wait)) {
+                    errors |= result.is_err();
+                    responses[*slot] = Some(match result {
+                        Ok(result) => item_result(&items[*slot].action, name, &result),
+                        Err(error) => {
+                            item_error(&items[*slot].action, name, &items[*slot].id, &error)
                         }
-                    }
-                    Err(error) => {
-                        errors = true;
-                        let error = ApiError::from(error);
-                        for slot in &slots {
-                            responses[*slot] = Some(item_error(
-                                &items[*slot].action,
-                                name,
-                                &items[*slot].id,
-                                &error,
-                            ));
-                        }
-                    }
+                    });
                 }
             }
             i = j;
