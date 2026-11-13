@@ -1190,8 +1190,13 @@
             "M20.06"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m20-03-write-path-v0.md",
+              "result": "Crash matrix on real RustFS 1.0.4: abort before the slot write, after it before the ack, after the ack before apply, and mid-publish, each followed by a fresh-process rebuild with local files deleted: zero acknowledged writes missing, no partial bulk, no unacknowledged write reported. One PUT per bulk, a refresh makes no request, LIST is zero everywhere. Provisional; v0 formats are disposable and multi-writer fencing, multi-node and M06.07 visibility are out of scope."
+            }
+          ]
         },
         {
           "id": "M20.04",

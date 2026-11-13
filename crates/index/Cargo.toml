@@ -1,0 +1,18 @@
+[package]
+name = "hsearch-index"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Single-node write path v0: object-store log, engine apply, segment publish and recovery"
+
+[dependencies]
+hsearch-object = { path = "../object" }
+hsearch-engine = { path = "../engine" }
+
+[dev-dependencies]
+hsearch-s3 = { path = "../s3" }
+
+[lints]
+workspace = true

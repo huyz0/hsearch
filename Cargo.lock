@@ -159,6 +159,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hsearch-index"
+version = "0.1.0"
+dependencies = [
+ "hsearch-engine",
+ "hsearch-object",
+ "hsearch-s3",
+]
+
+[[package]]
 name = "hsearch-object"
 version = "0.1.0"
 
