@@ -1487,8 +1487,13 @@
             "M02.02"
           ],
           "owner": "engine/architecture",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m02-03-range-inputs.md",
+              "result": "Prototype RangeCache/RangeInput (read_at, coalesced GETs, fixed memory, bounded trace) in crates/engine; real Lucene segment files verified by range through a cache smaller than the file, injected range errors at every GET position, working set 8x cache. Pinned Input is bytes-only (open fetches all 81 files whole); upstream main already has ExternalBytes::will_need, so the route is a rev bump, no new lucene-rust patch. Provisional numbers, in-memory source."
+            }
+          ]
         },
         {
           "id": "M02.04",
