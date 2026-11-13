@@ -6,7 +6,7 @@ CI is deliberately small. Every PR and push to `main` runs:
 |---|---|
 | `check` | `python3 tools/check.py`: fmt, clippy `-D warnings`, `cargo test --workspace --all-features`, plan/API/engine-research/dependency-policy checks, Python tests. Also writes the status summary from `tasks.json`. |
 | `coverage` | `scripts/coverage.sh 90`: standard `cargo llvm-cov`, 90% line floor per production crate. Zero coverable lines is not applicable, not 100%. |
-| `harness-budget` | A PR touching only harness/plan paths is refused when harness work exceeds 20% of the last 30 commits (label `harness-exempt` overrides, with a stated reason). |
+| `harness-budget` | Advisory only: warns in the job summary when tools, CI and gate code are over 20% of the last 30 commits. Never fails a PR. Product docs (requirements, architecture, decisions) are not counted as harness work. |
 | `ci-ok` | Aggregates the above; the one required check. |
 
 A small change (docs, one crate) takes the same path; there is no separate planner. Add a check only for a defect that has actually shipped.

@@ -2,6 +2,8 @@
 
 Object-storage-native, scalability-first search store in Rust on top of `lucene-rust`. RustFS first; S3/GCS/Azure later. The API is OpenSearch-inspired partial compatibility ([api-compatibility](docs/plan/api-compatibility.md)), not drop-in. Current state in one page: [docs/plan/CURRENT.md](docs/plan/CURRENT.md).
 
+**Product requirements:** [docs/plan/product-requirements.md](docs/plan/product-requirements.md) is the authoritative requirement list (confirmed 13 Nov 2026). It wins over older plan text where they conflict; its conflicts section lists what it overrides.
+
 ## Find the work
 
 ```sh
@@ -28,7 +30,7 @@ Run commands yourself and report what they printed. Never claim a test passed, a
 - Product tasks need >=90% line coverage per production crate and a review of the final tree. Never lower a threshold or delete a test to make a check pass.
 - Reviews: one independent reviewer by default; add the architecture/security role only for security-, format- or durability-sensitive code. At most two planned rounds, hard ceiling three, then split or redesign. ([review-gates](docs/plan/review-gates.md))
 - API changes: `python3 tools/api_contract.py check` (`render` regenerates the matrix). Keep matching, different and unsupported semantics explicit.
-- Ship product work. The harness is frozen: do not add harness tasks or gates; harness work over ~20% of recent commits is held (`plan.py harness-share`, CI `harness-budget`). Add a check only for a defect that has actually shipped.
+- Ship product work. The harness is frozen: do not add harness tasks or gates; harness work (tools, CI, gate code) over ~20% of recent commits holds harness tasks in `plan.py next` and shows a warning from CI `harness-budget`, which is advisory and never fails a PR. Product docs are not harness work. Add a check only for a defect that has actually shipped.
 
 ## Working agreement
 

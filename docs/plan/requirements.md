@@ -1,5 +1,7 @@
 # Requirement coverage and completion evidence
 
+> The authoritative product requirements (10M indexes, per-request durable/searchable, node roles, vectors and more) are in [product-requirements](product-requirements.md). It wins where this matrix disagrees.
+
 The user requested deep research and an end-to-end delivery plan first. This planning package is the current deliverable. Product implementation remains explicitly planned. Requirements below preserve the full intended product, including the later module/CCR/copy/BYOK addition.
 
 | ID | Requirement | Planned delivery and decisive evidence |
