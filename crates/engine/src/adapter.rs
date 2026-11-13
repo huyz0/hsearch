@@ -1,5 +1,5 @@
 //! Serialized admission around a caller-owned directory and native writer.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError, atomic::AtomicUsize};
 
 use lucene_index::buffered_updates::Term;
@@ -10,7 +10,7 @@ use lucene_search::directory_reader::DirectoryReader;
 
 use crate::checkpoint::{Head, Lineage, NativeCommit, WriterLease};
 use crate::directory::DirectoryAttempt;
-use crate::schema::{MAX_DOCUMENTS, MAX_OPERATIONS, analyzer};
+use crate::schema::{MAX_DOCUMENT_BYTES, analyzer};
 use crate::{
     CleanupStatus, Directory, EngineDirectory, Error, ReleaseStatus, Result, Schema, Value,
 };
@@ -22,7 +22,6 @@ const VERSION: LuceneVersion = LuceneVersion {
 };
 const MAX_BATCH: usize = 16;
 const MAX_BATCH_BYTES: usize = 65_536;
-const MAX_HISTORY_BYTES: usize = 262_144;
 
 /// Caller-resolved mutation. The adapter never generates IDs or versions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -250,6 +249,7 @@ pub struct Receipt {
 
 #[derive(Clone)]
 struct History {
+    bytes: usize,
     request: String,
     operations: Vec<Operation>,
     receipts: Vec<Receipt>,
@@ -257,7 +257,7 @@ struct History {
 #[derive(Clone, Default)]
 struct State {
     current: BTreeMap<String, Operation>,
-    history: Vec<History>,
+    history: VecDeque<History>,
     operations: usize,
     history_bytes: usize,
     physical_documents: usize,
@@ -351,12 +351,17 @@ impl<'d> Engine<'d> {
         schema: Schema,
         checkpoint: Option<Checkpoint>,
     ) -> Result<Self> {
-        Self::open_configured(directory, schema, checkpoint, |writer| {
+        let buffered = schema.limits.buffered_documents;
+        // Room for a full buffer of worst-case documents, never below 8 MiB.
+        let ram_mb = (buffered as f64 * MAX_DOCUMENT_BYTES as f64 / 1_048_576.0).clamp(8.0, 256.0);
+        Self::open_configured(directory, schema, checkpoint, move |writer| {
             writer.set_analyzer(Some(Arc::new(analyzer())));
             writer
-                .set_ram_buffer_size_mb(8.0)
+                .set_ram_buffer_size_mb(ram_mb)
                 .map_err(|_| Error::Native)?;
-            writer.set_max_buffered_docs(8).map_err(|_| Error::Native)
+            writer
+                .set_max_buffered_docs(buffered as i32)
+                .map_err(|_| Error::Native)
         })
     }
 
@@ -470,10 +475,11 @@ impl<'d> Engine<'d> {
             .iter()
             .filter(|op| !state.current.contains_key(&op.id))
             .count();
-        if state.operations + batch.operations.len() > MAX_OPERATIONS
-            || state.physical_documents + additions > MAX_DOCUMENTS
-            || state.current.len() + new_ids > MAX_DOCUMENTS
-            || state.history_bytes + batch.bytes > MAX_HISTORY_BYTES
+        let limits = self.schema.limits;
+        if state.operations + batch.operations.len() > limits.operations
+            || state.physical_documents + additions > limits.documents
+            || state.current.len() + new_ids > limits.documents
+            || (!limits.window && state.history_bytes + batch.bytes > limits.history_bytes)
         {
             return Err(Error::Limit);
         }
@@ -520,7 +526,7 @@ impl<'d> Engine<'d> {
             })
             .collect();
         let mut writer = gate(&self.writer)?;
-        if writer.segment_count() + additions / 8 + 2 > 32 {
+        if writer.segment_count() + additions / limits.buffered_documents + 2 > limits.segments {
             return Err(Error::Limit);
         }
         for (op, document) in batch.operations.iter().zip(batch.documents) {
@@ -545,7 +551,17 @@ impl<'d> Engine<'d> {
         for op in &batch.operations {
             state.current.insert(op.id.clone(), op.clone());
         }
-        state.history.push(History {
+        if limits.window {
+            // Retry identity beyond the window belongs to the caller's log.
+            while state.history_bytes > limits.history_bytes {
+                let Some(old) = state.history.pop_front() else {
+                    break;
+                };
+                state.history_bytes -= old.bytes;
+            }
+        }
+        state.history.push_back(History {
+            bytes: batch.bytes,
             request: batch.request,
             operations: batch.operations,
             receipts: receipts.clone(),

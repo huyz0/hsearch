@@ -15,6 +15,62 @@ pub const MAX_DOCUMENTS: usize = 128;
 /// Maximum admitted mutation operations over one adapter lifetime/checkpoint.
 pub const MAX_OPERATIONS: usize = 256;
 
+/// Admission bounds for one adapter. [`Limits::BOUNDED`] is the research
+/// profile and the default; [`Limits::scale`] is the opt-in first-slice profile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Limits {
+    /// Retained logical identities, including deleted ones, and the largest
+    /// native scope a search, count or aggregation will read.
+    pub documents: usize,
+    /// Mutation operations admitted over one adapter lifetime or checkpoint.
+    pub operations: usize,
+    /// Bytes of retry history kept. Over it, [`Limits::window`] decides.
+    pub history_bytes: usize,
+    /// Native segments a writer or snapshot may hold.
+    pub segments: usize,
+    /// Documents buffered by the native writer before it flushes a segment.
+    pub buffered_documents: usize,
+    /// When true the oldest retry history is dropped to make room, so an exact
+    /// retry older than the window is no longer recognised here: the caller's
+    /// log owns request identity. When false the adapter refuses instead.
+    pub window: bool,
+}
+
+impl Limits {
+    /// The bounded research profile: today's constants, refusing at each.
+    pub const BOUNDED: Self = Self {
+        documents: MAX_DOCUMENTS,
+        operations: MAX_OPERATIONS,
+        history_bytes: 262_144,
+        segments: 32,
+        buffered_documents: 8,
+        window: false,
+    };
+
+    /// The first-slice scale profile: a million identities, a bounded retry
+    /// window, and larger segments so a bulk load does not fragment.
+    pub const fn scale() -> Self {
+        Self {
+            documents: 1_000_000,
+            operations: 100_000_000,
+            history_bytes: 4 * 1024 * 1024,
+            segments: 256,
+            buffered_documents: 10_000,
+            window: true,
+        }
+    }
+
+    fn valid(&self) -> bool {
+        self.documents > 0
+            && self.documents <= i32::MAX as usize
+            && self.operations > 0
+            && self.history_bytes > 0
+            && self.segments > 0
+            && self.buffered_documents > 0
+            && self.buffered_documents <= i32::MAX as usize
+    }
+}
+
 /// Supported single-valued field kinds. All fields are required and stored.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -48,6 +104,7 @@ pub enum Value<'a> {
 pub struct Schema {
     pub(crate) revision: u64,
     pub(crate) fields: Vec<(String, Kind)>,
+    pub(crate) limits: Limits,
 }
 
 impl Schema {
@@ -69,7 +126,23 @@ impl Schema {
         Ok(Self {
             revision,
             fields: fields.iter().map(|(n, k)| (n.to_string(), *k)).collect(),
+            limits: Limits::BOUNDED,
         })
+    }
+
+    /// Replace the admission bounds. Part of schema identity: a checkpoint only
+    /// reopens under the limits it was taken with.
+    pub fn with_limits(mut self, limits: Limits) -> Result<Self> {
+        if !limits.valid() {
+            return Err(Error::Schema);
+        }
+        self.limits = limits;
+        Ok(self)
+    }
+
+    /// The admission bounds in force.
+    pub fn limits(&self) -> Limits {
+        self.limits
     }
 
     /// Return the exact declared field kind, refusing unknown fields.

@@ -1,5 +1,5 @@
 //! Complete finite aggregations over the same native query/snapshot.
-use crate::{Error, Kind, MAX_DOCUMENTS, MAX_FIELDS, Query, Result, Snapshot};
+use crate::{Error, Kind, MAX_FIELDS, Query, Result, Snapshot};
 use lucene_search::aggs::{self, MetricSpec, NEED_ALL, Source, ValueKind};
 use lucene_search::terms_agg;
 
@@ -59,7 +59,7 @@ impl Snapshot {
                         max: None,
                     });
                 }
-                if v.count > MAX_DOCUMENTS as u64
+                if v.count > self.schema.limits.documents as u64
                     || ![v.sum, v.min, v.max].iter().all(|n| n.is_finite())
                 {
                     return Err(Error::Limit);
@@ -82,7 +82,7 @@ impl Snapshot {
         field: &str,
         max_buckets: usize,
     ) -> Result<Vec<Bucket>> {
-        if max_buckets == 0 || max_buckets > MAX_DOCUMENTS {
+        if max_buckets == 0 || max_buckets > self.schema.limits.documents {
             return Err(Error::Limit);
         }
         if self.schema.kind(field)? != Kind::Keyword {
@@ -97,7 +97,7 @@ impl Snapshot {
             self.reader.segment_readers(),
             &query,
             field,
-            MAX_DOCUMENTS,
+            self.schema.limits.documents,
         )
         .map_err(|_| Error::Native)?;
         if result.other_doc_count != 0 || result.buckets.len() > max_buckets {
