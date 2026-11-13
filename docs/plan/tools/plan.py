@@ -386,6 +386,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("check", "render", "status", "next", "selftest", "harness-share", "summary"))
     args = parser.parse_args()
+    if args.command == "harness-share":
+        # Advisory report: independent of tasks.json validity, never fails.
+        share, count = harness_share()
+        if share is None:
+            print("harness share: no git history")
+        else:
+            print(f"harness share: {share:.0%} of last {count} commits (cap {HARNESS_SHARE_CAP:.0%})")
+            if share > HARNESS_SHARE_CAP:
+                print(f"::warning::Harness work is over its {HARNESS_SHARE_CAP:.0%} guide ({share:.0%} of last {count} commits). Prefer product work; this check does not fail the PR.")
+        return 0
     try:
         data = json.loads((ROOT / "tasks.json").read_text(encoding="utf-8"))
         validate(data)
@@ -433,15 +443,6 @@ def main() -> int:
             share, count = harness_share()
             if share is not None:
                 print(f"\nHarness share of last {count} commits: {share:.0%} (cap {HARNESS_SHARE_CAP:.0%})")
-        elif args.command == "harness-share":
-            share, count = harness_share()
-            if share is None:
-                print("harness share: no git history")
-            else:
-                print(f"harness share: {share:.0%} of last {count} commits (cap {HARNESS_SHARE_CAP:.0%})")
-                # Advisory: a warning for the reader, never a failing check.
-                if share > HARNESS_SHARE_CAP:
-                    print(f"::warning::Harness work is over its {HARNESS_SHARE_CAP:.0%} guide ({share:.0%} of last {count} commits). Prefer product work; this check does not fail the PR.")
         return 0
     except (InvalidPlan, KeyError, TypeError, OSError, json.JSONDecodeError) as error:
         print(f"FAIL: {error}", file=sys.stderr)

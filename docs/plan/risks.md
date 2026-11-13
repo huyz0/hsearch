@@ -8,7 +8,7 @@
 | D02 | Immutable remote segments + conditional roots + ordered shard operations | Fits object durability and mutable semantics; prove publication/GC model |
 | D03 | Object-durable backend first, optional quorum backend required later | Establish correctness before lower-latency persistent fleet; both have explicit contracts |
 | D04 | Independent role deployment and cache affinity | Scale read/write/maintenance separately; keep authority separate from placement |
-| D05 | Typed trusted Rust modules, versioned external RPC | Extension performance without promising stable native plugin ABI |
+| D05 | Typed trusted Rust modules, versioned external RPC (**native-ABI stance superseded by D18**) | Extension performance without promising stable native plugin ABI |
 | D06 | Application envelope BYOK, cloud SSE optional additional defense | Portable local hardware AEAD across RustFS/cloud; incurs key/cache/format lifecycle work |
 | D07 | Active-passive follower-pull CCR and independent materialized copy | Clear conflict and DR contract; active-active requires new semantics |
 | D08 | Linux x86_64/aarch64 release, WSL/container local path | Matches release priority; optional native ports follow qualification |
