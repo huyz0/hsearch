@@ -1,6 +1,6 @@
 # hsearch research and delivery plan
 
-Current API authority: [scalability-first core-v1](api-compatibility.md), [engineering standards](engineering-standards.md), and priority [M19](milestones/M19.md). Existing IDs/evidence remain stable; full OpenSearch compatibility is not required.
+Authoritative product requirements: [product-requirements](product-requirements.md) (13 November 2026). Current API authority: [scalability-first core-v1](api-compatibility.md), [engineering standards](engineering-standards.md), and priority [M19](milestones/M19.md). Existing IDs/evidence remain stable; full OpenSearch compatibility is not required.
 
 Prepared 1 November 2026 (Australia/Sydney). This is the research and planning deliverable. The directory started empty, without a Git repository or runtime. Product capabilities below are proposed until their milestone evidence proves otherwise.
 

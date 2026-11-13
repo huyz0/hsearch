@@ -2,6 +2,8 @@
 
 Current factual status: M02.02 is accepted for its declared native embedding/lifecycle profile through reviewed `6d88535`, normal merge `656b790` and successful main qualification. M03.01's [typed traits and memory/fault conformance](docs/plan/evidence/m03-01-qualified-source.md) were accepted through PR30. Both retain original992 lineage, issued2/planned2/hard3 and all earlier failures. Older candidate/seed statements below describe their recorded source phases. Neither acceptance closes whole M01/M02/M03, qualifies M03.02 artifact/controller transport or introduces a search service/API compatibility.
 
+**Product requirements:** `docs/plan/product-requirements.md` is the authoritative requirement list (confirmed 13 Nov 2026) and wins over older plan text where they conflict; its conflicts section lists what it overrides.
+
 The current API direction is scalability-first, OpenSearch-inspired partial compatibility. Read `docs/plan/api-compatibility.md` and `docs/plan/engineering-standards.md`; their declared profile supersedes historical broad replacement assumptions. Keep matching, deliberately different and unsupported semantics explicit, with bounded native alternatives and source-backed rationale. Full/drop-in compatibility is not required.
 
 Read `docs/plan/PROGRESS.md` and the relevant task in `docs/plan/tasks.json` before implementation. The ledger owns task acceptance; generated milestone pages and roadmap come from `python3 docs/plan/tools/plan.py render`.
