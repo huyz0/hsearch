@@ -36,4 +36,4 @@ Run commands yourself and report what they printed. Never claim a test passed, a
 
 One branch per task. Do not force-push or overwrite another task's work. Normal reviewed, check-passing pushes and protected merges are authorized; release/deployment is separate. No hsearch licence is selected; do not infer a reuse grant from public visibility.
 
-Where to look: [architecture](docs/plan/architecture.md), [modules](docs/plan/modules.md), [security](docs/plan/security.md), [requirements](docs/plan/requirements.md), [CI and testing](docs/plan/ci-testing.md), [development](docs/plan/development.md).
+Where to look: [requirement-to-task map](docs/plan/product-coverage.md), [architecture](docs/plan/architecture.md), [modules](docs/plan/modules.md), [security](docs/plan/security.md), [requirements](docs/plan/requirements.md), [CI and testing](docs/plan/ci-testing.md), [development](docs/plan/development.md).

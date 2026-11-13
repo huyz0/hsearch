@@ -147,4 +147,4 @@ These are not blocking. Each is settled when its milestone freezes workloads.
 
 ## Follow-up: documents that still say the old thing
 
-This PR does not edit them. Until the API task for A05 lands, an agent reading only one of them must be pointed here: `api-compatibility.md` A05, `api-profile.json` (the refresh entry) and `architecture.md` (the "per-request forced refresh" sentence) still exclude `refresh=true`. `AGENTS.md` now says this file wins over older plan text.
+Resolved on 13 November 2026 by the delivery-plan rework: `api-compatibility.md` and `api-profile.json` (rows A01 to A07, A10 to A12 and A14 revised) and `architecture.md` now follow this file, and [product-coverage](product-coverage.md) maps each requirement to tasks. The `fixtures/api/core-v1` corpus is pinned by the engine differential bundle and was left as it was; M06.05 refreshes it together with that bundle. `AGENTS.md` says this file wins over older plan text.

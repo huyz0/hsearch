@@ -2,7 +2,7 @@
   "schema_version": 1,
   "updated": "2026-11-13",
   "timezone": "Australia/Sydney",
-  "scope": "Scalability-first OpenSearch-inspired partial compatibility is the current direction. M00, M19 and M01.01/M01.02/M01.03/M01.04/M01.05/M01.06 are integrated. M01.09 is operationally closed through qualified M01.15; its historical cause remains unconfirmed and M01.08 remains separately unqualified. M02.01 selected fixture inventory is in progress. Runtime, provider, scale and release obligations remain explicit.",
+  "scope": "Scalability-first OpenSearch-inspired partial compatibility is the current direction. M00, M19 and M01.01/M01.02/M01.03/M01.04/M01.05/M01.06 are integrated. M01.09 is operationally closed through qualified M01.15; its historical cause remains unconfirmed and M01.08 remains separately unqualified. M02.01 selected fixture inventory is in progress. Runtime, provider, scale and release obligations remain explicit. On 13 November 2026 the delivery plan was reworked against the product requirements PR-01 to PR-54: M20 is the lean path to a first runnable slice, M21 to M24 add document and mapping semantics, index management and jobs, vector search and extension modules, and docs/plan/product-coverage.md maps every requirement to its tasks.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
   "milestones": [
     {
@@ -1063,6 +1063,145 @@
       ]
     },
     {
+      "id": "M20",
+      "title": "First runnable slice: RustFS, engine and a minimal endpoint",
+      "goal": "Reach a node that ingests with _bulk and answers _search over data held only in RustFS, with the smallest design that is honest about durability, before the deep features.",
+      "owner": "storage/runtime",
+      "status": "planned",
+      "depends_on": [
+        "M01"
+      ],
+      "definition_of_done": [
+        "An external HTTP client creates an index, bulk-loads documents, searches and reads them back against a real RustFS, and the data survives deleting every local file.",
+        "Every acknowledged write is recovered after kill -9 at each durability boundary; nothing unacknowledged is ever acknowledged.",
+        "The slice states what it lacks (auth, BYOK, multiple nodes, frozen formats). Formats it writes are marked v0 and disposable until M03.03 freezes them; M06 hardens the same path rather than starting again."
+      ],
+      "document": "milestones/M20.md",
+      "tasks": [
+        {
+          "id": "M20.01",
+          "title": "Add an S3-compatible object adapter and run it against RustFS",
+          "goal": "Give hsearch-object a real backend so every later task runs against a store, not only the in-memory double.",
+          "deliverables": [
+            "`ObjectBackend` over the S3 API for RustFS first and MinIO as the second S3-compatible target, with an exact-pinned client dependency and licence note",
+            "Conditional create and conditional update mapped to the trait outcomes the M03.02 probe proves available; exact-version range reads, timeouts and cancellation",
+            "Per-operation request counters (GET, PUT, HEAD, LIST, DELETE) and a digest-pinned RustFS compose file for local and CI runs"
+          ],
+          "validation": [
+            "Run the M03.01 trait contract suite against RustFS and the in-memory double; run it again against MinIO",
+            "No compare-and-set built from GET plus an unconditional PUT; a missing conditional-write capability fails the run instead of falling back"
+          ],
+          "definition_of_done": [
+            "The contract suite passes on RustFS and every request is counted by type",
+            "AWS-specific authentication, KMS and cloud tuning stay in M15; this adapter assumes only the S3 subset the probe verified"
+          ],
+          "depends_on": [
+            "M03.02"
+          ],
+          "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M20.02",
+          "title": "Open the engine over object-stored segments",
+          "goal": "Serve immutable Lucene segment files from the object store through a disposable local cache.",
+          "deliverables": [
+            "Engine-side directory in `hsearch-engine` that fetches whole immutable files into a bounded local cache; range-native reads arrive later through M04.02",
+            "Cache holds nothing that is not in the store; eviction and loss are always safe"
+          ],
+          "validation": [
+            "Write segments with the engine, upload them, delete the cache, reopen and search; compare with the local-directory result",
+            "Existing differential fixtures still pass; file fetch counts per open are recorded as provisional"
+          ],
+          "definition_of_done": [
+            "Search results over object-stored segments equal results over a local directory, and deleting the cache never changes them",
+            "Only `hsearch-engine` imports Lucene crates; a missing engine feature goes upstream to lucene-rust (PR-53), not into a local workaround"
+          ],
+          "depends_on": [
+            "M20.01",
+            "M02.02"
+          ],
+          "owner": "engine/architecture",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M20.03",
+          "title": "Write path v0: durable bulk, apply, publish and recover on one node",
+          "goal": "Acknowledge a write only after it is in the object store, apply it to the engine, publish segments, and rebuild from the store alone.",
+          "deliverables": [
+            "One writer per index, a log of conditional-create slots in the object store with derived keys, group commit per index, committed receipts and unknown-outcome handling",
+            "Apply committed operations to the engine, flush segments and publish a root object by conditional update; recovery replays the committed tail from the root",
+            "refresh=false and a simple wait_for (ack when searchable); the coalesced forced refresh and the visibility target are M06.07",
+            "Formats carry a v0 marker, are documented as disposable, and are replaced by the M03.03 formats; no sharing of a log between indexes (M03.09 decides that)"
+          ],
+          "validation": [
+            "Kill -9 before the slot write, after the slot write before the ack, after the ack before apply, and in the middle of a flush; delete all local files and restart each time",
+            "Count requests per bulk and per refresh; no LIST on any read, write or startup path"
+          ],
+          "definition_of_done": [
+            "Zero acknowledged writes are missing after the whole fault matrix, and no write that was never acknowledged is reported as acknowledged",
+            "This is the minimal path, not the M06.01 protocol: fencing across owners, multi-node and authority barriers are out of scope here and listed as such in the report"
+          ],
+          "depends_on": [
+            "M20.02"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M20.04",
+          "title": "Serve a minimal HTTP endpoint: create index, streamed _bulk, _search, get, _refresh",
+          "goal": "Give an external client something to run against.",
+          "deliverables": [
+            "`hsearch-node` binary (single process, all roles) with PUT /{index} with a mapping, POST /_bulk, GET /{index}/_doc/{id}, POST /{index}/_search (match, term, range, bool, from/size) and POST /{index}/_refresh",
+            "NDJSON bulk bodies parsed as a stream under a configured buffer, per-item results in order, request byte and item limits from the API profile's example limits",
+            "Unknown routes and parameters rejected with structured errors; loopback bind by default and no authentication (M05 adds mTLS and RBAC); real-time get is M21.05"
+          ],
+          "validation": [
+            "Plain HTTP client script, not an SDK, against RustFS: bulk 100k documents, search, restart the node, search again; one over each limit is refused",
+            "Compare a query set with the Java fixture corpus results where the fixtures exist"
+          ],
+          "definition_of_done": [
+            "The calls above work against RustFS from outside the process and return the shapes api-compatibility.md promises for the subset",
+            "Nothing in the response claims a feature the node does not implement"
+          ],
+          "depends_on": [
+            "M20.03",
+            "M19"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M20.05",
+          "title": "Qualify the first slice end to end",
+          "goal": "Prove the walking skeleton and say plainly what it is.",
+          "deliverables": [
+            "One-command run (compose with RustFS plus the node) and an end-to-end script",
+            "Report: recovery after deleting every local file, requests per bulk and per search by type, bulk and search latency; numbers labelled provisional with hardware",
+            "A list of deliberate gaps: authentication, BYOK, quorum mode, multiple nodes, frozen formats, real-time get, mapping evolution"
+          ],
+          "validation": [
+            "Run the script on the Linux dev container and in CI against RustFS; repeat after a kill -9 during a bulk"
+          ],
+          "definition_of_done": [
+            "A reviewer can start from a clean checkout and reproduce the run; the report matches what the run printed",
+            "M21 to M23 and M06 start from this slice"
+          ],
+          "depends_on": [
+            "M20.04"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
       "id": "M02",
       "title": "API-scoped engine, catalog and cost feasibility",
       "goal": "Prove the selected core API and scalable catalog/resource model before format and runtime freeze, with matched cost/failure envelopes.",
@@ -1076,7 +1215,8 @@
         "Remote-read strategy is proved on affected codecs or engine patches are concretely scoped; materialization alone cannot close the range-native requirement.",
         "API/workload inventory, failure-model SLOs and candidate decisions have measured baselines and explicit rejection criteria.",
         "Workload/SLO freeze includes profile-specific API/network/KMS cost envelopes and no unpriced or unproven failure-domain assumptions.",
-        "Selected API, paged-catalog and total/concurrent query/retention budgets have explicit measured or unresolved gates; full OpenSearch equivalence is not required."
+        "Selected API, paged-catalog and total/concurrent query/retention budgets have explicit measured or unresolved gates; full OpenSearch equivalence is not required.",
+        "Vector gaps in lucene-rust are confirmed (M02.12) and the recovery, drain, visibility and cross-zone targets from the product requirements are frozen or explicitly open (M02.05)."
       ],
       "document": "milestones/M02.md",
       "tasks": [
@@ -1344,14 +1484,16 @@
           "goal": "Make performance claims reproducible and falsifiable.",
           "deliverables": [
             "Workload/hardware/arrival profiles, SLO worksheet, independent receipt ledger design and capacity model",
-            "G06 workload and numerical scale-efficiency/latency/cost thresholds frozen from calibration; no claim of implemented multi-worker service qualification"
+            "G06 workload and numerical scale-efficiency/latency/cost thresholds frozen from calibration; no claim of implemented multi-worker service qualification",
+            "Confirm, revise or reject each proposed number in product-requirements.md with its measurement protocol: PR-03 noisy-neighbour bound, PR-04 cold-wake, PR-08 load, hardware and batch settings, PR-13 request-cost bound, PR-29 recovery (p50 5 s, p99 15 s), PR-31 per query class, PR-35 drain pause (2 s), PR-39 cross-zone bytes, the PR-01 large-index threshold, and the default document, field and nesting limits (PR-40, PR-42)"
           ],
           "validation": [
             "Reproduce single-node baseline twice with raw histograms/configs; calculate batch/egress/retention costs."
           ],
           "definition_of_done": [
             "Targets in performance-scale.md are accepted or explicitly revised with evidence and no hidden exclusions.",
-            "Component/single-node calibration is recorded separately from later M15.06 provider curves and M17.03 real-service G06 qualification; no future runtime result is required or implied here"
+            "Component/single-node calibration is recorded separately from later M15.06 provider curves and M17.03 real-service G06 qualification; no future runtime result is required or implied here",
+            "Every proposed requirement number is frozen with a protocol or listed as open with an owner; the recovery and drain targets are decided here, before M07.10 and M07.11 are built against them"
           ],
           "depends_on": [
             "M02.01",
@@ -1382,7 +1524,8 @@
           "depends_on": [
             "M02.03",
             "M02.05",
-            "M02.07"
+            "M02.07",
+            "M02.12"
           ],
           "owner": "engine/architecture",
           "status": "planned",
@@ -1418,6 +1561,28 @@
               "result": "Proposed merged FINALCANDIDATE state only: revised development policy remains unaccepted pending same-lineage exact-final-source R2, complete current-source checks/native-hosted CI/ci-ok, normal protected integration and postmerge. Historical R1 binds511 only. No M02.10 experiment/campaign admission, code-finding resolution or counter reset follows from candidate done."
             }
           ]
+        },
+        {
+          "id": "M02.12",
+          "title": "Audit vector support in lucene-rust and plan upstream changes",
+          "goal": "Turn the 13 Nov source inspection of HNSW, IVF, quantization, disk variants and SIMD into confirmed gaps with upstream tasks.",
+          "deliverables": [
+            "Gap table checked by building and running the pinned revision's vector tests and benches: disk-based IVF layout, range reads of posting lists, update and delete behaviour, concurrent HNSW build and merge, quantizer settings OpenSearch mappings can expose",
+            "Mapping from OpenSearch `knn_vector` parameters to lucene-rust variants, recall@10 floors per variant with a stated corpus, and a list of additive lucene-rust PRs with owners"
+          ],
+          "validation": [
+            "Run the recall tests and benches that exist; record anything that could not be run instead of inferring it from crate names"
+          ],
+          "definition_of_done": [
+            "Each row of the vector table in product-requirements.md is confirmed, refuted or marked unrun, with the command and revision",
+            "Every confirmed gap names the additive upstream change that closes it and the M23 task that waits for it"
+          ],
+          "depends_on": [
+            "M02.02"
+          ],
+          "owner": "engine/architecture",
+          "status": "planned",
+          "evidence": []
         }
       ]
     },
@@ -1490,12 +1655,37 @@
           "evidence": []
         },
         {
+          "id": "M03.09",
+          "title": "Decide commit-domain sharing under tenant = index",
+          "goal": "Resolve the open design question in product-requirements conflict 3 before formats freeze: with one tenant per index, may small indexes share a fenced append lane?",
+          "deliverables": [
+            "Decision record (templates/decision.md) comparing one lane per index, lanes shared by indexes with the same key, residency and durability policy, and shared lanes with per-index payload encryption; each with requests per acknowledged write, idle cost at 10M indexes with 90% idle, blast radius and noisy-neighbour limits",
+            "Rules for revoking one index's key without blocking its lane-mates, and for BYOK indexes, which cannot share a lane unless the payload is separately encrypted per index",
+            "The chosen option written into the M03.03 format inputs, the M03.08 scope and the PR-02 wording"
+          ],
+          "validation": [
+            "Run the M02.07 trace workloads at 10M indexes (modelled, labelled as such) and a small-index write storm; test revocation of a lane-mate's key on the M03.04 model"
+          ],
+          "definition_of_done": [
+            "The decision forbids a per-index request floor (PR-01, PR-11) and any weakening of the per-index isolation and key boundary, and says what it costs",
+            "The id is M03.09 only because ids are stable; it runs before M03.03 and M03.08 implements it"
+          ],
+          "depends_on": [
+            "M02.07",
+            "M03.01"
+          ],
+          "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
           "id": "M03.03",
           "title": "Specify bounded on-disk formats",
           "goal": "Version objects/manifests/WAL/schema/checkpoint envelopes.",
           "deliverables": [
             "Format specifications, parsers/encoders, size limits and golden corpus",
-            "Versioned API/profile/schema, opaque version and bounded cursor/pin identity requirements from the early scale model"
+            "Versioned API/profile/schema, opaque version and bounded cursor/pin identity requirements from the early scale model",
+            "Fleet format-version record in the object store, changed by conditional write, and the unknown-mandatory-capability refusal rule (PR-10, PR-52); per-index object layout and a mapping object keyed by content hash (PR-43); size limits that admit documents up to 200 MB (PR-40)"
           ],
           "validation": [
             "Every-byte truncation/corruption and oversized/overflow fuzz inputs; roundtrip plus independent fixture checks."
@@ -1507,7 +1697,8 @@
             "M03.01",
             "M19",
             "M02.08",
-            "M02.05"
+            "M02.05",
+            "M03.09"
           ],
           "owner": "storage/consistency",
           "status": "planned",
@@ -1565,7 +1756,7 @@
           "goal": "Implement the researched ordered conditional-create WAL, compatible batching and amortized checkpoint protocol, proving the full activation/GC/reader boundary.",
           "deliverables": [
             "Fenced ordered-slot log prototype with one in-flight append, failure poisoning, own-term establishment, retained fences/tail locator and explicit unknown outcomes",
-            "Same-tenant/key-compatible domains, bounded batching, inline initial wrapped-key format, amortized dirty-only checkpoints and fenced hot-stream promotion",
+            "Domains shared only as M03.09 allows (tenant = index; same key, residency and durability policy), bounded batching, inline initial wrapped-key format, amortized dirty-only checkpoints and fenced hot-stream promotion",
             "Payload-plus-head-CAS comparison implementation and complete attempt/page/key/recovery accounting"
           ],
           "validation": [
@@ -1581,7 +1772,8 @@
             "M02.07",
             "M03.04",
             "M03.02",
-            "M03.07"
+            "M03.07",
+            "M03.09"
           ],
           "owner": "cost/architecture/operations",
           "status": "planned",
@@ -1661,7 +1853,8 @@
           ],
           "definition_of_done": [
             "No runtime crate bypasses the adapter to engine internals; revision upgrade has a dedicated test command.",
-            "Only selected core-v1 capabilities are promised; unsupported engine/API features remain explicit and cannot be silently ignored."
+            "Only selected core-v1 capabilities are promised; unsupported engine/API features remain explicit and cannot be silently ignored.",
+            "hsearch holds no vendored copy or private patch of lucene-rust (`git grep` finds none); each engine change is a linked lucene-rust PR plus a pin bump, with the bridge contract and old-index corpus passing at the new pin (PR-53)"
           ],
           "depends_on": [
             "M02",
@@ -1677,7 +1870,7 @@
           "title": "Deliver remote-input engine changes",
           "goal": "Make lazy object reads real through all affected readers.",
           "deliverables": [
-            "Reviewed engine patch series, read-at input implementation, bounded I/O/cache bridge"
+            "Additive lucene-rust PR series (range-native input behind a new abstraction; nothing that changes what an existing OpenSearch deployment reads, writes or calls), then an exact pin bump in hsearch (PR-53), read-at input implementation, bounded I/O/cache bridge"
           ],
           "validation": [
             "Remote/cold corpus across affected codecs with cache smaller than corpus and injected errors/timeouts."
@@ -1697,7 +1890,7 @@
           "title": "Build resolved-operation preparation",
           "goal": "Evaluate conditional mutations once against committed state.",
           "deliverables": [
-            "Canonical operation identity/version map, script/patch resolver and idempotency outcome storage"
+            "Canonical operation identity/version map, partial-document, upsert and no-op resolver for _update including if_seq_no and if_primary_term (scripts stay out, A11) and idempotency outcome storage"
           ],
           "validation": [
             "Dependent updates/create races; failed commit after preparation; replay with time/random input changes."
@@ -1802,7 +1995,8 @@
             "Wrong CA/SAN/cluster/role, expired cert, public-token peer access and tenant spoof tests."
           ],
           "definition_of_done": [
-            "Every peer RPC has explicit role/tenant checks and cert verification cannot be disabled by ordinary config."
+            "Every peer RPC has explicit role/tenant checks and cert verification cannot be disabled by ordinary config.",
+            "Principal, policy, quota and key scope are the index (tenant = index); no policy object spans several indexes"
           ],
           "depends_on": [
             "M03"
@@ -1816,10 +2010,12 @@
           "title": "Implement key-provider contract",
           "goal": "Make key wrapping replaceable without exposing key material.",
           "deliverables": [
-            "KeyProvider API, isolated test KMS, provider errors, bounded DEK cache and audit schema"
+            "KeyProvider API, isolated test KMS, provider errors, bounded DEK cache and audit schema",
+            "Per-index key references with a deployment default key for indexes that have none (PR-24); the DEK cache keeps KMS calls off the per-request path"
           ],
           "validation": [
-            "Wrap/unwrap context/version mismatch, throttle/denial/timeout, cancellation and zeroization checks."
+            "Wrap/unwrap context/version mismatch, throttle/denial/timeout, cancellation and zeroization checks.",
+            "Mixed-key test; KMS call count stays inside the cache policy; revoking one index's key blocks reads of that index only"
           ],
           "definition_of_done": [
             "Plaintext keys never enter logs/evidence; test provider is refused in production profile."
@@ -1879,10 +2075,12 @@
           "title": "Implement rotation and revocation state machines",
           "goal": "Retire key versions without breaking pinned readers or promising instant revocation.",
           "deliverables": [
-            "Immutable envelope rewrap publication, dependency inventory, policy invalidation and bounded key/reader TTL"
+            "Immutable envelope rewrap publication, dependency inventory, policy invalidation and bounded key/reader TTL",
+            "Crypto-shredding by destroying an index's key (PR-26) and the audit log of rotation and revocation (PR-27)"
           ],
           "validation": [
-            "Concurrent rewrap/PIT/GC/restart, KMS outage, revoked cached key and policy partition histories."
+            "Concurrent rewrap/PIT/GC/restart, KMS outage, revoked cached key and policy partition histories.",
+            "After key destruction the index's objects and caches cannot be read; the audit log records rotation, revocation and destruction"
           ],
           "definition_of_done": [
             "Old roots keep needed envelopes; expired policy fails closed; measured revocation envelope is documented."
@@ -1953,7 +2151,8 @@
         "Successful mutations survive loss of every compute cache/scratch directory when RustFS and keys remain intact.",
         "Ordered committed WAL slots and separately published segment/schema roots recover a valid committed prefix; GC cannot delete pinned or unpublished-but-required dependencies.",
         "An external client can ingest, query, restart, restore and verify a declared dataset on a real RustFS topology.",
-        "Object commits count payload/root/page/key attempts and use dirty-only compatible batching; successful cost reduction preserves restore/freshness semantics."
+        "Object commits count payload/root/page/key attempts and use dirty-only compatible batching; successful cost reduction preserves restore/freshness semantics.",
+        "M20's v0 log and formats are replaced behind the same endpoint; v0 data is disposable and never migrated."
       ],
       "document": "milestones/M06.md",
       "tasks": [
@@ -1977,7 +2176,8 @@
           "depends_on": [
             "M04",
             "M05",
-            "M03.08"
+            "M03.08",
+            "M20.05"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -2051,7 +2251,8 @@
           "deliverables": [
             "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls",
             "Native /v1 capabilities/receipts and explicitly selected thin adapter routes; core request/response/queue/retention admission",
-            "Early selected OpenSearch-reference and intentional-difference/unsupported conformance corpus; no broad SDK promise"
+            "Early selected OpenSearch-reference and intentional-difference/unsupported conformance corpus; no broad SDK promise",
+            "Refresh the core-v1 fixture corpus for the rows revised on 13 November 2026 (the refresh=true history, the partial `_update` example in A11, nested/join and kNN inputs, aliases, snapshots) together with the pinned engine differential bundle that hashes it; until then those native inputs predate the product requirements"
           ],
           "validation": [
             "External process client against RustFS with encrypted data and identity checks; delete/recreate name races.",
@@ -2082,12 +2283,437 @@
             "Fixed and randomized crash seeds, storage errors, key unavailable and fresh-host restore."
           ],
           "definition_of_done": [
-            "All acknowledged object-mode writes recover; runtime coverage and independent code/test review pass."
+            "All acknowledged object-mode writes recover; runtime coverage and independent code/test review pass.",
+            "Refresh modes and the visibility measurement (M06.07) are part of the qualification report."
+          ],
+          "depends_on": [
+            "M06.05",
+            "M06.07"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.07",
+          "title": "Implement per-request refresh modes and the visibility target",
+          "goal": "Make durable versus searchable a per-request choice and measure it (PR-07, PR-08).",
+          "deliverables": [
+            "`refresh=false` (ack when durable), `wait_for` (ack when searchable) and `true` (ack once a reader covering the write is published, forcing a publication if none is due) on bulk, index, update and delete",
+            "Forced publication coalesced across concurrent requests inside one batching window bounded by the profile, never one segment or object per write, and metered per index",
+            "Durable receipts name the committed write even when a visibility wait times out; the batching window is chosen against both the object-durable ack target and PR-08 (conflict 5)"
+          ],
+          "validation": [
+            "Each mode tested for ack semantics, timeout and lost replies; 1,000 concurrent refresh=true writes cost a number of publications set by the window, not by the writes",
+            "Measure write-ack to first-search-hit at the load, hardware and batch settings frozen in M02.05; report p50 and p99 against < 500 ms and < 5 s as provisional"
+          ],
+          "definition_of_done": [
+            "Every mode behaves as PR-07 states and request cost does not scale with the number of refresh=true writes",
+            "The measured visibility latency is reported with its conditions; a miss is recorded, not tuned away by weakening durability"
           ],
           "depends_on": [
             "M06.05"
           ],
           "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M21",
+      "title": "Document and mapping semantics",
+      "goal": "Streamed ingestion, bounded mappings and OpenSearch-style document operations on top of the durable store.",
+      "owner": "engine/api",
+      "status": "planned",
+      "depends_on": [
+        "M06"
+      ],
+      "definition_of_done": [
+        "Large documents and bulk bodies stream under a memory cap; mappings are bounded, shared by content hash and evolve online.",
+        "Real-time get, partial update and nested/join documents behave as the product requirements state, or refuse with a named reason."
+      ],
+      "document": "milestones/M21.md",
+      "tasks": [
+        {
+          "id": "M21.01",
+          "title": "Stream bulk bodies and enforce document size limits",
+          "goal": "Bound memory per request by a buffer, not by document size (PR-16, PR-40).",
+          "deliverables": [
+            "Streaming NDJSON and document parser with a configured buffer, concurrent large `_bulk` requests and visible backpressure",
+            "Configurable per-index or per-profile document limit with a hard ceiling of 200 MB, structured rejection naming the limit before anything is committed",
+            "Any engine memory that grows with document size is recorded as an upstream lucene-rust gap (PR-53), not worked around"
+          ],
+          "validation": [
+            "A 200 MB document and a bulk of many large documents under a fixed memory cap with no OOM; a document one byte over the limit is rejected and nothing of it is committed",
+            "Concurrent large bulks with clients that read slowly; peak memory reported against document size"
+          ],
+          "definition_of_done": [
+            "Peak memory per request is bounded by the configured buffer in every test",
+            "The default limit is the M02.05 value; the 200 MB ceiling is not raisable by configuration"
+          ],
+          "depends_on": [
+            "M20.04",
+            "M03.03"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M21.02",
+          "title": "Store mappings once by content hash",
+          "goal": "Make millions of small indexes share mappings instead of carrying one each (PR-43).",
+          "deliverables": [
+            "Canonical mapping and settings form, content-hash id, immutable mapping objects under the hash, one parsed copy per node",
+            "Authorization form for shared objects: readable only through each index's own authorization, or a form proved not to leak one index's mapping to another's principals",
+            "Mapping change creates a new immutable object under its new hash"
+          ],
+          "validation": [
+            "Two indexes with the same mapping in different key order share one hash; 1M indexes from 100 mappings give about 100 stored objects and no per-index parsed copy (modelled beyond what runs, labelled)",
+            "Cross-index sharing and hash collision checks, including principals of one index reading another's mapping"
+          ],
+          "definition_of_done": [
+            "Stored mapping objects scale with distinct mappings, not with indexes",
+            "No index can read another index's mapping through a shared object"
+          ],
+          "depends_on": [
+            "M03.03",
+            "M20.04"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M21.03",
+          "title": "Guard field limits and set the dynamic-mapping policy",
+          "goal": "Reject mapping explosion whole and let each index choose how unknown fields behave (PR-42).",
+          "deliverables": [
+            "Field-count limit (default from M02.05, upper bound configurable), nested depth and nested-objects-per-document limits",
+            "Per-index dynamic setting `true`, `false` or `strict`; structured errors; per-item bulk errors that never partially apply a mapping change"
+          ],
+          "validation": [
+            "At the limit one more new field is rejected and the mapping is unchanged; strict rejects an unknown field and false ignores it; a bulk with some items over the limit reports per-item errors with the mapping untouched"
+          ],
+          "definition_of_done": [
+            "A request that would pass the limit is rejected as a whole",
+            "The limits are sized for the under-100-fields document shape"
+          ],
+          "depends_on": [
+            "M21.02"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M21.04",
+          "title": "Evolve mappings online",
+          "goal": "Add fields to a live index without losing writes and refuse changes that cannot be made in place (PR-44).",
+          "deliverables": [
+            "put-mapping and permitted dynamic additions published as a new immutable mapping version; limits from M21.03 applied to each change",
+            "Segments keep opening under the mapping version they were written with; changing a field's type or analyzer is refused with an error that points to a new index plus `_reindex`"
+          ],
+          "validation": [
+            "Add a field while writes and searches run: no write lost, old segments readable, new field searchable; a type change on an existing field is rejected and the mapping is unchanged"
+          ],
+          "definition_of_done": [
+            "Concurrent writers see either the old or the new mapping version, never a mix",
+            "Mapping publication costs a constant number of conditional writes"
+          ],
+          "depends_on": [
+            "M21.03",
+            "M06.02"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M21.05",
+          "title": "Serve real-time get and multi-get from the shard owner",
+          "goal": "Return the latest acknowledged write whether or not a reader covering it exists (PR-49, owner side).",
+          "deliverables": [
+            "`GET /{index}/_doc/{id}` and multi-get answered from committed-but-unpublished state on the owner, honouring custom routing; `realtime=false` reads published state only",
+            "Multi-get grouped by shard so cost follows shards touched, not documents asked for"
+          ],
+          "validation": [
+            "Write with refresh=false and read at once; update then get returns the update; delete then get returns not found; the same after owner restart; multi-get of 10 and 20 documents in one shard cost the same requests"
+          ],
+          "definition_of_done": [
+            "A get never returns older data than an acknowledged write",
+            "Forwarding through a coordinator and the amortized authority barrier are M07.12"
+          ],
+          "depends_on": [
+            "M06.03"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M21.06",
+          "title": "Implement partial update",
+          "goal": "Support `_update` as a best-effort fast path that never compromises durability, visibility, request cost or scale (PR-47).",
+          "deliverables": [
+            "Partial-document merge, `doc_as_upsert`/`upsert`, `detect_noop`, and optimistic concurrency with `if_seq_no`/`if_primary_term` mapped onto the native version token",
+            "The update is resolved once on the shard owner against committed state and the resolved operation is what is logged; replay never re-evaluates it; scripted updates stay out of scope"
+          ],
+          "validation": [
+            "Concurrent updates: a lost race returns a conflict, never a silent overwrite; crash-replay yields the same document; request count per update equals an index operation; update latency reported against index latency"
+          ],
+          "definition_of_done": [
+            "No update adds object-store requests beyond an index operation",
+            "The A02 and A04 matrix rows match the behaviour tested"
+          ],
+          "depends_on": [
+            "M04.03",
+            "M06.01",
+            "M21.05"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M21.07",
+          "title": "Support nested documents and parent-child joins",
+          "goal": "Provide `nested` and `join` fields with their queries, and refuse what would not scale (PR-41).",
+          "deliverables": [
+            "`nested` fields and queries, `join` fields with `has_child` and `has_parent`, using lucene-rust's block-join support (check parity/joins.md first; gaps go upstream)",
+            "Parent and children routed to the same shard; a child indexed without a routable parent is rejected; a join across shards is rejected, not approximated; limits from M21.03 apply"
+          ],
+          "validation": [
+            "Nested and join queries match the pinned reference results on a shared corpus; child without routable parent rejected; cross-shard join request rejected with a named reason"
+          ],
+          "definition_of_done": [
+            "Matrix rows for nested and join have tests",
+            "Document shape stays under 100 fields; the profile states every difference from OpenSearch"
+          ],
+          "depends_on": [
+            "M21.03",
+            "M04.01"
+          ],
+          "owner": "engine/search",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M22",
+      "title": "Pinned views, index management and background jobs",
+      "goal": "Paging, aliases, reindex, by-query jobs and snapshots, all built on pinned views and bounded background jobs.",
+      "owner": "engine/api",
+      "status": "planned",
+      "depends_on": [
+        "M21"
+      ],
+      "definition_of_done": [
+        "A pinned view serves PIT, search_after and scroll; aliases swap atomically; reindex and by-query jobs are resumable, throttled and cancellable.",
+        "A shallow snapshot costs a constant number of requests and is protected from garbage collection until deleted."
+      ],
+      "document": "milestones/M22.md",
+      "tasks": [
+        {
+          "id": "M22.01",
+          "title": "Provide pinned views: paging window, search_after, PIT and scroll",
+          "goal": "One mechanism behind OpenSearch's paging shapes (PR-54).",
+          "deliverables": [
+            "Bounded `from`/`size` window, `search_after`, point-in-time and scroll with OpenSearch request and response shapes, scroll served on the pinned-view mechanism",
+            "A pin per shard view with fixed routing and catalog generation, keep-alive, explicit release or expiry, registered before the id is returned and honoured by garbage collection; pins visible in metrics"
+          ],
+          "validation": [
+            "Page a large index with search_after during writes: no duplicates or gaps relative to the pinned view; expired and released ids return a clear error; `from + size` over the window is rejected naming the limit; a view survives compaction and restart"
+          ],
+          "definition_of_done": [
+            "GC never deletes an object a live pin needs",
+            "Resuming after a node kill on another node is proved with the distributed work in M07.05"
+          ],
+          "depends_on": [
+            "M06.04",
+            "M06.05"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M22.02",
+          "title": "Support aliases with atomic swap, and rollover",
+          "goal": "Zero-downtime cutover and explicit index lifecycle (PR-46, PR-34).",
+          "deliverables": [
+            "Alias actions in one request take effect as one conditional metadata change, so a request sees entirely the old target or entirely the new; write aliases name one write index; alias resolution uses a fixed catalog generation per request",
+            "Rollover on request or on an admitted check, with no timer or poll per index"
+          ],
+          "validation": [
+            "Continuous reads and writes through an alias during a swap: none fails and none sees a mix; a swap costs a constant number of conditional writes regardless of index size"
+          ],
+          "definition_of_done": [
+            "Alias swap cost does not depend on index size or count",
+            "An idle index with a rollover policy costs no requests"
+          ],
+          "depends_on": [
+            "M03.05",
+            "M06.05"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M22.03",
+          "title": "Run `_reindex` as a resumable background job",
+          "goal": "Provide the job framework once and use it for reindex (PR-45).",
+          "deliverables": [
+            "Durable job record, bounded page reads on a pinned view, throttle, progress, cancel and resume, writing through the normal bulk path; optional query and script-free field mapping",
+            "Type changes served by creating the new index with a new mapping and reindexing into it"
+          ],
+          "validation": [
+            "Reindex a large index under a type change; kill a node mid-job and resume without duplicating or losing documents; throttle respected; cancel stops it; request count follows bytes, not documents"
+          ],
+          "definition_of_done": [
+            "The job framework carries no per-document state beyond what the next page needs",
+            "M22.04 and M10.02 reuse this framework and its logical document iterator"
+          ],
+          "depends_on": [
+            "M22.01",
+            "M21.04"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M22.04",
+          "title": "Run update-by-query and delete-by-query as bounded jobs",
+          "goal": "Large changes without starving foreground traffic (PR-48).",
+          "deliverables": [
+            "Evaluation against a pinned view, bounded pages per shard, resume, cancel and progress on the M22.03 framework",
+            "Version check so a document changed since the pinned view is not overwritten or deleted blindly; script-free update bodies only"
+          ],
+          "validation": [
+            "Delete a large fraction of a big index under foreground load: foreground p99 stays inside the PR-03 bound; kill and resume with no missed or double deletes; a concurrent update of a matched document is detected; job request cost follows bytes written"
+          ],
+          "definition_of_done": [
+            "No job raises request cost per document above the normal write path",
+            "A conflict is reported, never silently overwritten"
+          ],
+          "depends_on": [
+            "M22.03",
+            "M21.06"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M22.05",
+          "title": "Create shallow snapshots and restore them in the same store",
+          "goal": "Metadata-only snapshots that pin existing immutable objects (PR-50).",
+          "deliverables": [
+            "Snapshot record referencing the index's segments, manifests and key envelopes, with pins registered before it is returned; constant request count independent of index size",
+            "Same-store restore creating a new index that references those segments and copies nothing up front; same-key only, with joint storage attribution until detached",
+            "Delete releases pins; an object is reclaimed only when no snapshot and no live index references it"
+          ],
+          "validation": [
+            "Snapshot a large index and count requests; compact and collect garbage after writes and restore byte-identical content; suspend a GC sweep across snapshot creation; delete and check exclusive versus shared objects; revoke an index key and check the snapshot becomes unreadable"
+          ],
+          "definition_of_done": [
+            "Request count is constant with index size, and restore is searchable without copying data",
+            "A snapshot of an index with its own key stays under that key; M10.01 adds the quorum-mode tail and M11.06 the portable form"
+          ],
+          "depends_on": [
+            "M06.04",
+            "M03.05"
+          ],
+          "owner": "engine/api",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M23",
+      "title": "Vector search: HNSW and IVF with quantization and disk variants",
+      "goal": "Expose lucene-rust's vector indexes through the mapping and query surface, with recall floors per variant.",
+      "owner": "engine/search",
+      "status": "planned",
+      "depends_on": [
+        "M06"
+      ],
+      "definition_of_done": [
+        "HNSW and IVF each work with quantization and with a disk-based variant, with recall@10 floors at a stated corpus.",
+        "Every gap in lucene-rust was closed upstream as an additive PR and the pin bumped; hsearch carries no engine patch."
+      ],
+      "document": "milestones/M23.md",
+      "tasks": [
+        {
+          "id": "M23.01",
+          "title": "Serve HNSW with and without quantization",
+          "goal": "First vector variant through the adapter (PR-22).",
+          "deliverables": [
+            "`knn_vector` mapping for HNSW, a kNN query usable inside bool with a filter, quantizer settings chosen in M02.12",
+            "Recall@10 floor and latency for plain and quantized variants on a stated corpus"
+          ],
+          "validation": [
+            "Recall and latency run on the stated corpus and hardware; results reported as provisional off real instances; vectors in a restored or recovered index return the same top-k"
+          ],
+          "definition_of_done": [
+            "Recall@10 meets the floor frozen in M02.12 for each variant",
+            "Merge and delete behaviour is tested"
+          ],
+          "depends_on": [
+            "M02.12",
+            "M04.01"
+          ],
+          "owner": "engine/search",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M23.02",
+          "title": "Serve IVF with and without quantization",
+          "goal": "Second vector variant (PR-22).",
+          "deliverables": [
+            "IVF mapping and query (`nprobe`, rerank) using lucene-rust's `lucene-ivf` and the shared quantizer trait",
+            "Update, delete and merge behaviour of write-once IVF segments stated and tested"
+          ],
+          "validation": [
+            "Recall@10 and latency on the stated corpus; delete a fraction and merge; compare with HNSW at equal recall"
+          ],
+          "definition_of_done": [
+            "Recall@10 meets its floor",
+            "The mapping parameters OpenSearch users set map to a variant or are refused with a reason"
+          ],
+          "depends_on": [
+            "M23.01"
+          ],
+          "owner": "engine/search",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M23.03",
+          "title": "Serve disk-based HNSW and IVF from the object store",
+          "goal": "Read vector data by range from the object store instead of loading it (PR-22, PR-53).",
+          "deliverables": [
+            "Disk-based HNSW (`lucene-disk-hnsw`) and a disk-oriented IVF layout reading by range through the M04.02 input; where M02.12 confirmed the IVF layout is missing, an additive lucene-rust PR and a pin bump",
+            "Cold and warm query reports with range counts per query"
+          ],
+          "validation": [
+            "Query a corpus larger than the cache cold and warm; count GETs and bytes per query; recall floor holds"
+          ],
+          "definition_of_done": [
+            "Range reads per query are bounded and reported, and recall stays above its floor",
+            "No change alters what an existing OpenSearch deployment reads or writes"
+          ],
+          "depends_on": [
+            "M23.02",
+            "M04.02"
+          ],
+          "owner": "engine/search",
           "status": "planned",
           "evidence": []
         }
@@ -2107,7 +2733,8 @@
         "Latest/at-least/PIT reads validate receiver checkpoints; stale placement cannot downgrade freshness.",
         "Node loss, hot tenant overload and shard movement preserve declared results or return explicit incomplete/unavailable status.",
         "Zone-local serving and eligible fallback pass normal and zone-loss cost/capacity tests; direct object access is compared with paid cross-zone peers.",
-        "Core-v1 matching/different/unsupported semantics and total/concurrent work budgets pass early distributed conformance; later migration cannot retroactively define an unbounded API."
+        "Core-v1 matching/different/unsupported semantics and total/concurrent work budgets pass early distributed conformance; later migration cannot retroactively define an unbounded API.",
+        "Node roles, fast takeover, graceful drain and coordinator-forwarded real-time get meet the frozen product targets or record their misses (PR-18, PR-29, PR-35, PR-49)."
       ],
       "document": "milestones/M07.md",
       "tasks": [
@@ -2117,10 +2744,12 @@
           "goal": "Discover nodes and recommend placements without granting authority.",
           "deliverables": [
             "Role/capacity/zone registry, rendezvous placement, drain and shard activation limits",
-            "Zone/cell endpoint identity and local-eligible placement policy with explicit profile fallback and capacity accounting."
+            "Zone/cell endpoint identity and local-eligible placement policy with explicit profile fallback and capacity accounting.",
+            "AZ-aware spread: ownership, search replicas and cache copies of one index spread across AZs (a hot index in at least two, an index in the all-AZ availability class in all three), node tags used only as hints, an untagged node counted neither near nor far (PR-38)"
           ],
           "validation": [
-            "Join/leave/stale gossip, skew, duplicate identity and role-change histories."
+            "Join/leave/stale gossip, skew, duplicate identity and role-change histories.",
+            "Placement over a 3-AZ fleet at skewed index sizes: no index has all serving copies in one AZ unless its profile says single-AZ economy; large-index spread within one node of even"
           ],
           "definition_of_done": [
             "Routing hints cannot create writer authority or bypass receiver authorization/freshness."
@@ -2162,7 +2791,8 @@
             "Routing generation, forwarded identity context, old-owner rejection and retry identity handling"
           ],
           "validation": [
-            "Move ownership during in-flight index/create/CAS/delete; stale routes and lost replies."
+            "Move ownership during in-flight index/create/CAS/delete; stale routes and lost replies.",
+            "Requests per acknowledged write at three times the index nodes stay within the PR-13 bound frozen in M02.05 for the same workload"
           ],
           "definition_of_done": [
             "Independent histories show no duplicate committed identity or stale writer publication."
@@ -2185,7 +2815,8 @@
           ],
           "validation": [
             "Profile G03: target/concurrency limit+one, hot-tenant skew, stalled peers, retry storms and coordinator cancellation",
-            "Measure actual queued/RPC/remote bytes and verify rejected or incomplete work cannot appear as an exact successful result"
+            "Measure actual queued/RPC/remote bytes and verify rejected or incomplete work cannot appear as an exact successful result",
+            "Concurrency sweep with a latency curve and explicit 429s past the limit (PR-17)"
           ],
           "definition_of_done": [
             "Every distributed request and retry uses the admitted envelope; no full-catalog hot scan or unlimited fanout",
@@ -2233,7 +2864,8 @@
           "deliverables": [
             "Published/latest/at_least modes, replica catch-up, PIT vectors/pins and token limits",
             "Authoritative latest barriers and bounded WAL-tail discovery from structural checkpoints; cached manifests alone cannot certify latest",
-            "TTL/count/retained-byte snapshot quotas, stable query/sort cursors, routing/schema/profile binding and typed expiry; per-partition consistency is not global serializability"
+            "TTL/count/retained-byte snapshot quotas, stable query/sort cursors, routing/schema/profile binding and typed expiry; per-partition consistency is not global serializability",
+            "Scroll served on the pinned view with keep-alive and release, resume of a PIT or scroll on another node after a node kill, and pinned storage visible in metrics (PR-54, building on M22.01)"
           ],
           "validation": [
             "Stale node and unavailable authority, refresh races, deadline expiry, topology change and PIT GC."
@@ -2259,7 +2891,8 @@
           ],
           "validation": [
             "Replay identical queries with local, cross-zone and direct-object paths; meter each edge and API attempt",
-            "Lose a cell, force a cold working set and test stale local replicas; compare fallback cost/latency and result completeness"
+            "Lose a cell, force a cold working set and test stale local replicas; compare fallback cost/latency and result completeness",
+            "Report cross-zone bytes per query and per write at 3 AZs, split by cause, against the target set in M02.05 (PR-12, PR-39)"
           ],
           "definition_of_done": [
             "Cost ranking runs only after authorization/freshness checks; strong reads never silently downgrade",
@@ -2290,7 +2923,105 @@
           "depends_on": [
             "M07.05",
             "M07.07",
-            "M19"
+            "M19",
+            "M07.09",
+            "M07.10",
+            "M07.11",
+            "M07.12"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.09",
+          "title": "Declare node roles and refuse out-of-role work",
+          "goal": "Make `index`, `search` and `coordinator` explicit and independently scalable (PR-18).",
+          "deliverables": [
+            "Node configuration of roles in any combination (all three for development), roles and zone reported in status, structured refusal of work outside the declared roles",
+            "The zone comes from the node tag; the engine never calls a cloud API for it; the journal role stays an optional fourth for quorum mode"
+          ],
+          "validation": [
+            "Each role alone, each pair and all three; a search-only node never accepts a write; a coordinator-only node owns no shard"
+          ],
+          "definition_of_done": [
+            "A node refuses out-of-role work with a structured error and reports its roles",
+            "Roles scale independently in the multi-node tests"
+          ],
+          "depends_on": [
+            "M07.01"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.10",
+          "title": "Implement fast failure detection and parallel shard takeover",
+          "goal": "Make any node's loss recoverable inside the PR-29 targets; the OpenSearch fork's lease design measured p50 59 s, so this is a design task, not a tuning task (PR-29, PR-36, PR-37).",
+          "deliverables": [
+            "Failure detection that does not depend on a long lease expiry for liveness, compared in a short decision record; ownership is still granted only by conditional write, never by the detector",
+            "Bounded parallel shard activation, preferring a surviving node that already holds the shard's recent data or warm cache; a cold replacement recovers from the object store alone with a bounded warm-up that does not block serving",
+            "Loss of every node in one AZ at once handled inside the same targets, with capacity loss for any index limited to its share of that AZ"
+          ],
+          "validation": [
+            "Kill -9 a loaded node and then a whole AZ; measure kill-to-first-acknowledged-write per shard against the M02.05 targets; zero acknowledged-write loss; warm and cold takeover reported separately",
+            "Wipe a node's disks and kill it: its shards recover elsewhere with correct data; cold query latency during warm-up reported"
+          ],
+          "definition_of_done": [
+            "Takeover meets the frozen targets, or the miss is recorded with its measured cause; a deposed owner never acknowledges",
+            "Searches over the lost node's data keep being served from published state with retries only inside the request deadline"
+          ],
+          "depends_on": [
+            "M07.03",
+            "M07.09"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.11",
+          "title": "Implement graceful drain with fenced shard handoff",
+          "goal": "Hand work off deliberately on shutdown instead of waiting for a lease to expire (PR-35).",
+          "deliverables": [
+            "Drain command and SIGTERM handling: stop new work for the node's roles, fenced handoff of each owned shard, finish or hand off in-flight requests, exit when empty or at a deadline",
+            "A drain that hits its deadline falls back to the abrupt-loss path of M07.10"
+          ],
+          "validation": [
+            "Drain under load: per-shard write pause p99 inside the M02.05 bound (proposed 2 s), zero acknowledged-write loss, zero requests failed without a retriable error, no node-wide pause; drain time reported against the number of shards"
+          ],
+          "definition_of_done": [
+            "Drain never loses an acknowledged write and never stalls the whole node",
+            "A missed deadline degrades to the PR-29 path, not to data loss"
+          ],
+          "depends_on": [
+            "M07.03",
+            "M07.09"
+          ],
+          "owner": "query/cluster",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M07.12",
+          "title": "Serve real-time get through any coordinator with an amortized authority barrier",
+          "goal": "Clients send a get to any coordinator and get the owner's answer (PR-49, routing side).",
+          "deliverables": [
+            "Coordinator resolves the shard, forwards to the owner on the client's behalf, preferring a same-AZ path; direct service from the owner is an optimization",
+            "Get served only under a valid authority barrier; concurrent gets to one shard share one barrier check within a short window; multi-get costs requests by shards touched"
+          ],
+          "validation": [
+            "Gets sent to a coordinator that does not own the shard return the owner's answers; after owner kill the same holds on the new owner; a get on an owner that lost authority fails or redirects, never answers stale; barrier requests scale with shards and time, not with gets"
+          ],
+          "definition_of_done": [
+            "No stale answer from a deposed owner",
+            "Request cost per get does not grow with the number of gets inside a barrier window"
+          ],
+          "depends_on": [
+            "M21.05",
+            "M07.05",
+            "M07.09"
           ],
           "owner": "query/cluster",
           "status": "planned",
@@ -2311,7 +3042,8 @@
         "Traces/logs/metrics correlate requests to shard/checkpoint/resource state with bounded cardinality and producer redaction.",
         "Versioned diagnostic API/CLI and optional MCP expose scoped, paginated read-only summaries and artifact handles.",
         "AI-only diagnostic exercises identify injected failures using operator-visible evidence; stalled telemetry does not stall search.",
-        "Cost diagnostics separate logical operations, provider attempts, directed bytes, rate provenance and budget/maintenance debt with bounded cardinality."
+        "Cost diagnostics separate logical operations, provider attempts, directed bytes, rate provenance and budget/maintenance debt with bounded cardinality.",
+        "Each role reports the scaling metrics an external orchestrator needs (PR-19)."
       ],
       "document": "milestones/M08.md",
       "tasks": [
@@ -2448,9 +3180,163 @@
             "Service remains within budgets; observability degradation is visible and bounded."
           ],
           "depends_on": [
-            "M08.05"
+            "M08.05",
+            "M08.07"
           ],
           "owner": "operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M08.07",
+          "title": "Report per-role status and scaling metrics",
+          "goal": "Expose what an external orchestrator needs to scale each role, without building the orchestrator (PR-19).",
+          "deliverables": [
+            "Status endpoint and Prometheus scrape with a named metric set per role: index (ingest and bulk rate, queue depth, backpressure and 429 rate, commit and publish lag, active shards, engine memory), search (query rate, p50 and p99, queue depth, cache hit rate and fill, cold-read rate, active readers) and coordinator (request rate, in-flight, fanout width, admission rejections, cross-zone bytes); CPU and memory against limit for every role",
+            "Readiness and drain state in the same contract"
+          ],
+          "validation": [
+            "Contract test of the metric set per role; raising load on one role moves its metrics and not another's"
+          ],
+          "definition_of_done": [
+            "Every metric named in PR-19 exists and is documented",
+            "No component that spawns or places nodes is added"
+          ],
+          "depends_on": [
+            "M08.02",
+            "M07.09"
+          ],
+          "owner": "observability/runtime",
+          "status": "planned",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "M24",
+      "title": "Extension modules: native C ABI and WebAssembly",
+      "goal": "Load external modules that add analyzers, query types, ingest processors and scoring functions, with no JVM and no scripting plugins.",
+      "owner": "extensions/runtime",
+      "status": "planned",
+      "depends_on": [
+        "M07"
+      ],
+      "definition_of_done": [
+        "An example module built outside the workspace loads on a running node as a native C-ABI module and as a WASM module and returns identical results.",
+        "A version mismatch is refused, a disabled module is absent, and a WASM module that traps or exceeds its limits is stopped while the node keeps serving.",
+        "`unsafe` exists only in the loader crate, with a written safety proof."
+      ],
+      "document": "milestones/M24.md",
+      "tasks": [
+        {
+          "id": "M24.01",
+          "title": "Specify the module ABI, host interface and extension points",
+          "goal": "Fix the contract before any loader code (PR-23, D18).",
+          "deliverables": [
+            "Versioned C-compatible ABI for in-process shared libraries and a versioned WASM host interface; both declare name, version, required engine API version and extension points (analyzers, query types, ingest processors, scoring functions)",
+            "Bounded buffers with explicit ownership, enablement by node configuration and node role, refusal of an unsupported API version, failure semantics per model (native in-process is trusted and can take the node down; WASM and out-of-process are isolated); a separate-process RPC model stays optional"
+          ],
+          "validation": [
+            "Review the spec against the example module's needs; golden ABI header and host-interface fixtures"
+          ],
+          "definition_of_done": [
+            "The spec states what each model can and cannot isolate",
+            "No extension point lets a module read files, sockets or memory outside what the host grants"
+          ],
+          "depends_on": [
+            "M19",
+            "M20.04"
+          ],
+          "owner": "extensions/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M24.02",
+          "title": "Build the native module loader crate",
+          "goal": "The one place `unsafe` is allowed (PR-23, D18, conflict 11).",
+          "deliverables": [
+            "One dedicated loader crate for library open, symbol lookup and ABI calls, with a written safety proof and tests; the rest of the workspace keeps `unsafe_code = \"forbid\"`",
+            "AGENTS.md rule and the existing workspace check amended to name that single crate; no new gate"
+          ],
+          "validation": [
+            "Load a valid module, a wrong-version module, a missing-symbol module and a module that returns malformed buffers; sanitizer or Miri run where it applies"
+          ],
+          "definition_of_done": [
+            "`git diff Cargo.toml` shows the exception and nothing else widens `unsafe`",
+            "A node refuses a module whose declared API version it does not support"
+          ],
+          "depends_on": [
+            "M24.01"
+          ],
+          "owner": "extensions/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M24.03",
+          "title": "Choose and embed the WASM runtime with enforced limits",
+          "goal": "A sandboxed option for less-trusted extensions (PR-23).",
+          "deliverables": [
+            "Runtime selection with exact pin, licence inventory and a build-size and compile-time note; limits on memory, CPU (fuel) and host calls; a host interface that grants no files or sockets",
+            "A trap or limit breach stops that module and leaves the node serving"
+          ],
+          "validation": [
+            "Modules that trap, exhaust memory, exhaust fuel and attempt a forbidden host call; the node keeps serving in each case"
+          ],
+          "definition_of_done": [
+            "The runtime is pinned and licence-checked before adoption",
+            "A WASM module cannot read files, sockets or memory outside what the host interface grants"
+          ],
+          "depends_on": [
+            "M24.01"
+          ],
+          "owner": "extensions/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M24.04",
+          "title": "Wire extension points into the engine and node roles",
+          "goal": "Make analyzers, query types, ingest processors and scoring functions pluggable (PR-23).",
+          "deliverables": [
+            "Registration through `hsearch-engine` only, per-role enablement from node configuration, capability reporting of loaded modules, disabled modules absent from the capability list"
+          ],
+          "validation": [
+            "Enable per role; disable and confirm the endpoint and capability vanish; version-mismatch refusal; index and search through a module-provided analyzer and query type"
+          ],
+          "definition_of_done": [
+            "No extension point bypasses the engine adapter",
+            "Module state never changes what an existing index reads without an explicit mapping reference"
+          ],
+          "depends_on": [
+            "M24.02",
+            "M24.03",
+            "M07.09",
+            "M04.01"
+          ],
+          "owner": "extensions/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M24.05",
+          "title": "Qualify an external example module in both forms",
+          "goal": "Prove the extension story end to end (PR-23).",
+          "deliverables": [
+            "Example module built outside the workspace serving a query type and an analyzer, as native C-ABI and as WASM, from the public contracts only"
+          ],
+          "validation": [
+            "Load on a running node; identical results in both forms; version-mismatch and disabled-module tests; WASM limit and trap tests; native panic documented as taking the node down"
+          ],
+          "definition_of_done": [
+            "Both forms return identical results on a shared corpus",
+            "M16.06 reuses this example for the documentation"
+          ],
+          "depends_on": [
+            "M24.04"
+          ],
+          "owner": "extensions/runtime",
           "status": "planned",
           "evidence": []
         }
@@ -2670,7 +3556,8 @@
           "title": "Implement snapshot barrier and durable pins",
           "goal": "Capture a complete recoverable cut, including unarchived tail.",
           "deliverables": [
-            "Snapshot descriptor, vector checkpoint, coordinated pin creation/renewal and base+tail inventory"
+            "Snapshot descriptor, vector checkpoint, coordinated pin creation/renewal and base+tail inventory",
+            "Extension of the object-mode shallow snapshot (M22.05) with the quorum-mode unarchived tail, using the same pins"
           ],
           "validation": [
             "Concurrent writes/GC, quorum archive lag, pin expiry/renewal response loss and multi-shard capture."
@@ -2680,7 +3567,8 @@
           ],
           "depends_on": [
             "M07",
-            "M09"
+            "M09",
+            "M22.05"
           ],
           "owner": "storage/export",
           "status": "planned",
@@ -2691,7 +3579,8 @@
           "title": "Implement export and logical reindex paths",
           "goal": "Support physical-compatible and format/topology-changing transfers.",
           "deliverables": [
-            "Versioned file/schema export API, scoped grants, logical document iterator and format negotiation"
+            "Versioned file/schema export API, scoped grants, logical document iterator and format negotiation",
+            "Logical document iterator shared with the M22.03 `_reindex` job; no second implementation"
           ],
           "validation": [
             "Unsupported engine/cipher, source recreation, bounded batches and traversal/SSRF controls."
@@ -2700,7 +3589,8 @@
             "Export binds source UUID/incarnation/cut and never exposes long-lived provider secrets."
           ],
           "depends_on": [
-            "M10.01"
+            "M10.01",
+            "M22.03"
           ],
           "owner": "storage/export",
           "status": "planned",
@@ -2781,7 +3671,8 @@
       "definition_of_done": [
         "Two separate RustFS deployments complete a snapshot-cut copy with destination policy and bounded resources.",
         "Pause/resume/cancel and process loss cannot mix source cuts, duplicate activation or delete unrelated data.",
-        "Completed destination recovers/searches after source network, storage and KMS access are blocked."
+        "Completed destination recovers/searches after source network, storage and KMS access are blocked.",
+        "A full portable snapshot restores on a different provider and is independent of the source store afterwards (PR-51)."
       ],
       "document": "milestones/M11.md",
       "tasks": [
@@ -2875,7 +3766,8 @@
           ],
           "validation": [
             "Concurrent source updates, topology/engine mismatch logical reindex, certificate rotation and independent recovery.",
-            "Attribute source/destination operation, re-encryption/KMS, inter-region/provider egress, retries and failed/cancelled transfer cost."
+            "Attribute source/destination operation, re-encryption/KMS, inter-region/provider egress, retries and failed/cancelled transfer cost.",
+            "Same-index re-key (PR-25): copy under key B inside the same cluster, switch reads without downtime, revoke key A, data still readable"
           ],
           "definition_of_done": [
             "Module can drain/disable after jobs finish; coverage/review pass; no prefix-only test substitutes for separate clusters."
@@ -2885,6 +3777,29 @@
             "M08"
           ],
           "owner": "copy-module",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M11.06",
+          "title": "Take full portable snapshots and restore them across clouds",
+          "goal": "A self-contained snapshot that restores on another provider (PR-51).",
+          "deliverables": [
+            "Full snapshot copying all segments, manifests and metadata and referencing nothing in the source store; cross-cloud restore as a deep-copy job on the copy machinery: resumable, throttled, checksum and manifest verified, cost and egress reported before it starts",
+            "Explicit key story: the destination index uses a key the destination can reach, or is re-encrypted under a new key"
+          ],
+          "validation": [
+            "Snapshot on one provider and restore on another through the provider conformance suite (RustFS plus a second provider here, real clouds in M15): identical results on a shared query set; kill mid-job and resume without duplicating or losing objects; the destination keeps working after the source bucket is deleted"
+          ],
+          "definition_of_done": [
+            "The restored index depends on nothing in the source store",
+            "Bytes and request counts are reported and match what was metered"
+          ],
+          "depends_on": [
+            "M11.04",
+            "M22.05"
+          ],
+          "owner": "replication/storage",
           "status": "planned",
           "evidence": []
         }
@@ -3079,7 +3994,8 @@
             "Catalog partition strategy, lazy engine lifecycle, active caps and footprint simulator"
           ],
           "validation": [
-            "1M tenants/50M-index model with >=99% idle, burst activation and catalog repair."
+            "1M tenants/50M-index model with >=99% idle, burst activation and catalog repair.",
+            "Model 10M indexes with 90% idle and the large-index threshold from M02.05 (PR-01); a one-document index costs no steady-state requests (PR-02)"
           ],
           "definition_of_done": [
             "No O(total indexes) per-node polling/resource cost; model assumptions and real tested sizes are separate.",
@@ -3250,10 +4166,12 @@
           "title": "Implement target-dispatched SIMD kernels",
           "goal": "Accelerate hottest decode/search/vector paths where engine hooks permit.",
           "deliverables": [
-            "Scalar and SSE/AVX2/NEON paths; optional AVX-512/SVE capability adapters"
+            "Scalar and SSE/AVX2/NEON paths; optional AVX-512/SVE capability adapters",
+            "Runtime CPU-feature dispatch with a scalar fallback for every kernel; a kernel built as a baseline (lucene-rust builds AVX2 and NEON that way) only with a documented CPU floor checked at startup; AVX-512 selected at run time; whether SVE helps on Graviton4 decided by measurement; any engine change as an additive lucene-rust PR (PR-30, PR-53)"
           ],
           "validation": [
-            "Property/differential tests for tails/alignment/NaN/overflow, force-disabled features and native x86/ARM runs."
+            "Property/differential tests for tails/alignment/NaN/overflow, force-disabled features and native x86/ARM runs.",
+            "Paired scalar and accelerated correctness; benchmarks on real AWS r8g and r8i and GCP C4 instances, not emulation; ARM CI stays a manual workflow"
           ],
           "definition_of_done": [
             "Unsupported CPUs never execute new instructions; no precision/relevance change is hidden."
@@ -3420,7 +4338,8 @@
           "title": "Qualify cross-provider transfer and DR",
           "goal": "Prove portable data and destination key independence.",
           "deliverables": [
-            "S3/GCS/Azure/RustFS copy+CCR matrix, residency/network policy and cost evidence"
+            "S3/GCS/Azure/RustFS copy+CCR matrix, residency/network policy and cost evidence",
+            "Portable snapshot taken on one real provider and restored on another through the conformance suite (PR-51)"
           ],
           "validation": [
             "At least one transfer to/from each provider; source access removed; rekey/format mismatch/long-RTT faults.",
@@ -3432,7 +4351,8 @@
           "depends_on": [
             "M15.01",
             "M15.02",
-            "M15.03"
+            "M15.03",
+            "M11.06"
           ],
           "owner": "cloud/security",
           "status": "planned",
@@ -3529,7 +4449,8 @@
         "Declared core/module profiles and explicitly adapted workloads pass shadow/replay/copy workflows with pinned discrepancy reports; out-of-profile OpenSearch semantics are documented application gaps, not universal replacement obligations.",
         "Rolling engine/protocol/format changes respect old readers and downgrade limits; a published engine release can replace its Git pin safely.",
         "AI harness achieves bounded context/review/worktree behavior on realistic tasks; Linux remains primary and optional native ports are honestly qualified.",
-        "Profile selection, budget diagnostics and authorized cost/reliability transitions are usable without silently changing prior receipt guarantees."
+        "Profile selection, budget diagnostics and authorized cost/reliability transitions are usable without silently changing prior receipt guarantees.",
+        "A loaded multi-AZ fleet rolls from N to N+1 and back without outage (PR-52)."
       ],
       "document": "milestones/M16.md",
       "tasks": [
@@ -3538,7 +4459,8 @@
           "title": "Qualify supported-profile migration and client adapters",
           "goal": "Prove migration for declared supported/adapted workloads without a universal OpenSearch replacement promise.",
           "deliverables": [
-            "Bulk/query/error compatibility fixtures, shadow read/dual-write reconciliation and import tooling"
+            "Bulk/query/error compatibility fixtures, shadow read/dual-write reconciliation and import tooling",
+            "Fixtures for `_update`, `_reindex`, update/delete-by-query, aliases, nested/join, PIT/scroll and kNN beside the bulk and query fixtures"
           ],
           "validation": [
             "Supported client versions and M02 corpus; routing/version/deletes/aliases/aggregations under shadow traffic."
@@ -3561,7 +4483,8 @@
           "title": "Implement upgrade, format and engine adoption policy",
           "goal": "Upgrade without stranding old data or tokens.",
           "deliverables": [
-            "Read/write format epochs, rolling-version matrix, engine release pin update procedure and old-data fixtures"
+            "Read/write format epochs, rolling-version matrix, engine release pin update procedure and old-data fixtures",
+            "Durable fleet format-version setting changed by conditional write by the operator, and the rule that a node never writes a format an older node in the fleet cannot read until the roll is declared complete (PR-10, PR-52)"
           ],
           "validation": [
             "Old/new node coexistence, unsupported format refusal, engine revision change, key/module compatibility and rollback."
@@ -3670,7 +4593,7 @@
           "title": "Validate external extension example and final docs",
           "goal": "Make modules usable and docs trustworthy for another agent.",
           "deliverables": [
-            "Out-of-tree provider/query example, API/schema docs, incident/release/migration guides and updated ledger"
+            "Out-of-tree provider example, and the M24.05 module example reused for the extension docs, API/schema docs, incident/release/migration guides and updated ledger"
           ],
           "validation": [
             "New agent implements bounded extension from public docs only; link/command/example and capability tests."
@@ -3681,9 +4604,33 @@
           "depends_on": [
             "M16.03",
             "M16.05",
-            "M16.07"
+            "M16.07",
+            "M24.05"
           ],
           "owner": "integration/developer-experience",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M16.08",
+          "title": "Qualify zero-downtime rolling upgrades",
+          "goal": "Roll a loaded 3-AZ fleet from N to N+1 and back (PR-52).",
+          "deliverables": [
+            "Roll procedure one node or one AZ at a time using graceful drain where it can and abrupt-loss recovery where it cannot; versions N and N+1 coexisting; rollback to N until the roll is declared complete"
+          ],
+          "validation": [
+            "Roll a loaded 3-AZ fleet N to N+1 and back: no acknowledged-write loss, no request failing without a retriable error, per-shard write pause inside the drain bound, searches served, at most one AZ of capacity out at once, identical cross-version results on a shared corpus; kill a node mid-roll and check recovery against the PR-29 targets; the old-format corpus opens on N+1; report warm versus cold takeover"
+          ],
+          "definition_of_done": [
+            "The roll completes with no outage and no acknowledged-write loss",
+            "A node that meets an unknown mandatory capability fails explicitly"
+          ],
+          "depends_on": [
+            "M16.02",
+            "M07.10",
+            "M07.11"
+          ],
+          "owner": "release/operations",
           "status": "planned",
           "evidence": []
         }
@@ -3720,7 +4667,7 @@
           "title": "Run full requirement-by-requirement release audit",
           "goal": "Match every original requirement to authoritative current evidence.",
           "deliverables": [
-            "Release matrix linking R01-R23 to test/run/commit artifacts and unresolved blockers"
+            "Release matrix linking R01-R23 and PR-01 to PR-54 (see product-coverage.md) to test/run/commit artifacts and unresolved blockers"
           ],
           "validation": [
             "Inspect actual commands, runtime behaviors, coverage denominator, module/provider/hardware claims and reviews.",
@@ -3742,7 +4689,12 @@
             "M15.06",
             "M15.07",
             "M16.07",
-            "M19"
+            "M19",
+            "M20",
+            "M21",
+            "M22",
+            "M23",
+            "M24"
           ],
           "owner": "release/integrator",
           "status": "planned",
@@ -3756,7 +4708,8 @@
             "Receipt-ledger histories for node/zone/disk/storage/key/cert failures and fresh-host restores"
           ],
           "validation": [
-            "Inject partitions/SIGKILL/fsync faults/corruption, total compute loss, key revocation/rotation and GC races."
+            "Inject partitions/SIGKILL/fsync faults/corruption, total compute loss, key revocation/rotation and GC races.",
+            "AZ-loss and rolling-upgrade drills against the PR-29, PR-37 and PR-52 targets"
           ],
           "definition_of_done": [
             "No acknowledged loss inside contract; outside-envelope exposure matches declared archive/CCR RPO."

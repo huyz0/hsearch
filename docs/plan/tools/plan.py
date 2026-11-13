@@ -285,6 +285,8 @@ def generated(data: dict) -> dict[Path, str]:
              "Generated from `tasks.json`. All product capabilities are planned until cited evidence closes their tasks.", "",
              "## Research first", "",
              "Cost research and architecture decisions belong to M00.07, before runtime work. See [completed decisions](research/cost-decisions.md) and [executed experiments](archive/evidence/cost-research-results.md). Implementation cost gates are inside M02/M03/M06/M07/M09; real-provider reconciliation remains in M15. There is no active M18.", "",
+             "## Product first", "",
+             "M20 is the lean path to a first runnable slice (RustFS object store, engine, minimal bulk and search endpoint) and needs only M03.02 first; M21 to M24 add the product features beyond it. Milestones are listed in the order the work should be picked up; dependencies, not list order, decide what is ready. [product-coverage](product-coverage.md) maps every PR requirement to its tasks.", "",
              "Task dependencies permit parallel work; milestone prerequisites govern completion. Owners are roles to allocate, not people already assigned.", "",
              "| Milestone | Status | Tasks done | Completion prerequisites |", "| --- | --- | --- | --- |"]
     for m in data["milestones"]:
