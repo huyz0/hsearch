@@ -106,7 +106,7 @@ class ContractControls(unittest.TestCase):
         reordered = copy.deepcopy(self.ledger)
         reordered["milestones"][1], reordered["milestones"][2] = reordered["milestones"][2], reordered["milestones"][1]
         plan["validate"](reordered, files=False)
-        self.assertEqual(plan["selftest"](reordered), 16)
+        self.assertEqual(plan["selftest"](reordered), 17)
 
 
 if __name__ == "__main__":

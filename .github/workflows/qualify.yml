@@ -1,0 +1,42 @@
+name: qualify (manual)
+
+# Native ARM and the capped RustFS sandbox are run by hand, not on every PR or on a
+# schedule: Actions -> qualify (manual) -> Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Which manual suite to run
+        required: true
+        default: arm64
+        type: choice
+        options: [arm64, sandbox-x64, sandbox-arm64, all]
+
+permissions:
+  contents: read
+
+jobs:
+  arm64:
+    if: ${{ inputs.suite == 'arm64' || inputs.suite == 'all' }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Same check as CI, on native ARM
+        run: python3 tools/check.py
+
+  sandbox-x64:
+    if: ${{ inputs.suite == 'sandbox-x64' || inputs.suite == 'all' }}
+    uses: ./.github/workflows/sandbox.yml
+    with:
+      runner: ubuntu-24.04
+
+  sandbox-arm64:
+    if: ${{ inputs.suite == 'sandbox-arm64' || inputs.suite == 'all' }}
+    uses: ./.github/workflows/sandbox.yml
+    with:
+      runner: ubuntu-24.04-arm

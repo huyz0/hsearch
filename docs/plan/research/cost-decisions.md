@@ -40,7 +40,7 @@ This changes **which upload is authoritative**, not the safety requirement. An a
 
 ## Experiments executed now
 
-The [reproducible script](../tools/cost_research.py) generated and ran three workloads, three seeds, two grouping policies and four maximum waits, for **72 experiments**. The [results](../evidence/cost-research-results.md) and [raw JSON](../evidence/cost-research-results.json) include all counts and assumptions.
+The [reproducible script](../tools/cost_research.py) generated and ran three workloads, three seeds, two grouping policies and four maximum waits, for **72 experiments**. The [results](../archive/evidence/cost-research-results.md) and [raw JSON](../archive/evidence/cost-research-results.json) include all counts and assumptions.
 
 Each trace is 30 seconds of synthetic arrivals with 1 KiB encoded records, a 4 MiB cap, 50 logical indexes per tenant and two distinct key policies per tenant. Sparse load is about 100 records/s across 10,000 indexes; busy is about 5,000/s across 1,000; skewed directs 80% to one tenant. Timers start with the first dirty record and drain without an artificial final early flush. The simulation assumes instantaneous storage/crypto; it measures batching wait and request groups, **not cloud throughput or acknowledgement latency**. In particular, 50 ms groups may outpace a real single-in-flight object lane and would incur additional queue/coalescing delay. No p99 service claim is inferred.
 

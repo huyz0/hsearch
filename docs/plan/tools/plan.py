@@ -9,14 +9,21 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import re
+import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-STATES = {"planned", "in_progress", "review", "blocked", "done"}
+STATES = {"planned", "in_progress", "review", "blocked", "done", "cancelled"}
+# A cancelled task is closed without being built (scope cut); it satisfies
+# dependencies and milestone completion but must say why.
+SETTLED = {"done", "cancelled"}
+HARNESS_SHARE_CAP = 0.20
+HARNESS_PATHS = ("tools/", "dev/", "harness/", "ci/", "xtask/", ".github/", "scripts/", "docs/plan/", "docs/archive/", "AGENTS.md")
 
 
 class InvalidPlan(ValueError):
@@ -121,9 +128,9 @@ def incident_gate_contract(tasks: dict) -> None:
          "Incident disposition must retain the unresolved original cause")
     if incident["status"] == "done":
         need(successor["status"] == "done", "Incident disposition is not accepted")
-        need(any(item.get("path") == "evidence/m01-15-incident-disposition.md"
+        need(any(item.get("path") == "archive/evidence/m01-15-incident-disposition.md"
                  for item in incident["evidence"]) and
-             any(item.get("path") == "evidence/m01-15-incident-disposition.md"
+             any(item.get("path") == "archive/evidence/m01-15-incident-disposition.md"
                  for item in successor["evidence"]),
              "Incident disposition acceptance record missing")
 
@@ -152,7 +159,7 @@ def validate(data: dict, files: bool = True) -> None:
         within_root(milestone["document"])
         for dep in milestone["depends_on"]:
             need(dep in milestones and dep != mid, f"Invalid milestone prerequisite: {mid}")
-        all_done = all(t["status"] == "done" for t in milestone["tasks"])
+        all_done = all(t["status"] in SETTLED for t in milestone["tasks"])
         need((milestone["status"] == "done") == all_done,
              f"Milestone/task completion mismatch: {mid}")
         if milestone["status"] == "done":
@@ -172,6 +179,8 @@ def validate(data: dict, files: bool = True) -> None:
             need(task.get("status") in STATES, f"Invalid task status: {tid}")
             need(isinstance(task.get("depends_on"), list), f"Missing dependencies: {tid}")
             need(isinstance(task.get("evidence"), list), f"Missing evidence list: {tid}")
+            if task["status"] == "cancelled":
+                need(bool(task.get("cancelled_reason")), f"Cancelled task needs a reason: {tid}")
             if task["status"] == "blocked":
                 need(bool(task.get("blocker")) and bool(task.get("next_action")),
                      f"Blocked task needs reason and next action: {tid}")
@@ -215,10 +224,25 @@ def validate(data: dict, files: bool = True) -> None:
     for tid, task in tasks.items():
         visit(tid)
         if task["status"] in {"in_progress", "review", "done"}:
-            need(all(tasks[d]["status"] == "done" for d in edges[tid]),
+            need(all(tasks[d]["status"] in SETTLED for d in edges[tid]),
                  f"Active/done task has unfinished dependency: {tid}")
     research_gate_contract(milestones, tasks)
     incident_gate_contract(tasks)
+
+
+def harness_share(limit: int = 30):
+    """Share of the last `limit` commits that touched only harness/plan paths."""
+    try:
+        log = subprocess.check_output(["git", "log", f"-{limit}", "--name-only", "--format=@@%H"],
+                                      cwd=ROOT.parents[1], text=True, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None, 0
+    commits = [[line for line in chunk.splitlines()[1:] if line] for chunk in log.split("@@")[1:]]
+    commits = [c for c in commits if c]
+    if not commits:
+        return None, 0
+    harness = sum(all(f.startswith(HARNESS_PATHS) for f in c) for c in commits)
+    return harness / len(commits), len(commits)
 
 
 def bullet(items: list[str]) -> str:
@@ -258,7 +282,7 @@ def generated(data: dict) -> dict[Path, str]:
     lines = ["# Delivery roadmap", "",
              "Generated from `tasks.json`. All product capabilities are planned until cited evidence closes their tasks.", "",
              "## Research first", "",
-             "Cost research and architecture decisions belong to M00.07, before runtime work. See [completed decisions](research/cost-decisions.md) and [executed experiments](evidence/cost-research-results.md). Implementation cost gates are inside M02/M03/M06/M07/M09; real-provider reconciliation remains in M15. There is no active M18.", "",
+             "Cost research and architecture decisions belong to M00.07, before runtime work. See [completed decisions](research/cost-decisions.md) and [executed experiments](archive/evidence/cost-research-results.md). Implementation cost gates are inside M02/M03/M06/M07/M09; real-provider reconciliation remains in M15. There is no active M18.", "",
              "Task dependencies permit parallel work; milestone prerequisites govern completion. Owners are roles to allocate, not people already assigned.", "",
              "| Milestone | Status | Tasks done | Completion prerequisites |", "| --- | --- | --- | --- |"]
     for m in data["milestones"]:
@@ -266,7 +290,7 @@ def generated(data: dict) -> dict[Path, str]:
         lines += [f"| [{m['id']}: {m['title']}]({m['document']}) | {m['status']} | {count}/{len(m['tasks'])} | {', '.join(m['depends_on']) or 'None'} |"]
     lines += ["", "## Operating contract", "",
               "A task is done only when its own definition of done, milestone release boundaries, applicable coverage/security gates, and final review are satisfied. Cite immutable run/commit artifacts through a local evidence record. A file's existence alone does not prove the result it describes.", "",
-              "Use `python docs/plan/tools/plan.py next` to find dependency-ready planned tasks. Reserve path/resource ownership before allocation. See [AI harness](ai-harness.md), [CI/testing](ci-testing.md), [requirements](requirements.md), and [progress](PROGRESS.md).", ""]
+              "Use `python docs/plan/tools/plan.py next` to find dependency-ready planned tasks. Reserve path/resource ownership before allocation. See [AI harness](ai-harness.md), [CI/testing](ci-testing.md), [requirements](requirements.md), and [current state](CURRENT.md).", ""]
     result[ROOT / "roadmap.md"] = "\n".join(lines)
     return result
 
@@ -332,20 +356,21 @@ def selftest(data: dict) -> int:
     case("self cycle", "Dependency cycle", lambda d: task(d, "M00.01")["depends_on"].append("M00.01"))
     case("duplicate task", "Duplicate task", lambda d: milestone(d, "M00")["tasks"].append(copy.deepcopy(task(d, "M00.01"))))
     case("missing done evidence", "Done task lacks evidence", lambda d: task(d, "M00.01").update(status="done", evidence=[]))
-    case("false milestone completion", "Milestone/task completion mismatch", lambda d: milestone(d, "M01").update(status="done"))
-    case("invalid status", "Invalid task status", lambda d: task(d, "M01.01").update(status="passed"))
+    case("false milestone completion", "Milestone/task completion mismatch", lambda d: milestone(d, "M02").update(status="done"))
+    case("cancelled without reason", "Cancelled task needs a reason", lambda d: task(d, "M01.08").update(status="cancelled", cancelled_reason=""))
+    case("invalid status", "Invalid task status", lambda d: task(d, "M02.01").update(status="passed"))
     case("missing task acceptance", "Missing task definition_of_done", lambda d: task(d, "M00.01").update(definition_of_done=[]))
-    case("unexplained blocker", "Blocked task needs reason", lambda d: task(d, "M01.01").update(status="blocked", blocker="", next_action=""))
+    case("unexplained blocker", "Blocked task needs reason", lambda d: task(d, "M02.01").update(status="blocked", blocker="", next_action=""))
     case("path traversal", "Path escapes", lambda d: milestone(d, "M00").update(document="../escape.md"))
     case("wrong field type", "Invalid task validation", lambda d: task(d, "M00.01").update(validation="not a list"))
     case("unknown schema", "Unsupported ledger schema", lambda d: d.update(schema_version=99))
     case("cross-task cycle", "Dependency cycle", lambda d: task(d, "M00.01")["depends_on"].append("M00.02"))
     def unfinished(d):
         # Bind by stable ID: roadmap priority may change independently of IDs.
-        task(d, "M01.01").update(depends_on=[], status="planned")
-        task(d, "M00.01")["depends_on"].append("M01.01")
+        task(d, "M02.01").update(depends_on=[], status="planned")
+        task(d, "M00.01")["depends_on"].append("M02.01")
     case("unfinished dependency", "Active/done task has unfinished dependency", unfinished)
-    case("milestone completion cycle", "Milestone prerequisite cycle", lambda d: milestone(d, "M01").update(depends_on=["M02"]))
+    case("milestone completion cycle", "Milestone prerequisite cycle", lambda d: milestone(d, "M02").update(depends_on=["M03"]) or milestone(d, "M03").update(depends_on=["M02"]))
     case("evidence traversal", "Path escapes", lambda d: task(d, "M00.01")["evidence"][0].update(path="../outside.txt"))
     candidate = copy.deepcopy(data)
     milestone(candidate, "M00")["title"] += " stale control"
@@ -357,7 +382,7 @@ def selftest(data: dict) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "render", "status", "next", "selftest"))
+    parser.add_argument("command", choices=("check", "render", "status", "next", "selftest", "harness-share", "summary"))
     args = parser.parse_args()
     try:
         data = json.loads((ROOT / "tasks.json").read_text(encoding="utf-8"))
@@ -379,10 +404,41 @@ def main() -> int:
             print(json.dumps({"milestones": dict(Counter(m["status"] for m in milestones.values())),
                               "tasks": dict(Counter(t["status"] for t in tasks.values()))}, indent=2))
         elif args.command == "next":
+            share, count = harness_share()
+            over = share is not None and share > HARNESS_SHARE_CAP
+            ready = [t for t in tasks.values() if t["status"] == "planned" and
+                     all(tasks[d]["status"] in SETTLED for d in task_dependencies(t, milestones, tasks))]
+            for task in [t for t in ready if t.get("track") != "harness"]:
+                print(f"{task['id']} {task['title']} [{task['owner']}]")
+            for task in [t for t in ready if t.get("track") == "harness"]:
+                if over:
+                    print(f"(held) {task['id']} harness task: harness share {share:.0%} of last {count} commits exceeds {HARNESS_SHARE_CAP:.0%}")
+                else:
+                    print(f"{task['id']} {task['title']} [{task['owner']}] (harness)")
+        elif args.command == "summary":
+            # Markdown status generated from tasks.json; CI writes it to the job summary.
+            print("## hsearch status (generated from docs/plan/tasks.json)\n")
+            print("| Milestone | Status | Tasks done/cancelled/total |\n|---|---|---|")
+            for m in milestones.values():
+                done = sum(t["status"] == "done" for t in m["tasks"])
+                gone = sum(t["status"] == "cancelled" for t in m["tasks"])
+                print(f"| {m['id']} {m['title']} | {m['status']} | {done}/{gone}/{len(m['tasks'])} |")
+            print("\n### Ready next\n")
             for task in tasks.values():
-                deps = task_dependencies(task, milestones, tasks)
-                if task["status"] == "planned" and all(tasks[d]["status"] == "done" for d in deps):
-                    print(f"{task['id']} {task['title']} [{task['owner']}]")
+                if task["status"] == "planned" and task.get("track") != "harness" and all(
+                        tasks[d]["status"] in SETTLED for d in task_dependencies(task, milestones, tasks)):
+                    print(f"- {task['id']} {task['title']}")
+            share, count = harness_share()
+            if share is not None:
+                print(f"\nHarness share of last {count} commits: {share:.0%} (cap {HARNESS_SHARE_CAP:.0%})")
+        elif args.command == "harness-share":
+            share, count = harness_share()
+            if share is None:
+                print("harness share: no git history")
+            else:
+                print(f"harness share: {share:.0%} of last {count} commits (cap {HARNESS_SHARE_CAP:.0%})")
+                need(share <= HARNESS_SHARE_CAP or os.environ.get("HARNESS_EXEMPT") == "1",
+                     "Harness work is over its cap; ship product work, or set HARNESS_EXEMPT=1 with a stated reason")
         return 0
     except (InvalidPlan, KeyError, TypeError, OSError, json.JSONDecodeError) as error:
         print(f"FAIL: {error}", file=sys.stderr)

@@ -28,7 +28,7 @@ class IncidentPlanTests(unittest.TestCase):
 
     def accepted_disposition_model(self):
         # This models only graph/state consistency, never actual acceptance.
-        evidence = [{"path": "evidence/m01-15-incident-disposition.md",
+        evidence = [{"path": "archive/evidence/m01-15-incident-disposition.md",
                      "result": "In-memory acceptance counterexample, not execution evidence."}]
         self.tasks["M01.15"].update(status="done", evidence=copy.deepcopy(evidence))
         self.tasks["M01.09"].update(status="done", evidence=copy.deepcopy(evidence))
@@ -78,7 +78,7 @@ class IncidentPlanTests(unittest.TestCase):
             with self.subTest(task=task_id):
                 self.tasks[task_id]["evidence"][0]["path"] = "incident-disposition.md"
                 self.reject("acceptance record missing")
-                self.tasks[task_id]["evidence"][0]["path"] = "evidence/m01-15-incident-disposition.md"
+                self.tasks[task_id]["evidence"][0]["path"] = "archive/evidence/m01-15-incident-disposition.md"
 
     def test_replacement_task_and_each_prerequisite_remain_required(self):
         for dep in tuple(self.tasks["M01.15"]["depends_on"]):

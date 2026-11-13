@@ -18,14 +18,15 @@ Refused = API["Refused"]
 
 
 class SchemaControls(unittest.TestCase):
-    def test_risk_routing_is_derived_from_actual_paths_and_unknown_code_is_sensitive(self):
-        with patch.dict(API["routes"].__globals__, NARRATIVE_DOCS=frozenset({"docs/known-narrative.md"})):
-            self.assertEqual(API["routes"](["docs/known-narrative.md"]), ["correctness_tests_claims"])
-            self.assertIn("architecture_security", API["routes"](["docs/known-narrative.md", "docs/unknown.md"]))
-        for path in ("tools/review.py", "crates/types/src/lib.rs", "docs/plan/security.md", ".github/workflows/native.yml", "new_unknown_file",
-                     "docs/plan/tools/plan.py", "docs/plan/tasks.json", "docs/generated.rs", "docs/plan/review-gates.md", "docs/plan/sandbox.md", "docs/sandbox.md",
-                     "docs/usage.md", "docs/authentication.md", "docs/access-control.md", "docs/contracts/durability.md", "docs/operating-profiles.md", "docs/new_contract.txt"):
-            self.assertIn("architecture_security", API["routes"]([path]))
+    def test_one_reviewer_by_default_two_for_security_format_or_durability_paths(self):
+        for path in ("tools/review.py", "docs/plan/tasks.json", "docs/usage.md", "new_unknown_file",
+                     "crates/observe/src/lib.rs", "crates/engine/src/lib.rs", ".github/workflows/ci.yml"):
+            self.assertEqual(API["routes"]([path]), ["correctness_tests_claims"], path)
+        for path in ("crates/object/src/auth.rs", "crates/types/src/auth.rs", "docs/plan/security.md",
+                     "crates/engine/src/segment_format.rs", "crates/engine/src/codec.rs", "docs/contracts/durability.md",
+                     "crates/x/src/authentication.rs", "crates/x/src/manifest.rs"):
+            self.assertEqual(API["routes"]([path]), ["correctness_tests_claims", "architecture_security"], path)
+        self.assertEqual(len(API["routes"](["docs/usage.md", "crates/object/src/auth.rs"])), 2)
 
 
 class InputControls(unittest.TestCase):
@@ -73,7 +74,7 @@ class ProtocolControls(unittest.TestCase):
         (self.root / "docs/plan").mkdir(parents=True)
         (self.root / "src").mkdir()
         (self.root / "docs/plan/tasks.json").write_text(json.dumps({"milestones": [{"id": "M01", "tasks": [{"id": "M01.05", "status": "planned", "depends_on": []}]}]}), encoding="utf-8")
-        (self.root / "src/lib.rs").write_text("pub fn add_one(x: i32) -> i32 { x + 1 }\npub fn authenticate(expected: &str, supplied: &str) -> bool { expected == supplied }\n#[test] fn arithmetic_oracle() { assert_eq!(add_one(0), 1); }\n", encoding="utf-8", newline="\n")
+        (self.root / "src/auth.rs").write_text("pub fn add_one(x: i32) -> i32 { x + 1 }\npub fn authenticate(expected: &str, supplied: &str) -> bool { expected == supplied }\n#[test] fn arithmetic_oracle() { assert_eq!(add_one(0), 1); }\n", encoding="utf-8", newline="\n")
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.name", "Review fixture")
         self.git("config", "user.email", "review@example.invalid")
@@ -81,7 +82,7 @@ class ProtocolControls(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "base")
         self.base = self.git("rev-parse", "HEAD")
-        (self.root / "src/lib.rs").write_text("pub fn add_one(x: i32) -> i32 { x + 2 }\npub fn authenticate(_expected: &str, _supplied: &str) -> bool { true }\n#[test] fn arithmetic_oracle() { assert_eq!(add_one(0), add_one(0)); }\n", encoding="utf-8", newline="\n")
+        (self.root / "src/auth.rs").write_text("pub fn add_one(x: i32) -> i32 { x + 2 }\npub fn authenticate(_expected: &str, _supplied: &str) -> bool { true }\n#[test] fn arithmetic_oracle() { assert_eq!(add_one(0), add_one(0)); }\n", encoding="utf-8", newline="\n")
         self.git("commit", "-qam", "seed concrete arithmetic regression")
         self.store = API["ReviewStore"](self.area / "state", self.root)
         self.reviewers = {"correctness_tests_claims": "separate-session-correctness", "architecture_security": "separate-session-security"}
@@ -109,7 +110,7 @@ class ProtocolControls(unittest.TestCase):
                                 for item in value["previous_findings"] if item["priority"] != "P3"]}
 
     def finding(self, category="correctness"):
-        return {"id": category, "priority": "P1", "file": "src/lib.rs", "line": {"correctness": 1, "security": 2, "weak_oracle": 3}[category],
+        return {"id": category, "priority": "P1", "file": "src/auth.rs", "line": {"correctness": 1, "security": 2, "weak_oracle": 3}[category],
                 "reproduction": {"correctness": "add_one(0) returns 2", "security": "authenticate(secret, forged) returns true", "weak_oracle": "assert_eq!(add_one(0), add_one(0)) passes for the seeded wrong result"}[category],
                 "expected": "Independent reference behavior must match", "observed": "Seeded fixture contradicts the independent oracle"}
 
@@ -130,7 +131,7 @@ class ProtocolControls(unittest.TestCase):
     def test_status_recovers_issued_packet_and_utf8_output_without_charging_another_round(self):
         packet = self.store.begin("M01.05", self.base, "implementer", self.reviewers, self.checks, "Inspect quoted source: 雪 λ")
         self.store.record(self.verdict(packet, "correctness_tests_claims"))
-        (self.root / "src/lib.rs").write_text("// changed after packet issuance\n", encoding="utf-8", newline="\n")
+        (self.root / "src/auth.rs").write_text("// changed after packet issuance\n", encoding="utf-8", newline="\n")
         buffer = io.BytesIO()
         console = io.TextIOWrapper(buffer, encoding="ascii")
         with patch.dict(API["main"].__globals__, ReviewStore=lambda _state: self.store), \
@@ -169,11 +170,11 @@ class ProtocolControls(unittest.TestCase):
         packet = self.begin()
         self.store.record(self.verdict(packet, "correctness_tests_claims"))
         self.store.record(self.verdict(packet, "architecture_security"))
-        (self.root / "src/lib.rs").write_text("// actual changed compiler input\n", encoding="utf-8", newline="\n")
-        self.git("update-index", "--assume-unchanged", "src/lib.rs")
+        (self.root / "src/auth.rs").write_text("// actual changed compiler input\n", encoding="utf-8", newline="\n")
+        self.git("update-index", "--assume-unchanged", "src/auth.rs")
         with self.assertRaisesRegex(Refused, "Hidden index"):
             self.store.gate("M01.05", self.checks)
-        self.git("update-index", "--no-assume-unchanged", "src/lib.rs")
+        self.git("update-index", "--no-assume-unchanged", "src/auth.rs")
         self.git("commit", "-qam", "new tree")
         with self.assertRaisesRegex(Refused, "stale"):
             self.store.gate("M01.05", self.checks)
@@ -182,7 +183,7 @@ class ProtocolControls(unittest.TestCase):
         for number in range(1, 4):
             self.assertEqual(self.begin()["packet"]["round"], number)
             self.store = API["ReviewStore"](self.area / "state", self.root)
-            (self.root / "src/lib.rs").write_text(f"// changed diff {number}\n", encoding="utf-8", newline="\n")
+            (self.root / "src/auth.rs").write_text(f"// changed diff {number}\n", encoding="utf-8", newline="\n")
             self.git("commit", "-qam", f"iteration {number}")
             for check in self.checks:
                 check["head"] = self.git("rev-parse", "HEAD")
@@ -206,7 +207,7 @@ class ProtocolControls(unittest.TestCase):
 
     def test_follow_up_base_is_immutable_and_risk_roles_survive_a_source_revert(self):
         self.begin()
-        self.git("checkout", self.base, "--", "src/lib.rs")
+        self.git("checkout", self.base, "--", "src/auth.rs")
         self.git("commit", "-qm", "repair by reverting seeded code")
         repair = self.git("rev-parse", "HEAD")
         (self.root / "docs/notes.md").write_text("narrative only\n", encoding="utf-8", newline="\n")
