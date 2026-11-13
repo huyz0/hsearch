@@ -148,6 +148,8 @@ dependencies = [
 name = "hsearch-engine"
 version = "0.1.0"
 dependencies = [
+ "hsearch-object",
+ "hsearch-s3",
  "hsearch-testkit",
  "lucene-analysis",
  "lucene-codecs",

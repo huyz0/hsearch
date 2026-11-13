@@ -4,6 +4,8 @@ mod aggregations;
 mod checkpoint;
 mod directory;
 pub use directory::EngineDirectory;
+mod remote;
+pub use remote::{CachedDirectory, RemoteError, RemoteFiles};
 mod schema;
 pub use aggregations::{Bucket, Metrics};
 mod adapter;
