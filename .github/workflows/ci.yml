@@ -1,0 +1,93 @@
+name: ci
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Light ship path: fmt, clippy, tests, doc tests, plan/contract/policy checks.
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Prefetch locked dependencies
+        run: cargo fetch --locked
+      - name: fmt, clippy, tests, plan and policy checks
+        run: python3 tools/check.py
+      - name: Status from tasks.json (job summary, no reconciliation PRs)
+        if: always()
+        run: python3 docs/plan/tools/plan.py summary >> "$GITHUB_STEP_SUMMARY"
+
+  # Standard cargo-llvm-cov, per-crate line floor. See scripts/coverage.sh.
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Prefetch locked dependencies
+        run: cargo fetch --locked
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked --version 0.9.1
+      - name: Per-crate coverage floor
+        run: scripts/coverage.sh 90
+
+  # Harness work may not exceed ~20% of recent commits unless the PR carries the
+  # `harness-exempt` label (state the reason in the PR body).
+  harness-budget:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 40
+          persist-credentials: false
+      - name: Harness-only PRs are refused over the cap
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          HARNESS_EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'harness-exempt') && '1' || '0' }}
+        run: |
+          paths=$(git diff --name-only "$BASE" "$HEAD")
+          if echo "$paths" | grep -qvE '^(tools/|dev/|harness/|ci/|xtask/|\.github/|scripts/|docs/plan/|docs/archive/|AGENTS\.md)'; then
+            echo "PR touches product paths; harness cap does not apply."
+          else
+            python3 docs/plan/tools/plan.py harness-share
+          fi
+
+  ci-ok:
+    if: always()
+    needs: [check, coverage, harness-budget]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every job to have passed or been skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          bad = {k: v["result"] for k, v in json.loads(os.environ["RESULTS"]).items() if v["result"] not in ("success", "skipped")}
+          sys.exit(f"FAIL: {bad}" if bad else 0)
+          PY

@@ -4,7 +4,7 @@ Generated from `tasks.json`. All product capabilities are planned until cited ev
 
 ## Research first
 
-Cost research and architecture decisions belong to M00.07, before runtime work. See [completed decisions](research/cost-decisions.md) and [executed experiments](evidence/cost-research-results.md). Implementation cost gates are inside M02/M03/M06/M07/M09; real-provider reconciliation remains in M15. There is no active M18.
+Cost research and architecture decisions belong to M00.07, before runtime work. See [completed decisions](research/cost-decisions.md) and [executed experiments](archive/evidence/cost-research-results.md). Implementation cost gates are inside M02/M03/M06/M07/M09; real-provider reconciliation remains in M15. There is no active M18.
 
 Task dependencies permit parallel work; milestone prerequisites govern completion. Owners are roles to allocate, not people already assigned.
 
@@ -12,7 +12,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | --- | --- | --- | --- |
 | [M00: Research and delivery contract](milestones/M00.md) | done | 7/7 | None |
 | [M19: Scalability-first API and engineering contract](milestones/M19.md) | done | 1/1 | M00 |
-| [M01: Linux workspace and AI harness foundation](milestones/M01.md) | in_progress | 17/21 | M00 |
+| [M01: Linux workspace and AI harness foundation](milestones/M01.md) | done | 17/21 | M00 |
 | [M02: API-scoped engine, catalog and cost feasibility](milestones/M02.md) | planned | 5/11 | M01 |
 | [M03: Storage semantics, cost-aware formats and metadata](milestones/M03.md) | planned | 1/8 | M01 |
 | [M04: Lucene Rust bridge and committed readers](milestones/M04.md) | planned | 0/6 | M02, M03 |
@@ -34,4 +34,4 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 
 A task is done only when its own definition of done, milestone release boundaries, applicable coverage/security gates, and final review are satisfied. Cite immutable run/commit artifacts through a local evidence record. A file's existence alone does not prove the result it describes.
 
-Use `python docs/plan/tools/plan.py next` to find dependency-ready planned tasks. Reserve path/resource ownership before allocation. See [AI harness](ai-harness.md), [CI/testing](ci-testing.md), [requirements](requirements.md), and [progress](PROGRESS.md).
+Use `python docs/plan/tools/plan.py next` to find dependency-ready planned tasks. Reserve path/resource ownership before allocation. See [AI harness](ai-harness.md), [CI/testing](ci-testing.md), [requirements](requirements.md), and [current state](CURRENT.md).

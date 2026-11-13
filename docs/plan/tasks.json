@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-11-05",
+  "updated": "2026-11-13",
   "timezone": "Australia/Sydney",
   "scope": "Scalability-first OpenSearch-inspired partial compatibility is the current direction. M00, M19 and M01.01/M01.02/M01.03/M01.04/M01.05/M01.06 are integrated. M01.09 is operationally closed through qualified M01.15; its historical cause remains unconfirmed and M01.08 remains separately unqualified. M02.01 selected fixture inventory is in progress. Runtime, provider, scale and release obligations remain explicit.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
@@ -149,11 +149,11 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/planning-validation.txt",
+              "path": "archive/evidence/planning-validation.txt",
               "result": "Observed plan validation, generated output, state/graph/link checks and 16 targeted negative controls pass."
             },
             {
-              "path": "evidence/planning-audit.md",
+              "path": "archive/evidence/planning-audit.md",
               "result": "Author audited requested research/planning content and explicitly separated unimplemented runtime requirements."
             }
           ]
@@ -183,11 +183,11 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/cost-planning-audit.md",
+              "path": "archive/evidence/cost-planning-audit.md",
               "result": "Author audited R23, cost source evidence, explicit profile semantics, early protocol gates and release dependencies; no runtime savings claimed."
             },
             {
-              "path": "evidence/cost-planning-validation.txt",
+              "path": "archive/evidence/cost-planning-validation.txt",
               "result": "Observed plan checks and 16 negative controls pass; cost model passes 8 arithmetic checks and 7 invalid-input controls; original IDs and required cost gates audited."
             }
           ]
@@ -198,7 +198,7 @@
           "goal": "Resolve cost architecture choices before implementation and remove the late research umbrella.",
           "deliverables": [
             "research/cost-decisions.md",
-            "tools/cost_research.py and evidence/cost-research-results.json/.md",
+            "tools/cost_research.py and archive/evidence/cost-research-results.json/.md",
             "Source-backed fenced-append/inline-key/compatible-batch/read-barrier decisions and in-place cost task migration"
           ],
           "validation": [
@@ -220,15 +220,15 @@
               "result": "Pinned fork WAL/fencing/group-commit code and primary system RFCs inspected; fenced slots, compatible batching, inline key wrapping, amortized checkpoints and authoritative latest barriers selected now."
             },
             {
-              "path": "evidence/cost-research-results.json",
+              "path": "archive/evidence/cost-research-results.json",
               "result": "72 seeded batching experiments and bounded fence model executed; safe configuration explores 23 states and three unsafe controls yield counterexamples. Repeated run produces byte-identical JSON/Markdown; no cloud performance claim."
             },
             {
-              "path": "evidence/cost-research-now-audit.md",
+              "path": "archive/evidence/cost-research-now-audit.md",
               "result": "Author audited all eight migrated cost obligations, early/release gates, current protocol contracts and explicit model/provider limitations; product implementation remains planned."
             },
             {
-              "path": "evidence/cost-research-now-validation.txt",
+              "path": "archive/evidence/cost-research-now-validation.txt",
               "result": "Observed plan graph/link/render checks and 16 negative controls pass; cost arithmetic passes 8 boundary checks and 7 invalid-input controls. Inventory preserves 108 original IDs, 111 planned product tasks, R01-R23 and S01-S82."
             }
           ]
@@ -277,11 +277,11 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/api-direction-revision.md",
+              "path": "archive/evidence/api-direction-revision.md",
               "result": "Concrete 16-area official-source matrix and reordered plan; first architecture review clear, consistency review findings fixed with mandatory-budget/qualification-owner controls; full local Rust/Python/two-store smoke passed before those fixes; final review and hosted qualification pending."
             },
             {
-              "path": "evidence/api-direction-integrated.md",
+              "path": "archive/evidence/api-direction-integrated.md",
               "result": "Both independent final reviews clear at5c911665; full local66-case/Rust/live-store and all7 hosted jobs pass; protected normal PR5 merge367760ad with identical reviewed tree."
             }
           ]
@@ -293,7 +293,7 @@
       "title": "Linux workspace and AI harness foundation",
       "goal": "Create a reproducible Rust workspace and a measured, safe parallel-agent development loop before storage code grows.",
       "owner": "harness/integrator",
-      "status": "in_progress",
+      "status": "done",
       "depends_on": [
         "M00"
       ],
@@ -324,19 +324,19 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-01-bootstrap.md",
+              "path": "archive/evidence/m01-01-bootstrap.md",
               "result": "Workspace artifact and complete local Linux bootstrap checks/production coverage available; independent final-tree review and native hosted matrix pending."
             },
             {
-              "path": "evidence/m01-01-linux-check.txt",
+              "path": "archive/evidence/m01-01-linux-check.txt",
               "result": "Observed offline Linux debug/release, Clippy, dependency-policy, planning and model checks; 43/43 executable production lines covered."
             },
             {
-              "path": "evidence/m01-01-review-fix-check.txt",
+              "path": "archive/evidence/m01-01-review-fix-check.txt",
               "result": "Complete offline Linux suite passed after independent-review identity fix, including 18 dependency-policy negative controls; unchanged production source retains 43/43 covered lines."
             },
             {
-              "path": "evidence/m01-01-integrated.md",
+              "path": "archive/evidence/m01-01-integrated.md",
               "result": "Independent final-tree review and native x86_64/ARM64 CI succeeded at c4549eb; PR #1 normally merged as 81bde7398bec3ebb50a82f9661f50faae1a02852 under explicit user auto-merge authorization."
             }
           ],
@@ -353,8 +353,9 @@
             "tools",
             "docs/plan/development.md",
             "docs/plan/dependencies.json",
-            "docs/plan/evidence/m01-01-bootstrap.md"
-          ]
+            "docs/plan/archive/evidence/m01-01-bootstrap.md"
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.02",
@@ -376,23 +377,23 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-02-sandbox.md",
+              "path": "archive/evidence/m01-02-sandbox.md",
               "result": "Pinned non-root sandbox, private RustFS/test-CA topology, resource leases and refusal/cleanup controls implemented; local full smoke passed; independent review and hosted native matrix pending."
             },
             {
-              "path": "evidence/m01-02-local-check.txt",
+              "path": "archive/evidence/m01-02-local-check.txt",
               "result": "Observed fresh-image and two-store Linux smoke, actual cgroup limits, complete bootstrap suite with 23 Python tests, TLS/auth negatives, S3 round trips and targeted cleanup preserving the second topology."
             },
             {
-              "path": "evidence/m01-02-review-fix-check.txt",
+              "path": "archive/evidence/m01-02-review-fix-check.txt",
               "result": "Fresh full offline smoke and 29 targeted Linux regressions passed after correcting the three independent review findings; follow-up review and hosted native checks pending."
             },
             {
-              "path": "evidence/m01-02-command-admission-check.txt",
+              "path": "archive/evidence/m01-02-command-admission-check.txt",
               "result": "Complete fresh smoke passed with 30 tests after final command-time backend/actual-volume admission fix; final third-round delta review and hosted native CI pending."
             },
             {
-              "path": "evidence/m01-02-integrated.md",
+              "path": "archive/evidence/m01-02-integrated.md",
               "result": "Both final independent reviewers found no blockers at d542b45; native x86_64/ARM64 and ci-ok passed run41264469947; PR#2 normally merged as f630dc8d20860b7765e7b7e021ce3bd59a87e39b."
             }
           ],
@@ -407,7 +408,8 @@
             "docs/plan/development.md",
             "docs/plan/tasks.json",
             "docs/plan/PROGRESS.md"
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.03",
@@ -429,18 +431,19 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-03-preserved.md",
+              "path": "archive/evidence/m01-03-preserved.md",
               "result": "Unfinished local work saved asb563042;72Linux pure controls passed, live smoke failed known logging configuration; exact owned resources cleaned. No publication/completion claim."
             },
             {
-              "path": "evidence/m01-03-task-runner.md",
+              "path": "archive/evidence/m01-03-task-runner.md",
               "result": "Resumed in a fresh worktree from integrated API direction367760ad, preserving original WIPb563042; single-file Docker local log compression disabled; complete qualification/reviews pending."
             },
             {
-              "path": "evidence/m01-03-integrated.md",
+              "path": "archive/evidence/m01-03-integrated.md",
               "result": "Both independent final sessions clear at2ff4409;95Linux/Rust/live-store and exact2worktreekill/resume/rerun pass; all7 PR and all7main jobs successful; normal protected PR6 merge7555c4b."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.04",
@@ -462,14 +465,15 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-04-navigation.md",
+              "path": "archive/evidence/m01-04-navigation.md",
               "result": "Pinned semantic/router implementation and all seven round1 corrections passed129 Linux cases/no skips, complete Rust/TLS/S3 checks and real concurrent-worktree semantic/freshness/compiler corpus; final independent review and both-architecture hosted CI pending."
             },
             {
-              "path": "evidence/m01-04-integrated.md",
+              "path": "archive/evidence/m01-04-integrated.md",
               "result": "Merged reviewed93f825e as2c85cd9; both independent final sessions clear; all7 PR41279467218 and integratedmain41279937533 jobs passed, including real concurrent semantic corpora on both native architectures."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.05",
@@ -491,10 +495,11 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-05-integrated.md",
+              "path": "archive/evidence/m01-05-integrated.md",
               "result": "Both final independent reports clear at629414f; full147Linux/Rust/TLS/auth/S3 and all7PR jobs passed; normal merge996b84b. Original failed main preserved; integrated protocol qualification recovered with all7main jobs at3dfb235/run41287991098. Separate M01.09 root cause remains open."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.06",
@@ -516,30 +521,31 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-06-impact-ci.md",
+              "path": "archive/evidence/m01-06-impact-ci.md",
               "result": "Conservative selector/ownership graph and conditional fail-closed CI implemented; fresh full Linux smoke50 plus final51 Python cases and workflow lint pass; independent review/hosted checks/protection pending."
             },
             {
-              "path": "evidence/m01-06-linux-smoke.txt",
+              "path": "archive/evidence/m01-06-linux-smoke.txt",
               "result": "Fresh full offline Rust/plan/model suite and50 Linux Python controls passed under finite caps; real two-store TLS/auth/S3 isolation and cleanup passed."
             },
             {
-              "path": "evidence/m01-06-python-final.txt",
+              "path": "archive/evidence/m01-06-python-final.txt",
               "result": "Final51 Linux Python cases, including real Git/Cargo history and actual non-Cargo ownership red controls, plus plan/model checks passed; exact container absent and resource lease released."
             },
             {
-              "path": "evidence/m01-06-review-fix-python.txt",
+              "path": "archive/evidence/m01-06-review-fix-python.txt",
               "result": "All54 Linux Python cases and plan/model controls pass after both independent P2 review fixes; populated coverage floor and conservative behavioral/unknown ownership remain enforced."
             },
             {
-              "path": "evidence/m01-06-engine-coverage.txt",
+              "path": "archive/evidence/m01-06-engine-coverage.txt",
               "result": "Actual pinned cargo-llvm-cov0.9.1 engine-only compile/two integration tests/report and N/A-aware gate pass under finite caps; full hosted native entrypoint still pending."
             },
             {
-              "path": "evidence/m01-06-integrated.md",
+              "path": "archive/evidence/m01-06-integrated.md",
               "result": "Both independent reviews clear687f645; full/docs/types/engine hosted qualification and protected normal PR3 merge69d9163; integrated main CI41267554420 passed."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.07",
@@ -565,14 +571,15 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-07-blocked.md",
+              "path": "archive/evidence/m01-07-blocked.md",
               "result": "Original implementation attempt blocked at round3; no original gate pass. Composite goal can close only after separately reviewed redesigned source protocol and complete final integration, all inherited counterexamples and full native PR/main qualification."
             },
             {
-              "path": "evidence/m01-13-integrated.md",
+              "path": "archive/evidence/m01-13-integrated.md",
               "result": "Accepted genuine native-report/context3 and complete inherited successor integration: actual finalR3clear, protected PR16, all7 finalPR/main/manual. Composite goal only; originalM07hard3blocked and allM12/M13issuedhistories remain frozen; originalmanualfailure retained."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.08",
@@ -596,8 +603,10 @@
             "M01.09"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "cancelled",
+          "evidence": [],
+          "track": "harness",
+          "cancelled_reason": "Harness frozen 2026-11-13: the baseline qualification adds no product capability; the harness is accepted as built (see docs/plan/CURRENT.md)."
         },
         {
           "id": "M01.09",
@@ -623,21 +632,22 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-09-cold-diagnostics.md",
+              "path": "archive/evidence/m01-09-cold-diagnostics.md",
               "result": "Main996b84b run41283307456 failed the ARM semantic corpus after cold invalid-source diagnostics; original error masked by dirty fixture cleanup. Observability/reproduction repair in progress; no blind rerun or relaxed assertion."
             },
             {
-              "path": "incident-disposition.md",
+              "path": "archive/incident-disposition.md",
               "result": "User authorized preparation of an independently reviewed replacement gate on 5 November 2026. Proposed only; original cause remains unconfirmed and M01.09/M01.08 are not accepted by this draft."
             },
             {
-              "path": "evidence/m01-15-incident-disposition.md",
+              "path": "archive/evidence/m01-15-incident-disposition.md",
               "result": "PR21 normally merged fc6b48e with identical reviewed tree after both independent R1 clear reports and all7 PR/main jobs. Operational unresolved-cause disposition only; historical cause stays unconfirmed, M01.08 and whole-M01 product gates remain."
             }
           ],
           "acceptance_route": "M01.15-unresolved-incident",
           "incident_cause_status": "unconfirmed",
-          "incident_run": "41283307456"
+          "incident_run": "41283307456",
+          "track": "harness"
         },
         {
           "id": "M01.10",
@@ -661,10 +671,11 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-10-integrated.md",
+              "path": "archive/evidence/m01-10-integrated.md",
               "result": "Two actual independent plan reviews and durable gate, protected PR11 merge with matching tree, all7 PR/main native jobs and decoded full corpora passed. Plan only; original M01.07 remains blocked."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.11",
@@ -691,14 +702,15 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-11-integrated.md",
+              "path": "archive/evidence/m01-11-integrated.md",
               "result": "Both actual R2 sessions clear, immutable failed R1 retained, full191native/no skips plus both7job PR/main source/corpora proof, durable gate and normal protected PR12 merge with matching reviewed tree. Source-only; no coverage integration acceptance."
             },
             {
-              "path": "evidence/source-proof-review-history.json",
+              "path": "archive/evidence/source-proof-review-history.json",
               "result": "Both failed R1 ancestry reports/reproduction hashes retained; exact native ignored-parent control now refuses. Original M01.07 registry remains blocked at hard3."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.12",
@@ -727,18 +739,19 @@
           "status": "done",
           "evidence": [
             {
-              "path": "native-coverage-projection.md",
+              "path": "archive/native-coverage-projection.md",
               "result": "Merged75f30dd after final R3 clear and full7-job PR/main/manual qualification of43-line baseline. Real next-library LLVM LF/DA mismatch blocks generic acceptance; preserve historical gate/reviews, no fourth M01.12 packet."
             },
             {
-              "path": "evidence/native-report-counterexample.json",
+              "path": "archive/evidence/native-report-counterexample.json",
               "result": "Actual pinned production-object denominator fails closed before tests: observe LF208/195DA, observation types LF280/272DA; no floor/control waived."
             },
             {
-              "path": "evidence/m01-13-integrated.md",
+              "path": "archive/evidence/m01-13-integrated.md",
               "result": "Accepted genuine native-report/context3 and complete inherited successor integration: actual finalR3clear, protected PR16, all7 finalPR/main/manual. Composite goal only; originalM07hard3blocked and allM12/M13issuedhistories remain frozen; originalmanualfailure retained."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.13",
@@ -766,10 +779,11 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-13-integrated.md",
+              "path": "archive/evidence/m01-13-integrated.md",
               "result": "Accepted genuine native-report/context3 and complete inherited successor integration: actual finalR3clear, protected PR16, all7 finalPR/main/manual. Composite goal only; originalM07hard3blocked and allM12/M13issuedhistories remain frozen; originalmanualfailure retained."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.14",
@@ -797,10 +811,11 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-14-integrated.md",
+              "path": "archive/evidence/m01-14-integrated.md",
               "result": "Actual finalsource independent CLEAR, conservative overallround2, protected PR18 merge with identical reviewed tree and complete all7 PR/main native proof. Coordinator-research plan only; original harness/product gates retained."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.15",
@@ -833,14 +848,15 @@
           "status": "done",
           "evidence": [
             {
-              "path": "incident-disposition.md",
+              "path": "archive/incident-disposition.md",
               "result": "User-authorized proposal in progress. No replacement gate, incident or agent-baseline acceptance yet."
             },
             {
-              "path": "evidence/m01-15-incident-disposition.md",
+              "path": "archive/evidence/m01-15-incident-disposition.md",
               "result": "PR21 normally merged fc6b48e with identical reviewed tree after both independent R1 clear reports and all7 PR/main jobs. Operational unresolved-cause disposition only; historical cause stays unconfirmed, M01.08 and whole-M01 product gates remain."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.16",
@@ -872,14 +888,15 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-16-factual-integration.md",
+              "path": "archive/evidence/m01-16-factual-integration.md",
               "result": "New factual integration candidate with both author identities and retained failed PR22 evidence. Its independent final-tree reviews/full applicable checks/normal integration remain pending; original accepted integrations do not qualify this artifact."
             },
             {
-              "path": "evidence/m01-16-integrated.md",
+              "path": "archive/evidence/m01-16-integrated.md",
               "result": "Original factual integration reviewed 274d17a/tree c3e8f2a, independent R1 clear and durable gate, normal PR23 merge 2b2fd47; all seven PR run42025032564 and all seven main run42030965812 jobs successful. PR22 failures/authors retained; historical ARM cause unconfirmed; M01.08/product, current M01.18 completion and frozen M02.10 histories unchanged. This follow-up requires its own exact-head R2/checks/integration."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.17",
@@ -909,8 +926,10 @@
             "M01.06"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "cancelled",
+          "evidence": [],
+          "track": "harness",
+          "cancelled_reason": "Harness frozen 2026-11-13: forensic retention of the failed ARM artifact pair is dropped; history is archived, not extended."
         },
         {
           "id": "M01.18",
@@ -918,7 +937,7 @@
           "goal": "Review and integrate a genuine plan-only decomposition after M01.17 hard3, preserving its failed source, counters, every original acceptance predicate and all independent parent/product gates.",
           "deliverables": [
             "docs/plan/forensic-retention-redesign.md with distinct host-context, opaque-image and complete operation-integration trust interfaces and proposed owned paths.",
-            "Versioned committed hard3 history and exact eleven-clause acceptance bridge in docs/plan/evidence/m01-17-hard3-disposition.json and docs/plan/evidence/m01-18-acceptance-bridge.json; no implementation source or claim."
+            "Versioned committed hard3 history and exact eleven-clause acceptance bridge in docs/plan/archive/evidence/m01-17-hard3-disposition.json and docs/plan/archive/evidence/m01-18-acceptance-bridge.json; no implementation source or claim."
           ],
           "validation": [
             "Validate original132 tasks and dependency/acceptance objects unchanged, original M01.17 gate permanently frozen at c0a0050/issued3/both blocked, reviewer enumeration disagreement and new recovery-duration failure preserved.",
@@ -940,10 +959,11 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-18-integrated.md",
+              "path": "archive/evidence/m01-18-integrated.md",
               "result": "PR26 reviewed plan3c44380 integrated normally as81bae9b with identical tree; both R2 nonauthor roles clear, durable gate passed and all seven PR/main jobs successful. Only decomposition/history/eleven-clause bridge accepted; successors unimplemented, original M17 hard3 and all parent/product gates preserved. This factual bookkeeping source still requires its own final legal same-M18 R3/checks/integration."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.19",
@@ -973,10 +993,11 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m01-19-qualified-source.md",
+              "path": "archive/evidence/m01-19-qualified-source.md",
               "result": "Proposed merged state only: unchanged builder458c96c and code-only CI42432481369 support the conditional native contract; this combined candidate still requires its own deterministic checks, both counted nonauthor roles, exact-head native CI/coverage/ci-ok, normal gate and protected integration before acceptance. No M21 deployment or live operation authority."
             }
-          ]
+          ],
+          "track": "harness"
         },
         {
           "id": "M01.20",
@@ -1000,8 +1021,10 @@
             "M01.19"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "cancelled",
+          "evidence": [],
+          "track": "harness",
+          "cancelled_reason": "Harness frozen 2026-11-13: opaque image/byte-conservation contract is dropped with M01.17."
         },
         {
           "id": "M01.21",
@@ -1032,8 +1055,10 @@
             "M01.20"
           ],
           "owner": "harness/integrator",
-          "status": "planned",
-          "evidence": []
+          "status": "cancelled",
+          "evidence": [],
+          "track": "harness",
+          "cancelled_reason": "Harness frozen 2026-11-13: forensic-retention successor integration is dropped with M01.17."
         }
       ]
     },
@@ -1079,7 +1104,7 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m02-01-integrated.md",
+              "path": "archive/evidence/m02-01-integrated.md",
               "result": "Two independent R2clear reports, exact-head durable gate, normal PR10 merge02abc722 and full PR/main native x86_64/ARM64 checks passed, including actual14search/4analyzer/34mutation reference steps and strict cold navigation. Inventory accepted; SDK/hsearch/native-property/private/scale/provider execution not claimed."
             }
           ]
@@ -1108,15 +1133,15 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m02-08-integrated.md",
+              "path": "archive/evidence/m02-08-integrated.md",
               "result": "Final independent R3 resolves all7P2s; full225local/no skips plus all7 PR/main native jobs and raw18probe reports each, durable gate and protected expected-head PR13 merge with matching reviewed tree. Synthetic model only."
             },
             {
-              "path": "evidence/catalog-model-final-native.json",
+              "path": "archive/evidence/catalog-model-final-native.json",
               "result": "Both actual native main reports retain36fresh-process samples/source module hashes/row counters/query plans/noise, independently recomputed. No runtime/fleet/physical-I/O acceptance."
             },
             {
-              "path": "evidence/catalog-model-review-history.json",
+              "path": "archive/evidence/catalog-model-review-history.json",
               "result": "Both earlier blocked rounds/reproduction hashes retained; original base/counters unchanged."
             }
           ]
@@ -1177,7 +1202,7 @@
               "result": "30f080e complete local native suite passed; runtimeexport hit64MiB bound. Explicit compact-profile/context4 continuation is implemented draft only, all finalsource coverage/review/hosted gates pending."
             },
             {
-              "path": "evidence/m02-09-integrated.md",
+              "path": "archive/evidence/m02-09-integrated.md",
               "result": "Retrospective status correction: accepted PR19 reviewed95bcf0d/treea58bb0f normalmergeb19074d; final formal2/overall3 clear and all7 PR/main/explicitbase manual jobs. Bounded coordinator component research/context4 only; all historical failures and downstream gates retained."
             }
           ]
@@ -1242,7 +1267,7 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m02-02-integrated.md",
+              "path": "archive/evidence/m02-02-integrated.md",
               "result": "Scoped bounded native embedding/lifecycle adapter and selected internal core-v1 inventory accepted through PR31: reviewed 6d88535, identical tree c34664d merged normally as 656b790. Both R2 roles clear and all four R1 keys resolved; normal gate pass. PR 42768496915, original-992 manual 42768623024 and main 42774598520 each passed all seven jobs on attempt 1, with source-bound native/Java matrices and all required coverage floors. Original 992 lineage, issued2/planned2/hard3 and every failed history remain. No whole-M02, service/HTTP/API compatibility, provider durability, fleet or release acceptance."
             }
           ]
@@ -1389,7 +1414,7 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m02-11-qualified-source.md",
+              "path": "archive/evidence/m02-11-qualified-source.md",
               "result": "Proposed merged FINALCANDIDATE state only: revised development policy remains unaccepted pending same-lineage exact-final-source R2, complete current-source checks/native-hosted CI/ci-ok, normal protected integration and postmerge. Historical R1 binds511 only. No M02.10 experiment/campaign admission, code-finding resolution or counter reset follows from candidate done."
             }
           ]
@@ -1439,7 +1464,7 @@
           "status": "done",
           "evidence": [
             {
-              "path": "evidence/m03-01-qualified-source.md",
+              "path": "archive/evidence/m03-01-qualified-source.md",
               "result": "M03.01 typed traits and memory/fault conformance were accepted through PR30. Reviewed source `81e31623c36a4b92382c1bbba0711c9958400698`, with tree `b01cfcb0f60587836aae01898c4adbdbf242ed0a`, was merged through the protected branch as `5a0a0628172e42b5ccc7db5bfa5f5fbff8f3d123`, with the same tree. Both R2 roles were clear, with no findings. The normal M03.01 gate passed, and all seven jobs in postmerge run 42458087463 succeeded. The original review base remains `992084caa931fc64b1589350453fde9fa0e3a765`. Two rounds have been issued out of two planned, with a hard ceiling of three. Earlier BB and candidate observations and failures remain historical. This does not qualify M03.02 artifact, runtime or native work, providers, a service, persistence, durability, fleet, whole M01 or M03, or release."
             }
           ]
@@ -2313,15 +2338,15 @@
           "status": "done",
           "evidence": [
             {
-              "path": "native-coverage-projection.md",
+              "path": "archive/native-coverage-projection.md",
               "result": "Unpublished event/facade draft preserved in an isolated worktree; preliminary draft Rust/bootstrap passed, new production coverage blocked by native report protocol; no schema/runtime acceptance."
             },
             {
-              "path": "evidence/m01-13-integrated.md",
+              "path": "archive/evidence/m01-13-integrated.md",
               "result": "Coverage prerequisite accepted; original-model fixture is scoped report evidence, not finalM08/schema acceptance."
             },
             {
-              "path": "evidence/m08-01-integrated.md",
+              "path": "archive/evidence/m08-01-integrated.md",
               "result": "Actual finalsource R1clear, protected PR17 merge with identical reviewed tree; all7 PR/main native/sandbox jobs and full decoded288/compiler/source/catalog/reference/coverage/layout proof. Typed contract/facade only."
             }
           ]

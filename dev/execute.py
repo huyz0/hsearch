@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-COMMANDS = {"coverage": ["python3", "/harness/coverage_entry.py"], "prefetch": ["cargo", "fetch", "--locked"], "check": ["cargo", "xtask", "check"],
+COMMANDS = {"prefetch": ["cargo", "fetch", "--locked"], "check": ["cargo", "xtask", "check"],
             "compile": ["cargo", "check", "--locked", "--offline", "--workspace", "--all-targets", "--all-features"],
             "navigation-build": ["python3", "/harness/install_navigation.py"]}
 
@@ -80,7 +80,7 @@ def diagnostics():
 def run(mode, disk_bytes, timeout, output_bytes=1024**2):
     verify_limits(2000, 4 * 1024**3, 256)
     writable = (("/cargo", "/target", "/navigation-output") if mode == "navigation-build" else
-                ("/cargo", "/target", "/coverage-evidence") if mode == "coverage" else ("/cargo", "/target"))
+                ("/cargo", "/target"))
     reserve = int(os.environ.get("HSEARCH_BACKEND_RESERVE_BYTES", "0"))
     if reserve and (reserve < 10 * 1024**3 or min(shutil.disk_usage(path).free for path in writable) < reserve):
         raise RuntimeError("Actual task volume reserve is unavailable")
