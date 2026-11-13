@@ -101,7 +101,7 @@ fn main() {
         );
     }
     // Trace overhead on the warm path.
-    for trace in [0usize, 4096] {
+    for trace in [0usize, 4096, 2_100_000] {
         let cache = RangeCache::new(
             Memory(data[..8 << 20].to_vec()),
             vec![("f".to_owned(), 8 << 20)],

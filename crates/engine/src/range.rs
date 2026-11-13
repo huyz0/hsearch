@@ -7,7 +7,7 @@
 //! manifest the caller passes, so a read costs no HEAD and nothing here lists
 //! the store.
 //!
-//! Memory is fixed at construction: one slab of `cache_bytes`, one scratch of
+//! Memory is fixed at construction (the index is sized at twice the slot count so eviction churn never regrows it): one slab of `cache_bytes`, one scratch of
 //! `max_run_pages` pages, per-slot bookkeeping and the trace ring. Nothing
 //! allocates afterwards, whatever the working set. A source writes a run into
 //! the scratch, which is then copied into the slab and the caller's buffer; that
@@ -21,7 +21,8 @@
 //! `docs/plan/evidence/m02-03-range-inputs.md`): the pinned `lucene_store::Input`
 //! is a byte slice, so Lucene itself cannot be handed a [`RangeInput`] until the
 //! upstream `ExternalBytes::will_need` input is adopted. v0 limits: one lock
-//! covers the cache and is held across a fetch, so concurrent misses queue.
+//! covers the cache and is held across a fetch, so one slow request stalls every
+//! reader, hits included; `cache_bytes` is not checked against available memory.
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
@@ -30,7 +31,9 @@ use crate::RemoteError;
 /// Byte-range source for immutable files.
 pub trait RangeFiles: Send + Sync {
     /// Fill `buf` with exactly the bytes `offset..offset + buf.len()` of `name`,
-    /// or fail. A short or partial read is a failure, never a success.
+    /// or fail. A short or partial read is a failure, never a success: the cache
+    /// trusts an `Ok`, and a source that returns `Ok` without writing every byte
+    /// would have stale scratch bytes served as file data.
     fn read_at(&self, name: &str, offset: u64, buf: &mut [u8]) -> Result<(), RemoteError>;
 }
 
@@ -68,7 +71,8 @@ pub struct RangeLimits {
     pub cache_bytes: u64,
     /// Most adjacent pages one request may cover; at least one.
     pub max_run_pages: usize,
-    /// Trace events kept; later ones are counted and dropped. Zero disables it.
+    /// Trace events captured: the first this many accesses are kept and later ones
+    /// are counted and dropped (a capture window, not a ring). Zero disables it.
     pub trace_events: usize,
 }
 
@@ -137,6 +141,8 @@ struct State {
     map: HashMap<(u32, u64), u32>,
     free: Vec<u32>,
     hand: usize,
+    /// Pages of the window being served, which eviction must not take: (file, first, count).
+    pin: (u32, u64, u64),
     /// Per page of the window being served: was it found in the cache.
     window_hit: Vec<bool>,
     stats: RangeStats,
@@ -201,9 +207,10 @@ impl<S: RangeFiles> RangeCache<S> {
             key: vec![None; pages],
             len: vec![0; pages],
             referenced: vec![false; pages],
-            map: HashMap::with_capacity(pages),
+            map: HashMap::with_capacity(pages * 2),
             free: (0..pages as u32).rev().collect(),
             hand: 0,
+            pin: (0, 0, 0),
             window_hit: vec![false; run],
             stats: RangeStats::default(),
             trace: Vec::with_capacity(limits.trace_events),
@@ -243,8 +250,19 @@ impl<S: RangeFiles> RangeCache<S> {
     /// bookkeeping and the trace ring. Fixed at construction.
     #[must_use]
     pub fn memory_bound_bytes(&self) -> usize {
-        let slot = size_of::<Option<(u32, u64)>>() + size_of::<u32>() + 1 + 2 * size_of::<u32>();
-        self.pages * (self.page + slot) + self.run * (self.page + 1) + self.trace_capacity_bytes()
+        let Ok(state) = self.state.lock() else {
+            return 0;
+        };
+        // Real capacities, so a hidden regrowth shows up here.
+        let map = state.map.capacity() * (size_of::<((u32, u64), u32)>() + 1);
+        state.slab.capacity()
+            + state.scratch.capacity()
+            + state.key.capacity() * size_of::<Option<(u32, u64)>>()
+            + (state.len.capacity() + state.free.capacity()) * size_of::<u32>()
+            + state.referenced.capacity()
+            + state.window_hit.capacity()
+            + map
+            + state.trace.capacity() * size_of::<Event>()
     }
 
     /// Bytes reserved for the trace ring.
@@ -306,6 +324,13 @@ impl<S: RangeFiles> RangeCache<S> {
         loop {
             let slot = state.hand;
             state.hand = (state.hand + 1) % self.pages;
+            if let Some((f, p)) = state.key[slot]
+                && f == state.pin.0
+                && p >= state.pin.1
+                && p < state.pin.1 + state.pin.2
+            {
+                continue;
+            }
             if state.referenced[slot] {
                 state.referenced[slot] = false;
                 continue;
@@ -347,6 +372,7 @@ impl<S: RangeFiles> RangeCache<S> {
         while first <= last_page {
             let window_end = (first + self.run as u64).min(last_page + 1);
             let count = (window_end - first) as usize;
+            state.pin = (file, first, count as u64);
             // Pass 1: copy every hit out now, before a miss can evict it.
             for i in 0..count {
                 let index = first + i as u64;
@@ -495,8 +521,10 @@ impl<S: RangeFiles> RangeInput<'_, S> {
     }
 
     /// Make `offset..offset + len` resident before it is read, so a failed
-    /// request is seen here rather than at a later read. Refuses a range that is
-    /// more than the cache holds at once.
+    /// request is seen here rather than at a later read. Refuses a range of more
+    /// pages than one request window (`max_run_pages`), so that every page of it is
+    /// resident when this returns: nothing in the range can be evicted by another
+    /// part of the same call.
     pub fn prefetch(&self, offset: u64, len: u64) -> Result<(), RangeError> {
         let end = offset.checked_add(len).ok_or(RangeError::OutOfRange)?;
         if end > self.len {
@@ -509,7 +537,7 @@ impl<S: RangeFiles> RangeInput<'_, S> {
         } else {
             (from + len - 1) / page - from / page + 1
         };
-        if span > self.cache.pages as u64 {
+        if span > self.cache.run as u64 {
             return Err(RangeError::OutOfRange);
         }
         self.cache.fill(self.file, from, len, None)

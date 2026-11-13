@@ -133,7 +133,10 @@ fn working_set_larger_than_the_cache_stays_bounded_and_correct() {
     }
     assert!(cache.stats().evictions > 0);
     assert_eq!(cache.memory_bound_bytes(), bound, "the bound never moves");
-    assert!(bound <= 64 * 5 + 64 * 2 + 4096, "slab plus one run");
+    assert!(
+        bound <= 64 * 5 + 64 * 2 + 8192,
+        "slab, one run, bookkeeping: {bound}"
+    );
 }
 
 #[test]
@@ -287,6 +290,7 @@ fn prefetch_announces_a_range_in_one_batch_and_reports_errors() {
     assert_eq!(buf, store.files["f"][128..512]);
     // More than the cache can hold at once is a refusal, not an eviction storm.
     assert_eq!(input.prefetch(0, 64 * 9), Err(RangeError::OutOfRange));
+    assert_eq!(input.prefetch(0, 64 * 20), Err(RangeError::OutOfRange));
     // A failed prefetch reaches the caller as the error, not at a later read.
     *store.fail_at.lock().unwrap() = Some((store.get_count(), RemoteError::Unavailable));
     assert_eq!(input.prefetch(64 * 12, 64), Err(RangeError::Unavailable));
@@ -296,7 +300,7 @@ fn prefetch_announces_a_range_in_one_batch_and_reports_errors() {
 fn the_trace_records_reads_and_gets_and_is_bounded() {
     let store = Store::with(&[("f", 64 * 4), ("g", 64)]);
     let mut config = limits(64, 64 * 4, 4);
-    config.trace_events = 3;
+    config.trace_events = 4;
     let cache = RangeCache::new(&store, store.manifest(), config).unwrap();
     let capacity = cache.trace_capacity_bytes();
     let f = cache.input("f").unwrap();
@@ -328,8 +332,13 @@ fn the_trace_records_reads_and_gets_and_is_bounded() {
     let g = cache.input("g").unwrap();
     assert!(g.read_at(0, &mut buf[..8]).is_err());
     let (kept, dropped) = (cache.trace(), cache.trace_dropped());
-    assert_eq!(kept.len(), 3, "bounded at trace_events");
-    assert_eq!(dropped, 2, "the rest are counted, not stored");
+    assert_eq!(kept.len(), 4, "bounded at trace_events");
+    assert_eq!(dropped, 1, "the rest are counted, not stored");
+    assert_eq!(
+        kept[3].kind,
+        TraceKind::Read,
+        "the failed read's own Read event"
+    );
     assert_eq!(cache.trace_capacity_bytes(), capacity, "never grows");
 
     let mut off = limits(64, 64 * 4, 4);
@@ -410,4 +419,105 @@ fn real_segment_files_verify_through_a_cache_smaller_than_the_largest_file() {
     assert!(s.resident_bytes <= cache_bytes);
     assert!(s.evictions > 0, "the working set exceeded the cache");
     assert!(s.get_bytes >= largest as u64);
+}
+
+/// A prefetch makes its whole range resident on a full, warm cache even when
+/// the cache is barely bigger than the range: it cannot evict its own pages.
+#[test]
+fn prefetch_on_a_full_cache_keeps_every_page_of_the_range() {
+    let store = Store::with(&[("f", 64 * 40)]);
+    let cache = RangeCache::new(&store, store.manifest(), limits(64, 64 * 8, 8)).unwrap();
+    let input = cache.input("f").unwrap();
+    let mut sink = vec![0u8; 64 * 40];
+    input.read_at(0, &mut sink).unwrap(); // churn: the cache is full of other pages
+    for start in [0u64, 7, 11, 24] {
+        // Some pages of the range are already resident (mixed hits and misses).
+        input.prefetch(64 * start, 64 * 8).unwrap();
+        let gets = store.get_count();
+        let mut buf = vec![0u8; 64 * 8];
+        input.read_at(64 * start, &mut buf).unwrap();
+        assert_eq!(
+            store.get_count(),
+            gets,
+            "range at page {start} not resident"
+        );
+        assert_eq!(buf, store.files["f"][(64 * start) as usize..][..64 * 8]);
+    }
+}
+
+/// Eviction churn never regrows the index: the memory bound stays what it was.
+#[test]
+fn memory_bound_does_not_move_under_eviction_churn() {
+    let store = Store::with(&[("f", 4096 * 64)]);
+    let cache = RangeCache::new(&store, store.manifest(), limits(256, 256 * 32, 4)).unwrap();
+    let before = cache.memory_bound_bytes();
+    let input = cache.input("f").unwrap();
+    let mut state = 5u64;
+    let mut buf = [0u8; 100];
+    for _ in 0..50_000 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        input
+            .read_at((state >> 20) % (4096 * 64 - 100), &mut buf)
+            .unwrap();
+    }
+    assert!(cache.stats().evictions > 10_000);
+    assert_eq!(cache.memory_bound_bytes(), before);
+}
+
+/// Real queries over files read only through a range cache smaller than the
+/// largest file, then the same with injected range errors: answers equal the
+/// local directory's, and a failed range is an error, never a partial answer.
+#[test]
+fn queries_over_range_read_files_equal_local_and_fail_cleanly() {
+    use hsearch_engine::{CachedDirectory, EngineDirectory, Snapshot};
+    struct ViaRanges<'a>(&'a RangeCache<&'a Store>);
+    impl hsearch_engine::RemoteFiles for ViaRanges<'_> {
+        fn fetch(&self, name: &str) -> Result<Vec<u8>, RemoteError> {
+            let input = self.0.input(name).map_err(|_| RemoteError::NotFound)?;
+            let mut out = vec![0u8; usize::try_from(input.len()).unwrap()];
+            let mut at = 0usize;
+            while at < out.len() {
+                let n = (out.len() - at).min(100);
+                input
+                    .read_at(at as u64, &mut out[at..at + n])
+                    .map_err(|_| RemoteError::Unavailable)?;
+                at += n;
+            }
+            Ok(out)
+        }
+    }
+    let (written, files) = fixture::write_documents();
+    let mut store = Store::default();
+    for (name, bytes) in files {
+        store.files.insert(name, bytes);
+    }
+    let largest = store.files.values().map(Vec::len).max().unwrap() as u64;
+    let local = hsearch_engine::EngineDirectory::new(lucene_store::FsDirectory::open(&written.0));
+    let expected = fixture::answers(&Snapshot::open_committed(&local, fixture::schema()).unwrap());
+    let names: Vec<String> = store.files.keys().cloned().collect();
+    let open = |cache: &RangeCache<&Store>| {
+        let scratch = fixture::Scratch::new("viaranges");
+        let directory = EngineDirectory::new(
+            CachedDirectory::new(&scratch.0, ViaRanges(cache), names.clone(), 1 << 26).unwrap(),
+        );
+        Snapshot::open_committed(&directory, fixture::schema()).map(|s| fixture::answers(&s))
+    };
+    let cache = RangeCache::new(&store, store.manifest(), limits(64, largest / 3, 4)).unwrap();
+    assert_eq!(open(&cache).unwrap(), expected);
+    assert!(
+        cache.stats().evictions > 0,
+        "working set exceeded the cache"
+    );
+    assert!(cache.stats().resident_bytes <= largest / 3);
+    // Fail each of the first GETs of a cold cache in turn: always an error.
+    for fail in 0..6 {
+        let store2 = Store {
+            files: store.files.clone(),
+            ..Store::default()
+        };
+        *store2.fail_at.lock().unwrap() = Some((fail, RemoteError::Unavailable));
+        let cold = RangeCache::new(&store2, store2.manifest(), limits(64, largest / 3, 4)).unwrap();
+        assert!(open(&cold).is_err(), "fail at {fail}");
+        assert_eq!(cold.stats().errors, 1);
+    }
 }

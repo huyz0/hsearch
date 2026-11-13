@@ -40,6 +40,10 @@ paths and touches every crate, so it is left as the follow-up below.
 - Reader paths enumerated: at the pinned rev every path above is reached at open (file-level trace above).
   Byte-range footprints per query inside a file are not observable until the upstream input is adopted; that
   measurement is part of the follow-up.
+- Queries through ranges: `queries_over_range_read_files_equal_local_and_fail_cleanly` runs the fixed term, range, doc-values-sort and stored-field queries over files fetched only via the range cache (cache one third of the largest file, evictions observed) and equals the local directory; a range error injected at each of the first six GETs makes open an error, never a partial answer. Lucene still receives whole-file bytes here (pinned `Input`), so this proves the error and equality path, not the no-full-file-heap goal, which needs the rev bump.
+- `prefetch` is limited to one request window (`max_run_pages`) so it cannot evict its own pages; tested on a full, warm cache with mixed hits.
+- Trace is a capture window (first N accesses kept, rest counted), not a ring.
+- Contract: `RangeFiles::read_at` implementors must write every byte on `Ok`; the cache trusts it.
 - Vector reader tests: not applicable, no vector capability is advertised.
 
 ## Benchmark (provisional: 4 vCPU container, release build, in-memory source so only the cache's own cost shows)
@@ -48,13 +52,14 @@ paths and touches every crate, so it is left as the follow-up below.
 
 | page | run | cold scan | GETs (bytes/GET) | random 4 KiB | amplification | warm 4 KiB |
 |---|---|---|---|---|---|---|
-| 4 KiB | 16 | 3.0 GB/s | 4096 (64 KiB) | 1.7 us, 0.93 GET/read | 1.8x | 291 ns |
-| 64 KiB | 16 | 2.9 GB/s | 256 (1 MiB) | 10.0 us, 0.88 GET/read | 14.9x | 232 ns |
-| 64 KiB | 4 | 3.5 GB/s | 1024 (256 KiB) | 10.3 us, 0.88 GET/read | 14.9x | 207 ns |
-| 1 MiB | 4 | 3.2 GB/s | 256 (1 MiB) | 145 us, 0.87 GET/read | 224.7x | 220 ns |
+| 4 KiB | 16 | 4.2 GB/s | 4096 (64 KiB) | 1.1 us, 0.93 GET/read | 1.8x | 189 ns |
+| 64 KiB | 16 | 3.6 GB/s | 256 (1 MiB) | 8.4 us, 0.88 GET/read | 14.9x | 183 ns |
+| 64 KiB | 4 | 4.2 GB/s | 1024 (256 KiB) | 9.9 us, 0.88 GET/read | 14.9x | 225 ns |
+| 1 MiB | 4 | 3.9 GB/s | 256 (1 MiB) | 150 us, 0.87 GET/read | 224.7x | 242 ns |
 
-Hit rate on uniform random reads is 12.5% (= cache/file), as it must be. Trace on vs off: 225 vs 226 ns warm.
-Memory bound is cache + one run (+ about 0.1% bookkeeping): 33-37 MiB for a 32 MiB cache. Not profiled with a
+Two runs of the same binary differed by up to ~30% in time columns (shared 4-vCPU container); GET counts and amplification are exact.
+Hit rate on uniform random reads is 12.5% (= cache/file), as it must be. Warm 4 KiB read with trace off / 4,096-event window / 2.1M-event window (every timed read still pushing events): 258 / 263 / 275 ns, so recording costs roughly 15 ns a read, within run noise.
+`memory_bound_bytes()` sums live capacities, including the index: 33-37 MiB for a 32 MiB cache (bookkeeping is about 3% at 4 KiB pages, under 0.1% at 64 KiB+). A test asserts it is unchanged after 50,000 evicting reads (the index is sized at twice the slot count so churn cannot regrow it). Not profiled with a
 sampling profiler; the in-memory source removes the network, so these are lower bounds on per-read cost.
 
 ## Trade-offs and downsides
@@ -64,7 +69,7 @@ sampling profiler; the in-memory source removes the network, so these are lower 
   probes want small ones; a per-file-kind page size is the likely answer and is unmeasured against real S3 latency.
 - Each cold byte is copied twice (source into scratch, scratch into slab) plus once to the caller. Scratch exists so
   a run can span non-adjacent slots; reading straight into the slab would save a copy for single-page runs.
-- One lock covers the cache and is held across a fetch, so concurrent misses queue (same v0 limit as
+- One lock covers the cache and is held across a fetch, so one slow request stalls every reader, hits included (same v0 limit as
   `CachedDirectory`). Single-flight and per-shard locks are later work.
 - RAM-only; an NVMe tier and a cache that survives restart are not here.
 - Every page lookup is a `HashMap` probe plus a lock; ~220 ns per 4 KiB warm read is dominated by that and the copy.
