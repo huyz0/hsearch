@@ -1,49 +1,39 @@
-# hsearch contributor router
+# hsearch
 
-Current factual status: M02.02 is accepted for its declared native embedding/lifecycle profile through reviewed `6d88535`, normal merge `656b790` and successful main qualification. M03.01's [typed traits and memory/fault conformance](docs/plan/evidence/m03-01-qualified-source.md) were accepted through PR30. Both retain original992 lineage, issued2/planned2/hard3 and all earlier failures. Older candidate/seed statements below describe their recorded source phases. Neither acceptance closes whole M01/M02/M03, qualifies M03.02 artifact/controller transport or introduces a search service/API compatibility.
+Object-storage-native, scalability-first search store in Rust on top of `lucene-rust`. RustFS first; S3/GCS/Azure later. The API is OpenSearch-inspired partial compatibility ([api-compatibility](docs/plan/api-compatibility.md)), not drop-in. Current state in one page: [docs/plan/CURRENT.md](docs/plan/CURRENT.md).
 
-**Product requirements:** `docs/plan/product-requirements.md` is the authoritative requirement list (confirmed 13 Nov 2026) and wins over older plan text where they conflict; its conflicts section lists what it overrides.
+**Product requirements:** [docs/plan/product-requirements.md](docs/plan/product-requirements.md) is the authoritative requirement list (confirmed 13 Nov 2026). It wins over older plan text where they conflict; its conflicts section lists what it overrides.
 
-The current API direction is scalability-first, OpenSearch-inspired partial compatibility. Read `docs/plan/api-compatibility.md` and `docs/plan/engineering-standards.md`; their declared profile supersedes historical broad replacement assumptions. Keep matching, deliberately different and unsupported semantics explicit, with bounded native alternatives and source-backed rationale. Full/drop-in compatibility is not required.
+## Find the work
 
-Read `docs/plan/PROGRESS.md` and the relevant task in `docs/plan/tasks.json` before implementation. The ledger owns task acceptance; generated milestone pages and roadmap come from `python3 docs/plan/tools/plan.py render`.
+```sh
+python3 docs/plan/tools/plan.py next    # ready tasks, product first; harness tasks are held when over the cap
+```
 
-Use one branch/worktree per task. Record owner, base SHA, owned paths/resources, observed checks and remaining failures. Serialize lockfile, shared contract and ledger changes through the integrator. Never overwrite another task's work, force push, prune unrelated resources, or treat an observation timeout as a failed process.
+The ledger is `docs/plan/tasks.json` (task states, dependencies, evidence). Read the one task you are doing, not the whole plan. Everything under `docs/plan/archive/` is history: do not read it unless a task cites it.
 
-Start with `docs/plan/development.md` for current executable commands. `cargo xtask check` runs the implemented bootstrap checks only. M01.02 sandbox, M01.06 impact CI and M19 API direction are integrated. M01.03 task ownership/recovery, M01.04 bounded semantic context and M01.05 durable review gates are integrated. M01.09 is operationally closed through the qualified M01.15 unresolved-cause disposition; the historical ARM cause remains unconfirmed and M01.08 remains independently unqualified. Original M01.07's implementation gate remains blocked at hard3; accepted M10/11/12/13 satisfy its composite goal through the separately reviewed redesign in docs/plan/coverage-redesign.md. Keep every failed history and control intact. The frozen agent-corpus gate remains separate. M02.01's reference inventory/corpus is qualified. M02.02's [bounded native adapter and selected native/Java profile](docs/plan/evidence/m02-02-integrated.md) is qualified through PR31; public HTTP/service API parity remains unimplemented. No runtime service exists yet.
+## Commands
 
-- Keep `hsearch-types` independent of adapters; `hsearch-observe` depends only on types. Only `hsearch-engine` imports Lucene crates. Testkit is a dev dependency of production crates, never a normal/build dependency.
-- Keep dependency, toolchain and image revisions exact. Do not enable upstream test features in production. Inventory source/licenses before introducing dependencies. No hsearch redistribution license has been selected; do not infer a reuse grant from public visibility.
-- Preserve the committed/applied/searchable/archived distinction. Read `docs/plan/architecture.md` before changing authority, durability, checkpoints or readers. No speculative operations in search.
-- Read `docs/plan/security.md` for encryption/authentication, `modules.md` for boundaries, `replication-copy.md` for transfer/retention, and `ci-testing.md` for validation policy.
-- Bound allocation, queues, fanout, parsing, decompression and diagnostic output. No plaintext secrets in code, logs or artifacts. Unsafe is forbidden in bootstrap; a later exception needs a documented proof and matching tests.
-- Product tasks need >=90% aggregate/per-crate/changed-line production line coverage and independent review of the final tree. Zero coverable lines means not applicable, not 100%. Do not lower tests, omit a required matrix, or mark unrun provider/hardware tests passed.
-- Run deterministic checks before independent semantic review. Bind findings to exact code and evidence; empty findings are valid. Plan at most two rounds, with a hard ceiling of three per task. Unresolved blockers at the ceiling require split/redesign, never a pass by budget. Formal approving GitHub reviews as the user require specific authorization.
+```sh
+python3 tools/check.py        # fmt, clippy -D warnings, tests, plan/API/policy checks. Run before every commit.
+scripts/coverage.sh           # cargo-llvm-cov, 90% line floor per production crate
+cargo test --workspace        # Rust tests only
+```
 
-M02.10 alone has the prospective same-task completion exception in [M02.10 continuation](docs/plan/m02-10-continuation.md): one additional candidate checkpoint, actual overall4/cumulative formal3/max4, after independently reviewed policy integration. All original BLOCKED history is retained; if this checkpoint remains blocked or incomplete, stop/split or redesign. This is not a global ceiling change or a fourth packet in any historical frozen gate.
+Run commands yourself and report what they printed. Never claim a test passed, a gate ran or a number was measured without having done it.
 
-Use bounded source navigation and linked task context. Keep progress concise and separate measurements, proposals and unverified work. Runtime instructions and status claims must match observed implementation.
+## Rules
 
-Run `python tools/api_contract.py check`; regenerate the matrix with `python tools/api_contract.py render`. Design gates and examples are not observed runtime evidence. Normal reviewed/check-passing public pushes and protected merges are authorized; release/deployment authorization is separate.
+- Only `hsearch-engine` imports Lucene crates. `hsearch-types` is independent of adapters; `hsearch-observe` depends only on types. Testkit is a dev dependency only. (`tools/workspace.py check`)
+- Exact pins for dependencies, toolchain and images. No upstream test features in production. `unsafe` is forbidden.
+- Keep committed / applied / searchable / archived distinct ([architecture](docs/plan/architecture.md)). No speculative work in the search path. Bound allocation, queues, fan-out, parsing and diagnostics. No plaintext secrets.
+- Product tasks need >=90% line coverage per production crate and a review of the final tree. Never lower a threshold or delete a test to make a check pass.
+- Reviews: one independent reviewer by default; add the architecture/security role only for security-, format- or durability-sensitive code. At most two planned rounds, hard ceiling three, then split or redesign. ([review-gates](docs/plan/review-gates.md))
+- API changes: `python3 tools/api_contract.py check` (`render` regenerates the matrix). Keep matching, different and unsupported semantics explicit.
+- Ship product work. The harness is frozen: do not add harness tasks or gates; harness work over ~20% of recent commits is held (`plan.py harness-share`, CI `harness-budget`). Add a check only for a defect that has actually shipped.
 
-M01.12's earlier generic hold is resolved by the accepted M01.13 native-report redesign in docs/plan/native-coverage-projection.md. Preserve all M12/M13 issued rounds, the original manual failure and historical gates; no fourth packet or relaxed LCOV/floor control. M08.01's typed contract/facade has its own accepted final qualification; see docs/plan/evidence/m08-01-integrated.md. SDK/exporter/runtime remain unimplemented.
+## Working agreement
 
-Current M13 native JSON3.1 physical projection/context3 and complete M12 successor integration are accepted; see docs/plan/evidence/m01-13-integrated.md. Composite M07 is satisfied via successors; original b637/hard3gate and all M12/M13 issued histories stay frozen. The original ARM cause remains unconfirmed; composite M01.09 is operationally closed and M01.08 remains unqualified.
+One branch per task. Do not force-push or overwrite another task's work. Normal reviewed, check-passing pushes and protected merges are authorized; release/deployment is separate. No hsearch licence is selected; do not infer a reuse grant from public visibility.
 
-M01.14's [coordinator research plan/guard is accepted](docs/plan/evidence/m01-14-integrated.md). The [M03.01 development-seed route](docs/plan/product-start-policy.md) permits a normal development-only claim from an exact legitimate committed policy seed only after root audits prerequisites, owner and paths. Policy and nonempty code share final counted review/native CI/protected integration before acceptance; no separate policy merge is required to begin development. M03.02 starts only after actually accepted M03.01; whole-M03 completion retains M01. Historical M14 acceptance, the unconfirmed ARM cause, unqualified M01.08 and every other acceptance edge remain; no claim is made by this preparation.
-
-M01.16's [original factual integration is qualified](docs/plan/evidence/m01-16-integrated.md): PR23 reviewed `274d17a` and merged normally as `2b2fd47` with both R1 roles clear, its gate and all seven PR/main jobs successful. The later factual status follow-up retains its own exact-head same-task review/check/integration obligations. Original criteria, failures, authors and counters remain preserved; no old source packet is reopened. The historical M02.10 candidate remains frozen. Its [development addendum](docs/plan/m02-10-development.md) permits only root-audited, separately claimed reversible development and explicitly bounded ordinary synthetic controls before M02.11 integration; actual experiments, qualification and the sole future candidate checkpoint still wait for actual policy integration and proper admission.
-
-Historical M03.01 candidate snapshot, retained for its original source phase:
-
-M03.01's [combined source candidate](docs/plan/evidence/m03-01-qualified-source.md) has bounded typed object/conditional metadata contracts and a nonpersistent memory/fault double. Ledger done is intended merged state only; new-head ordinary/native architecture/profile/coverage/hosted CI, both counted independent roles and protected integration remain pending. Preserve exact BB bodies and all old failed collector contexts; BB local x64 qualification is predecessor evidence, not a new-head/ARM/provider/service/durability pass. M03.02 requires actually accepted M03.01; whole-M03/M01 and M03.03 calibration gates remain.
-
-M01.19 has a [conditional native contract candidate](docs/plan/retention-context-native-contract.md) and [combined-source evidence](docs/plan/evidence/m01-19-qualified-source.md). Its ledger done is the intended merged state only; exact-final-source checks, both counted nonauthor roles, native CI/ci-ok and protected integration remain pending. Preserve original scoped audit/source/metadata/count budgets and every numeric cap; no universal hidden-kernel/physical-I/O/latency or invisible VM-rollback claim. Trusted image/build/mount and controlled no-snapshot/no-migration admission remain required. Code-only conditional tmpfs positives do not qualify M21 deployment/CAS/resources or live FFF authority. M17 hard3/eleven clauses and M08/whole-M01/product gates remain unchanged.
-
-The [successor local delivery preparation](docs/plan/evidence/delivery-integration-v2.md) retains M03.01/M02.11/M01.19 R1 histories at one issued round each; M19 architecture P2 remains pending R2. Its complete local Linux64/62pass/2clock-error run remains FAILED despite9new close controls passing. No clock relaxation or retry-to-green. Actual PR29 protected merge0a2ff358 is adopted by normal merge with the same initial v1 tree; main postmerge qualification and complete current-source qualification precede final same-task R2. M02.11 candidate done is proposed merged status only, with the scoped development route retained; actual M02.10 experiments/qualification/solefuturecandidate still require actual policy integration and proper admission. No publication, claim/resource/native/provider/FFF or acceptance authority follows from this preparation.
-
-Historical M02.02 seed framing, retained for its original source phase:
-
-The [M02.02 prospective native-engine start seed](docs/plan/native-engine-start-policy.md) changes only its task-start dependencies to M19/M02.09. Root must audit the legitimate committed seed, actually accepted prerequisites, owner and paths before a separate normal development claim; this source makes no claim or implementation. Planned status/full adapter acceptance, whole-M02/M01 completion, M02.04/M02.10 and all other gates/history remain. Full policy plus later code uses original992 comparison for final native/coverage/independent/CI/protected qualification, without an extra policy-only review round or hidden seed-only review base.
-
-This separate administrative engine integration seed retains exactf0 engine author bodies and the v2 foundation, with both admitted task-start profiles and explicitly united planning guards. M02.02 remains planned/unqualified and issued0/planned2/hard3/original992; preliminary author findings remain open. No native/resource/acceptance authority follows; final validation waits for actual foundation qualification/integration or independently complete combined proof.
+Where to look: [architecture](docs/plan/architecture.md), [modules](docs/plan/modules.md), [security](docs/plan/security.md), [requirements](docs/plan/requirements.md), [CI and testing](docs/plan/ci-testing.md), [development](docs/plan/development.md).

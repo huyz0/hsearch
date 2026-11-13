@@ -1,0 +1,26 @@
+name: sandbox (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build pinned non-root development image
+        run: python3 tools/sandbox.py --state-root "${{ runner.temp }}/hsearch-leases" image
+      - name: Private RustFS sandbox smoke
+        run: python3 tools/sandbox.py --state-root "${{ runner.temp }}/hsearch-leases" smoke
+      - name: Pinned public reference corpus
+        run: python3 tools/reference.py --state-root "${{ runner.temp }}/hsearch-leases" --evidence-parent "${{ runner.temp }}/hsearch-api-reference"

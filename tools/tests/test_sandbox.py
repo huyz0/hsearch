@@ -29,7 +29,7 @@ class AdmissionControls(unittest.TestCase):
     def test_image_identity_changes_with_each_artifact_controller(self):
         original = Path.read_bytes
         initial = MODULE["image_digest"]()
-        for name in ("install_navigation.py", "install_correctness.py", "coverage_entry.py", "correctness-tools.json", "execute.py", "sandbox.py"):
+        for name in ("install_navigation.py", "install_correctness.py", "correctness-tools.json", "execute.py", "sandbox.py"):
             with self.subTest(name=name), patch.object(Path, "read_bytes", lambda path: original(path) + (b"\n# changed\n" if path.name == name else b"")):
                 self.assertNotEqual(MODULE["image_digest"](), initial)
 

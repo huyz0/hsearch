@@ -23,7 +23,7 @@ GIB = 1024**3
 LABEL = "io.hsearch.owner"
 NAMESPACE = re.compile(r"hsearch-[a-z0-9-]{1,25}-[0-9a-f]{12}\Z")
 VOLUMES = ("ca", "server", "client", "credentials", "data", "cargo", "target")
-HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py", "install_correctness.py", "coverage_entry.py")
+HARNESS_FILES = ("execute.py", "init.py", "probe.py", "install_navigation.py", "install_correctness.py")
 BUILD = {"cpu_millis": 2000, "memory_bytes": 4 * GIB, "pids": 256, "disk_bytes": 8 * GIB}
 NAVIGATION = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 4 * GIB}
 STORAGE = {"cpu_millis": 1000, "memory_bytes": 2 * GIB, "pids": 256, "disk_bytes": 10 * GIB}
@@ -267,7 +267,7 @@ def assert_owned(objects, owner):
 
 def image_digest():
     inputs = {name: hashlib.sha256((ROOT / "dev" / name).read_bytes()).hexdigest()
-              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json", "correctness-tools.json", "install_navigation.py", "install_correctness.py", "coverage_entry.py", "execute.py")}
+              for name in ("Dockerfile", ".dockerignore", "navigation-tools.json", "correctness-tools.json", "install_navigation.py", "install_correctness.py", "execute.py")}
     inputs["assembly_controller"] = hashlib.sha256((ROOT / "tools/sandbox.py").read_bytes()).hexdigest()
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
 
@@ -565,37 +565,13 @@ class Sandbox:
         return self.docker.command("compose", "--project-name", record["namespace"], "--file", str(path), *args, timeout=150)
 
     def run(self, namespace, mode, *, output_budget=1024**2, stream=True, artifact_directory=None):
-        need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build", "coverage"}, "Unknown sandbox command")
+        need(mode in {"prefetch", "diagnostics", "check", "compile", "probe", "navigation-build"}, "Unknown sandbox command")
         need(type(output_budget) is int and 4096 <= output_budget <= 8 * 1024**2, "Invalid command output budget")
         record = self.registry.get(namespace)
         need(record.get("source") == str(self.source_root) and record["engine"] == self.docker.engine and record["phase"] == "ready", "Namespace unavailable in this worktree/engine")
         if mode == "navigation-build":
             need(artifact_directory == self.snapshot(record) / "artifacts" and artifact_directory.resolve() == artifact_directory.absolute()
                  and not artifact_directory.exists(), "Navigation artifact output escaped or reused the owned snapshot")
-        elif mode == "coverage":
-            need(record.get("snapshot_schema") == 2 and self.source_root == ROOT and
-                 artifact_directory == self.snapshot(record) / "coverage-evidence" and
-                 artifact_directory.resolve() == artifact_directory.absolute() and not artifact_directory.exists(),
-                 "Coverage output escaped or reused its owned snapshot")
-            pins = record.get("coverage_inputs")
-            need(type(pins) is dict and set(pins) == {"coverage-source.bundle", "coverage-source.json"}, "Coverage inputs were not prepared by the owner")
-            for name, pin in pins.items():
-                path = self.snapshot(record) / name
-                need(path.resolve() == path.absolute() and path.is_file() and path.stat().st_nlink == 1 and
-                     type(pin) is dict and set(pin) == {"bytes", "sha256"} and type(pin["bytes"]) is int and
-                     0 < pin["bytes"] <= (128 * 1024**2 if name.endswith(".bundle") else 4096) and path.stat().st_size == pin["bytes"],
-                     "Invalid owned coverage input snapshot")
-                before = path.stat()
-                digest, count = hashlib.sha256(), 0
-                with path.open("rb") as source:
-                    while chunk := source.read(65536):
-                        count += len(chunk)
-                        need(count <= pin["bytes"], "Coverage input changed beyond its bound")
-                        digest.update(chunk)
-                after = path.stat()
-                need(count == pin["bytes"] and digest.hexdigest() == pin["sha256"] and
-                     (before.st_ino, before.st_size, before.st_mtime_ns) == (after.st_ino, after.st_size, after.st_mtime_ns),
-                     "Coverage input snapshot changed")
         else:
             need(artifact_directory is None, "Unexpected artifact output mount")
         harness = self.harness(record)
@@ -625,10 +601,6 @@ class Sandbox:
                 "--mount", f"type=volume,source={namespace}-target,target=/target"]
         if mode == "navigation-build":
             args += ["--mount", f"type=bind,source={artifact_directory},target=/navigation-output"]
-        if mode == "coverage":
-            args += ["--mount", f"type=bind,source={artifact_directory},target=/coverage-evidence"]
-            for name in ("coverage-source.bundle", "coverage-source.json"):
-                args += ["--mount", f"type=bind,source={self.snapshot(record) / name},target=/{name},readonly"]
         if mode == "probe":
             args += ["--mount", f"type=volume,source={namespace}-client,target=/certs,readonly",
                      "--mount", f"type=volume,source={namespace}-credentials,target=/run/secrets,readonly", record["image"], "python3", "/harness/probe.py", namespace]
@@ -782,30 +754,12 @@ class Sandbox:
         # Keep the small owned snapshot/evidence; never recursively delete host source.
 
     def smoke(self, evidence_parent=None):
-        differential = runpy.run_path(str(ROOT / "tools/engine_differential.py")) if evidence_parent is not None else None
-        area = differential["evidence_directory"](evidence_parent, self.source_root, self.registry.root) if differential else None
-        before = differential["source_identity"](self.source_root) if differential else None
         namespaces = []
         try:
             first = self.up("smoke-a")
             namespaces.append(first)
             for mode in ("prefetch", "diagnostics", "check", "probe"):
-                try:
-                    result = self.run(first, mode)
-                except WorkloadFailed as error:
-                    if area is not None and mode == "check":
-                        differential["save_public"](area / "failed-check.json", error.result, 2 * 1024**2)
-                    raise
-                if area is not None and mode == "check":
-                    differential["save_public"](area / "check-result.json", result, 2 * 1024**2)
-                    record = self.registry.get(first)
-                    cache = json.loads((self.registry.root / "images" / (image_digest() + ".json")).read_text(encoding="utf-8"))
-                    need(cache["id"] == record["image"], "Smoke admitted image changed")
-                    image = {key: cache[key] for key in ("id", "engine", "build_inputs_sha256", "dockerfile_sha256", "correctness_artifact")}
-                    image["correctness_artifact"] = {key: cache["correctness_artifact"][key] for key in ("architecture", "revision", "archive_sha256", "profile_sha256", "binary_sha256", "version")}
-                    image["architecture"] = result["execution"]["architecture"]
-                    capture = differential["collect_native"](result, before, differential["source_identity"](self.source_root), image, self.source_root)
-                    differential["save_public"](area / "capture.json", capture)
+                self.run(first, mode)
             second = self.up("smoke-b")
             namespaces.append(second)
             self.run(second, "probe")

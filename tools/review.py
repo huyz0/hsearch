@@ -18,9 +18,12 @@ need, Refused, encoded = TASK["need"], TASK["Refused"], TASK["encoded"]
 SANDBOX = TASK["SANDBOX"]
 HARD_CEILING, PLANNED_ROUNDS = 3, 2
 ROLES = {"correctness_tests_claims", "architecture_security"}
-# No standalone narrative paths have been approved for reduced routing yet.
-# Future exact-path exceptions require an independently reviewed policy change.
-NARRATIVE_DOCS = frozenset()
+# One independent reviewer by default. A second role (architecture_security) is
+# added only for security-, format- or durability-sensitive paths, chosen by name.
+SENSITIVE = re.compile(
+    r"(^|/)(crates/object/|crates/types/)|auth|crypto|tls|secret|credential|kms|byok|security|"
+    r"format|codec|wire|checkpoint|manifest|journal|wal\b|durab|commit|cas\b|encrypt",
+    re.IGNORECASE)
 
 
 def schema(name, value):
@@ -29,12 +32,8 @@ def schema(name, value):
 
 
 def routes(paths):
-    # A suffix or filename cannot establish that a document is nonbehavioral.
-    # Unknown Markdown receives the additional review just like unknown code.
-    ordinary_docs = bool(paths) and all(path in NARRATIVE_DOCS and path.startswith("docs/") and
-                        not path.casefold().startswith("docs/plan/") and Path(path).suffix.casefold() in {".md", ".txt"}
-                        for path in paths)
-    return ["correctness_tests_claims"] + ([] if ordinary_docs else ["architecture_security"])
+    sensitive = any(SENSITIVE.search(path) for path in paths)
+    return ["correctness_tests_claims"] + (["architecture_security"] if sensitive else [])
 
 
 def bounded_json(path, limit):

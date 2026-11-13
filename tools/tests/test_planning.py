@@ -12,7 +12,7 @@ class ResearchReproduction(unittest.TestCase):
     def test_recorded_experiments_match_the_executable_model(self):
         module = runpy.run_path(str(RESEARCH))
         data = module["run"]()
-        directory = ROOT / "docs/plan/evidence"
+        directory = ROOT / "docs/plan/archive/evidence"
         self.assertEqual(json.loads((directory / "cost-research-results.json").read_text(encoding="utf-8")), data)
         self.assertEqual((directory / "cost-research-results.md").read_text(encoding="utf-8"), module["summary"](data))
         self.assertEqual(len(data["rows"]), 72)

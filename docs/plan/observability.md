@@ -1,6 +1,6 @@
 # Versioned observability contract
 
-Status: M08.01's typed Rust event model, bounded local outbox and OpenTelemetry mapping seam are [accepted after final-source independent reviews, protected PR17 and complete PR/main qualification](evidence/m08-01-integrated.md). There is no SDK, exporter, diagnostic service or runtime instrumentation. The [native-report prerequisite](evidence/m01-13-integrated.md) remains accepted; its earlier private original-model fixture alone was report evidence, not schema acceptance.
+Status: M08.01's typed Rust event model, bounded local outbox and OpenTelemetry mapping seam are [accepted after final-source independent reviews, protected PR17 and complete PR/main qualification](archive/evidence/m08-01-integrated.md). There is no SDK, exporter, diagnostic service or runtime instrumentation. The [native-report prerequisite](archive/evidence/m01-13-integrated.md) remains accepted; its earlier private original-model fixture alone was report evidence, not schema acceptance.
 
 ## Producer model and privacy
 

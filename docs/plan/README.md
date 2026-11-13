@@ -19,9 +19,9 @@ Build a horizontally scalable Rust search store around [huyz0/lucene-rust](https
 | What should CI build and verify? | [CI and testing](ci-testing.md) |
 | How do we prove scale and performance? | [Performance and scale](performance-scale.md) |
 | How do we minimize API/cross-AZ costs and choose tradeoffs? | [Completed cost decisions](research/cost-decisions.md), [cost evidence](research/cost-economics.md), [operating profiles](operating-profiles.md) |
-| Which cost decisions and experiments are complete now? | [Immediate decisions](research/cost-decisions.md), [executed results](evidence/cost-research-results.md) |
-| What is the next executable unit of work? | [Roadmap](roadmap.md), then one file in [milestones](milestones/) |
-| What is complete, uncertain, or blocked? | [Progress](PROGRESS.md), [risk and decision register](risks.md) |
+| Which cost decisions and experiments are complete now? | [Immediate decisions](research/cost-decisions.md), [executed results](archive/evidence/cost-research-results.md) |
+| What is the next executable unit of work? | [Roadmap](roadmap.md), then one file in [milestones](milestones) |
+| What is complete, uncertain, or blocked? | [Progress](archive/PROGRESS.md), [risk and decision register](risks.md) |
 | What supports the research? | [Primary source register](research/sources.md) |
 
 ## Recommendation

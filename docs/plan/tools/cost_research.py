@@ -194,8 +194,8 @@ def main():
     args=parser.parse_args()
     data=run()
     if args.write:
-        (ROOT/"evidence/cost-research-results.json").write_text(json.dumps(data,indent=2)+"\n",encoding="utf-8",newline="\n")
-        (ROOT/"evidence/cost-research-results.md").write_text(summary(data),encoding="utf-8",newline="\n")
+        (ROOT/"archive/evidence/cost-research-results.json").write_text(json.dumps(data,indent=2)+"\n",encoding="utf-8",newline="\n")
+        (ROOT/"archive/evidence/cost-research-results.md").write_text(summary(data),encoding="utf-8",newline="\n")
     print(summary(data))
 
 

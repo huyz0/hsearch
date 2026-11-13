@@ -1,4 +1,0 @@
-# Explicit CLI config, shared by Cargo and nextest's Cargo invocations.
-[env]
-RUSTC_BOOTSTRAP = { value = "-1", force = true }
-CLIPPY_ARGS = { value = "-D__CLIPPY_HACKERY__warnings__CLIPPY_HACKERY__", force = true }
