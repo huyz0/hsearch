@@ -26,6 +26,8 @@ static NEXT: AtomicU32 = AtomicU32::new(0);
 struct Proxy {
     addr: String,
     mode: Arc<AtomicU8>,
+    /// Faults actually applied, so a test can assert the one it armed was the one that fired.
+    fired: Arc<AtomicU32>,
 }
 
 impl Proxy {
@@ -34,18 +36,21 @@ impl Proxy {
         let addr = listener.local_addr().unwrap().to_string();
         let mode = Arc::new(AtomicU8::new(PASS));
         let shared = Arc::clone(&mode);
+        let fired = Arc::new(AtomicU32::new(0));
+        let counter = Arc::clone(&fired);
         std::thread::spawn(move || {
             for client in listener.incoming().flatten() {
-                let (mode, upstream) = (Arc::clone(&shared), upstream.clone());
-                std::thread::spawn(move || serve(client, &upstream, &mode));
+                let (mode, upstream, fired) =
+                    (Arc::clone(&shared), upstream.clone(), Arc::clone(&counter));
+                std::thread::spawn(move || serve(client, &upstream, &mode, &fired));
             }
         });
-        Self { addr, mode }
+        Self { addr, mode, fired }
     }
 }
 
 /// One request per connection: the proxy asks the store to close after answering.
-fn serve(mut client: TcpStream, upstream: &str, mode: &AtomicU8) {
+fn serve(mut client: TcpStream, upstream: &str, mode: &AtomicU8, fired: &AtomicU32) {
     let mut request = Vec::new();
     let mut chunk = [0u8; 65536];
     let (head_end, length) = loop {
@@ -83,6 +88,9 @@ fn serve(mut client: TcpStream, upstream: &str, mode: &AtomicU8) {
     } else {
         None
     };
+    if fault.is_some() {
+        fired.fetch_add(1, Ordering::SeqCst);
+    }
     if fault == Some(LOSE_REQUEST) {
         return;
     }
@@ -168,6 +176,11 @@ fn a_lost_response_after_commit_resolves_to_the_original_receipt() {
     proxy.mode.store(LOSE_RESPONSE, Ordering::SeqCst);
     let lost = run(proxied.create(&ctx, &first));
     assert_eq!(lost, Err(Error::UnknownOutcome), "the client cannot tell");
+    assert_eq!(
+        proxy.fired.load(Ordering::SeqCst),
+        1,
+        "exactly the armed PUT was faulted"
+    );
 
     // The write happened: resolution finds it by identity and returns its receipt.
     let receipt = run(direct.resolve(&ctx, &first)).expect("resolves to the committed write");
@@ -190,7 +203,12 @@ fn a_lost_request_is_unknown_to_the_client_and_absent_in_the_store() {
         run(proxied.create(&ctx, &first)),
         Err(Error::UnknownOutcome)
     );
-    // Resolution certifies that nothing was accepted; the same request then succeeds once.
+    assert_eq!(
+        proxy.fired.load(Ordering::SeqCst),
+        1,
+        "exactly the armed PUT was faulted"
+    );
+    // Resolution reports it cannot find an accepted write; the same request then succeeds once.
     assert_eq!(
         run(direct.resolve(&ctx, &first)),
         Err(Error::ResolutionUnavailable)
@@ -223,6 +241,11 @@ fn a_lost_response_to_a_compare_and_set_replays_without_a_second_version() {
     assert_eq!(
         run(proxied.compare_exchange(&ctx, &update)),
         Err(Error::UnknownOutcome)
+    );
+    assert_eq!(
+        proxy.fired.load(Ordering::SeqCst),
+        1,
+        "exactly the armed PUT was faulted"
     );
     let receipt = run(direct.resolve(&ctx, &update)).expect("committed");
     let again = run(proxied.compare_exchange(&ctx, &update)).expect("replay");
@@ -341,14 +364,15 @@ fn an_unfinished_or_failed_multipart_upload_leaves_no_visible_object() {
         "complete with a missing part: HTTP {status} {}",
         reply.chars().take(120).collect::<String>()
     );
-    assert!(status >= 400, "a bad completion must be refused");
+    assert_eq!(status, 400, "a bad completion is InvalidPart: {reply}");
+    assert!(reply.contains("InvalidPart"), "{reply}");
     assert_eq!(run(direct.head(&ctx, &key)), Err(Error::NotFound));
 
     // Abort removes the upload; a late part is refused and nothing appears.
     assert!((200..300).contains(&open.abort()));
     let (late, _) = open.part(2, b"tail");
     eprintln!("part after abort: HTTP {late}");
-    assert!(late >= 400);
+    assert_eq!(late, 404, "a part for an aborted upload is NoSuchUpload");
     assert_eq!(run(direct.head(&ctx, &key)), Err(Error::NotFound));
 }
 

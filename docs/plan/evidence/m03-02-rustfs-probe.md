@@ -60,14 +60,14 @@ Provisional: RustFS 1.0.4 (same digest), one container, loopback, debug build. R
 | Case | Observed |
 |---|---|
 | Create, response lost after RustFS committed | the adapter reports `UnknownOutcome`; `resolve` finds the write by identity and returns the original receipt; re-sending the same request returns the same version, no second version |
-| Create, request lost before RustFS saw it | `UnknownOutcome` to the client; `resolve` answers `ResolutionUnavailable` (certified absent); the retry is then the first write |
+| Create, request lost before RustFS saw it | `UnknownOutcome` to the client (the proxy's fault counter shows it dropped the request before the store); `resolve` answers `ResolutionUnavailable`, the adapter's answer when it finds no accepted write; the retry then succeeds |
 | Compare-and-set, response lost after commit | `UnknownOutcome`; `resolve` and a replay return the same receipt; a rival holding the old token gets `Conflict` |
 | Multipart: parts uploaded, never completed | `HEAD` is not found; no partial object |
 | Multipart: complete naming a part never uploaded | HTTP 400 `InvalidPart`; key still absent |
 | Multipart: abort, then upload a part | abort succeeds; the late part is HTTP 404; key absent |
-| Multipart: complete with `If-None-Match: *` onto a new key | HTTP 200; one version of the right length |
+| Multipart: complete with `If-None-Match: *` onto a new key | HTTP 200; the object is visible with the right length (versions are not listed by the test) |
 | Multipart: a second complete with `If-None-Match: *` onto an existing key | HTTP 412; the first version is still current |
 
-The three response-loss tests were run with the proxy's fault removed and failed (three of five red), then restored and green; the multipart cases record store behaviour, not adapter behaviour.
+The three response-loss tests were run with the proxy's fault removed and failed (three of five red); each fault test also asserts the proxy fired exactly one fault, then restored and green; the multipart cases record store behaviour, not adapter behaviour.
 
 **Not done: MinIO as a second target.** `docker.io/minio/minio` is gone and the quay.io image needs credentials; pulling an unvetted image from another registry is not done under the project's rule against running unvetted binaries. The contract suite has therefore not been run on MinIO; M03.10 stays open for that, and the adapter's multipart upload (files above 16 MiB) is still unimplemented: this probe shows RustFS's multipart is safe to build on, not that the adapter uses it.
