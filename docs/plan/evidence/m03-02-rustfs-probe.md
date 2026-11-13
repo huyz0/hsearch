@@ -31,7 +31,7 @@ The probe exits non-zero on any required failure, and CI runs it plus the restar
 
 `If-Match` compares the ETag (a body hash). Re-putting identical bytes over a version keeps the ETag, so
 a conditional update against the older version can succeed. Version ids differ, so reads stay exact.
-Callers that need a strict fence include a sequence number in the payload (the M20.03 root does).
+Callers that need a strict fence include a sequence number in the payload (the M20.03 root does). A retry of a `Matches` update with identical bytes also passes `If-Match` and writes a new version rather than replaying, for the same reason.
 
 ## Not covered by this probe (moved to M03.10)
 
@@ -46,7 +46,7 @@ real RustFS response. MinIO as a second target could not be pulled in this envir
 `crates/s3` (`hsearch-s3`): `ObjectBackend` and `MetadataStore` over the S3 API. The M03.01 public
 history (`conditional_history`), the 8-way simultaneous CAS test, lost-race and replay, identity
 conflict, bounded resolution, typed error mapping and budget/cancel/deadline tests pass against the
-pinned RustFS (11 integration tests, 9 unit tests). Line coverage of the crate: 95.6%, measured with
+pinned RustFS (13 integration tests, 9 unit tests). Line coverage of the crate: 95.7%, measured with
 `cargo llvm-cov` while RustFS was running (floor 90%).
 
 Request cost, counted by the adapter per operation type: a successful write is one PUT; a head is one

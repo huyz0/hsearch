@@ -47,7 +47,7 @@ use std::time::{Duration, SystemTime};
 /// Most versions a recovery scan inspects before giving up.
 pub const SCAN_LIMIT: usize = 16;
 /// Largest opaque metadata this adapter stores (S3 user metadata is capped at 2 KiB).
-pub const MAX_METADATA: usize = 900;
+pub const MAX_METADATA: usize = 700;
 /// Upper bound charged to the response budget for one write receipt's version token.
 const TOKEN_BOUND: u64 = 128;
 
@@ -163,6 +163,15 @@ fn split_token(token: &VersionToken) -> Result<(&str, &str), Error> {
     std::str::from_utf8(token.as_bytes())
         .ok()
         .and_then(|text| text.split_once('\n'))
+        // Both halves travel in headers or query strings: refuse control bytes.
+        .filter(|(id, etag)| {
+            !id.is_empty()
+                && !etag.is_empty()
+                && id
+                    .bytes()
+                    .chain(etag.bytes())
+                    .all(|b| (0x20..0x7f).contains(&b))
+        })
         .ok_or(Error::InvalidInput)
 }
 
@@ -342,7 +351,7 @@ impl S3Store {
                 .limit(response_limit)
                 .read_to_vec()
                 .map_err(|error| match error {
-                    ureq::Error::BodyExceedsLimit(_) => Error::Corrupt,
+                    ureq::Error::BodyExceedsLimit(_) if !mutation => Error::Corrupt,
                     _ if mutation => Error::UnknownOutcome,
                     _ => Error::Unavailable,
                 })?
@@ -529,7 +538,13 @@ impl S3Store {
             .iter()
             .filter(|v| v.key == request.key.as_bytes())
             .collect();
-        let more = page.truncated || candidates.len() > SCAN_LIMIT;
+        // Versions sort by key, so history can continue past the page only when the
+        // page ends inside this key's versions; siblings sharing the prefix come later.
+        let ends_in_key = page
+            .versions
+            .last()
+            .is_some_and(|v| v.key == request.key.as_bytes());
+        let more = (page.truncated && ends_in_key) || candidates.len() > SCAN_LIMIT;
         for listed in candidates.into_iter().take(SCAN_LIMIT) {
             if boundary.as_deref() == Some(listed.version_id.as_str()) {
                 reached = true;
@@ -544,9 +559,6 @@ impl S3Store {
             if reply.header(META_DIGEST) != Some(digest(request).as_str()) {
                 return Err(Error::IdentityConflict);
             }
-            context.charge_response(
-                request.request_id.len() as u64 + TOKEN_BOUND + 8 + info.metadata.len() as u64,
-            )?;
             return Ok(Some(WriteReceipt {
                 request_id: request.request_id.clone(),
                 object: info,
@@ -591,12 +603,18 @@ impl S3Store {
         )?;
         match reply.status {
             200..=299 => {
-                let etag = reply.header("etag").ok_or(Error::Unsupported)?;
-                let version_id = reply.header("x-amz-version-id").ok_or(Error::Unsupported)?;
+                // Accepted: a receipt we cannot build is an unknown outcome to resolve,
+                // never a refusal. (Missing version headers mean versioning is off;
+                // `verify_versioning` reports that as Unsupported.)
+                let version = reply
+                    .header("etag")
+                    .zip(reply.header("x-amz-version-id"))
+                    .and_then(|(etag, id)| token(id, etag).ok())
+                    .ok_or(Error::UnknownOutcome)?;
                 Ok(WriteReceipt {
                     request_id: request.request_id.clone(),
                     object: ObjectInfo {
-                        version: token(version_id, etag)?,
+                        version,
                         length: request.payload.len() as u64,
                         metadata: request.metadata.clone(),
                     },
@@ -649,6 +667,9 @@ impl ObjectBackend for S3Store {
         Box::pin(async move {
             context.charge_request(key.len() as u64 + version.len() as u64 + 16)?;
             let (version_id, _) = split_token(version)?;
+            if range.length() > 16 * 1024 * 1024 {
+                return Err(Error::BudgetExceeded);
+            }
             context.charge_response(range.length())?;
             let query = format!("versionId={}", encode(version_id.as_bytes(), false));
             let end = range.offset() + range.length() - 1;
@@ -700,10 +721,16 @@ impl MetadataStore for S3Store {
         request: &'a Mutation,
     ) -> Operation<'a, WriteReceipt> {
         Box::pin(async move {
-            match self.find_accepted(context, request)? {
-                Some(receipt) => Ok(receipt),
-                None => Err(Error::ResolutionUnavailable),
-            }
+            let receipt = self
+                .find_accepted(context, request)?
+                .ok_or(Error::ResolutionUnavailable)?;
+            context.charge_response(
+                request.request_id.len() as u64
+                    + TOKEN_BOUND
+                    + 8
+                    + receipt.object.metadata.len() as u64,
+            )?;
+            Ok(receipt)
         })
     }
 }

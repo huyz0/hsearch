@@ -1,7 +1,7 @@
 //! The M03.01 storage contract against a real S3-compatible store.
 //!
 //! Needs `HSEARCH_S3_ENDPOINT` (host:port), `HSEARCH_S3_ACCESS_KEY` and
-//! `HSEARCH_S3_SECRET_KEY`: RustFS first, MinIO second (CI runs both). Without
+//! `HSEARCH_S3_SECRET_KEY`: RustFS first (CI); MinIO is tracked as M03.10. Without
 //! them each test prints SKIPPED and passes, unless `HSEARCH_S3_REQUIRED=1`,
 //! which CI sets so a missing store is a failure rather than a silent skip.
 #[path = "../../object/tests/support/mod.rs"]
@@ -459,13 +459,13 @@ fn provider_statuses_map_to_typed_errors() {
         run(store.create(&context(), &request)),
         Err(Error::UnknownOutcome)
     );
-    // A 200 without version headers means versioning is off: unsupported, not guessed.
+    // An accepted write whose receipt cannot be built is unknown, never a refusal.
     let store = offline(canned(vec![
         "HTTP/1.1 200 OK\r\netag: \"x\"\r\ncontent-length: 0\r\n\r\n",
     ]));
     assert_eq!(
         run(store.create(&context(), &request)),
-        Err(Error::Unsupported)
+        Err(Error::UnknownOutcome)
     );
     let store = offline(canned(vec!["HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n"]));
     assert_eq!(store.verify_versioning(&context()), Err(Error::Unsupported));
@@ -482,4 +482,50 @@ fn a_dropped_connection_is_unknown_for_writes_and_unavailable_for_reads() {
         run(store.create(&context(), &request)),
         Err(Error::UnknownOutcome)
     );
+}
+
+#[test]
+fn tight_budgets_survive_a_replayed_accept_and_siblings_do_not_hide_conflicts() {
+    let Some(store) = store() else { return };
+    let request = mutation(b"r", b"k", b"v", Precondition::Absent);
+    run(store.create(&context(), &request)).unwrap();
+    // Retry with room for exactly one receipt: the replay must not be a budget refusal.
+    let one_receipt = support::limited(1 << 20, 1 + 128 + 8 + 15 + 1, 10);
+    assert!(run(store.create(&one_receipt, &request)).is_ok());
+    // Many sibling keys sharing the prefix must not turn a plain conflict into "unavailable".
+    for i in 0..20 {
+        let id = format!("s{i}");
+        let key = format!("k{i}");
+        run(store.create(
+            &context(),
+            &mutation(id.as_bytes(), key.as_bytes(), b"x", Precondition::Absent),
+        ))
+        .unwrap();
+    }
+    let other = mutation(b"other", b"k", b"w", Precondition::Absent);
+    assert_eq!(run(store.create(&context(), &other)), Err(Error::Conflict));
+}
+
+#[test]
+fn control_bytes_in_a_token_never_reach_the_network() {
+    let Some(store) = store() else { return };
+    let before = store.counts();
+    let bad = mutation(
+        b"b",
+        b"k",
+        b"x",
+        Precondition::Matches(VersionToken::new(b"v\n\"e\r\nX: y\"").unwrap()),
+    );
+    assert_eq!(
+        run(store.compare_exchange(&context(), &bad)),
+        Err(Error::InvalidInput)
+    );
+    let huge = ByteRange::new(0, 16 * 1024 * 1024 + 1).unwrap();
+    let key = ObjectKey::new(b"k").unwrap();
+    let token = VersionToken::new(b"v\n\"e\"").unwrap();
+    assert_eq!(
+        run(store.read_range(&context(), &key, &token, huge)),
+        Err(Error::BudgetExceeded)
+    );
+    assert_eq!(store.counts(), before);
 }

@@ -35,7 +35,9 @@ jobs:
       - name: fmt, clippy, tests, plan and policy checks
         run: python3 tools/check.py
       - name: RustFS capability probe and restart check
+        shell: bash
         run: |
+          set -euo pipefail
           cargo run --locked -q -p hsearch-s3 --example probe -- run | tee -a "$GITHUB_STEP_SUMMARY"
           cargo run --locked -q -p hsearch-s3 --example probe -- write
           scripts/rustfs.sh restart
