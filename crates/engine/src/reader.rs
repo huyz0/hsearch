@@ -115,6 +115,18 @@ impl Snapshot {
         }
         Ok(snapshot)
     }
+    /// Open the last native commit in `directory` read-only, with no writer, no
+    /// lock and no retry state. This is how a search role serves committed
+    /// segments, including over a remote-backed directory. Only a native commit
+    /// is visible; nothing is verified against hsearch retry history.
+    pub fn open_committed<D: lucene_store::Directory>(
+        directory: &crate::EngineDirectory<D>,
+        schema: Schema,
+    ) -> Result<Self> {
+        let reader = DirectoryReader::open(&directory.observed).map_err(|_| Error::Native)?;
+        let counter = Arc::new(AtomicUsize::new(0));
+        Self::new(reader, schema, Reservation::new(&counter)?)
+    }
     /// Read one logical identity from this frozen snapshot. This is not an
     /// authoritative latest GET or a distributed freshness guarantee.
     pub fn get(&self, id: &str, projection: &[&str]) -> Result<Option<Hit>> {

@@ -15,6 +15,8 @@ lucene-search.workspace = true
 lucene-store.workspace = true
 
 [dev-dependencies]
+hsearch-object = { path = "../object" }
+hsearch-s3 = { path = "../s3" }
 hsearch-testkit.workspace = true
 
 [lints]

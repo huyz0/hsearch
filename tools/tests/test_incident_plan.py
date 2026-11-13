@@ -20,7 +20,9 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M02.02"]["status"] = "planned"  # Private preacceptance model only.
         self.tasks["M03.01"]["status"] = "planned"  # Private preacceptance model only.
         self.tasks["M03.02"]["status"] = "planned"  # Done later; keep this model pre-acceptance.
-        self.tasks["M20.01"]["status"] = "planned"  # Same: depends on M02.02 and M03.02.
+        for tid in self.tasks:  # The first runnable slice lands after this draft model.
+            if tid.startswith("M20."):
+                self.tasks[tid]["status"] = "planned"
         self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.
         milestones["M01"]["status"] = "in_progress"
 

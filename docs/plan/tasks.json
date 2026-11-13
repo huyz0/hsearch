@@ -1129,8 +1129,13 @@
             "M02.02"
           ],
           "owner": "engine/architecture",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m20-02-object-stored-segments.md",
+              "result": "Search over remote-backed segments (in-memory remote and real RustFS 1.0.4) equals search over a local directory, including after deleting the cache; no LIST while opening; whole-file fetches only. Needed no upstream change. Provisional; range reads are M04.02."
+            }
+          ]
         },
         {
           "id": "M20.03",
