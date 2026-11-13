@@ -1,6 +1,6 @@
 # Product requirement coverage
 
-Maps each requirement in [product-requirements](product-requirements.md) (PR-01 to PR-54) to the tasks that deliver it. The first task listed is the one that builds it; later ones prove, extend or measure it. Task ids are in [tasks.json](tasks.json), and the milestone pages are linked from the [roadmap](roadmap.md).
+Maps each requirement in [product-requirements](product-requirements.md) (PR-01 to PR-54) to the tasks that deliver it. Tasks are listed roughly in build order, but some early ones only probe or audit (for example M03.02, M02.12); the note column says where that matters. Task ids are in [tasks.json](tasks.json), and the milestone pages are linked from the [roadmap](roadmap.md).
 
 This table is written by hand and no gate checks it. It was verified once, on 13 November 2026, by a script that confirmed every PR id appears here and every task id exists in `tasks.json`; if you add a task that delivers a requirement, add it here.
 
@@ -8,7 +8,7 @@ This table is written by hand and no gate checks it. It was verified once, on 13
 
 1. **M03.02, then M20** is the lean path to something that runs: a node over RustFS that takes `_bulk`, answers `_search` and recovers from the object store alone. M20 is deliberately small and its formats are disposable (D19).
 2. **M04 to M06** turn that slice into the durable store: engine bridge, security, the full commit protocol and the refresh modes.
-3. **M21 to M23** add the product features that need only one node: documents and mappings, index management and jobs, vectors.
+3. **M21 to M23** add the product features that work on one node: documents and mappings, index management and jobs, vectors. Only M21.01 to M21.04, M21.07 and M23 can start right after M20; real-time get, `_update`, PIT, aliases, jobs and snapshots wait for parts of M06 (and M06.05 for the paged catalog), and M06.01 waits for the security work in M05.
 4. **M07 to M13** make it distributed and elastic; **M24** adds extension modules once roles exist.
 5. **M14 to M17** are performance, providers, migration and release.
 
@@ -31,7 +31,7 @@ M02 and M03 run beside M20: they freeze the numbers and formats that M20 leaves 
 | PR-06 | Acknowledged write never lost | M20.03, M06.01, M06.06, M17.02 | |
 | PR-07 | Durable versus searchable per request | M20.03, M06.07 | M20 has `false` and a simple `wait_for`; M06.07 adds coalesced `true` |
 | PR-08 | Visibility p50 < 500 ms, p99 < 5 s | M02.05, M06.07 | Load and hardware fixed in M02.05 |
-| PR-09 | S3, GCS, Azure, S3-compatible stores | M03.02, M20.01, M03.06, M15.01, M15.02, M15.03 | RustFS first, MinIO second |
+| PR-09 | S3, GCS, Azure, S3-compatible stores | M20.01, M03.02, M03.06, M15.01, M15.02, M15.03 | RustFS first, MinIO second |
 | PR-10 | Format versioning, old corpus opens | M03.03, M16.02, M16.08 | Fleet format-version record specified in M03.03 |
 
 ## Cost
@@ -72,7 +72,7 @@ M02 and M03 run beside M20: they freeze the numbers and formats that M20 leaves 
 | --- | --- | --- | --- |
 | PR-20 | OpenSearch API compatibility as close as practical | M02.01 (done), M06.05, M07.04, M16.01 | Matrix rows A01 to A16 in [api-compatibility](api-compatibility.md) |
 | PR-21 | Full-text search through lucene-rust | M02.02 (done), M04.01, M07.04 | |
-| PR-22 | HNSW and IVF, quantization, disk variants | M02.12, M23.01, M23.02, M23.03 | |
+| PR-22 | HNSW and IVF, quantization, disk variants | M23.01, M23.02, M23.03, M02.12 | |
 | PR-23 | Extension modules, native C ABI and WASM | M24.01, M24.02, M24.03, M24.04, M24.05, M16.06 | Loader crate is the only `unsafe` (D18) |
 | PR-53 | Engine gaps fixed upstream | M04.01, M04.02, M14.03, M23.03, M02.12 | Rule applies to every task that needs an engine change |
 | PR-54 | Paging, PIT, scroll | M22.01, M07.05 | |
@@ -83,7 +83,7 @@ M02 and M03 run beside M20: they freeze the numbers and formats that M20 leaves 
 | --- | --- | --- | --- |
 | PR-24 | BYOK per index, default key otherwise | M05.02, M05.04 | |
 | PR-25 | Re-key by same-index replication | M11.02, M11.05 | |
-| PR-26 | Crypto-shredding | M05.05 | |
+| PR-26 | Crypto-shredding | M05.05 | Added to M05.05's deliverables and validation |
 | PR-27 | mTLS, RBAC, audit of rotation and revocation | M05.01, M05.05, M07.02 | |
 
 ## Replication, failure and availability

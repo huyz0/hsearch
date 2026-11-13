@@ -1107,6 +1107,7 @@
           "title": "Open the engine over object-stored segments",
           "goal": "Serve immutable Lucene segment files from the object store through a disposable local cache.",
           "deliverables": [
+            "First check whether lucene-rust already has a pluggable directory or input hook for whole-file fetch; if not, the smallest additive upstream PR (a new directory implementation behind a new option or crate, nothing that changes existing OpenSearch behaviour) and a pin bump before this task closes. A local wrapper that reimplements engine behaviour is not allowed (PR-53)",
             "Engine-side directory in `hsearch-engine` that fetches whole immutable files into a bounded local cache; range-native reads arrive later through M04.02",
             "Cache holds nothing that is not in the store; eviction and loss are always safe"
           ],
@@ -1157,12 +1158,13 @@
           "goal": "Give an external client something to run against.",
           "deliverables": [
             "`hsearch-node` binary (single process, all roles) with PUT /{index} with a mapping, POST /_bulk, GET /{index}/_doc/{id}, POST /{index}/_search (match, term, range, bool, from/size) and POST /{index}/_refresh",
-            "NDJSON bulk bodies parsed as a stream under a configured buffer, per-item results in order, request byte and item limits from the API profile's example limits",
-            "Unknown routes and parameters rejected with structured errors; loopback bind by default and no authentication (M05 adds mTLS and RBAC); real-time get is M21.05"
+            "NDJSON bulk bodies parsed as a stream under a configured buffer for one request, per-item results in order, request byte and item limits from the API profile's example limits; concurrent-bulk memory ceilings and the document size limit are M21.01",
+            "Unknown routes and parameters rejected with structured errors; loopback bind by default and no authentication (M05 adds mTLS and RBAC); real-time get is M21.05",
+            "New `hsearch-node` crate registered in the workspace layering check and the 90% coverage floor, with the HTTP stack exact-pinned and licence-noted; no layering edge outside the rules in AGENTS.md"
           ],
           "validation": [
             "Plain HTTP client script, not an SDK, against RustFS: bulk 100k documents, search, restart the node, search again; one over each limit is refused",
-            "Compare a query set with the Java fixture corpus results where the fixtures exist"
+            "Compare a query set with the engine differential documents under fixtures/engine-research (not the stale native inputs in fixtures/api/core-v1) where results exist"
           ],
           "definition_of_done": [
             "The calls above work against RustFS from outside the process and return the shapes api-compatibility.md promises for the subset",
@@ -2666,7 +2668,10 @@
           ],
           "depends_on": [
             "M02.12",
-            "M04.01"
+            "M04.01",
+            "M20.04",
+            "M21.02",
+            "M21.03"
           ],
           "owner": "engine/search",
           "status": "planned",
