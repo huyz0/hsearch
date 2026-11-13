@@ -1,5 +1,5 @@
 //! Typed query lowering with a shared node, byte, depth and token budget.
-use crate::{Error, Kind, MAX_DOCUMENTS, MAX_TERMS, Result, Schema, Value};
+use crate::{Error, Kind, MAX_TERMS, Result, Schema, Value};
 use lucene_search::query::{
     BooleanQuery, Clause, MatchAllDocsQuery, MatchNoDocsQuery, PhraseQuery, PointsRangeQuery,
     TermQuery,
@@ -127,7 +127,7 @@ fn clause(schema: &Schema, query: &Query<'_>, depth: usize, budget: &mut Budget)
     budget.charge(1, 0, 0)?;
     match query {
         Query::All => Ok(Clause::MatchAllDocs(MatchAllDocsQuery::new(
-            MAX_DOCUMENTS as i32,
+            schema.limits.documents as i32,
         ))),
         Query::Unsupported => Err(Error::Unsupported),
         Query::Id(id) => {
@@ -228,7 +228,7 @@ fn clause(schema: &Schema, query: &Query<'_>, depth: usize, budget: &mut Budget)
             // A pure negative/empty bool starts from the admitted live universe.
             if must.is_empty() && filter.is_empty() && should.is_empty() {
                 must.push(Clause::MatchAllDocs(MatchAllDocsQuery::new(
-                    MAX_DOCUMENTS as i32,
+                    schema.limits.documents as i32,
                 )));
             }
             Ok(Clause::Boolean(Box::new(BooleanQuery {

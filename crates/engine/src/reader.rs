@@ -1,5 +1,5 @@
 //! Frozen, bounded native readers. Search never mutates a writer.
-use crate::{Error, Kind, MAX_DOCUMENTS, MAX_FIELDS, Query, Result, Schema};
+use crate::{Error, Kind, MAX_FIELDS, Query, Result, Schema};
 use lucene_codecs::stored_fields::FieldValue;
 use lucene_search::directory_reader::DirectoryReader;
 use lucene_search::index_searcher::IndexSearcher;
@@ -108,8 +108,9 @@ impl Snapshot {
             schema,
             _reservation: reservation,
         };
-        if !(0..=MAX_DOCUMENTS as i32).contains(&snapshot.reader.max_doc())
-            || snapshot.reader.segment_readers().len() > 32
+        let limits = snapshot.schema.limits;
+        if !(0..=limits.documents as i32).contains(&snapshot.reader.max_doc())
+            || snapshot.reader.segment_readers().len() > limits.segments
         {
             return Err(Error::Limit);
         }
@@ -145,7 +146,7 @@ impl Snapshot {
         size: usize,
         projection: &[&str],
     ) -> Result<SearchResult> {
-        if size > MAX_DOCUMENTS || sort.len() > 4 || projection.len() > MAX_FIELDS {
+        if size > self.schema.limits.documents || sort.len() > 4 || projection.len() > MAX_FIELDS {
             return Err(Error::Limit);
         }
         let query = crate::query::lower(&self.schema, query)?;
@@ -195,7 +196,15 @@ impl Snapshot {
                 None,
             )
             .map_err(|_| Error::Native)?;
-        if searcher.timed_out() || result.total.value > MAX_DOCUMENTS as u64 {
+        // Past the collector's counting threshold the value is only a lower
+        // bound, so the exact count comes from a counting pass.
+        let total = if result.total.relation == lucene_search::collector::TotalHitsRelation::EqualTo
+        {
+            result.total.value
+        } else {
+            searcher.count(&query).map_err(|_| Error::Native)?
+        };
+        if searcher.timed_out() || total > self.schema.limits.documents as u64 {
             return Err(Error::Limit);
         }
         let hits = result
@@ -204,10 +213,7 @@ impl Snapshot {
             .take(size)
             .map(|h| self.hit(h.doc, projection))
             .collect::<Result<_>>()?;
-        Ok(SearchResult {
-            hits,
-            total: result.total.value,
-        })
+        Ok(SearchResult { hits, total })
     }
     fn hit(&self, doc: i32, projection: &[&str]) -> Result<Hit> {
         let id = match stored(&self.reader, doc, "_hs_id")? {
@@ -277,7 +283,9 @@ pub(crate) fn verify(
     expected: &BTreeMap<String, crate::adapter::Operation>,
 ) -> Result<()> {
     // Use the same bounded production reader and preserve duplicate detection.
-    if reader.max_doc() > MAX_DOCUMENTS as i32 || reader.segment_readers().len() > 32 {
+    if reader.max_doc() > schema.limits.documents as i32
+        || reader.segment_readers().len() > schema.limits.segments
+    {
         return Err(Error::Limit);
     }
     let fields: Vec<_> = schema.fields.iter().map(|(n, _)| n.as_str()).collect();
@@ -290,7 +298,7 @@ pub(crate) fn verify(
     let query = crate::query::lower(schema, &Query::All)?;
     let result = IndexSearcher::new(&segments, &norms)
         .map_err(|_| Error::Native)?
-        .search(&query, MAX_DOCUMENTS)
+        .search(&query, schema.limits.documents)
         .map_err(|_| Error::Native)?;
     let mut seen = std::collections::BTreeSet::new();
     if result.score_docs.len() != expected.values().filter(|op| op.fields.is_some()).count() {
