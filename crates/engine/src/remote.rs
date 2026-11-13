@@ -59,6 +59,15 @@ fn io_error(kind: io::ErrorKind, what: &str) -> lucene_store::Error {
     lucene_store::Error::Io(io::Error::new(kind, what.to_owned()))
 }
 
+/// A file name is one path component: never empty, `.`/`..`, absolute or nested.
+fn valid_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0'])
+}
+
+fn invalid_name() -> lucene_store::Error {
+    io_error(io::ErrorKind::InvalidInput, "invalid file name")
+}
+
 fn poisoned() -> lucene_store::Error {
     io_error(io::ErrorKind::Other, "cache lock poisoned")
 }
@@ -86,12 +95,19 @@ impl<R: RemoteFiles> CachedDirectory<R> {
         } else {
             std::fs::create_dir_all(&root)?;
         }
+        let backed: BTreeSet<String> = files.into_iter().collect();
+        if !backed.iter().all(|name| valid_name(name)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "manifest names must be single path components",
+            ));
+        }
         Ok(Self {
             local: FsDirectory::open(root.clone()),
             remote,
             root,
             max_bytes,
-            backed: Mutex::new(files.into_iter().collect()),
+            backed: Mutex::new(backed),
             cache: Mutex::new(Cache::default()),
             fetches: AtomicU64::new(0),
         })
@@ -118,6 +134,12 @@ impl<R: RemoteFiles> CachedDirectory<R> {
     /// Declare that `name` is now in the remote store, making it evictable and
     /// refetchable. Call only after the store acknowledged the file.
     pub fn mark_remote(&self, name: &str) -> io::Result<()> {
+        if !valid_name(name) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid file name",
+            ));
+        }
         self.backed
             .lock()
             .map_err(|_| io::Error::other("manifest lock poisoned"))?
@@ -153,9 +175,18 @@ impl<R: RemoteFiles> CachedDirectory<R> {
             };
             remove_cached(&self.local, cache, &victim)?;
         }
-        let mut out = self.local.create_output(name)?;
-        out.write_bytes(&bytes);
-        out.close()?;
+        // `create_output` refuses an existing file: a leftover from a failed write or
+        // a file that was local before `mark_remote` is replaced, never wedged on.
+        let _ = self.local.delete_file(name);
+        let written = self.local.create_output(name).and_then(|mut out| {
+            out.write_bytes(&bytes);
+            out.close()
+        });
+        if let Err(error) = written {
+            // Drop a half-written file so a retry starts clean; nothing was counted.
+            let _ = self.local.delete_file(name);
+            return Err(error);
+        }
         cache.order.push_back(name.to_owned());
         cache.sizes.insert(name.to_owned(), length);
         cache.bytes += length;
@@ -164,13 +195,16 @@ impl<R: RemoteFiles> CachedDirectory<R> {
 }
 
 fn remove_cached(local: &FsDirectory, cache: &mut Cache, name: &str) -> lucene_store::Result<()> {
+    // Account only once the file is really gone, so a failed delete cannot leave
+    // bytes on disk that the byte count has forgotten.
+    match local.delete_file(name) {
+        Ok(()) => {}
+        Err(lucene_store::Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
     cache.bytes -= cache.sizes.remove(name).unwrap_or(0);
     cache.order.retain(|n| n != name);
-    match local.delete_file(name) {
-        Ok(()) => Ok(()),
-        Err(lucene_store::Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
-    }
+    Ok(())
 }
 
 impl<R: RemoteFiles> Directory for CachedDirectory<R> {
@@ -181,15 +215,30 @@ impl<R: RemoteFiles> Directory for CachedDirectory<R> {
     }
 
     fn open(&self, name: &str) -> lucene_store::Result<Input> {
+        if !valid_name(name) {
+            return Err(invalid_name());
+        }
+        // Lock order is cache, then manifest, everywhere, so a concurrent delete of
+        // the same name is ordered against this open rather than interleaved.
+        let mut cache = self.cache.lock().map_err(|_| poisoned())?;
         let remote_backed = self.backed.lock().map_err(|_| poisoned())?.contains(name);
         if !remote_backed {
+            drop(cache);
             return self.local.open(name);
         }
-        let mut cache = self.cache.lock().map_err(|_| poisoned())?;
         if cache.sizes.contains_key(name) {
-            cache.order.retain(|n| n != name);
-            cache.order.push_back(name.to_owned());
-            return self.local.open(name);
+            match self.local.open(name) {
+                Ok(input) => {
+                    cache.order.retain(|n| n != name);
+                    cache.order.push_back(name.to_owned());
+                    return Ok(input);
+                }
+                // The cache was damaged behind our back: forget it and refetch.
+                Err(lucene_store::Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
+                    remove_cached(&self.local, &mut cache, name)?;
+                }
+                Err(error) => return Err(error),
+            }
         }
         self.fetch_into_cache(name, &mut cache)
     }
@@ -217,11 +266,15 @@ impl<R: RemoteFiles> Directory for CachedDirectory<R> {
     /// Removing a remote-backed file forgets it locally; the store's copy is
     /// collected by a separate, deliberate step, never by an engine merge.
     fn delete_file(&self, name: &str) -> lucene_store::Result<()> {
+        if !valid_name(name) {
+            return Err(invalid_name());
+        }
+        let mut cache = self.cache.lock().map_err(|_| poisoned())?;
         let removed = self.backed.lock().map_err(|_| poisoned())?.remove(name);
         if removed {
-            let mut cache = self.cache.lock().map_err(|_| poisoned())?;
             remove_cached(&self.local, &mut cache, name)
         } else {
+            drop(cache);
             self.local.delete_file(name)
         }
     }

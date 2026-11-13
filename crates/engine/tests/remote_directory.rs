@@ -176,3 +176,39 @@ fn the_cache_directory_is_emptied_on_creation_and_deletes_forget_remote_files() 
     );
     directory.delete_file("local-only").unwrap();
 }
+
+#[test]
+fn names_must_be_single_path_components() {
+    let store = Store::default();
+    let (_written, names) = write_and_upload(&store);
+    for bad in ["../escape", "/abs", "a/b", "..", ".", "", "a\\b"] {
+        let cache = Scratch::new("names");
+        let result = CachedDirectory::new(&cache.0, &store, vec![bad.to_string()], 1 << 20);
+        assert!(result.is_err(), "{bad:?} must be refused in the manifest");
+        let directory = CachedDirectory::new(&cache.0, &store, names.clone(), 1 << 20).unwrap();
+        assert!(directory.mark_remote(bad).is_err());
+        assert!(directory.open(bad).is_err());
+        assert!(directory.delete_file(bad).is_err());
+    }
+}
+
+#[test]
+fn a_leftover_or_previously_local_file_is_replaced_not_wedged() {
+    let store = Store::default();
+    let (_written, names) = write_and_upload(&store);
+    let cache = Scratch::new("leftover");
+    let directory = CachedDirectory::new(&cache.0, &store, names.clone(), 1 << 26).unwrap();
+    // A file written locally under a name that later becomes remote-backed.
+    let name = names[0].clone();
+    directory.delete_file(&name).unwrap();
+    let mut out = directory.create_output(&name).unwrap();
+    lucene_store::DataOutput::write_bytes(&mut out, b"half-written junk");
+    out.close().unwrap();
+    directory.mark_remote(&name).unwrap();
+    let fetched = directory.open(&name).unwrap();
+    assert_eq!(fetched.len(), store.files.lock().unwrap()[&name].len());
+    assert_eq!(
+        std::fs::read(cache.0.join(&name)).unwrap(),
+        store.files.lock().unwrap()[&name]
+    );
+}
