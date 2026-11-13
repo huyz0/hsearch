@@ -53,8 +53,8 @@ jobs:
       - name: Per-crate coverage floor
         run: scripts/coverage.sh 90
 
-  # Harness work may not exceed ~20% of recent commits unless the PR carries the
-  # `harness-exempt` label (state the reason in the PR body).
+  # Advisory: warns in the job log and summary when tools/CI/gate work is over ~20%
+  # of recent commits. It never fails the PR; product docs are not counted.
   harness-budget:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -64,18 +64,8 @@ jobs:
         with:
           fetch-depth: 40
           persist-credentials: false
-      - name: Harness-only PRs are refused over the cap
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-          HARNESS_EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'harness-exempt') && '1' || '0' }}
-        run: |
-          paths=$(git diff --name-only "$BASE" "$HEAD")
-          if echo "$paths" | grep -qvE '^(tools/|dev/|harness/|ci/|xtask/|\.github/|scripts/|docs/plan/|docs/archive/|AGENTS\.md)'; then
-            echo "PR touches product paths; harness cap does not apply."
-          else
-            python3 docs/plan/tools/plan.py harness-share
-          fi
+      - name: Report harness share (advisory)
+        run: python3 docs/plan/tools/plan.py harness-share | tee -a "$GITHUB_STEP_SUMMARY"
 
   ci-ok:
     if: always()

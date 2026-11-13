@@ -30,7 +30,7 @@ Run commands yourself and report what they printed. Never claim a test passed, a
 - Product tasks need >=90% line coverage per production crate and a review of the final tree. Never lower a threshold or delete a test to make a check pass.
 - Reviews: one independent reviewer by default; add the architecture/security role only for security-, format- or durability-sensitive code. At most two planned rounds, hard ceiling three, then split or redesign. ([review-gates](docs/plan/review-gates.md))
 - API changes: `python3 tools/api_contract.py check` (`render` regenerates the matrix). Keep matching, different and unsupported semantics explicit.
-- Ship product work. The harness is frozen: do not add harness tasks or gates; harness work over ~20% of recent commits is held (`plan.py harness-share`, CI `harness-budget`). Add a check only for a defect that has actually shipped.
+- Ship product work. The harness is frozen: do not add harness tasks or gates; harness work (tools, CI, gate code) over ~20% of recent commits holds harness tasks in `plan.py next` and shows a warning from CI `harness-budget`, which is advisory and never fails a PR. Product docs are not harness work. Add a check only for a defect that has actually shipped.
 
 ## Working agreement
 

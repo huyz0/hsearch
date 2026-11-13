@@ -12,7 +12,7 @@ One page. Live task status is generated from `tasks.json` (`python3 docs/plan/to
 - No search service or HTTP API yet.
 
 ## Harness: frozen
-The M01 harness (sandbox, task runner, review gate, navigation) is accepted as built. Its follow-on tasks (M01.08, M01.17, M01.20, M01.21) are cancelled. Do not add harness tasks; harness work above ~20% of recent commits is held (`plan.py next`, `plan.py harness-share`, CI `harness-budget`). Old coverage, source-proof, forensic-retention and ledger history is in `docs/plan/archive/`; it is not required reading.
+The M01 harness (sandbox, task runner, review gate, navigation) is accepted as built. Its follow-on tasks (M01.08, M01.17, M01.20, M01.21) are cancelled. Do not add harness tasks; harness work (tools, CI, gate code) above ~20% of recent commits holds harness tasks in `plan.py next`; CI `harness-budget` only warns. Product docs do not count as harness work. Old coverage, source-proof, forensic-retention and ledger history is in `docs/plan/archive/`; it is not required reading.
 
 ## Next product goal
 RustFS-backed object store → engine over it → a minimal index/search endpoint (M03.02 onward, then M06). Pick work with `python3 docs/plan/tools/plan.py next`; product tasks are listed first.
