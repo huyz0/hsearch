@@ -145,6 +145,30 @@ fn prepare(
 
 /// Split into engine-sized runs of distinct identities, shrinking a run the
 /// engine finds too large. Deterministic, so replay chunks exactly as live.
+/// Upper bound of the bytes the engine charges to its retry history for `ops`.
+fn cost(schema: &Schema, ops: &[Op]) -> usize {
+    let names: usize = schema.fields().map(|(n, _)| n.len()).sum();
+    ops.iter()
+        .map(|op| {
+            let body = match op {
+                Op::Put { fields, .. } => {
+                    names
+                        + fields
+                            .iter()
+                            .map(|f| match f {
+                                Field::Str(s) => s.len(),
+                                _ => 8,
+                            })
+                            .sum::<usize>()
+                }
+                Op::Delete { .. } => 0,
+            };
+            // The request name is charged per chunk; this covers it per operation.
+            op.id().len() + body + 32
+        })
+        .sum()
+}
+
 fn chunks(schema: &Schema, ops: &[Op], first_version: i64) -> Result<Vec<(usize, usize)>> {
     let mut ranges = Vec::new();
     let mut start = 0;
@@ -184,6 +208,10 @@ struct Core<'e, 'd, S> {
     next_version: i64,
     ids: HashMap<String, bool>,
     live: usize,
+    /// Lifetime operations and retry-history bytes the engine has admitted:
+    /// bounds it enforces forever and that no merge or commit reduces.
+    operations: usize,
+    history: usize,
     epoch: u64,
     root_token: VersionToken,
     uploaded: BTreeMap<String, String>,
@@ -255,6 +283,8 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             }
         }
         self.track(&slot.ops);
+        self.operations += slot.ops.len();
+        self.history += cost(&self.schema, &slot.ops);
         self.seq = slot.seq + 1;
         self.next_version = self
             .next_version
@@ -313,6 +343,13 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         let mut bytes = 0usize;
         let mut new_ids: HashSet<String> = HashSet::new();
         let mut puts = 0usize;
+        let mut planned_ops = 0usize;
+        let mut planned_history = 0usize;
+        let window = self.schema.limits().window;
+        let (max_ops, max_history) = (
+            self.schema.limits().operations,
+            self.schema.limits().history_bytes,
+        );
         for bulk in group {
             let verdict = self.validate(&bulk.ops).and_then(|()| {
                 let size = encode_slot(&Slot {
@@ -336,11 +373,17 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
                     || bytes + size > MAX_SLOT_BYTES
                     || self.ids.len() + new_ids.len() + added.len() > limit
                     || self.live + puts + more_puts > limit
+                    || self.operations + planned_ops + bulk.ops.len() > max_ops
+                    || (!window
+                        && self.history + planned_history + cost(&self.schema, &bulk.ops)
+                            > max_history)
                 {
                     return Err(Error::Capacity);
                 }
                 bytes += size;
                 puts += more_puts;
+                planned_ops += bulk.ops.len();
+                planned_history += cost(&self.schema, &bulk.ops);
                 new_ids.extend(added.into_iter().map(str::to_string));
                 Ok(())
             });
@@ -457,6 +500,9 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
                 Written::Unknown => return Err(Error::Unknown),
             }
         }
+        if names.len() > crate::format::MAX_FILES {
+            return Err(Error::Capacity);
+        }
         self.hooks.at(Point::BeforeRoot);
         let root = Root {
             epoch: self.epoch,
@@ -502,15 +548,25 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
     }
 }
 
+/// Unique per call and process, for identities that must not be shared.
+fn nonce() -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!(
+        "{}-{nanos}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    )
+}
+
 /// Create the root of a new index. Fails if it exists.
 pub(crate) fn create_root<S: MetadataStore>(store: &S, name: &str) -> Result<()> {
     // A fresh identity per attempt: a replayed create must not read as success
     // for an index that already existed.
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
     let request = mutation(
-        &format!("{name}/root/create/{}/{nonce}", std::process::id()),
+        &format!("{name}/root/create/{}", nonce()),
         &root_key(name),
         &encode_root(&Root {
             epoch: 0,
@@ -590,6 +646,8 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
         next_version: 1,
         ids: HashMap::new(),
         live: 0,
+        operations: 0,
+        history: 0,
         epoch: root.epoch,
         root_token: token,
         uploaded: BTreeMap::new(),
@@ -624,7 +682,10 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
         covered: root.covered,
         files: root.files,
     };
-    core.swap_root(&bumped, &format!("{}/root/open/{}", core.name, core.epoch))?;
+    // A per-open nonce: two openers building the same bump must not resolve to
+    // each other's receipt and both believe they own the epoch.
+    let request = format!("{}/root/open/{}/{}", core.name, core.epoch, nonce());
+    core.swap_root(&bumped, &request)?;
     core.refresh()?;
     Ok(core)
 }

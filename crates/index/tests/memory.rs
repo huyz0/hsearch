@@ -315,3 +315,105 @@ fn capacity_is_refused_before_a_slot_is_written_and_a_full_engine_merges() {
     // Nothing was poisoned by the refusal.
     assert!(index.bulk(vec![delete("e0")], Wait::Searchable).is_ok());
 }
+
+/// Room for many documents, but the default 256 lifetime operations.
+fn roomy() -> hsearch_engine::Schema {
+    schema()
+        .with_limits(Limits {
+            documents: 1000,
+            ..Limits::BOUNDED
+        })
+        .unwrap()
+}
+
+#[test]
+fn lifetime_operation_and_history_bounds_are_refused_before_a_slot_is_written() {
+    // The engine's lifetime operation bound (256 by default) never resets: the
+    // writer must refuse past it up front, never acknowledge what cannot apply,
+    // and the index must still reopen.
+    let store = store();
+    let (one, two) = (Scratch::new("life-a"), Scratch::new("life-b"));
+    let index = Index::create(Arc::clone(&store), "orders", roomy(), &one.0).unwrap();
+    index
+        .bulk(
+            (0..200).map(|i| put(&format!("d{i}"), "x", i)).collect(),
+            Wait::Durable,
+        )
+        .unwrap();
+    assert_eq!(
+        index
+            .bulk(
+                (0..100).map(|i| put(&format!("d{i}"), "y", i)).collect(),
+                Wait::Durable
+            )
+            .err(),
+        Some(Error::Capacity)
+    );
+    // 56 more operations still fit exactly; then nothing does.
+    index
+        .bulk(
+            (0..56).map(|i| put(&format!("d{i}"), "y", i)).collect(),
+            Wait::Searchable,
+        )
+        .unwrap();
+    assert_eq!(
+        index.bulk(vec![put("d0", "z", 0)], Wait::Durable).err(),
+        Some(Error::Capacity)
+    );
+    let live = all(&index.snapshot().unwrap());
+    index.close();
+    let again = Index::open(store, "orders", roomy(), &two.0).unwrap();
+    assert_eq!(all(&again.snapshot().unwrap()), live);
+}
+
+#[test]
+fn history_window_bytes_are_bounded_under_the_default_profile() {
+    let (store, scratch) = (store(), Scratch::new("history"));
+    let index = Index::create(store, "orders", schema(), &scratch.0).unwrap();
+    // Large values exhaust the 256 KiB retry history long before 256 operations.
+    let big = "v".repeat(4000);
+    let mut accepted = 0;
+    for i in 0..100 {
+        match index.bulk(vec![put(&format!("d{i}"), &big, i)], Wait::Durable) {
+            Ok(_) => accepted += 1,
+            Err(error) => {
+                assert_eq!(error, Error::Capacity);
+                break;
+            }
+        }
+    }
+    assert!((30..100).contains(&accepted), "accepted {accepted}");
+    index.refresh().unwrap();
+    assert_eq!(all(&index.snapshot().unwrap()).0, accepted);
+}
+
+#[test]
+fn two_openers_cannot_both_own_the_same_epoch() {
+    let store = store();
+    let seed = Scratch::new("race-seed");
+    Index::create(Arc::clone(&store), "orders", schema(), &seed.0)
+        .unwrap()
+        .close();
+    for round in 0..8 {
+        let (a, b) = (Scratch::new("race-a"), Scratch::new("race-b"));
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let spawn = |scratch: Scratch| {
+            let (store, barrier) = (Arc::clone(&store), Arc::clone(&barrier));
+            std::thread::spawn(move || {
+                barrier.wait();
+                let result = Index::open(store, "orders", schema(), &scratch.0);
+                (result.map(|_| ()), scratch)
+            })
+        };
+        let (first, second) = (spawn(a), spawn(b));
+        let results = [first.join().unwrap().0, second.join().unwrap().0];
+        let winners = results.iter().filter(|r| r.is_ok()).count();
+        assert!(winners >= 1, "round {round}: {results:?}");
+        // Both succeeding is only possible if they opened strictly one after the
+        // other (the second saw the first's bumped root); a simultaneous open
+        // has exactly one winner and the other is fenced.
+        for result in &results {
+            assert!(matches!(result, Ok(()) | Err(Error::Fenced)), "{result:?}");
+        }
+    }
+}

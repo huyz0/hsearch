@@ -10,7 +10,8 @@ pub const MAX_SLOT_OPS: usize = 4096;
 pub const MAX_SLOT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_FIELD_BYTES: usize = 8192;
 const MAX_FIELDS: usize = 16;
-const MAX_FILES: usize = 4096;
+/// Most segment files a root may name.
+pub const MAX_FILES: usize = 4096;
 
 /// One typed field value, in the schema's canonical order.
 #[derive(Clone, Debug, PartialEq, Eq)]
