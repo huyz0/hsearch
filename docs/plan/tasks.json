@@ -353,7 +353,7 @@
             "tools",
             "docs/plan/development.md",
             "docs/plan/dependencies.json",
-            "docs/plan/evidence/m01-01-bootstrap.md"
+            "docs/plan/archive/evidence/m01-01-bootstrap.md"
           ],
           "track": "harness"
         },
@@ -606,7 +606,7 @@
           "status": "cancelled",
           "evidence": [],
           "track": "harness",
-          "cancelled_reason": "Harness frozen 2026-11-13: the baseline qualification adds no product capability; the harness is accepted as built (see docs/CURRENT.md)."
+          "cancelled_reason": "Harness frozen 2026-11-13: the baseline qualification adds no product capability; the harness is accepted as built (see docs/plan/CURRENT.md)."
         },
         {
           "id": "M01.09",
@@ -937,7 +937,7 @@
           "goal": "Review and integrate a genuine plan-only decomposition after M01.17 hard3, preserving its failed source, counters, every original acceptance predicate and all independent parent/product gates.",
           "deliverables": [
             "docs/plan/forensic-retention-redesign.md with distinct host-context, opaque-image and complete operation-integration trust interfaces and proposed owned paths.",
-            "Versioned committed hard3 history and exact eleven-clause acceptance bridge in docs/plan/evidence/m01-17-hard3-disposition.json and docs/plan/evidence/m01-18-acceptance-bridge.json; no implementation source or claim."
+            "Versioned committed hard3 history and exact eleven-clause acceptance bridge in docs/plan/archive/evidence/m01-17-hard3-disposition.json and docs/plan/archive/evidence/m01-18-acceptance-bridge.json; no implementation source or claim."
           ],
           "validation": [
             "Validate original132 tasks and dependency/acceptance objects unchanged, original M01.17 gate permanently frozen at c0a0050/issued3/both blocked, reviewer enumeration disagreement and new recovery-duration failure preserved.",

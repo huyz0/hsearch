@@ -22,11 +22,11 @@
       "sha256": "237434080e2663ad6ca3ee9b34db1eacff2c16a4b4478072c456ec161b136d81"
     },
     {
-      "path": "docs/plan/evidence/m01-18-acceptance-bridge.json",
+      "path": "docs/plan/archive/evidence/m01-18-acceptance-bridge.json",
       "sha256": "8b7e5ec4ed0228093732619a36da3fdaffee835b4b7d7e9e7acd054347a49131"
     },
     {
-      "path": "docs/plan/evidence/m01-17-hard3-disposition.json",
+      "path": "docs/plan/archive/evidence/m01-17-hard3-disposition.json",
       "sha256": "13722071a42132e86e0337af14358275bc429cefe8567762dc16099e887845c0"
     }
   ],

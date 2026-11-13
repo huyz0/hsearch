@@ -2,6 +2,7 @@ name: ci
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -73,7 +74,6 @@ jobs:
           if echo "$paths" | grep -qvE '^(tools/|dev/|harness/|ci/|xtask/|\.github/|scripts/|docs/plan/|docs/archive/|AGENTS\.md)'; then
             echo "PR touches product paths; harness cap does not apply."
           else
-            git checkout -q "$BASE"
             python3 docs/plan/tools/plan.py harness-share
           fi
 
