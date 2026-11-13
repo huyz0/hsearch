@@ -11,6 +11,8 @@ python3 docs/plan/tools/plan.py check  # ledger, links, generated pages (render 
 python3 tools/api_contract.py check    # API contract matrix (`render` regenerates it)
 ```
 
+Before changing a hot, I/O or bounded path, read the [resource and performance standard](engineering-standards.md#resource-and-performance-standard): measure first, bound every buffer, stream instead of materializing, avoid avoidable copies and allocations, keep the simpler version unless a number justifies more, and record the before/after. Independent tasks run in parallel project threads on separate branches, following the same standard's parallel-thread rules.
+
 The capped RustFS sandbox (`cargo xtask sandbox`, `tools/sandbox.py`) and the OpenSearch reference corpus are optional, run by hand and by the manual `qualify (manual)` workflow. They are frozen: fix them if they break, do not extend them.
 
 Historical development notes are in [archive/development-history.md](archive/development-history.md). They are not required reading.

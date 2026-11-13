@@ -5,6 +5,7 @@
 - **One independent reviewer by default** (`correctness_tests_claims`). A second role (`architecture_security`) is added only when changed paths are security-, format- or durability-sensitive (`tools/review.py` `SENSITIVE`: object/types crates, auth/crypto/TLS/secret/KMS, format/codec/wire, manifest/checkpoint/journal/WAL, commit/CAS). Routing is by path name, not by judgement.
 - Round cap is unchanged: two planned rounds, hard ceiling three; at the ceiling, split or redesign.
 - The reviewer never receives the author's reasoning. Empty findings are valid.
+- On a hot, I/O or bounded-resource path the reviewer also checks the [resource and performance standard](engineering-standards.md#resource-and-performance-standard): bounds checked before allocation, nothing materialized that could stream, avoidable copies and allocations, request and byte cost counted, a recorded benchmark or profile, and stated downsides. A missing bound or an unmeasured performance claim is a blocking finding.
 
 The rest of this page describes the packet/verdict protocol in detail and is reference, not required reading.
 
