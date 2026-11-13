@@ -4,13 +4,17 @@
 Starts `hsearch-node` as a subprocess against the S3-compatible store named by the
 HSEARCH_S3_* environment, then: bulk-indexes N documents and measures latency; kills
 the node with SIGKILL in the middle of a bulk; restarts it on an empty data directory;
-checks that every acknowledged document survived and nothing was half-applied; restarts
-once more and compares a fixed query set. Prints a report; exits non-zero on any failure.
+checks that every acknowledged document survived (the one property the script can
+observe from outside; a bulk of more than 1000 operations is several log slots, so an
+unacknowledged bulk may be partly durable, which is allowed and reported); restarts once
+more and compares a fixed query set. The kill happens against a healthy store, so this is a
+node-crash test, not a store fault test; the durability boundaries inside the write path
+are covered by the crash matrix in crates/index/tests/rustfs.rs. Prints a report; exits non-zero on any failure.
 
     scripts/e2e.sh            # builds, starts RustFS if needed, runs this
     N=100000 BATCH=5000 python3 scripts/e2e.py path/to/hsearch-node
 """
-import json, os, platform, shutil, signal, statistics, subprocess, sys, tempfile
+import atexit, json, os, platform, shutil, signal, statistics, subprocess, sys, tempfile
 import threading, time, urllib.error, urllib.request
 
 N = int(os.environ.get("N", "100000"))
@@ -29,6 +33,16 @@ def doc_lines(lo, hi):
     return "\n".join(out) + "\n"
 
 
+LIVE = []
+
+
+@atexit.register
+def _reap():
+    for node in LIVE:
+        if node.proc.poll() is None:
+            node.proc.kill()
+
+
 class Node:
     def __init__(self, binary, bucket, data):
         env = dict(os.environ, HSEARCH_S3_BUCKET=bucket)
@@ -39,6 +53,9 @@ class Node:
             self.proc.kill()
             raise SystemExit(f"node did not start: {line}{self.proc.stdout.read()}")
         self.base = line.strip().split("listening on ")[1]
+        # Keep draining the pipe so a node that logs later can never block on it.
+        threading.Thread(target=lambda: [None for _ in self.proc.stdout], daemon=True).start()
+        LIVE.append(self)
 
     def call(self, method, path, body=None, timeout=300):
         if body is None:
@@ -58,7 +75,11 @@ class Node:
 
     def stop(self):
         self.proc.terminate()
-        self.proc.wait(timeout=10)
+        try:
+            self.proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
 
 
 def total(node, query):
@@ -144,8 +165,17 @@ def main():
 
     th = threading.Thread(target=writer)
     th.start()
-    while not acked:  # kill after the first acknowledged bulk, while the next is in flight
+    deadline = time.time() + 120
+    while not acked and th.is_alive() and time.time() < deadline:
         time.sleep(0.005)
+    if not acked:
+        node.kill9()
+        th.join()
+        report.append("FAIL no bulk was acknowledged before the kill")
+        print("\n".join(report))
+        sys.exit(1)
+    # Let the next bulk get under way (a bulk takes about `typical` ms), then kill mid-bulk.
+    time.sleep(0.4 * statistics.median(lat) / 1000)
     node.kill9()
     th.join()
     report.append(f"kill -9 after {len(acked)} acknowledged bulk(s) of {inflight // BATCH} sent")
@@ -154,12 +184,13 @@ def main():
     after = total(node, {"match_all": {}})
     lo_bound, hi_bound = N + len(acked) * BATCH, N + inflight
     check(lo_bound <= after <= hi_bound, f"after kill: {after} documents, between {lo_bound} acknowledged and {hi_bound} sent")
-    # Every acknowledged document is present (exact count by id for the acknowledged range).
+    # Every acknowledged document is present (counted by the unique `n` of each document).
     present = sum(total(node, {"range": {"n": {"gte": lo, "lt": lo + BATCH}}}) for lo in acked)
     check(present == len(acked) * BATCH, f"all {present} acknowledged documents present")
     # A bulk is split into slots of at most 1000 operations; the in-flight one may be partly durable.
     # It was never acknowledged, so that is allowed; only an acknowledged bulk must be whole.
-    report.append(f"unacknowledged documents that became durable: {after - lo_bound}")
+    report.append(f"unacknowledged documents that became durable: {after - lo_bound} "
+                  f"(allowed: they were never acknowledged)")
     s, out = node.call("POST", "/orders/_bulk?refresh=true", doc_lines(10**6, 10**6 + 10))
     check(s == 200 and out["errors"] is False, "the restarted node accepts new writes")
     after2 = answers(node)
