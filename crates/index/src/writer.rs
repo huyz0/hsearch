@@ -21,7 +21,8 @@ use crate::format::{
     encode_slot,
 };
 use crate::store::{
-    Written, block, context, key, mutation, read_version, root_key, segment_key, slot_key, write,
+    Written, block, context, key, mutation, read_all, read_version, root_key, segment_key,
+    slot_key, write,
 };
 use crate::{Error, Result};
 
@@ -559,6 +560,29 @@ fn nonce() -> String {
         std::process::id(),
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     )
+}
+
+pub(crate) fn put_mapping<S: MetadataStore>(store: &S, name: &str, bytes: &[u8]) -> Result<()> {
+    let request = mutation(
+        &format!("{name}/mapping/{}", nonce()),
+        &format!("{name}/mapping"),
+        bytes,
+        Precondition::Absent,
+    )?;
+    match write(store, &request, false) {
+        Written::Done(_) => Ok(()),
+        Written::Occupied => Err(Error::Exists),
+        Written::Refused(error) => Err(Error::Store(error)),
+        Written::Unknown => Err(Error::Unknown),
+    }
+}
+
+pub(crate) fn get_mapping<S: MetadataStore>(store: &S, name: &str) -> Result<Vec<u8>> {
+    let object = key(&format!("{name}/mapping"))?;
+    match read_all(store, &object) {
+        Err(Error::Store(hsearch_object::Error::NotFound)) => Err(Error::NotFound),
+        other => other,
+    }
 }
 
 /// Create the root of a new index. Fails if it exists.

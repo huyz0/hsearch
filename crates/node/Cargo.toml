@@ -1,0 +1,24 @@
+[package]
+name = "hsearch-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Single-process hsearch node: a minimal OpenSearch-shaped HTTP subset over the object-store write path"
+
+[[bin]]
+name = "hsearch-node"
+path = "src/main.rs"
+
+[dependencies]
+hsearch-object = { path = "../object" }
+hsearch-engine = { path = "../engine" }
+hsearch-index = { path = "../index" }
+hsearch-s3 = { path = "../s3" }
+serde_json = "=1.0.154"
+tiny_http = "=0.12.0"
+typed-arena = "=2.0.2"
+
+[lints]
+workspace = true

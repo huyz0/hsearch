@@ -20,5 +20,5 @@ mod writer;
 
 pub use error::{Error, Result};
 pub use format::{Field, Op};
-pub use index::{Index, open_published};
+pub use index::{Index, get_mapping, open_published, put_mapping};
 pub use writer::{Hooks, ItemResult, NoHooks, Point, Published, Wait};
