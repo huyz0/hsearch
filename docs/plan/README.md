@@ -52,4 +52,24 @@ These commands validate planning artifacts only. M01.01 now has a workspace boot
 
 For executable cost arithmetic, run `python docs/plan/tools/cost_model.py` (or `--json`, `--selftest`). The [input scenarios](cost-scenarios.json) are illustrative component counts and rates, not a full TCO or a current region quote. Run `python docs/plan/tools/cost_research.py --write` to reproduce the completed research experiments/model. [Former M18 IDs](milestones/M18.md) point to their new owning tasks; late cloud tests certify real implemented cost, not the first architecture decision.
 
+## Work discovered later
+
+The ledger is meant to change. Anything found while building or reviewing goes into `tasks.json` through an ordinary pull request, and `plan.py check` holds it to the same rules as every other task (goal, validation, definition of done, dependencies, owner).
+
+1. **Add it where it belongs.** A gap found inside a task becomes a new task in the milestone that owns the capability, with a `depends_on` on what it needs. A gap that no milestone owns gets a new task in the closest one, and the milestone's definition of done is amended in the same PR if the gap changes it. IDs are never reused or renumbered; a task that turns out wrong is `cancelled` with the reason, not deleted.
+2. **Park it in the table below if it is not ready to be a task.** One line: what, where it was found, the milestone expected to own it. A parked item must be turned into a task, or dropped with a stated reason, before its owning milestone starts.
+3. **Milestone close reconciles the plan.** Before a milestone is marked done, the gaps its evidence lists are each either an existing task (cite the ID), a new task, or an entry in [risks](risks.md) with a decision. A milestone's evidence file that names a gap with none of the three is not finished.
+4. **Plan changes ride with the work that found them**, in the same PR, so the ledger and the code never disagree about what is left.
+
+Parked items:
+
+| Found in | Item | Expected owner |
+| --- | --- | --- |
+| M20.04 | Generated document ids and the bulk `create` action | M21 (bulk and document semantics) |
+| M20.04 | Scoring (`_score`) and aggregations on the HTTP node, which returns hits in engine order with a null score | M07.04 with M21 |
+| M20.04 | Socket read timeouts and worker-pool exhaustion by slow clients | M07.08 (API admission) |
+| M20.04 | Index creation is two writes (root, then mapping) and a stopped writer is reopened only by the node's own request path | M06.05 (lifecycle) |
+
+Already tracked, so not parked: segment publish and bounded recovery (M06.02, M06.03), multipart and response-loss probes (M03.10), multi-node serving and graceful drain (M07.01, M07.06, M07.11), zero-downtime rolling upgrades (M16.08), authentication, mTLS and BYOK (M05), real-time get (M21.05, M07.12), mapping evolution (M21.04), pinned views and scroll (M22.01).
+
 The lean path to something that runs is M03.02 (RustFS probe) then M20 (object adapter, engine over the store, write path v0, minimal endpoint); M02 and M03 continue beside it and freeze what M20 deliberately left disposable. M21 to M24 add document and mapping semantics, index management and jobs, vector search and extension modules. [product-coverage](product-coverage.md) maps every PR requirement to its tasks. Keep engine remote-read work and the storage capability probe on the critical path. Parallel development begins after contracts and isolated worktree resources exist. Linux x86_64 and aarch64 are release targets; Windows uses WSL2 and macOS uses a Linux container before optional native qualification.
