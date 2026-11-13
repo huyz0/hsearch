@@ -140,7 +140,7 @@ fn main() {
     let seconds: f64 = std::env::var("BENCH_SECONDS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(3.0)
+        .unwrap_or(3.0_f64)
         .max(0.1);
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
