@@ -111,6 +111,7 @@ enum Op {
     Head,
     List,
     Delete,
+    Post,
 }
 
 impl Op {
@@ -118,6 +119,7 @@ impl Op {
         match self {
             Op::Get | Op::List => "GET",
             Op::Put => "PUT",
+            Op::Post => "POST",
             Op::Head => "HEAD",
             Op::Delete => "DELETE",
         }
@@ -138,6 +140,10 @@ impl Reply {
             .map(|(_, v)| v.as_str())
     }
 }
+
+/// Status, headers and body of a probe request.
+#[doc(hidden)]
+pub type ProbeReply = (u16, Vec<(String, String)>, Vec<u8>);
 
 /// An S3-compatible object store.
 pub struct S3Store {
@@ -262,7 +268,7 @@ impl S3Store {
     fn count(&self, op: Op) {
         let counter = match op {
             Op::Get => &self.counters.get,
-            Op::Put => &self.counters.put,
+            Op::Put | Op::Post => &self.counters.put,
             Op::Head => &self.counters.head,
             Op::List => &self.counters.list,
             Op::Delete => &self.counters.delete,
@@ -286,7 +292,7 @@ impl S3Store {
         response_limit: u64,
     ) -> Result<Reply, Error> {
         context.check()?;
-        let mutation = op == Op::Put || op == Op::Delete;
+        let mutation = matches!(op, Op::Put | Op::Post | Op::Delete);
         let mut path = format!("/{}", encode(self.config.bucket.as_bytes(), false));
         if let Some(key) = key {
             path.push('/');
@@ -407,6 +413,14 @@ impl S3Store {
                     .build()
             )
             .call(),
+            Op::Post => finish!(
+                self.agent
+                    .post(url)
+                    .config()
+                    .timeout_global(Some(timeout))
+                    .build()
+            )
+            .send(body),
             Op::Put => finish!(
                 self.agent
                     .put(url)
@@ -416,6 +430,32 @@ impl S3Store {
             )
             .send(body),
         }
+    }
+
+    /// One signed request outside the adapter's own protocol, for probes of
+    /// provider behaviour the adapter does not use (multipart upload, listings).
+    /// Returns the status, headers and body. Not part of the storage contract.
+    #[doc(hidden)]
+    pub fn probe_request(
+        &self,
+        context: &RequestContext,
+        method: &str,
+        key: &ObjectKey,
+        query: &str,
+        headers: &[(&str, String)],
+        body: &[u8],
+    ) -> Result<ProbeReply, Error> {
+        let op = match method {
+            "GET" => Op::Get,
+            "PUT" => Op::Put,
+            "POST" => Op::Post,
+            "HEAD" => Op::Head,
+            "DELETE" => Op::Delete,
+            _ => return Err(Error::InvalidInput),
+        };
+        context.charge_request(key.len() as u64 + body.len() as u64 + 64)?;
+        let reply = self.send(context, op, Some(key), query, headers, body, 1 << 20)?;
+        Ok((reply.status, reply.headers, reply.body))
     }
 
     /// Create the bucket if absent and turn versioning on. Setup helper for tests,
