@@ -10,16 +10,16 @@ Targets here are acceptance targets, not measurements. Nothing in this file is c
 | --- | --- | --- |
 | PR-01 | A deployment holds **10M indexes**. Size is highly skewed: most hold a few documents, a few hold billions, and fewer than 10% are "large". | Catalog and cost model at 10M indexes with 90% or more idle (extends L3 in [performance-scale](performance-scale.md)). No per-index heartbeat, timer, open reader, process or consensus group. |
 | PR-02 | Shard count adapts to index size. A small index uses one shard and shares commit domains with its tenant. A hot or large index splits online. | Split under write load loses no acknowledged write (M13). A 1-document index costs no steady-state requests. |
-| PR-03 | Per-tenant quotas, rate limits and noisy-neighbor isolation. | One tenant at 10x quota does not move another tenant's p99 beyond a bound set in the test. |
+| PR-03 | Per-tenant quotas, rate limits and noisy-neighbor isolation. | One tenant at 10x its quota raises another tenant's p99 by at most 20% over its unloaded baseline (proposed bound, confirmed in M02). |
 | PR-04 | Cold indexes cost nothing while idle (no requests, no compute) and wake within a stated latency. | Idle-cost test: zero request count over an hour. Cold-wake p99 target is set when M02 freezes workloads. |
 
 ## 2. Storage and durability
 
 | ID | Requirement | Testable form |
 | --- | --- | --- |
-| PR-05 | The remote object store is the only durable tier. Local NVMe (or EBS as a fallback) and RAM are caches. Losing every cache loses no acknowledged data. | Kill all nodes and wipe all local disks: every acknowledged write is recovered from the store. |
+| PR-05 | In object mode the remote object store is the only durable tier. Local NVMe (or EBS as a fallback) and RAM are caches. Losing every cache loses no acknowledged data. The optional quorum mode (low-latency writes) additionally needs its journal volumes for the unarchived tail, so its guarantee is RPO <= archive lag; that is a declared exception, not the default. | Object mode: kill all nodes and wipe all local disks; every acknowledged write is recovered from the store. |
 | PR-06 | An acknowledged write is never lost. It is in a durable translog/WAL before the acknowledgement. | Fault-injection history: lost replies, node kill, store errors; zero acknowledged writes missing (existing D16 fenced-append design). |
-| PR-07 | **Durable versus searchable is a per-request choice**, like OpenSearch `refresh`: `false` (ack when durable), `wait_for` (ack when searchable), `true` (force visibility for this request). Durable receipts always identify the committed write, even if a visibility wait times out. | Each mode tested for ack semantics, timeout behavior and cost. `true` is allowed but is coalesced and metered (see conflicts). |
+| PR-07 | **Durable versus searchable is a per-request choice**, like OpenSearch `refresh`: `false` (ack when durable), `wait_for` (ack when searchable), `true` (ack once a reader covering this write is published, forcing a reader publication if none is due, but coalesced with other requests so it never costs one segment or object per write). Durable receipts always identify the committed write, even if a visibility wait times out. | Each mode tested for ack semantics, timeout behavior and cost. `true` waits at most one batching window (bounded by the profile) and is metered (see conflicts). |
 | PR-08 | **Search visibility after a write: p50 < 500 ms, p99 < 5 s** under the declared benchmark load. | Measured write-ack to first-search-hit latency, reported with load, hardware and batch settings. |
 | PR-09 | Storage backends: S3, GCS, Azure Blob, and S3-compatible stores (RustFS first, MinIO). Conditional writes are the only coordination primitive. | Provider capability probe and conformance per provider (existing R04). |
 | PR-10 | Snapshot and restore, and index format versioning with a rolling-upgrade path. | Old-format corpus opens in new binaries; mixed-version nodes fail explicitly, never silently. |
@@ -29,8 +29,8 @@ Targets here are acceptance targets, not measurements. Nothing in this file is c
 | ID | Requirement | Testable form |
 | --- | --- | --- |
 | PR-11 | Minimize object-store **PUT, LIST and GET** requests. No request count may scale with documents, indexes, or idle time. Never LIST on a normal read or write path. | Request-per-operation budgets in CI, as in M02.07/M03.07/M03.08. |
-| PR-12 | Minimize **inter-AZ data transfer**. Peers prefer same-zone choices (routing, replica selection, cache fetch), as a preference and never a hard rule. Object-store traffic within a region is not charged by zone, so cold reads go to the store, not to a peer in another zone. | Metered cross-zone bytes per query and per write in the benchmark report. Reference design: the `feature/serverlessshell` branch of huyz0/OpenSearch (`serverless/README.md`, "Keeping traffic inside a zone"): the zone comes from the stock `node.attr.zone` awareness attribute, travels in the node's lease, and an unknown zone counts as neither near nor far. |
-| PR-13 | Adding index nodes must not raise request cost beyond a stated bound. Concurrent writes to one shard share PUTs. | Request count per acknowledged write stays flat as writer nodes grow, in the benchmark. |
+| PR-12 | Minimize **inter-AZ data transfer**. Peers prefer same-zone choices (routing, replica selection, cache fetch), as a preference and never a hard rule. Object-store traffic within a region is not charged by zone, so cold reads go to the store, not to a peer in another zone. | Metered cross-zone bytes per query and per write in the benchmark report. Reference design (read on 13 Nov, branch head 5cd4bb3, not run): the `feature/serverlessshell` branch of huyz0/OpenSearch (`serverless/README.md`, "Keeping traffic inside a zone"): the zone comes from the stock `node.attr.zone` awareness attribute, travels in the node's lease, and an unknown zone counts as neither near nor far. |
+| PR-13 | Adding index nodes must not raise request cost per acknowledged write. A shard has one owner at a time, which batches concurrent writes to that shard into shared PUTs; more index nodes spread more shards, not more requests per write. | Requests per acknowledged write at 3x index nodes are within 10% of the 1x figure for the same workload (proposed bound, confirmed in M02). |
 | PR-14 | Cost targets ($/GB-month stored, $/million writes, $/million queries) are measured in benchmarks using the [cost model](research/cost-economics.md), not asserted. | Benchmark report includes the cost breakdown by request type and cross-AZ bytes. |
 | PR-15 | Per-index cost attribution (requests, bytes, cross-AZ bytes). | Usage records emitted per index; reconcile with the store bill in M15. |
 
@@ -66,7 +66,7 @@ Targets here are acceptance targets, not measurements. Nothing in this file is c
 | ID | Requirement | Testable form |
 | --- | --- | --- |
 | PR-28 | Cross-cluster replication (active-passive, follower pull) and same-index replication (PR-25). | Bootstrap, stream, gap, promotion histories (existing R08, D07). The replica's lag is reported, not hidden. |
-| PR-29 | **Any node can die at any time and recovery is fast.** Recovery latency may be higher than normal while it happens, but the interval is short and bounded. After an abrupt node loss (kill -9, instance loss), every shard it owned is writable again on another node within **p50 <= 5 s and p99 <= 15 s**, and searches over its data are served by other nodes from published state with no unavailability beyond retries within the request deadline. RPO 0 in object mode. | Fleet fault test: kill a loaded node, measure kill-to-first-acknowledged-write per shard, and verify zero acknowledged-write loss. These are proposed targets to be confirmed or revised when M02 freezes workloads. The fork measured p50 59 s and p99 121 s at a 30 s lease (`serverless/scale-test-results.md`), most of it lease expiry and activation queueing, so meeting this needs a shorter failure-detection design and parallel shard activation. It is a real design target, not a given. |
+| PR-29 | **Any node can die at any time and recovery is fast.** Recovery latency may be higher than normal while it happens, but the interval is short and bounded. After an abrupt node loss (kill -9, instance loss), every shard it owned is writable again on another node within **p50 <= 5 s and p99 <= 15 s**, and searches over its data are served by other nodes from published state with no unavailability beyond retries within the request deadline. RPO 0 in object mode. | Fleet fault test: kill a loaded node, measure kill-to-first-acknowledged-write per shard, and verify zero acknowledged-write loss. These are proposed targets to be confirmed or revised when M02 freezes workloads. The OpenSearch fork's own fleet test (read on 13 Nov, not re-run; branch `feature/serverlessshell` at 5cd4bb3, `serverless/scale-test-results.md`) reports kill-to-writable p50 59 s and p99 121 s at a 30 s lease, most of it lease expiry and activation queueing, so meeting this needs a shorter failure-detection design and parallel shard activation. It is a real design target, not a given. |
 | PR-35 | **Graceful shutdown hands workload off explicitly.** On drain, a node stops accepting new work for its roles, hands each owned shard to another node with a deliberate fenced transfer (no waiting for a lease to expire), finishes or hands off in-flight requests, and exits when empty or at a deadline. | Drain test under load: per-shard write pause p99 <= 2 s (proposed), zero acknowledged-write loss, zero requests failed without a retriable error, and no node-wide pause. Drain of a node holding N shards completes in a bounded time that is reported against N. A drain that hits its deadline falls back to the abrupt-loss path (PR-29), never to lost data. |
 | PR-36 | Recovery does not depend on the dead node's local disk: a replacement node, with cold caches, recovers any shard using only the object store. Cache warm-up after recovery is bounded and does not block serving. | Wipe a node's disks and kill it: its shards recover elsewhere with correct data. Report cold-start query latency during warm-up. |
 
@@ -74,7 +74,7 @@ Targets here are acceptance targets, not measurements. Nothing in this file is c
 
 | ID | Requirement | Testable form |
 | --- | --- | --- |
-| PR-30 | SIMD-optimized on **ARM and x86**, for AWS r8g (Graviton4) and r8i, and GCP C4. Kernels are selected at runtime by CPU feature detection and always have a scalar fallback. | Paired scalar and accelerated correctness tests; benchmarks run on real instances of each type (not emulation). ARM CI is a manual workflow, not per PR. |
+| PR-30 | SIMD-optimized on **ARM and x86**, for AWS r8g (Graviton4) and r8i, and GCP C4. A shipped binary must run correctly on every target instance type: wider kernels (for example AVX-512) are selected at run time by CPU feature detection, and every kernel has a scalar fallback. A kernel set compiled in as a build baseline (lucene-rust currently builds AVX2 and NEON that way) is acceptable only if the supported-CPU floor is documented and checked at startup. | Paired scalar and accelerated correctness tests; benchmarks run on real instances of each type (not emulation). ARM CI is a manual workflow, not per PR. |
 | PR-31 | Search latency targets on a warm and a cold cache, set per query class in M02 when workloads freeze. Initial proposals stay in [performance-scale](performance-scale.md). | Reported with hardware, corpus and cache state. |
 
 ## 9. Correctness and operations
@@ -98,7 +98,7 @@ Checked against `huyz0/lucene-rust` on 13 November 2026 (source inspection only;
 | IVF + quantization | Pluggable `Quantizer` trait shared with HNSW | Same as above |
 | IVF disk-based | Posting lists are segment files and can be range-read | **Not confirmed**: no disk-specific IVF layout found. Verify first in M02. |
 | Sparse and multi-vector | `lucene-sparse`, `lucene-tensor` | Out of scope for PR-22; usable later |
-| SIMD | `lucene-util/src/simd.rs`: runtime AVX-512 detection on x86 and a NEON path on aarch64 | Whether AVX2 and Graviton4 SVE paths exist, and per-instance benchmarks |
+| SIMD | `lucene-util/src/simd.rs`: AVX2 and NEON kernels chosen by compile-time target (x86-64-v3, aarch64), AVX-512 detected at run time | Startup check of the CPU floor, whether SVE is worth adding on Graviton4, and per-instance benchmarks |
 | Encryption | `lucene-store-crypto`: AES-256-GCM per file with a `KeyProvider` for BYOK | Per-index key mapping onto the hsearch key hierarchy |
 
 Build on these crates through the existing engine adapter. Add to lucene-rust only where a row above is a confirmed gap.
@@ -106,17 +106,22 @@ Build on these crates through the existing engine adapter. Add to lucene-rust on
 ## Conflicts with existing plan documents
 
 1. **Forced refresh.** [api-compatibility](api-compatibility.md) A05 and the architecture text excluded per-request `refresh=true`. PR-07 overrides this: all three modes are supported. Forced visibility is coalesced across requests and metered, so it cannot create one tiny segment or one extra object per write. The architecture text on "per-request forced refresh" must be updated when the API task for A05 lands.
-2. **Visibility target.** The SLO worksheet in [performance-scale](performance-scale.md) proposes committed-to-searchable p99 <= 250 ms. PR-08 is p50 < 500 ms and p99 < 5 s, which is looser at the tail and tighter at the median. PR-08 is the requirement. The worksheet's number may stay as an internal stretch target.
+2. **Visibility target.** The SLO worksheet in [performance-scale](performance-scale.md) proposes committed-to-searchable p99 <= 250 ms and has no p50 target. PR-08 adds p50 < 500 ms and relaxes the p99 to < 5 s. PR-08 is the requirement; 250 ms may stay as an internal stretch target.
 3. **Scale figure.** The plan models 1M tenants and up to 50M indexes. PR-01 is 10M indexes. The plan's figure stays a modelled upper bound.
 4. **Object-durable ack p99 <= 1 s** (worksheet) and PR-08 interact: with refresh `wait_for`, ack time includes the visibility wait. The batching window must be chosen against both. This is an open tradeoff for M02.07/M03.08, not a settled number.
 5. **Control plane.** The plan has maintenance, placement and copy jobs. PR-19 keeps those inside the engine but excludes any component that spawns nodes.
 6. **Roles.** [architecture](architecture.md) lists API coordinator, index worker, query worker, maintenance worker and journal. PR-18 uses the user's three names. Mapping: coordinator = API/query coordinator, index = index and maintenance workers, search = query worker. The journal role stays an optional fourth role for quorum mode.
-7. **Replication of queries.** The fork serves search from the shard owner for gets, while this plan separates query replicas. No conflict, but PR-12 applies to both paths.
+7. **API compatibility wording.** [README](README.md) and [api-compatibility](api-compatibility.md) say full OpenSearch compatibility is not required. PR-20 agrees: "as close as practical" still means the core-v1 profile, with scalability-conflicting features dropped. No change to that profile is intended.
+8. **Quorum mode and PR-05.** The optional quorum backend keeps a journal tier for the unarchived tail, so PR-05 is stated for object mode and quorum mode carries its archive-lag RPO.
+9. **Query paths.** The fork serves gets from the shard owner while this plan separates query replicas. No conflict, but PR-12 applies to both paths.
 
 ## Open questions for later milestones
 
 These are not blocking. Each is settled when its milestone freezes workloads.
 
 - Warm and cold p99 per query class (PR-31); cold-wake latency (PR-04); takeover time (PR-29).
-- Whether `refresh=true` must be strictly immediate or may wait up to the batching window (PR-07).
 - Which OpenSearch `knn_vector` mapping parameters map to which lucene-rust variant (PR-20, PR-22).
+
+## Follow-up: documents that still say the old thing
+
+This PR does not edit them. Until the API task for A05 lands, an agent reading only one of them must be pointed here: `api-compatibility.md` A05, `api-profile.json` (the refresh entry) and `architecture.md` (the "per-request forced refresh" sentence) still exclude `refresh=true`. `AGENTS.md` now says this file wins over older plan text.
