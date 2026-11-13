@@ -65,6 +65,7 @@ Membership/placement gossip is a hint. It neither grants tenant access nor permi
 8. All queues, fanout, replay, decompression, cache population, and diagnostic responses have independent byte/count/time budgets before allocation.
 9. Only authenticated AEAD plaintext is handed to decoders. Header/length bounds apply before decryption and decompression; malformed objects cannot trigger unbounded allocation.
 10. Unknown mandatory protocol/format/cipher capabilities fail explicitly. Neither mixed-version nodes nor disabled modules silently weaken a contract.
+11. Memory, I/O and copies are designed and bounded, not tuned later: every buffer and queue has a checked bound, large data streams rather than materializes, hot paths avoid avoidable copies and allocations, and the cost and downsides of each design are stated. See the [resource and performance standard](engineering-standards.md#resource-and-performance-standard).
 
 ## Mutation sequence
 
