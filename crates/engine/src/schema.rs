@@ -140,6 +140,11 @@ impl Schema {
         Ok(self)
     }
 
+    /// Declared fields in canonical order.
+    pub fn fields(&self) -> impl Iterator<Item = (&str, Kind)> {
+        self.fields.iter().map(|(n, k)| (n.as_str(), *k))
+    }
+
     /// The admission bounds in force.
     pub fn limits(&self) -> Limits {
         self.limits

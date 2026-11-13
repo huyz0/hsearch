@@ -19,10 +19,11 @@ LAYERS = {
     "hsearch-engine": set(),
     "hsearch-object": set(),
     "hsearch-s3": {"hsearch-object"},
+    "hsearch-index": {"hsearch-object", "hsearch-engine"},
     "hsearch-testkit": set(),
     "xtask": set(),
 }
-PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3"}
+PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index"}
 EXTERNAL = {name: set() for name in LAYERS}
 EXTERNAL["hsearch-engine"] = {"lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store"}
 # Signing and a blocking HTTP client, exact-pinned in crates/s3/Cargo.toml. No TLS stack yet.
