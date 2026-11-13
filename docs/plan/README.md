@@ -52,4 +52,27 @@ These commands validate planning artifacts only. M01.01 now has a workspace boot
 
 For executable cost arithmetic, run `python docs/plan/tools/cost_model.py` (or `--json`, `--selftest`). The [input scenarios](cost-scenarios.json) are illustrative component counts and rates, not a full TCO or a current region quote. Run `python docs/plan/tools/cost_research.py --write` to reproduce the completed research experiments/model. [Former M18 IDs](milestones/M18.md) point to their new owning tasks; late cloud tests certify real implemented cost, not the first architecture decision.
 
+## Work discovered later
+
+The ledger is meant to change. Anything found while building or reviewing goes into `tasks.json` through an ordinary pull request, and `plan.py check` holds it to the same rules as every other task (goal, validation, definition of done, dependencies, owner).
+
+1. **Add it where it belongs.** A gap found inside a task becomes a new task in the milestone that owns the capability, with a `depends_on` on what it needs. A gap that no milestone owns gets a new task in the closest one, and the milestone's definition of done is amended in the same PR if the gap changes it. IDs are never reused or renumbered; a task that turns out wrong is `cancelled` with the reason, not deleted.
+2. **Park it in the table below if it is not ready to be a task.** One line: what, where it was found, the milestone expected to own it. A parked item must be turned into a task, or dropped with a stated reason, before its owning milestone starts.
+3. **Milestone close reconciles the plan.** Before a milestone is marked done, the gaps its evidence lists are each either an existing task (cite the ID), a new task, or an entry in [risks](risks.md) with a decision. A milestone's evidence file that names a gap with none of the three is not finished.
+4. **Plan changes ride with the work that found them**, in the same PR, so the ledger and the code never disagree about what is left.
+
+Rules 1 and 4 are checked by `plan.py check` and review; rules 2 and 3 are **reviewer-enforced conventions** (nothing parses the table or the evidence files), so a reviewer of a milestone-start or milestone-close PR must look at them. "Owner" below is where the item most plausibly lands, not a task that already says so; none of it has a task until the owning milestone is planned.
+
+Parked items:
+
+| Found in | Item | Expected owner |
+| --- | --- | --- |
+| M20.04 | Generated document ids and the bulk `create` action | M21: no task covers it yet (M21.01 is streaming and size limits, M21.06 is partial update) |
+| M20.04 | Single-node scoring (`_score`) and aggregations on the HTTP node, which returns hits in engine order with a null score | No owner: M07.04 covers distributed reduction and only optional later global statistics, so this needs a task |
+| M20.04 | Socket read timeouts and worker-pool exhaustion by slow clients | M07.08 (API admission) is the closest; it does not mention it yet |
+| M20.04 | Index creation is two writes (root, then mapping) and a stopped writer is reopened only by the node's own request path | M06.05 (lifecycle) is the closest; it does not mention it yet |
+| M20.04 | Bulk `update` action, dynamic mapping, publishing segments from the node over HTTP, TLS, and hit order without a `sort` | M21.06, M21.03, M06.02, M05 and (order) the scoring item above |
+
+Already tracked, so not parked: segment publish and bounded recovery (M06.02, M06.03), multipart and response-loss probes (M03.10), multi-node serving and graceful drain (M07.01, M07.06, M07.11), zero-downtime rolling upgrades (M16.08), authentication, mTLS and BYOK (M05), real-time get (M21.05, M07.12), mapping evolution (M21.04), pinned views and scroll (M22.01).
+
 The lean path to something that runs is M03.02 (RustFS probe) then M20 (object adapter, engine over the store, write path v0, minimal endpoint); M02 and M03 continue beside it and freeze what M20 deliberately left disposable. M21 to M24 add document and mapping semantics, index management and jobs, vector search and extension modules. [product-coverage](product-coverage.md) maps every PR requirement to its tasks. Keep engine remote-read work and the storage capability probe on the critical path. Parallel development begins after contracts and isolated worktree resources exist. Linux x86_64 and aarch64 are release targets; Windows uses WSL2 and macOS uses a Linux container before optional native qualification.
