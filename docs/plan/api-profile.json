@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "profile_id": "core-v1",
-  "revision": "2026-11-01-scalability-first",
+  "revision": "2026-11-13-product-requirements",
   "status": "design",
   "runtime_implemented": false,
-  "authority": "User direction: useful OpenSearch-inspired partial compatibility; scalability governs API choices. Full compatibility is not a delivery requirement.",
+  "authority": "User direction: useful OpenSearch-inspired partial compatibility; scalability governs API choices. Full compatibility is not a delivery requirement. Product requirements PR-01 to PR-54 (13 Nov 2026, docs/plan/product-requirements.md) extend rows A01 to A14 where they name an OpenSearch behaviour: refresh=true, _update, _reindex, by-query jobs, aliases, nested/join, PIT/scroll, real-time get, kNN, snapshots and extension modules. The fixture corpus under fixtures/api/core-v1 predates that revision and is refreshed by M06.05.",
   "upstream_basis": "Official OpenSearch latest documentation retrieved 2026-11-01. M02.01 must pin actual server/client versions and fixture hashes before any compatibility claim.",
   "sources": {
     "bulk": "https://docs.opensearch.org/latest/api-reference/document-apis/bulk/",
@@ -18,7 +18,15 @@
     "has_child": "https://docs.opensearch.org/latest/query-dsl/joining/has-child/",
     "nested": "https://docs.opensearch.org/latest/mappings/supported-field-types/nested/",
     "mapping": "https://docs.opensearch.org/latest/mappings/mapping-explosion/",
-    "split": "https://docs.opensearch.org/latest/api-reference/index-apis/split/"
+    "split": "https://docs.opensearch.org/latest/api-reference/index-apis/split/",
+    "mget": "https://docs.opensearch.org/latest/api-reference/document-apis/multi-get/",
+    "update": "https://docs.opensearch.org/latest/api-reference/document-apis/update-document/",
+    "reindex": "https://docs.opensearch.org/latest/api-reference/document-apis/reindex/",
+    "update_by_query": "https://docs.opensearch.org/latest/api-reference/document-apis/update-by-query/",
+    "delete_by_query": "https://docs.opensearch.org/latest/api-reference/document-apis/delete-by-query/",
+    "alias": "https://docs.opensearch.org/latest/api-reference/index-apis/alias/",
+    "rollover": "https://docs.opensearch.org/latest/api-reference/index-apis/rollover/",
+    "knn_vector": "https://docs.opensearch.org/latest/field-types/supported-field-types/knn-vector/"
   },
   "example_local_limits": {
     "max_bulk_bytes": 10485760,
@@ -107,64 +115,81 @@
     {
       "id": "A01",
       "kind": "difference",
-      "surface": "Collection creation and mappings",
-      "upstream": "OpenSearch provides dynamic mapping and field/depth/nested limits to control mapping growth.",
-      "contract": "Explicit versioned schemas; keyword, boolean, bounded numeric/date and one frozen text analyzer profile. Unknown indexed fields fail unless a declared source-only field policy applies. No automatic field/type growth.",
-      "alternative": "Schema migration creates a new generation and a bounded alias cutover; unindexed source-only attributes remain retrievable, not searchable.",
-      "scalability": "Mandatory schema/field caps bound per-tenant metadata and indexing amplification. This selects a stricter policy, not a claim that OpenSearch lacks such controls.",
+      "surface": "Collection creation, mappings and aliases",
+      "upstream": "OpenSearch provides dynamic mapping (true, false, strict), put-mapping for new fields, field, depth and nested limits, aliases with atomic actions, and rollover.",
+      "contract": "Explicit versioned mappings with the supported field types. Per-index dynamic setting true, false or strict; a request that would pass the field limit (default from M02.05) is rejected whole, with nested depth and nested-object limits. New fields can be added online as a new immutable mapping version; changing an existing field's type or analyzer is refused. Identical canonical mappings share one stored object by content hash (PR-42, PR-43, PR-44). Aliases: one actions request is one atomic metadata change, so a request sees entirely the old target or entirely the new one; write aliases name one write index; rollover runs on request or an admitted check, never on a timer per index (PR-46, PR-34).",
+      "alternative": "A type or analyzer change creates a new index and uses _reindex behind an alias swap (A03); unindexed source-only attributes remain retrievable, not searchable.",
+      "scalability": "Field caps and content-hash sharing bound per-index metadata, so 10M indexes do not carry 10M mapping blobs, and sharing must never let one index read another's mapping. An alias swap costs a constant number of conditional writes, independent of index size.",
       "sources": [
-        "mapping"
+        "mapping",
+        "alias",
+        "rollover"
       ],
       "owners": [
         "M03.03",
+        "M21.02",
+        "M21.03",
+        "M21.04",
+        "M22.02",
         "M06.05"
       ],
-      "acceptance": "Unknown fields/types, schema evolution and field-count overflow have explicit fixtures; no silent type coercion."
+      "acceptance": "Field-limit, strict, false, per-item bulk error, concurrent add-field, type-change refusal and shared-hash isolation tests pass; reads and writes through an alias during a swap neither fail nor see a mix; an idle index with a rollover policy costs no requests."
     },
     {
       "id": "A02",
       "kind": "subset",
-      "surface": "Document index/create/get/delete",
-      "upstream": "OpenSearch exposes ID-addressed document operations; GET is real-time by default.",
-      "contract": "Target familiar /{collection}/_doc/{id} operations and core _id/_index/_source/found/result fields; initial mutations require an explicit stable document ID. GET targets authoritative latest state within its deadline; search visibility remains a separate checkpoint. Exact response/client compatibility awaits fixtures.",
-      "alternative": "Native /v1 document operations expose explicit receipts and read modes.",
-      "scalability": "Point requests route by logical identity without exposing a fixed physical shard map; no stale fallback to make a latest GET appear successful.",
+      "surface": "Document index/create/get/update/delete and multi-get",
+      "upstream": "OpenSearch exposes ID-addressed document operations; GET is real-time by default; _update merges a partial document and supports upsert, doc_as_upsert, detect_noop and optimistic concurrency.",
+      "contract": "Target familiar /{collection}/_doc/{id}, _update and _mget operations and core _id/_index/_source/found/result fields; initial mutations require an explicit stable document ID. GET is real-time: it returns the latest acknowledged write whether or not a reader covering it is published, from any coordinator, which forwards to the shard owner under an authority barrier shared by concurrent gets; realtime=false reads published state. Custom routing is honoured (PR-49). _update supports partial-document merge, upsert, doc_as_upsert, detect_noop and if_seq_no/if_primary_term; it is resolved once on the shard owner against committed state and the resolved operation is what is logged, so replay never re-evaluates it; scripts are excluded (A11) and it adds no object-store request beyond an index operation (PR-47). Exact response/client compatibility awaits fixtures.",
+      "alternative": "Native /v1 document operations expose explicit receipts and read modes; read, change and index with a version token where an update mode is not offered.",
+      "scalability": "Point requests route by logical identity; no stale fallback to make a get appear successful; barrier cost scales with shards and time, a multi-get costs requests by shards touched, and an update costs what an index operation costs.",
       "sources": [
         "get",
+        "mget",
+        "update",
         "bulk"
       ],
       "owners": [
         "M04.03",
         "M06.05",
-        "M07.03"
+        "M07.03",
+        "M21.05",
+        "M21.06",
+        "M07.12"
       ],
-      "acceptance": "Create conflicts, missing deletes, lost replies, recreate/incarnation and post-write GET histories pass."
+      "acceptance": "Create conflicts, missing deletes, lost replies, recreate/incarnation, read-after-write with refresh=false, owner kill, deposed-owner and lost-update-race histories pass; crash-replay of an update yields the same document."
     },
     {
       "id": "A03",
       "kind": "subset",
-      "surface": "POST /_bulk NDJSON",
+      "surface": "POST /_bulk NDJSON and bulk-shaped background jobs",
       "upstream": "OpenSearch actions are independent, item results are returned in submitted order, and index/create can generate an ID when omitted.",
-      "contract": "Target index/create/delete with explicit stable IDs only; generated-ID and general update modes are excluded from core-v1. No cross-item transaction. Bounded whole-request structural validation precedes commits; item semantic failures do not erase other receipts. Preserve response item order and per-document mutation order.",
+      "contract": "Target index/create/delete with explicit stable IDs only; generated-ID modes are excluded from core-v1, and bulk update actions follow the _update contract in A02 once M21.06 passes. No cross-item transaction. Bodies are parsed as a stream under a configured buffer, with a document size limit and a hard ceiling of 200 MB (PR-16, PR-40); bounded whole-request structural validation precedes commits; item semantic failures do not erase other receipts. Preserve response item order and per-document mutation order. _reindex, update_by_query and delete_by_query are resumable, throttled, cancellable background jobs that read bounded pages from a pinned view and write through this bulk path, with progress reporting; a document changed since the pinned view is not overwritten or deleted blindly (PR-45, PR-48).",
       "alternative": "Large imports use bounded batches and resumable import jobs; retries use stable IDs/idempotency keys. Any later native allocated-ID profile must bound idempotency state and specify lost-reply recovery.",
-      "scalability": "Explicit item/byte/response admission bounds buffering and fanout while retaining batching benefits.",
+      "scalability": "Explicit item/byte/response admission bounds buffering and fanout while retaining batching benefits; background job request cost follows bytes read and written, not documents matched, and jobs must not starve foreground traffic.",
       "sources": [
-        "bulk"
+        "bulk",
+        "reindex",
+        "update_by_query",
+        "delete_by_query"
       ],
       "owners": [
         "M04.03",
         "M06.05",
-        "M07.03"
+        "M07.03",
+        "M21.01",
+        "M22.03",
+        "M22.04"
       ],
-      "acceptance": "Mixed success, repeated same-ID actions, omitted IDs, invalid tails, partial failures and uncertain acknowledgements are covered."
+      "acceptance": "Mixed success, repeated same-ID actions, omitted IDs, invalid tails, partial failures, uncertain acknowledgements, a 200 MB document and one byte over the limit are covered; job kill and resume loses and duplicates nothing and respects throttle and cancel."
     },
     {
       "id": "A04",
       "kind": "difference",
       "surface": "Optimistic concurrency and versions",
       "upstream": "OpenSearch supports if_seq_no with if_primary_term and several versioning modes.",
-      "contract": "Native opaque if_version tokens bind tenant, collection incarnation and document version. Do not synthesize OpenSearch election/sequence fields or silently accept external/external_gte modes.",
-      "alternative": "Read a native version token and submit conditional replace/delete; an adapter translates only a separately proved mode.",
+      "contract": "Support if_seq_no with if_primary_term on index, delete and _update, mapped onto a native version that binds index, incarnation and document version, alongside the native opaque if_version token. Do not accept external/external_gte versioning modes (PR-47).",
+      "alternative": "Read a native version token and submit a conditional replace/delete; external versioning is done by the client.",
       "scalability": "Logical version identity survives routing movement without exposing physical journal/group coordinates.",
       "sources": [
         "bulk"
@@ -172,34 +197,36 @@
       "owners": [
         "M04.03",
         "M06.05",
-        "M07.03"
+        "M07.03",
+        "M21.06"
       ],
-      "acceptance": "Stale token, ABA recreation, split/move, duplicate retry and restore cannot overwrite a newer document."
+      "acceptance": "Stale token, stale if_seq_no/if_primary_term, ABA recreation, split/move, duplicate retry and restore cannot overwrite a newer document."
     },
     {
       "id": "A05",
       "kind": "difference",
       "surface": "refresh and durability controls",
       "upstream": "OpenSearch refresh=false, true and wait_for distinguish deferred visibility, forced refresh and waiting.",
-      "contract": "Target refresh=false and bounded wait_for. Forced refresh=true and shard-copy-count durability parameters are excluded from core-v1. Durable receipts precede an optional searchable wait; a postcommit visibility timeout retains the committed identity.",
-      "alternative": "Use at_least(receipt) or native visibility wait, and a versioned object/quorum durability profile. Maintenance is an admitted job, not per-write segment forcing.",
-      "scalability": "Coalesce reader publication and avoid tiny-refresh work; never reduce accepted durability or misreport a committed write as rolled back.",
+      "contract": "All three modes are supported per request (PR-07). false acks when durable, wait_for acks when searchable, true acks once a reader covering the write is published and forces a publication if none is due, coalesced with other requests inside one batching window bounded by the profile and metered per index. A visibility timeout keeps the committed identity. Shard-copy-count durability parameters are excluded.",
+      "alternative": "Use at_least(receipt) or a native visibility wait, and a versioned object/quorum durability profile. Maintenance is an admitted job, never per-write segment forcing.",
+      "scalability": "refresh=true never costs one segment or object per write: concurrent forced refreshes share a publication, so request cost follows the window and not the writes. Never reduce accepted durability or misreport a committed write as rolled back.",
       "sources": [
         "bulk"
       ],
       "owners": [
         "M06.05",
+        "M06.07",
         "M07.05",
         "M09.08"
       ],
-      "acceptance": "Lost replies, visibility timeout, overload and retry preserve receipts and the selected failure envelope."
+      "acceptance": "Each mode tested for ack semantics, timeout, lost replies and overload; 1,000 concurrent refresh=true writes cost publications set by the window; visibility p50 < 500 ms and p99 < 5 s measured under the declared load and reported as provisional."
     },
     {
       "id": "A06",
       "kind": "subset",
       "surface": "Search DSL and response core",
       "upstream": "OpenSearch search_type can use shard-local or global term/document frequencies.",
-      "contract": "Target match_all, term/terms, range, integer-threshold bool, match and match_phrase on declared fields/analyzer, bounded field sorting and source projection. Start with documented shard-local BM25; scores are not promised bit-identical across topology changes. Unknown operators/options fail.",
+      "contract": "Target match_all, term/terms, range, integer-threshold bool, match and match_phrase on declared fields/analyzer, bounded field sorting and source projection; nested and has_child/has_parent on fields mapped as nested or join, with parent and children routed to the same shard (PR-41); and kNN on fields mapped as knn_vector (HNSW and IVF, each with quantization and a disk-based variant, PR-22). Start with documented shard-local BM25; scores are not promised bit-identical across topology changes. Unknown operators/options fail, and a kNN query on a field that is not a knn_vector refuses.",
       "alternative": "Typed native query IR and capability discovery; global-statistics scoring is a later budgeted profile if justified.",
       "scalability": "Limits cover clauses, decoded data, candidates, total targets and concurrency. A stable snapshot/sort provides deterministic paging without universal score parity.",
       "sources": [
@@ -208,27 +235,33 @@
       "owners": [
         "M02.02",
         "M04.01",
-        "M07.04"
+        "M07.04",
+        "M21.07",
+        "M23.01",
+        "M23.02",
+        "M23.03",
+        "M02.12"
       ],
-      "acceptance": "Pinned analyzer/query golden cases and ranking tolerances are explicit; unsupported syntax cannot return empty success."
+      "acceptance": "Pinned analyzer/query golden cases and ranking tolerances are explicit; nested and join queries match pinned reference results on a shared corpus; recall@10 meets its floor for each vector variant; unsupported syntax cannot return empty success."
     },
     {
       "id": "A07",
       "kind": "difference",
       "surface": "Deep pagination, scroll and PIT",
-      "upstream": "Deep from/size increases sorting/merge work; OpenSearch recommends PIT plus search_after and PIT retains segment resources.",
-      "contract": "Allow a shallow bounded offset window. Deep traversal uses a quota/TTL-bound native snapshot and stable cursor; target an explicitly tested PIT/search_after adapter subset. No unbounded scroll session or promise of one globally serializable instant.",
-      "alternative": "POST /v1/search-snapshots and cursor pages; bulk export uses resumable jobs. Tokens pin routing/catalog and per-partition reader generations.",
-      "scalability": "Separate total selected partitions from in-flight RPCs; enforce active snapshot and retained-byte quotas. Never expire pins silently to serve newer data under an old cursor.",
+      "upstream": "Deep from/size increases sorting/merge work; OpenSearch recommends PIT plus search_after, retains segment resources for PIT and scroll, and supports scroll for batch reads.",
+      "contract": "from/size inside a configured window, search_after, PIT and scroll with OpenSearch request and response shapes, scroll served on the same pinned-view mechanism. A PIT or scroll pins an immutable per-shard view with a fixed routing and catalog generation (not one global instant), has a keep-alive, releases on request or expiry, and its pin is registered before the id is returned and honoured by garbage collection. Beyond-limit requests are rejected with the limit named (PR-54).",
+      "alternative": "POST /v1/search-snapshots and cursor pages remain the native form; bulk export uses resumable jobs.",
+      "scalability": "Separate total selected partitions from in-flight RPCs; enforce active-view and retained-byte quotas and show pins in metrics. Never expire a pin silently to serve newer data under an old id.",
       "sources": [
         "pagination",
         "pit"
       ],
       "owners": [
+        "M22.01",
         "M07.05",
         "M10.01"
       ],
-      "acceptance": "Concurrent mutation/split, repeated pages, expiration, key revocation and GC preserve results or return typed failure."
+      "acceptance": "Paging during writes, compaction, node kill, split, expiry, key revocation and GC gives no duplicate or gap within a view or a typed error; the window limit rejects from + size over the bound."
     },
     {
       "id": "A08",
@@ -268,27 +301,28 @@
     {
       "id": "A10",
       "kind": "unsupported",
-      "surface": "Parent/child and nested query semantics",
+      "surface": "Cross-shard joins and unsupported nested/join forms",
       "upstream": "OpenSearch documents has_child performance costs; nested objects are stored as additional Lucene documents.",
-      "contract": "Exclude joins and nested query semantics from core-v1. A plain JSON object is not advertised as a nested join.",
-      "alternative": "Denormalized search documents, precomputed views or explicitly bounded application-side key lookups; these change the data model and are not equivalent joins.",
-      "scalability": "Avoid mandatory join/hidden-document amplification in the initial massive-tenancy path. A later module needs workload and amplification evidence.",
+      "contract": "Nested and same-shard join support is in A06. Refused with a typed error: a join across shards, a child indexed without a routable parent, nested or join queries on fields not mapped as nested or join, and nesting beyond the configured depth and count (PR-41, PR-42).",
+      "alternative": "Denormalized documents or bounded application-side lookups where a cross-shard join is needed.",
+      "scalability": "Same-shard routing keeps a join local and avoids a fan-out; refusing a cross-shard join is a choice that avoids an unbounded fan-out, not a claim OpenSearch cannot join.",
       "sources": [
         "has_child",
         "nested"
       ],
       "owners": [
         "M02.01",
+        "M21.07",
         "M07.04"
       ],
-      "acceptance": "Nested/has_child/has_parent requests fail explicitly; migration reports the required remodel."
+      "acceptance": "Cross-shard join, child without routable parent and unmapped nested/join queries are rejected with a named reason and nothing is approximated."
     },
     {
       "id": "A11",
       "kind": "unsupported",
       "surface": "Painless/scripted update/query/runtime expressions",
       "upstream": "OpenSearch documents script queries as computationally expensive.",
-      "contract": "No general _update, arbitrary per-document scripting or script-language compatibility in core-v1. A native bounded set/remove patch would require its own specification; unknown update options fail.",
+      "contract": "No arbitrary per-document scripting or script-language compatibility in core-v1. Partial-document _update, upsert and detect_noop are supported without scripts (A02); a scripted update, a script query and unknown update options fail before any mutation. A sandboxed script form would need its own specification.",
       "alternative": "Typed client-side transforms and precomputed indexed fields; future bounded declarative transforms require replay determinism and CPU budgets.",
       "scalability": "Keep per-document CPU, replay and security costs predictable; exclusion is a product choice, not a claim that all scripts are unscalable.",
       "sources": [
@@ -296,25 +330,30 @@
       ],
       "owners": [
         "M04.03",
-        "M06.05"
+        "M06.05",
+        "M21.06"
       ],
       "acceptance": "Scripts and unadvertised update modes refuse before mutation; replay never reexecutes nondeterministic user code."
     },
     {
       "id": "A12",
       "kind": "unsupported",
-      "surface": "Vector/hybrid, SQL/PPL and arbitrary plugins",
-      "upstream": "These surfaces are outside the chosen core profile; no claim is made that they inherently cannot scale.",
-      "contract": "No initial compatibility promise. Existing native kernel/extension research remains valid, but it does not imply these API features are shipped.",
-      "alternative": "Separate opt-in modules/profiles only after workload value, engine capability, recall/quality, resource and cost evidence; use external analytics where appropriate.",
-      "scalability": "Avoid turning all OpenSearch extensions into mandatory launch dependencies.",
+      "surface": "SQL/PPL, JVM plugins and queries on unmapped vector fields",
+      "upstream": "OpenSearch SQL, PPL and Java plugins are outside the chosen core profile; no claim is made that they inherently cannot scale.",
+      "contract": "No SQL or PPL and no JVM plugin compatibility. Extensions are native C-ABI shared libraries (in-process, trusted, strict version checks) or WASM modules (sandboxed, with memory, CPU and host-call limits), loaded by explicit node configuration per role, with no JVM and no scripting plugins (PR-23, D18). Vector search is in A06; a kNN query on a field that is not a knn_vector refuses.",
+      "alternative": "Native modules for analyzers, query types, ingest processors and scoring functions; an out-of-process native module over a versioned RPC remains an optional third model; external analytics where appropriate.",
+      "scalability": "Avoid turning OpenSearch's plugin ecosystem into a mandatory launch dependency. A native in-process module can take the node down, so it is enabled only by configuration; a WASM module that traps or exceeds its limits is stopped and the node keeps serving.",
       "sources": [],
       "owners": [
         "M02.01",
-        "M14.01",
+        "M24.01",
+        "M24.02",
+        "M24.03",
+        "M24.04",
+        "M24.05",
         "M16.06"
       ],
-      "acceptance": "Capabilities report absence; unsupported workloads remain adaptation gaps, not silent substitutes."
+      "acceptance": "Capabilities report absence of SQL/PPL and JVM plugins; an external example module loads as native and as WASM with identical results, a version mismatch is refused, and a disabled module is absent; unsupported workloads remain adaptation gaps, not silent substitutes."
     },
     {
       "id": "A13",
@@ -339,18 +378,22 @@
     {
       "id": "A14",
       "kind": "unsupported",
-      "surface": "_cluster/_cat settings, flush/force-merge and snapshot internals",
+      "surface": "_cluster/_cat settings, flush/force-merge and OpenSearch repository APIs",
       "upstream": "No compatibility is promised for another system's operational internals.",
-      "contract": "Reject unadvertised cluster-manager, replica-count, maintenance and repository APIs. Do not return fabricated shard/replica status fields.",
-      "alternative": "Bounded authorized /v1 diagnostics, paginated catalog, admitted maintenance and native snapshot/export/copy contracts.",
+      "contract": "Reject unadvertised cluster-manager, replica-count, maintenance and OpenSearch snapshot-repository APIs. Do not return fabricated shard/replica status fields. Snapshot and restore are native contracts (below), not the repository API.",
+      "alternative": "Bounded authorized /v1 diagnostics, paginated catalog, per-role status and metrics, admitted maintenance, and native snapshots: a shallow snapshot is a metadata-only record that pins the index's immutable objects in the same store and restores same-key without copying, at a constant request count (PR-50); a full portable snapshot copies everything and restores on another provider as a resumable deep-copy job with its cost reported first (PR-51); export and cross-cluster copy serve independent indexes with their own key.",
       "scalability": "Avoid whole-cluster state responses and accidental all-partition maintenance storms.",
       "sources": [],
       "owners": [
         "M08.03",
+        "M08.07",
+        "M22.05",
         "M10.01",
+        "M11.06",
+        "M15.04",
         "M16.01"
       ],
-      "acceptance": "Unknown operational calls refuse; diagnostics and maintenance enforce scope, pagination and I/O budgets."
+      "acceptance": "Unknown operational calls refuse; diagnostics and maintenance enforce scope, pagination and I/O budgets; snapshot request count is constant with index size, a pinned object is never collected, and a cross-provider restore returns identical results and survives deleting the source bucket."
     },
     {
       "id": "A15",
