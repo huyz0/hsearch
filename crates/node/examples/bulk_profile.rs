@@ -13,8 +13,16 @@ use serde_json::json;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let docs: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(100_000);
-    let batch: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(5_000);
+    let docs: usize = args
+        .next()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100_000)
+        .clamp(1, 5_000_000);
+    let batch: usize = args
+        .next()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5_000)
+        .clamp(1, 50_000);
     let dir = std::env::temp_dir().join(format!("hsearch-profile-{}", std::process::id()));
     let store = Arc::new(
         MemoryStore::new(MemoryLimits {

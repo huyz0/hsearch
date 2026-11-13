@@ -321,6 +321,10 @@ fn the_term_bound_counts_analyzed_tokens_not_bytes_across_all_text_fields() {
         put_texts(&one, &[&"a ".repeat(MAX_TERMS + 1)]),
         Err(Error::Limit)
     ));
+    // Boundary of the byte shortcut: exactly 128 and 129 bytes, both within the token bound.
+    assert!(put_texts(&one, &[&"a".repeat(MAX_TERMS)]).is_ok());
+    assert!(put_texts(&one, &[&"a".repeat(MAX_TERMS + 1)]).is_ok());
+    assert!(put_texts(&one, &[&"a ".repeat(MAX_TERMS / 2)]).is_ok());
     // The bound is per document, across fields: each field alone is fine.
     let three = text_schema(3);
     let fifty = "a ".repeat(50);

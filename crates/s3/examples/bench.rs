@@ -76,6 +76,9 @@ fn store(bucket: &str) -> Arc<S3Store> {
 }
 
 fn percentile(sorted: &[f64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return f64::NAN;
+    }
     sorted[((sorted.len() as f64 * p) as usize).min(sorted.len() - 1)]
 }
 
@@ -137,7 +140,8 @@ fn main() {
     let seconds: f64 = std::env::var("BENCH_SECONDS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(3.0);
+        .unwrap_or(3.0)
+        .max(0.1);
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -160,7 +164,7 @@ fn main() {
     ] {
         let body = Arc::new(vec![7u8; size]);
         let s2 = Arc::clone(&s);
-        let (ops, _, lat, elapsed) = run(1, seconds, move |_, i| {
+        let (_, ops, lat, elapsed) = run(1, seconds, move |_, i| {
             let m = mutation(
                 &format!("sz{size}-{i}"),
                 &format!("size{size}/{i}"),
@@ -184,7 +188,7 @@ fn main() {
     for writers in [1usize, 2, 4, 8, 16, 32] {
         let body = Arc::new(vec![7u8; 64 << 10]);
         let s2 = Arc::clone(&s);
-        let (ops, _, lat, elapsed) = run(writers, seconds, move |t, i| {
+        let (_, ops, lat, elapsed) = run(writers, seconds, move |t, i| {
             let m = mutation(
                 &format!("cw{writers}-{t}-{i}"),
                 &format!("conc{writers}/{t}/{i}"),

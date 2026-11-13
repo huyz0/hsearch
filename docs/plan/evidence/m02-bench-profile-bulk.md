@@ -17,3 +17,9 @@ Test: `the_term_bound_counts_analyzed_tokens_not_bytes_across_all_text_fields`.
 - serde_json `Value` DOM in the node, about 8-12%.
 - per-field `String` copies in `adapter::Operation`, about 3%.
 - per-bulk refresh cost, about 14%.
+
+## Notes from review
+- Short text (at most `MAX_TERMS` bytes) no longer surfaces an analyzer failure at prepare time; it surfaces at the native commit. Longer text keeps the prepare-time error.
+- The boundary test cannot observe the skip itself (behaviour is identical); it pins the 128/129-byte boundary.
+- The bench's PUT/s and MiB/s columns now count successful PUTs only. The s3 bench is M02.10 work, included here as measurement tooling; no result from it is recorded in this PR.
+- The bulk bench workload (~20 byte text) sits in the skipped regime; longer text still pays two analysis passes.
