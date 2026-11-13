@@ -30,8 +30,16 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
       - name: Prefetch locked dependencies
         run: cargo fetch --locked
+      - name: Start pinned RustFS
+        run: eval "$(scripts/rustfs.sh up)" && env | grep '^HSEARCH_S3_' >> "$GITHUB_ENV"
       - name: fmt, clippy, tests, plan and policy checks
         run: python3 tools/check.py
+      - name: RustFS capability probe and restart check
+        run: |
+          cargo run --locked -q -p hsearch-s3 --example probe -- run | tee -a "$GITHUB_STEP_SUMMARY"
+          cargo run --locked -q -p hsearch-s3 --example probe -- write
+          scripts/rustfs.sh restart
+          cargo run --locked -q -p hsearch-s3 --example probe -- verify | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Status from tasks.json (job summary, no reconciliation PRs)
         if: always()
         run: python3 docs/plan/tools/plan.py summary >> "$GITHUB_STEP_SUMMARY"
@@ -50,6 +58,8 @@ jobs:
         run: cargo fetch --locked
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked --version 0.9.1
+      - name: Start pinned RustFS
+        run: eval "$(scripts/rustfs.sh up)" && env | grep '^HSEARCH_S3_' >> "$GITHUB_ENV"
       - name: Per-crate coverage floor
         run: scripts/coverage.sh 90
 
