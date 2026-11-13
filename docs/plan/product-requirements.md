@@ -66,6 +66,7 @@ Targets here are acceptance targets, not measurements. Nothing in this file is c
 | PR-21 | Full-text search through lucene-rust as the core engine (existing D01). | Differential tests against Java Lucene fixtures. |
 | PR-22 | **Vector search: HNSW and IVF, each with quantization and with a disk-based variant.** Build on what lucene-rust already provides. | See [Vector support in lucene-rust](#vector-support-in-lucene-rust). Recall@10 floors per variant at a stated corpus. |
 | PR-23 | Optional extensions in Rust or as binaries, through typed trusted Rust modules and a versioned external RPC (existing D05). No stable native-plugin ABI is promised. | External example module in CI (existing R07). |
+| PR-53 | **Engine gaps are fixed upstream, not worked around.** Huy owns `huyz0/lucene-rust` and has authorized changing it. When hsearch needs an engine feature the crate lacks (for example a disk-based IVF layout, range-native object-store reads, runtime SIMD dispatch) or hits an engine bug, the fix goes into lucene-rust as its own PR, under that repository's rules (its AGENTS.md, gates, parity ledger and review process), self-reviewed and merged there, and hsearch then bumps its exact pinned revision. hsearch does not carry a private fork, patch, or wrapper that reimplements engine behavior. | A hsearch task that needs an engine change links the lucene-rust PR and the new pinned revision; the bridge contract and old-index corpus pass at the new pin (architecture.md, engine integration). `git grep` finds no vendored copy or patch of lucene-rust source in hsearch. |
 
 ## 6. Security and encryption
 
@@ -119,7 +120,7 @@ Checked against `huyz0/lucene-rust` on 13 November 2026 (source inspection only;
 | SIMD | `lucene-util/src/simd.rs`: AVX2 and NEON kernels chosen by compile-time target (x86-64-v3, aarch64), AVX-512 detected at run time | Startup check of the CPU floor, whether SVE is worth adding on Graviton4, and per-instance benchmarks |
 | Encryption | `lucene-store-crypto`: AES-256-GCM per file with a `KeyProvider` for BYOK | Per-index key mapping onto the hsearch key hierarchy |
 
-Build on these crates through the existing engine adapter. Add to lucene-rust only where a row above is a confirmed gap.
+Build on these crates through the existing engine adapter. Add to lucene-rust only where a row above is a confirmed gap, as upstream PRs (PR-53).
 
 ## Conflicts with existing plan documents
 
