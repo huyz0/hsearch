@@ -1221,8 +1221,13 @@
             "M19"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m20-04-http-node.md",
+              "result": "Raw-HTTP client (no SDK) against RustFS 1.0.4: 100k documents bulk-indexed, searched, node restarted on an empty local directory and answered identically; one over each bulk limit refused, out-of-subset requests refused by name, LIST zero. Provisional, debug build; no auth, no scoring, no real-time get, restart replays the whole log. Differential comparison not done (no result documents for this subset)."
+            }
+          ]
         },
         {
           "id": "M20.05",

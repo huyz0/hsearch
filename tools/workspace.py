@@ -20,14 +20,17 @@ LAYERS = {
     "hsearch-object": set(),
     "hsearch-s3": {"hsearch-object"},
     "hsearch-index": {"hsearch-object", "hsearch-engine"},
+    "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3"},
     "hsearch-testkit": set(),
     "xtask": set(),
 }
-PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index"}
+PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-node"}
 EXTERNAL = {name: set() for name in LAYERS}
 EXTERNAL["hsearch-engine"] = {"lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store"}
 # Signing and a blocking HTTP client, exact-pinned in crates/s3/Cargo.toml. No TLS stack yet.
 EXTERNAL["hsearch-s3"] = {"hmac", "sha2", "ureq"}
+# JSON bodies, a blocking HTTP/1.1 server (plain HTTP, no TLS) and a safe arena for query lowering, exact-pinned in crates/node/Cargo.toml.
+EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 TEST_FEATURES = {"test-util", "test-support", "asserting"}
 
 

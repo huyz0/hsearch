@@ -55,3 +55,23 @@ impl From<hsearch_engine::Error> for Error {
 
 /// Result alias for the write path.
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn errors_display_and_convert_from_their_sources() {
+        assert_eq!(Error::Fenced.to_string(), "Fenced");
+        assert_eq!(
+            Error::from(StoreError::Conflict),
+            Error::Store(StoreError::Conflict)
+        );
+        assert_eq!(
+            Error::from(hsearch_engine::Error::Limit),
+            Error::Engine(hsearch_engine::Error::Limit)
+        );
+        let boxed: Box<dyn std::error::Error> = Box::new(Error::Corrupt);
+        assert_eq!(boxed.to_string(), "Corrupt");
+    }
+}

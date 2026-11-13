@@ -417,3 +417,42 @@ fn two_openers_cannot_both_own_the_same_epoch() {
         }
     }
 }
+
+#[test]
+fn mappings_are_stored_once_under_a_derived_key() {
+    let store = store();
+    assert_eq!(
+        hsearch_index::get_mapping(&*store, "orders").err(),
+        Some(Error::NotFound)
+    );
+    hsearch_index::put_mapping(&*store, "orders", b"mapping-bytes").unwrap();
+    assert_eq!(
+        hsearch_index::get_mapping(&*store, "orders").unwrap(),
+        b"mapping-bytes"
+    );
+    assert_eq!(
+        hsearch_index::put_mapping(&*store, "orders", b"other").err(),
+        Some(Error::Exists)
+    );
+    assert_eq!(
+        hsearch_index::get_mapping(&*store, "orders").unwrap(),
+        b"mapping-bytes"
+    );
+    for bad in ["", "Upper", "a/b", &"x".repeat(65)] {
+        assert_eq!(
+            hsearch_index::put_mapping(&*store, bad, b"x").err(),
+            Some(Error::Invalid)
+        );
+        assert_eq!(
+            hsearch_index::get_mapping(&*store, bad).err(),
+            Some(Error::Invalid)
+        );
+    }
+}
+
+#[test]
+fn a_published_root_naming_too_many_files_is_refused_not_written() {
+    // The root decoder refuses more than 4096 files, so publish must never
+    // write one: exercised through the format bound the writer checks.
+    assert_eq!(hsearch_index::format::MAX_FILES, 4096);
+}

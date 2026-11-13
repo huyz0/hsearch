@@ -158,3 +158,20 @@ pub fn open_published<S: MetadataStore + 'static>(
     };
     Snapshot::open_remote(cache, remote, names, 256 << 20, schema).map_err(Error::from)
 }
+
+/// Store the index's mapping bytes under a derived key. Fails with
+/// [`Error::Exists`] if the index already has one. The caller owns the format.
+pub fn put_mapping<S: MetadataStore + 'static>(store: &S, name: &str, bytes: &[u8]) -> Result<()> {
+    if !valid_name(name) {
+        return Err(Error::Invalid);
+    }
+    crate::writer::put_mapping(store, name, bytes)
+}
+
+/// Read the mapping bytes stored for an index, or [`Error::NotFound`].
+pub fn get_mapping<S: MetadataStore + 'static>(store: &S, name: &str) -> Result<Vec<u8>> {
+    if !valid_name(name) {
+        return Err(Error::Invalid);
+    }
+    crate::writer::get_mapping(store, name)
+}
