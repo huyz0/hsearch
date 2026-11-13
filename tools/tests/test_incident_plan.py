@@ -23,6 +23,7 @@ class IncidentPlanTests(unittest.TestCase):
         for tid in self.tasks:  # The first runnable slice lands after this draft model.
             if tid.startswith("M20."):
                 self.tasks[tid]["status"] = "planned"
+        milestones["M20"]["status"] = "planned"
         self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.
         milestones["M01"]["status"] = "in_progress"
 

@@ -42,6 +42,8 @@ jobs:
           cargo run --locked -q -p hsearch-s3 --example probe -- write
           scripts/rustfs.sh restart
           cargo run --locked -q -p hsearch-s3 --example probe -- verify | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: End to end over plain HTTP (100k documents, kill -9, restart)
+        run: scripts/e2e.sh | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Status from tasks.json (job summary, no reconciliation PRs)
         if: always()
         run: python3 docs/plan/tools/plan.py summary >> "$GITHUB_STEP_SUMMARY"

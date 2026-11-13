@@ -1067,7 +1067,7 @@
       "title": "First runnable slice: RustFS, engine and a minimal endpoint",
       "goal": "Reach a node that ingests with _bulk and answers _search over data held only in RustFS, with the smallest design that is honest about durability, before the deep features.",
       "owner": "storage/runtime",
-      "status": "planned",
+      "status": "done",
       "depends_on": [
         "M01"
       ],
@@ -1249,8 +1249,13 @@
             "M20.04"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m20-05-first-slice-qualification.md",
+              "result": "scripts/e2e.sh over plain HTTP against RustFS 1.0.4: 100k documents, restart on an empty data dir, kill -9 mid-bulk with every acknowledged document present, identical answers after a second restart; requests per call by type measured and asserted (bulk 1 PUT, search 0, LIST 0). Provisional, debug build, 4-CPU cloud container; gaps listed."
+            }
+          ]
         }
       ]
     },

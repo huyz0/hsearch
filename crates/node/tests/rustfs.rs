@@ -133,3 +133,79 @@ fn a_hundred_thousand_documents_over_http_survive_a_restart() {
     assert_eq!(total["hits"]["total"]["value"], json!(DOCUMENTS + 1));
     running.shutdown();
 }
+
+/// Requests to the store caused by one HTTP call, by call type, on a real store.
+#[test]
+fn requests_per_http_call_by_type_never_list() {
+    let Some(store) = store() else {
+        return;
+    };
+    let dir = Scratch::new("rfc");
+    let node = Arc::new(Node::new(Arc::clone(&store), dir.0.clone()));
+    let running = serve(node, "127.0.0.1:0", 4, false).unwrap();
+    let addr = running.addr;
+    let measure = |label: &str, f: &dyn Fn()| -> [u64; 5] {
+        let before = store.counts();
+        f();
+        let after = store.counts();
+        let d = [
+            after.get - before.get,
+            after.put - before.put,
+            after.head - before.head,
+            after.list - before.list,
+            after.delete - before.delete,
+        ];
+        eprintln!(
+            "requests {label}: GET {} PUT {} HEAD {} LIST {} DELETE {}",
+            d[0], d[1], d[2], d[3], d[4]
+        );
+        d
+    };
+    let bulk = |range: std::ops::Range<usize>, query: &str| {
+        let body: String = range.map(doc).collect();
+        let (status, out) = call(addr, "POST", &format!("/orders/_bulk{query}"), &body);
+        assert_eq!((status, &out["errors"]), (200, &json!(false)));
+    };
+    let create = measure("create index", &|| {
+        assert_eq!(call(addr, "PUT", "/orders", MAPPING).0, 200);
+    });
+    assert_eq!(create[3], 0);
+    let durable = measure("bulk of 1000, durable", &|| bulk(0..1000, ""));
+    assert_eq!(durable, [0, 1, 0, 0, 0], "one PUT, nothing else");
+    let searchable = measure("bulk of 1000, refresh=wait_for", &|| {
+        bulk(1000..2000, "?refresh=wait_for");
+    });
+    assert_eq!(searchable, [0, 1, 0, 0, 0], "visibility adds no request");
+    let refresh = measure("refresh", &|| {
+        assert_eq!(call(addr, "POST", "/orders/_refresh", "").0, 200);
+    });
+    assert_eq!(refresh[3], 0);
+    let queries = [
+        ("match_all", json!({"match_all": {}})),
+        ("term", json!({"term": {"tag": "t1"}})),
+        ("range", json!({"range": {"n": {"gte": 10, "lt": 900}}})),
+        ("match", json!({"match": {"title": "fox"}})),
+        (
+            "bool",
+            json!({"bool": {"filter": [{"term": {"ok": true}}, {"term": {"tag": "t0"}}]}}),
+        ),
+    ];
+    for (label, query) in &queries {
+        let d = measure(&format!("search {label}"), &|| {
+            let (status, _) = call(
+                addr,
+                "POST",
+                "/orders/_search",
+                &json!({"query": query, "size": 10}).to_string(),
+            );
+            assert_eq!(status, 200);
+        });
+        assert_eq!(d, [0; 5], "a search on an open index reads no object");
+    }
+    let get = measure("get by id", &|| {
+        assert_eq!(call(addr, "GET", "/orders/_doc/d5", "").0, 200);
+    });
+    assert_eq!(get, [0; 5]);
+    assert_eq!(store.counts().list, 0);
+    running.shutdown();
+}
