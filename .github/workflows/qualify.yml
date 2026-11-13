@@ -26,6 +26,8 @@ jobs:
           persist-credentials: false
       - name: Install pinned toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      - name: Prefetch locked dependencies
+        run: cargo fetch --locked
       - name: Same check as CI, on native ARM
         run: python3 tools/check.py
 
