@@ -1083,12 +1083,12 @@
           "title": "Add an S3-compatible object adapter and run it against RustFS",
           "goal": "Give hsearch-object a real backend so every later task runs against a store, not only the in-memory double.",
           "deliverables": [
-            "`ObjectBackend` over the S3 API for RustFS first and MinIO as the second S3-compatible target, with an exact-pinned client dependency and licence note",
+            "`ObjectBackend` and `MetadataStore` over the S3 API for RustFS, with exact-pinned client dependencies and licence inventory; MinIO as a second target moves to M03.10 because no pinned MinIO image could be pulled",
             "Conditional create and conditional update mapped to the trait outcomes the M03.02 probe proves available; exact-version range reads, timeouts and cancellation",
             "Per-operation request counters (GET, PUT, HEAD, LIST, DELETE) and a digest-pinned RustFS compose file for local and CI runs"
           ],
           "validation": [
-            "Run the M03.01 trait contract suite against RustFS and the in-memory double; run it again against MinIO",
+            "Run the M03.01 trait contract suite against RustFS and the in-memory double",
             "No compare-and-set built from GET plus an unconditional PUT; a missing conditional-write capability fails the run instead of falling back"
           ],
           "definition_of_done": [
@@ -1099,8 +1099,13 @@
             "M03.02"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-02-rustfs-probe.md",
+              "result": "Contract history, simultaneous CAS, replay, identity conflict, bounded resolution, error mapping and budget tests pass against pinned RustFS 1.0.4 (13 integration, 9 unit tests, 95.7% lines). Requests counted by GET/PUT/HEAD/LIST/DELETE. Provisional; MinIO run moved to M03.10."
+            }
+          ]
         },
         {
           "id": "M20.02",
@@ -1644,13 +1649,40 @@
             "Capability probe executable, concurrent history recorder/checker and digest-pinned deployment"
           ],
           "validation": [
-            "Many-client conditional create/update races, response loss, ranges, restart and multipart failure tests."
+            "Many-client conditional create/update races, ranges and restart tests; multipart and response-loss tests are M03.10."
           ],
           "definition_of_done": [
             "Probe evidence binds image/config/topology; required capability failure blocks production readiness."
           ],
           "depends_on": [
             "M03.01"
+          ],
+          "owner": "storage/consistency",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-02-rustfs-probe.md",
+              "result": "Probe run against digest-pinned RustFS 1.0.4: conditional create/update, version-pinned ranges, 20 rounds of 16-client CAS races and a restart check all pass. Multipart and network response-loss probes moved to M03.10. Single node, plain HTTP, provisional."
+            }
+          ]
+        },
+        {
+          "id": "M03.10",
+          "title": "Probe RustFS multipart failure and response loss",
+          "goal": "Close the M03.02 probe gaps that need fault injection against the real store.",
+          "deliverables": [
+            "Probe cases for multipart failure and for losing a response after commit, using a fault-injecting TCP proxy in front of the pinned RustFS",
+            "Run the M03.01 contract suite against a pinned MinIO image as the second S3-compatible target"
+          ],
+          "validation": [
+            "Each case runs against the pinned image and records the observed outcome next to the M03.02 evidence.",
+            "The contract suite passes on MinIO, or the failing capability is recorded."
+          ],
+          "definition_of_done": [
+            "A lost response after a committed write resolves to the original receipt on the real store, and multipart failure leaves no visible partial object."
+          ],
+          "depends_on": [
+            "M03.02"
           ],
           "owner": "storage/consistency",
           "status": "planned",

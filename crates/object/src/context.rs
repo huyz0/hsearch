@@ -89,6 +89,18 @@ impl RequestContext {
         self.expired.store(true, Ordering::Release);
     }
 
+    /// Time left before the deadline, zero once expired or past due.
+    ///
+    /// Provider adapters use this to bound one network call. It does not charge
+    /// or check cancellation.
+    #[must_use]
+    pub fn remaining(&self) -> Duration {
+        if self.expired.load(Ordering::Acquire) {
+            return Duration::ZERO;
+        }
+        self.deadline.saturating_duration_since(Instant::now())
+    }
+
     /// Check whether a new operation can still be admitted.
     pub fn check(&self) -> Result<(), Error> {
         if self.cancellation.is_cancelled() {
