@@ -73,7 +73,7 @@ M02 and M03 run beside M20: they freeze the numbers and formats that M20 leaves 
 | PR-20 | OpenSearch API compatibility as close as practical | M02.01 (done), M06.05, M07.04, M16.01 | Matrix rows A01 to A16 in [api-compatibility](api-compatibility.md) |
 | PR-21 | Full-text search through lucene-rust | M02.02 (done), M04.01, M07.04 | |
 | PR-22 | HNSW and IVF, quantization, disk variants | M23.01, M23.02, M23.03, M02.12 | |
-| PR-23 | Extension modules, native C ABI and WASM | M24.01, M24.02, M24.03, M24.04, M24.05, M16.06 | Loader crate is the only `unsafe` (D18) |
+| PR-23 | Extension modules, native C ABI and WASM | M24.01, M24.02, M24.03, M24.04, M24.05, M16.06 | Loader crate is the only `unsafe` (D18). Contract: [extension-modules](extension-modules.md) |
 | PR-53 | Engine gaps fixed upstream | M04.01, M04.02, M14.03, M23.03, M02.12 | Rule applies to every task that needs an engine change |
 | PR-54 | Paging, PIT, scroll | M22.01, M07.05 | |
 

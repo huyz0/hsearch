@@ -79,7 +79,7 @@ At startup, validate duplicate IDs, dependency cycles, mandatory capabilities, c
 
 Persist the IDs and versions needed to read on-disk data. Removing a module that owns referenced formats/keys is refused until data is migrated. Rolling upgrades use an intersection of readers' supported formats and a cluster write-format epoch; do not emit a new format merely because one new node can write it. Downgrade is possible only if no unreadable format has been published. Key policy, authority and cipher changes require explicit migration protocols, not hot replacement of live trait objects.
 
-Separately deployed modules use versioned protobuf/HTTP contracts with mTLS and scoped capabilities. Untrusted query/ingest code may later use WASM with memory/fuel/network restrictions, but it is a separate qualified runtime. Native dynamic loading is not promised. The first release exposes extension traits and composition features with reproducible builds.
+Separately deployed modules use versioned protobuf/HTTP contracts with mTLS and scoped capabilities. Untrusted query/ingest code may later use WASM with memory/fuel/network restrictions, but it is a separate qualified runtime. Native dynamic loading was not promised here; decision D18 (13 Nov 2026) supersedes that. Dynamic extension modules, native C ABI and WASM, are specified in [extension-modules](extension-modules.md). Trusted Rust modules compiled in as crates remain the way the built-in catalog above is composed, with reproducible builds.
 
 ## Proof that the seams work
 

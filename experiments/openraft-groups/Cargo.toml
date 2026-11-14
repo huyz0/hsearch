@@ -1,0 +1,15 @@
+# M02.10 experiment: standalone on purpose. Not a member of the hsearch workspace, so its
+# dependency tree (openraft, tokio) never reaches the product build, cargo-deny or coverage.
+[package]
+name = "openraft-groups"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+openraft = { version = "=0.10.0", features = ["tokio-rt"] }
+openraft-memstore = "=0.10.0"
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "time", "sync", "macros"] }
+anyerror = "=0.1.13"
