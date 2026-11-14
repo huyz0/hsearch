@@ -26,6 +26,7 @@ Sources, fetched from crates.io and read only (not built):
 - Ambiguous outcomes: the object seam already resolves a lost PUT response by identity (see [m03-02-rustfs-probe.md](m03-02-rustfs-probe.md)); neither library models that, so each would need the storage layer to hide it.
 
 ## Not done, and why
-- No ambiguity/failure schedules against either candidate and no per-group CPU/RAM/disk/PID observations: that needs building and running them, which the M02.10 envelope and its governance have not been admitted for in this session's tooling.
-- The archived review/governance obligations on M02.10 were not run; M02.10 stays `in_progress`.
+- No ambiguity/failure schedules against either candidate and no per-group CPU/RAM/disk/PID observations: that needs building and running them, which was not done in this pass.
+- M02.10 stays `in_progress`.
 - Version choice is by newest published; a pinned-rev comparison is still owed.
+- The task's matched sparse/busy/skewed comparison and KMS path accounting are not covered by this file.

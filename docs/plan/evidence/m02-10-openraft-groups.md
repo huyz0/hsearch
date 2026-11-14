@@ -76,7 +76,7 @@ Notes and limits:
   [m02-10-quorum-candidates.md](m02-10-quorum-candidates.md).
 - No object-store log under either library, no multi-process or real-network run, no restart
   or snapshot schedule, no CPU/RAM/disk/PID envelope beyond the RSS check.
-- The archived M02.10 governance (review checkpoints, controls) was not run; M02.10 stays
+- No matched sparse/busy/skewed comparison and no KMS or object-store path accounting; M02.10 stays
   `in_progress`. No runtime authority is selected here; that is M02.04.
 
 ## Raw output
