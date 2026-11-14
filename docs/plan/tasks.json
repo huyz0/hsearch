@@ -1823,6 +1823,30 @@
           ]
         },
         {
+          "id": "M03.12",
+          "title": "Finish attribution: retrying client, multipart, tenant feed and bounded telemetry",
+          "goal": "Close what M03.07's ledger left open so attribution covers the paths a real deployment uses, not only the adapter's own single-attempt calls.",
+          "deliverables": [
+            "A retrying client layer (or a real SDK) under the adapter, with every retry attempt attributed and flagged, and the transport-log comparison repeated through it",
+            "Multipart and POST attribution, and the tenant identity passed to the traffic ledger from the request context so drill-down is fed by the adapter",
+            "Bounded OpenTelemetry instruments for the ledger in hsearch-observe (cardinality-bounded, no tenant labels on metrics)"
+          ],
+          "validation": [
+            "Inject throttling, connection loss and conflicts under the retrying layer and assert attempts, retries and bytes against an independent transport log that classifies requests without reusing the adapter's rules",
+            "A NAT/hairpin byte path reported by both ends is charged once through the adapter, and a wrong-unit rate is rejected at the boundary",
+            "Normal independent review of the code and the claimed results, and green CI."
+          ],
+          "definition_of_done": [
+            "Retries, multipart and tenant-scoped traffic are attributed independently of logical calls, and the exported telemetry stays within a fixed cardinality bound."
+          ],
+          "depends_on": [
+            "M03.07"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
           "id": "M03.09",
           "title": "Decide commit-domain sharing under tenant = index",
           "goal": "Resolve the open design question in product-requirements conflict 3 before formats freeze: with one tenant per index, may small indexes share a fenced append lane?",
@@ -1927,8 +1951,13 @@
             "M03.01"
           ],
           "owner": "cost/architecture/operations",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-07-attribution.md",
+              "result": "Implemented in hsearch-s3: logical calls (counted at every public entry, including calls refused before the wire) and attempts counted apart by role, verb and outcome with encoded bytes; directed traffic ledger by role, direction, endpoint, price class and payer with a transfer counted once, bounded keys, transfers and tenants, a scoped tenant drill-down, bytes refused by a bound kept as unknown, unknown (not free) pricing for a missing path, payer or rate, DNS-only paths failing acceptance, and the byte unit carried in the rate; redirects are not followed so no request hides. Adapter attempt counts agree with a scripted provider's transport log (one written in this repo, comparing verbs only) for a clean write, a lost race (1 call, 2 attempts), an empty-read/throttle/success sequence and a redirect; 34 tests, mutations seen red, hsearch-s3 line coverage 97.9%. Provisional and partial against the validation list: SDK retries are caller-repeated calls and flags, not a real retrying client; NAT and hairpin paths and double-counted endpoint charges are exercised only in the ledger's unit tests, no real route inspection or provider usage was used; request size is a lower bound computed not read. The remainder is M03.12 and M15.07."
+            }
+          ]
         },
         {
           "id": "M03.08",
@@ -4706,7 +4735,8 @@
           "goal": "Validate that the modeled savings survive actual cloud paths, SKU rules and provider charging.",
           "deliverables": [
             "S3/GCS/Azure rate/path profiles and scoped usage/billing export reconciliation with explained residuals",
-            "Infrastructure endpoint/route and LB/NAT/PrivateLink/TGW checks, explicit GB/GiB and sender/receiver payer mappings"
+            "Infrastructure endpoint/route and LB/NAT/PrivateLink/TGW checks, explicit GB/GiB and sender/receiver payer mappings",
+            "Real route-inspection and transport-log evidence fed into the M03.07 traffic ledger paths (a DNS-only path is rejected), the M03.07 key role fed by the KMS adapters, and real provider usage compared with the ledger"
           ],
           "validation": [
             "Compare meter projections to real provider usage and available billing exports for normal, retry, idle, failover and cross-cluster workloads",
