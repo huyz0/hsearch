@@ -1,0 +1,22 @@
+{
+  "name": "example-lowercase-ascii",
+  "version": "0.1.0",
+  "abi": "1.0",
+  "engine_api": "1.0",
+  "max_concurrent_calls": 8,
+  "io_bytes": 65536,
+  "extension_points": [
+    {
+      "kind": "analyzer",
+      "id": "lowercase_ascii",
+      "version": "1.0.0",
+      "deterministic": true
+    },
+    {
+      "kind": "query",
+      "id": "terms_lowercase",
+      "version": "1.0.0",
+      "deterministic": true
+    }
+  ]
+}
