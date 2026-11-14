@@ -35,7 +35,7 @@ UNSAFE_CRATES = {"hsearch-module-native"}
 EXTERNAL = {name: set() for name in LAYERS}
 EXTERNAL["hsearch-engine"] = {"lucene-aggs", "lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store"}
 # Signing and a blocking HTTP client, exact-pinned in crates/s3/Cargo.toml. No TLS stack yet.
-EXTERNAL["hsearch-s3"] = {"hmac", "sha2", "ureq"}
+EXTERNAL["hsearch-s3"] = {"hmac", "md-5", "sha2", "ureq"}
 # JSON bodies, a blocking HTTP/1.1 server (plain HTTP, no TLS) and a safe arena for query lowering, exact-pinned in crates/node/Cargo.toml.
 EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 # Extension module contract (JSON descriptor) and the native loader: dynamic library open, SHA-256 pin and a sealed memfd copy.
