@@ -1819,6 +1819,10 @@
             {
               "path": "evidence/m02-bench-profile-bulk.md",
               "result": "Origin: the M02.10 control and direct probe showed a stale If-Match update with identical bytes accepted on RustFS 1.0.4, and 16 identical-body writers saw zero conflicts. Other S3 implementations were not tested."
+            },
+            {
+              "path": "evidence/m03-11-fencing.md",
+              "result": "RustFS half: the shared stale-update probe failed on the adapter, an identical-body refusal rule makes it pass, and A-B-A is shown unfenced without a unique token in the payload (a limit pinned by a test). Provisional; MinIO and real S3 not run."
             }
           ]
         },
@@ -2425,7 +2429,8 @@
           "goal": "Acknowledge only authoritative object-durable operations.",
           "deliverables": [
             "Dirty-only group committer, conditional-create ordered WAL slots, inline wrapped-DEK envelope, explicit committed receipts and unknown-outcome resolution",
-            "Structural authority/checkpoint publication separate from append; resolved operation/crypto/schema dependencies validated before the commit PUT"
+            "Structural authority/checkpoint publication separate from append; resolved operation/crypto/schema dependencies validated before the commit PUT",
+            "The unique per-commit token inside every fenced commit payload (sequence number or nonce), because content-hash ETags do not fence A-B-A (M03.11 evidence)"
           ],
           "validation": [
             "Kill/response-loss at upload/CAS/ack boundaries and concurrent old/new owners with independent receipts.",

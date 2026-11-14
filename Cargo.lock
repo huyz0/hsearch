@@ -273,6 +273,7 @@ version = "0.1.0"
 dependencies = [
  "hmac",
  "hsearch-object",
+ "md-5",
  "sha2",
  "ureq",
 ]
@@ -516,6 +517,16 @@ source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d55
 dependencies = [
  "thiserror",
  "zstd-safe",
+]
+
+[[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest",
 ]
 
 [[package]]
