@@ -17,9 +17,12 @@
 //! # Honest limits
 //!
 //! - **ABA on identical bytes.** `If-Match` compares the `ETag`, which is a hash
-//!   of the body. Replacing an object with identical bytes keeps the `ETag`, so a
-//!   conditional update against the older version can still succeed. Callers that
-//!   need a strict fence put a sequence number in the payload.
+//!   of the body, so a stale `If-Match` with the bytes the object already holds is
+//!   accepted. The adapter refuses a conditional update whose body MD5 equals the
+//!   precondition's ETag ([`Error::InvalidInput`]); other ETag schemes (multipart,
+//!   SSE-KMS, weak) are not covered. That does not fence A, B, A:
+//!   after B is replaced by A again the ETag matches the first A. Only a unique
+//!   per-commit token inside the payload does, and the commit rule (M06) owns it.
 //! - **Identity retention is the version history.** Each version stores the
 //!   request id and a digest of the full request as user metadata. Resolution
 //!   scans at most [`SCAN_LIMIT`] versions newer than the precondition; beyond
@@ -230,6 +233,13 @@ fn split_token(token: &VersionToken) -> Result<(&str, &str), Error> {
                     .all(|b| (0x20..0x7f).contains(&b))
         })
         .ok_or(Error::InvalidInput)
+}
+
+/// Whether `etag` (quoted or not) is the MD5 of `body`, as a single-part PUT ETag is.
+fn etag_is_body_hash(etag: &str, body: &[u8]) -> bool {
+    use md5::{Digest, Md5};
+    let bare = etag.trim_matches('"');
+    bare.eq_ignore_ascii_case(&hex(&Md5::digest(body)))
 }
 
 fn digest(request: &Mutation) -> String {
@@ -908,7 +918,16 @@ impl S3Store {
         )?;
         let condition = match &request.precondition {
             Precondition::Absent => ("if-none-match", "*".to_owned()),
-            Precondition::Matches(token) => ("if-match", split_token(token)?.1.to_owned()),
+            Precondition::Matches(token) => {
+                let etag = split_token(token)?.1;
+                // The ETag is a content hash, so a body equal to the one the version
+                // holds would be accepted from any stale version (RustFS 1.0.4). Refuse
+                // it: the caller must change the bytes (a unique token) to be fenced.
+                if etag_is_body_hash(etag, request.payload.as_bytes()) {
+                    return Err(Error::InvalidInput);
+                }
+                ("if-match", etag.to_owned())
+            }
         };
         let headers = [
             condition,
@@ -1066,5 +1085,27 @@ impl MetadataStore for S3Store {
             )?;
             Ok(receipt)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::etag_is_body_hash;
+
+    const ABC: &str = "900150983cd24fb0d6963f7d28e17f72";
+
+    #[test]
+    fn an_etag_equal_to_the_body_md5_is_recognised_quoted_or_not() {
+        assert!(etag_is_body_hash(&format!("\"{ABC}\""), b"abc"));
+        assert!(etag_is_body_hash(ABC, b"abc"));
+        assert!(etag_is_body_hash(&ABC.to_uppercase(), b"abc"));
+    }
+
+    #[test]
+    fn other_etags_are_never_taken_for_the_body_hash() {
+        assert!(!etag_is_body_hash(&format!("\"{ABC}\""), b"abd"));
+        assert!(!etag_is_body_hash(&format!("\"{ABC}-3\""), b"abc"));
+        assert!(!etag_is_body_hash(&format!("W/\"{ABC}\""), b"abc"));
+        assert!(!etag_is_body_hash("", b"abc"));
     }
 }
