@@ -65,6 +65,25 @@ const META_REQUEST: &str = "x-amz-meta-hs-request";
 const META_DIGEST: &str = "x-amz-meta-hs-digest";
 const META_OPAQUE: &str = "x-amz-meta-hs-meta";
 
+/// How many times, and how far apart, the adapter repeats a request that certainly or probably
+/// did not take effect. Attempts, not retries: one means no retry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RetryPolicy {
+    /// Most attempts per request, at least one.
+    pub max_attempts: u32,
+    /// Pause before the second attempt; each later pause adds the same step.
+    pub backoff: Duration,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: 1,
+            backoff: Duration::ZERO,
+        }
+    }
+}
+
 /// Connection settings. Secrets are never printed by `Debug`.
 #[derive(Clone)]
 pub struct S3Config {
@@ -173,6 +192,7 @@ pub struct S3Store {
     agent: ureq::Agent,
     counters: Counters,
     attribution: Mutex<Attribution>,
+    retry: RetryPolicy,
 }
 
 /// What the adapter has attributed so far.
@@ -300,6 +320,7 @@ impl S3Store {
                 next_transfer: 0,
             }),
             config,
+            retry: RetryPolicy::default(),
         })
     }
 
@@ -312,6 +333,14 @@ impl S3Store {
             guard.path = path;
             guard.local = local;
         }
+        self
+    }
+
+    /// Retry throttled, failed and unconnected requests as `policy` says. The default is a single
+    /// attempt, so a store behaves as before until a caller opts in.
+    #[must_use]
+    pub fn with_retry(mut self, policy: RetryPolicy) -> Self {
+        self.retry = policy;
         self
     }
 
@@ -337,7 +366,15 @@ impl S3Store {
         self.attribution().ledger.logical(role);
     }
 
-    fn attribute(&self, role: Role, op: Op, status: Option<u16>, request: u64, response: u64) {
+    fn attribute(
+        &self,
+        role: Role,
+        op: Op,
+        status: Option<u16>,
+        request: u64,
+        response: u64,
+        retry: bool,
+    ) {
         let verb = op.verb();
         let mut guard = self.attribution();
         let state = &mut *guard;
@@ -347,7 +384,7 @@ impl S3Store {
             Outcome::classify(verb, status),
             request,
             response,
-            false,
+            retry,
         );
         for (direction, bytes) in [(Direction::Egress, request), (Direction::Ingress, response)] {
             state.next_transfer += 1;
@@ -389,10 +426,14 @@ impl S3Store {
         counter.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Send one signed request. `key` is the object key, or `None` for the bucket.
-    ///
-    /// A failure before the request is on the wire is [`Error::Unavailable`]; once
-    /// it may have been delivered a mutation reports [`Error::UnknownOutcome`].
+    /// Send a request, retrying under the store's [`RetryPolicy`]. Every attempt is attributed and a
+    /// repeat is flagged as a retry. A read is retried after a 429, a 5xx (except 501) or a failure
+    /// to connect. A mutation is retried **only when no connection was made** (nothing was sent): a
+    /// status code, even a 503, does not prove a write did not commit (a gateway or a store with a
+    /// quorum failure can answer after applying it), so a refused status is returned and the caller
+    /// replays the same request id, which the conditional-write path resolves. Each retry is
+    /// charged to the context's attempt and byte budget. When the budget is spent or the deadline
+    /// has passed, the last real result is returned, never a budget error in its place.
     #[allow(clippy::too_many_arguments)]
     fn send(
         &self,
@@ -404,6 +445,62 @@ impl S3Store {
         headers: &[(&str, String)],
         body: &[u8],
         response_limit: u64,
+    ) -> Result<Reply, Error> {
+        let mutation = matches!(op, Op::Put | Op::Post | Op::Delete);
+        let mut attempt = 0u32;
+        loop {
+            let result = self.send_once(
+                context,
+                role,
+                op,
+                key,
+                query,
+                headers,
+                body,
+                response_limit,
+                attempt > 0,
+            );
+            attempt += 1;
+            let retryable = match &result {
+                Ok(reply) => !mutation && matches!(reply.status, 429 | 500 | 502..=599),
+                // `Unavailable` is returned for a mutation only when the connection was never made.
+                Err(Error::Unavailable) => true,
+                Err(_) => false,
+            };
+            if !retryable || attempt >= self.retry.max_attempts {
+                return result;
+            }
+            let pause = self
+                .retry
+                .backoff
+                .saturating_mul(attempt)
+                .min(context.remaining());
+            if !pause.is_zero() {
+                std::thread::sleep(pause);
+            }
+            let again = body.len() as u64 + key.map_or(0, |k| k.len() as u64) + query.len() as u64;
+            if context.check().is_err() || context.charge_request(again).is_err() {
+                return result;
+            }
+        }
+    }
+
+    /// Send one signed request. `key` is the object key, or `None` for the bucket.
+    ///
+    /// A failure before the request is on the wire is [`Error::Unavailable`]; once
+    /// it may have been delivered a mutation reports [`Error::UnknownOutcome`].
+    #[allow(clippy::too_many_arguments)]
+    fn send_once(
+        &self,
+        context: &RequestContext,
+        role: Role,
+        op: Op,
+        key: Option<&ObjectKey>,
+        query: &str,
+        headers: &[(&str, String)],
+        body: &[u8],
+        response_limit: u64,
+        retry: bool,
     ) -> Result<Reply, Error> {
         context.check()?;
         let mutation = matches!(op, Op::Put | Op::Post | Op::Delete);
@@ -457,7 +554,7 @@ impl S3Store {
                     ureq::Error::Io(io) if io.kind() == std::io::ErrorKind::ConnectionRefused => 0,
                     _ => request_size,
                 };
-                self.attribute(role, op, None, sent, 0);
+                self.attribute(role, op, None, sent, 0, retry);
                 return Err(match error {
                     ureq::Error::ConnectionFailed | ureq::Error::HostNotFound => Error::Unavailable,
                     // Refused before any byte was accepted: certified not executed.
@@ -499,6 +596,7 @@ impl S3Store {
             Some(status),
             request_size,
             encoded_response_bytes(&headers, body_len),
+            retry,
         );
         let body = body?;
         Ok(Reply {
