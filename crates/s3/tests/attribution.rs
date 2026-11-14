@@ -4,7 +4,11 @@
 #[path = "../../object/tests/support/mod.rs"]
 mod support;
 
-use hsearch_object::{Error, MetadataStore, ObjectBackend, ObjectKey, Precondition};
+use hsearch_object::{
+    Budget, Cancellation, Error, MetadataStore, ObjectBackend, ObjectKey, Precondition,
+    RequestContext,
+};
+use hsearch_s3::RetryPolicy;
 use hsearch_s3::{
     Class, Evidence, Outcome, Path, Payer, Place, Rate, Rates, Rejection, Role, S3Config, S3Store,
     Unit, Verb, Via, reconcile,
@@ -457,4 +461,260 @@ fn traffic_keeps_recording_past_the_transfer_table_and_matches_the_ledger() {
     );
     assert_eq!(traffic.overflow_bytes(), 0);
     assert_eq!(traffic.acceptance(), Ok(()));
+}
+
+fn retrying(max_attempts: u32) -> RetryPolicy {
+    RetryPolicy {
+        max_attempts,
+        backoff: std::time::Duration::ZERO,
+    }
+}
+
+#[test]
+fn a_throttled_read_is_retried_and_every_attempt_is_attributed() {
+    let provider = Provider::start(vec![SLOW_DOWN, SLOW_DOWN, CREATED]);
+    let store = provider.store().with_retry(retrying(3));
+    let key = ObjectKey::new(b"obj").unwrap();
+    run(store.head(&context(), &key)).unwrap();
+    let ledger = store.ledger();
+    assert_eq!(ledger.logical_calls(Role::Payload), 1);
+    assert_eq!(ledger.attempts(Role::Payload), 3);
+    assert_eq!(ledger.retries(), 2);
+    assert_eq!(ledger.amplification(Role::Payload), Some((3, 1)));
+    assert_eq!(ledger.attempts_with(Outcome::Throttled), 2);
+    assert_eq!(ledger.attempts_with(Outcome::Ok), 1);
+    assert_eq!(provider.verbs(), vec![Verb::Head; 3]);
+    assert!(reconcile(&ledger, &provider.verbs()).is_empty());
+}
+
+#[test]
+fn a_throttled_write_is_not_repeated_because_a_status_does_not_prove_it_did_not_commit() {
+    let provider = Provider::start(vec![SLOW_DOWN, CREATED]);
+    let store = provider.store().with_retry(retrying(5));
+    assert_eq!(
+        run(store.create(&context(), &create_request())).unwrap_err(),
+        Error::Throttled
+    );
+    assert_eq!(store.ledger().attempts(Role::Payload), 1);
+    assert_eq!(store.ledger().retries(), 0);
+    assert_eq!(provider.verbs(), vec![Verb::Put]);
+}
+
+#[test]
+fn retries_stop_at_the_limit_and_report_the_last_failure() {
+    let provider = Provider::start(vec![SLOW_DOWN, SLOW_DOWN, CREATED]);
+    let store = provider.store().with_retry(retrying(2));
+    let key = ObjectKey::new(b"obj").unwrap();
+    assert_eq!(
+        run(store.head(&context(), &key)).unwrap_err(),
+        Error::Throttled
+    );
+    assert_eq!(store.ledger().attempts(Role::Payload), 2);
+    assert_eq!(store.ledger().retries(), 1);
+    assert_eq!(provider.verbs().len(), 2);
+}
+
+#[test]
+fn the_default_and_a_zero_policy_make_one_attempt() {
+    for policy in [RetryPolicy::default(), retrying(0)] {
+        let provider = Provider::start(vec![SLOW_DOWN, CREATED]);
+        let store = provider.store().with_retry(policy);
+        let key = ObjectKey::new(b"obj").unwrap();
+        assert_eq!(
+            run(store.head(&context(), &key)).unwrap_err(),
+            Error::Throttled
+        );
+        assert_eq!(store.ledger().attempts(Role::Payload), 1);
+        assert_eq!(store.ledger().retries(), 0);
+    }
+}
+
+#[test]
+fn a_read_is_retried_after_a_server_error_but_a_write_is_not() {
+    let reads = Provider::start(vec![
+        Reply {
+            status: 500,
+            headers: &[],
+            body: "",
+        },
+        CREATED,
+    ]);
+    let store = reads.store().with_retry(retrying(3));
+    let key = ObjectKey::new(b"obj").unwrap();
+    run(store.head(&context(), &key)).unwrap();
+    let ledger = store.ledger();
+    assert_eq!(
+        ledger
+            .cell(Role::Payload, Verb::Head, Outcome::ServerError)
+            .attempts,
+        1
+    );
+    assert_eq!(
+        ledger.cell(Role::Payload, Verb::Head, Outcome::Ok).attempts,
+        1
+    );
+    assert_eq!(ledger.retries(), 1);
+
+    // A 500 on a write may have executed, so it is not repeated.
+    let writes = Provider::start(vec![
+        Reply {
+            status: 500,
+            headers: &[],
+            body: "",
+        },
+        CREATED,
+    ]);
+    let store = writes.store().with_retry(retrying(3));
+    assert!(run(store.create(&context(), &create_request())).is_err());
+    assert_eq!(store.ledger().attempts(Role::Payload), 1);
+    assert_eq!(writes.verbs().len(), 1);
+}
+
+#[test]
+fn a_write_whose_outcome_is_unknown_is_never_retried() {
+    // The connection is accepted and dropped after the request is read: it may have executed.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let accepted = Arc::new(Mutex::new(0));
+    let count = Arc::clone(&accepted);
+    std::thread::spawn(move || {
+        for mut client in listener.incoming().flatten() {
+            let _ = read_request(&mut client);
+            *count.lock().unwrap() += 1;
+        }
+    });
+    let store = S3Store::new(S3Config {
+        endpoint: addr,
+        bucket: "b".into(),
+        access_key: "k".into(),
+        secret_key: "s".into(),
+        region: "us-east-1".into(),
+    })
+    .unwrap()
+    .with_retry(retrying(3));
+    assert_eq!(
+        run(store.create(&context(), &create_request())).unwrap_err(),
+        Error::UnknownOutcome
+    );
+    assert_eq!(store.ledger().attempts(Role::Payload), 1);
+    assert_eq!(*accepted.lock().unwrap(), 1);
+}
+
+#[test]
+fn a_refused_connection_is_retried_even_for_a_write_and_sends_nothing() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    let store = S3Store::new(S3Config {
+        endpoint: addr,
+        bucket: "b".into(),
+        access_key: "k".into(),
+        secret_key: "s".into(),
+        region: "us-east-1".into(),
+    })
+    .unwrap()
+    .with_retry(retrying(3));
+    assert_eq!(
+        run(store.create(&context(), &create_request())).unwrap_err(),
+        Error::Unavailable
+    );
+    let cell = store
+        .ledger()
+        .cell(Role::Payload, Verb::Put, Outcome::Transport);
+    assert_eq!((cell.attempts, cell.request_bytes), (3, 0));
+    assert_eq!(store.ledger().retries(), 2);
+}
+
+#[test]
+fn retries_spend_the_attempt_budget_and_the_last_real_failure_is_returned() {
+    let provider = Provider::start(vec![SLOW_DOWN, SLOW_DOWN, CREATED]);
+    let store = provider.store().with_retry(retrying(5));
+    let key = ObjectKey::new(b"obj").unwrap();
+    // One attempt is charged by the call, one by the first retry, then the budget is spent: the
+    // caller sees the throttle, not a budget error standing in for it.
+    let result = run(store.head(&limited(1 << 20, 1 << 20, 2), &key));
+    assert_eq!(result.unwrap_err(), Error::Throttled);
+    assert_eq!(store.ledger().attempts(Role::Payload), 2);
+    assert_eq!(provider.verbs().len(), 2);
+}
+
+#[test]
+fn retries_spend_the_byte_budget_too() {
+    let provider = Provider::start(vec![SLOW_DOWN, CREATED]);
+    let store = provider.store().with_retry(retrying(5));
+    let key = ObjectKey::new(b"obj").unwrap(); // 3 key bytes charged per attempt
+    let result = run(store.head(&limited(5, 1 << 20, 10), &key));
+    assert_eq!(result.unwrap_err(), Error::Throttled);
+    assert_eq!(store.ledger().attempts(Role::Payload), 1);
+}
+
+#[test]
+fn a_backoff_never_sleeps_past_the_deadline() {
+    let provider = Provider::start(vec![SLOW_DOWN, CREATED]);
+    let policy = RetryPolicy {
+        max_attempts: 3,
+        backoff: std::time::Duration::from_secs(30),
+    };
+    let store = provider.store().with_retry(policy);
+    let context = RequestContext::new(
+        std::time::Duration::from_millis(150),
+        Cancellation::default(),
+        Budget {
+            request_bytes: 1 << 20,
+            response_bytes: 1 << 20,
+            attempts: 10,
+        },
+    )
+    .unwrap();
+    let key = ObjectKey::new(b"obj").unwrap();
+    let started = std::time::Instant::now();
+    let result = run(store.head(&context, &key));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(result.unwrap_err(), Error::Throttled);
+    assert_eq!(store.ledger().attempts(Role::Payload), 1);
+}
+
+#[test]
+fn a_post_is_attributed_as_a_write_verb_and_matches_the_transport_log() {
+    let provider = Provider::start(vec![Reply {
+        status: 200,
+        headers: &[],
+        body: "",
+    }]);
+    let store = provider.store();
+    let key = ObjectKey::new(b"big").unwrap();
+    let (status, _, _) = store
+        .probe_request(&context(), "POST", &key, "uploads=", &[], b"")
+        .unwrap();
+    assert_eq!(status, 200);
+    let ledger = store.ledger();
+    assert_eq!(ledger.attempts_by_verb(Verb::Post), 1);
+    assert_eq!(ledger.attempts_by_verb(Verb::Put), 0);
+    assert_eq!(provider.verbs(), vec![Verb::Post]);
+    assert!(reconcile(&ledger, &provider.verbs()).is_empty());
+    assert_eq!(store.counts().put, 1); // billed as a write
+}
+
+#[test]
+fn a_hairpin_path_through_the_adapter_is_classified_and_priced_apart() {
+    let provider = Provider::start(vec![CREATED]);
+    let (mut path, local) = same_zone_path(&provider.addr);
+    path.via = Via::Hairpin;
+    let store = provider.store().with_path(path, local);
+    run(store.create(&context(), &create_request())).unwrap();
+    let cell = store.ledger().cell(Role::Payload, Verb::Put, Outcome::Ok);
+    let traffic = store.traffic();
+    let bytes = cell.request_bytes + cell.response_bytes;
+    assert_eq!(traffic.bytes(Role::Payload, Class::NatHairpin), bytes);
+    assert_eq!(traffic.bytes(Role::Payload, Class::SameZone), 0);
+    assert!(!traffic.price(&Rates::default()).complete());
+    let rates = Rates {
+        nat_hairpin: Some(Rate::per(45_000, Unit::GB)),
+        ..Rates::default()
+    };
+    assert!(traffic.price(&rates).complete());
 }

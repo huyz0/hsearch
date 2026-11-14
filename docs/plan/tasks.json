@@ -1824,23 +1824,53 @@
         },
         {
           "id": "M03.12",
-          "title": "Finish attribution: retrying client, multipart, tenant feed and bounded telemetry",
-          "goal": "Close what M03.07's ledger left open so attribution covers the paths a real deployment uses, not only the adapter's own single-attempt calls.",
+          "title": "Attribute retries and write verbs in the S3 adapter",
+          "goal": "Make every retry and every write verb the adapter sends visible in the attribution ledger, without ever repeating a write that may have committed.",
           "deliverables": [
-            "A retrying client layer (or a real SDK) under the adapter, with every retry attempt attributed and flagged, and the transport-log comparison repeated through it",
-            "Multipart and POST attribution, and the tenant identity passed to the traffic ledger from the request context so drill-down is fed by the adapter",
-            "Bounded OpenTelemetry instruments for the ledger in hsearch-observe (cardinality-bounded, no tenant labels on metrics)"
+            "A retry policy under the adapter that repeats reads after a throttle, a 5xx or a failed connect, and repeats a write only when no connection was made, with every attempt attributed and flagged and charged to the request budget",
+            "POST (multipart control) attribution through the probe helper and a hairpin path exercised through the adapter"
           ],
           "validation": [
-            "Inject throttling, connection loss and conflicts under the retrying layer and assert attempts, retries and bytes against an independent transport log that classifies requests without reusing the adapter's rules",
-            "A NAT/hairpin byte path reported by both ends is charged once through the adapter, and a wrong-unit rate is rejected at the boundary",
+            "Inject throttling, connection loss, server errors and a lost response under the retry policy and assert attempts, retries and bytes against the scripted provider's transport log",
+            "A write is never repeated after a status or an unknown outcome; a refused connection sends nothing; a retry past the attempt, byte or deadline limit returns the last real failure",
             "Normal independent review of the code and the claimed results, and green CI."
           ],
           "definition_of_done": [
-            "Retries, multipart and tenant-scoped traffic are attributed independently of logical calls, and the exported telemetry stays within a fixed cardinality bound."
+            "Retries and write verbs are attributed independently of logical calls and no write that may have committed is repeated; what is not done here (real SDK and multipart path, independent transport classification, conflicts under retry, tenant feed, telemetry) is listed with an owner in M03.13 and M08.02"
           ],
           "depends_on": [
             "M03.07"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-12-retry-attribution.md",
+              "result": "S3Store::with_retry: reads retried after 429, 500, 502-599 or no connection; a write only when no connection was made (a status such as 503 does not prove a write did not commit, so it is returned and the caller replays the same request id through the conditional-write path); never after an unknown outcome. Each attempt attributed and flagged as a retry (3 attempts of one read: 1 call, 3 attempts, 2 retries, 3 HEADs in the provider log); retries charged to the context's attempt and byte budget and the last real failure returned when the budget or deadline is spent; backoff capped at the remaining deadline; POST attributed as a write verb; a hairpin path classified and priced apart; 22 tests in the file, mutations seen red for each rule. Provisional: the retry layer is the adapter's own, no real SDK ran, no real multipart path exists, and the provider log is written in this repo. Remainder: M03.13 and M08.02."
+            }
+          ]
+        },
+        {
+          "id": "M03.13",
+          "title": "Attribute a real retrying client and multipart path against an independent log",
+          "goal": "Test attribution where the adapter does not control the retries or the classification: a real retrying SDK or client, a real multipart upload, and a transport log that classifies requests by its own rules.",
+          "deliverables": [
+            "A real S3 SDK or retrying HTTP client under the adapter's attribution, with its hidden attempts counted and flagged, run against the pinned RustFS and MinIO images",
+            "A multipart upload path in the adapter (M03.10 only probed it) with every part and control request attributed",
+            "A transport log that classifies LIST, multipart and conditional requests by parsing the wire without reusing the adapter's verb rules, and a reconciliation that compares outcomes and bytes as well as verbs",
+            "Conflicts and lost races exercised under the retrying layer, with each attempt attributed"
+          ],
+          "validation": [
+            "Counts agree exactly between the ledger and the independent log under injected throttling, connection loss, conflicts and a lost response",
+            "A deliberately mis-classifying adapter path makes the reconciliation fail (seen red)",
+            "Normal independent review of the code and the claimed results, and green CI."
+          ],
+          "definition_of_done": [
+            "Hidden SDK attempts, multipart requests and conflict resolution are attributed and agree with an independent record; any residual is explained, not rounded away"
+          ],
+          "depends_on": [
+            "M03.12",
+            "M03.10"
           ],
           "owner": "cost/architecture/operations",
           "status": "planned",
@@ -1955,7 +1985,7 @@
           "evidence": [
             {
               "path": "evidence/m03-07-attribution.md",
-              "result": "Implemented in hsearch-s3: logical calls (counted at every public entry, including calls refused before the wire) and attempts counted apart by role, verb and outcome with encoded bytes; directed traffic ledger by role, direction, endpoint, price class and payer with a transfer counted once, bounded keys, transfers and tenants, a scoped tenant drill-down, bytes refused by a bound kept as unknown, unknown (not free) pricing for a missing path, payer or rate, DNS-only paths failing acceptance, and the byte unit carried in the rate; redirects are not followed so no request hides. Adapter attempt counts agree with a scripted provider's transport log (one written in this repo, comparing verbs only) for a clean write, a lost race (1 call, 2 attempts), an empty-read/throttle/success sequence and a redirect; 34 tests, mutations seen red, hsearch-s3 line coverage 97.9%. Provisional and partial against the validation list: SDK retries are caller-repeated calls and flags, not a real retrying client; NAT and hairpin paths and double-counted endpoint charges are exercised only in the ledger's unit tests, no real route inspection or provider usage was used; request size is a lower bound computed not read. The remainder is M03.12 and M15.07."
+              "result": "Implemented in hsearch-s3: logical calls (counted at every public entry, including calls refused before the wire) and attempts counted apart by role, verb and outcome with encoded bytes; directed traffic ledger by role, direction, endpoint, price class and payer with a transfer counted once, bounded keys, transfers and tenants, a scoped tenant drill-down, bytes refused by a bound kept as unknown, unknown (not free) pricing for a missing path, payer or rate, DNS-only paths failing acceptance, and the byte unit carried in the rate; redirects are not followed so no request hides. Adapter attempt counts agree with a scripted provider's transport log (one written in this repo, comparing verbs only) for a clean write, a lost race (1 call, 2 attempts), an empty-read/throttle/success sequence and a redirect; 34 tests, mutations seen red, hsearch-s3 line coverage 97.9%. Provisional and partial against the validation list: SDK retries are caller-repeated calls and flags, not a real retrying client; NAT and hairpin paths and double-counted endpoint charges are exercised only in the ledger's unit tests, no real route inspection or provider usage was used; request size is a lower bound computed not read. The remainder is M03.12 (retries, now done), M03.13 (a real SDK and multipart), M08.02 (tenant feed and telemetry) and M15.07."
             }
           ]
         },
@@ -3421,7 +3451,8 @@
           "title": "Instrument all critical stages",
           "goal": "Make latency, resource and durability gaps attributable.",
           "deliverables": [
-            "Mutation/query/storage/cache/crypto/replication spans and metrics, trace links and profiles"
+            "Mutation/query/storage/cache/crypto/replication spans and metrics, trace links and profiles",
+            "Feed tenant identity into the S3 traffic ledger (M03.07) from request context and export its counters as bounded instruments in hsearch-observe, with no tenant or endpoint labels on metrics"
           ],
           "validation": [
             "Inspect end-to-end request timing, exporter stall, counter accuracy and sampling behavior."
