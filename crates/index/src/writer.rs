@@ -577,6 +577,36 @@ pub(crate) fn put_mapping<S: MetadataStore>(store: &S, name: &str, bytes: &[u8])
     }
 }
 
+/// Create one shared immutable object at `key`, outside every index prefix. If the
+/// key is already held, the bytes there must be identical (the same content
+/// stored twice is one object); different bytes are refused, never replaced.
+pub(crate) fn put_shared<S: MetadataStore>(store: &S, key: &str, bytes: &[u8]) -> Result<()> {
+    let request = mutation(
+        &format!("{key}/{}", nonce()),
+        key,
+        bytes,
+        Precondition::Absent,
+    )?;
+    match write(store, &request, false) {
+        Written::Done(_) => Ok(()),
+        Written::Occupied => match read_all(store, &self::key(key)?) {
+            Ok(held) if held == bytes => Ok(()),
+            Ok(_) => Err(Error::Corrupt),
+            Err(error) => Err(error),
+        },
+        Written::Refused(error) => Err(Error::Store(error)),
+        Written::Unknown => Err(Error::Unknown),
+    }
+}
+
+/// Read a shared immutable object, or [`Error::NotFound`].
+pub(crate) fn get_shared<S: MetadataStore>(store: &S, key: &str) -> Result<Vec<u8>> {
+    match read_all(store, &self::key(key)?) {
+        Err(Error::Store(hsearch_object::Error::NotFound)) => Err(Error::NotFound),
+        other => other,
+    }
+}
+
 pub(crate) fn get_mapping<S: MetadataStore>(store: &S, name: &str) -> Result<Vec<u8>> {
     let object = key(&format!("{name}/mapping"))?;
     match read_all(store, &object) {

@@ -175,3 +175,35 @@ pub fn get_mapping<S: MetadataStore + 'static>(store: &S, name: &str) -> Result<
     }
     crate::writer::get_mapping(store, name)
 }
+
+/// A shared key is a path of `[a-z0-9-]` components under `v1/`, so it can never
+/// fall inside an index's prefix: an index name has no `/`.
+fn valid_shared_key(key: &str) -> bool {
+    key.len() <= 256
+        && key.starts_with("v1/")
+        && key.split('/').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
+}
+
+/// Create one immutable object shared by many indexes at `key` (for example a
+/// mapping addressed by its content hash). Storing identical bytes again is a
+/// success and writes nothing new; different bytes under the same key are
+/// refused with [`Error::Corrupt`] and never replace what is there.
+pub fn put_shared<S: MetadataStore + 'static>(store: &S, key: &str, bytes: &[u8]) -> Result<()> {
+    if !valid_shared_key(key) {
+        return Err(Error::Invalid);
+    }
+    crate::writer::put_shared(store, key, bytes)
+}
+
+/// Read a shared immutable object, or [`Error::NotFound`].
+pub fn get_shared<S: MetadataStore + 'static>(store: &S, key: &str) -> Result<Vec<u8>> {
+    if !valid_shared_key(key) {
+        return Err(Error::Invalid);
+    }
+    crate::writer::get_shared(store, key)
+}

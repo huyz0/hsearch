@@ -451,6 +451,47 @@ fn mappings_are_stored_once_under_a_derived_key() {
 }
 
 #[test]
+fn a_shared_object_is_stored_once_and_a_different_body_under_its_key_is_refused() {
+    let store = store();
+    let key = "v1/local/mappings/abcd";
+    assert_eq!(
+        hsearch_index::get_shared(&*store, key).err(),
+        Some(Error::NotFound)
+    );
+    hsearch_index::put_shared(&*store, key, b"body").unwrap();
+    // The same bytes again are one object: success, nothing replaced.
+    hsearch_index::put_shared(&*store, key, b"body").unwrap();
+    assert_eq!(hsearch_index::get_shared(&*store, key).unwrap(), b"body");
+    // A different body under a held key is never written over it.
+    assert_eq!(
+        hsearch_index::put_shared(&*store, key, b"other").err(),
+        Some(Error::Corrupt)
+    );
+    assert_eq!(hsearch_index::get_shared(&*store, key).unwrap(), b"body");
+    // Keys that could fall inside an index prefix or escape the layout are refused.
+    for bad in [
+        "",
+        "orders/root",
+        "v1//x",
+        "v1/a/../b",
+        "v1/UPPER/x",
+        "v1/a b",
+        "mappings/x",
+    ] {
+        assert_eq!(
+            hsearch_index::put_shared(&*store, bad, b"x").err(),
+            Some(Error::Invalid),
+            "{bad}"
+        );
+        assert_eq!(
+            hsearch_index::get_shared(&*store, bad).err(),
+            Some(Error::Invalid),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
 fn a_published_root_naming_too_many_files_is_refused_not_written() {
     // The root decoder refuses more than 4096 files, so publish must never
     // write one: exercised through the format bound the writer checks.

@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use hsearch_engine::{Outcome, StoredValue};
+use hsearch_format::{Digest, Layout};
 use hsearch_index::{Field, Index, Op, Wait};
 use hsearch_object::MetadataStore;
 use serde_json::{Map, Value, json};
@@ -22,8 +23,15 @@ const CHUNK: usize = 1000;
 
 struct Entry {
     index: Index,
-    mapping: Mapping,
+    /// One parsed copy per node, shared by every index with this mapping.
+    mapping: Arc<Mapping>,
 }
+
+/// The deployment name this single-process node keys shared objects under.
+const DEPLOYMENT: &str = "local";
+/// Parsed shared mappings kept per node. Beyond this a mapping is still
+/// served, parsed per index, so the cache cannot grow with the index count.
+const MAX_SHARED_MAPPINGS: usize = 4096;
 
 /// One node: a store, a scratch directory and the indexes opened so far.
 pub struct Node<S> {
@@ -32,6 +40,8 @@ pub struct Node<S> {
     indexes: Mutex<HashMap<String, Slot>>,
     limits: Limits,
     gate: MemoryGate,
+    /// Shared mappings this node has stored or verified, by content hash.
+    shared: Mutex<HashMap<Digest, Arc<Mapping>>>,
 }
 
 /// One index's place in the node. The map lock is held only to find or add a
@@ -97,8 +107,16 @@ impl<S: MetadataStore + 'static> Node<S> {
             data_dir,
             indexes: Mutex::new(HashMap::new()),
             gate: MemoryGate::new(limits.memory_budget_bytes),
+            shared: Mutex::new(HashMap::new()),
             limits,
         })
+    }
+
+    /// How many distinct parsed mappings this node holds: one per distinct
+    /// mapping in use, however many indexes share it.
+    #[must_use]
+    pub fn shared_mapping_count(&self) -> usize {
+        self.shared.lock().unwrap_or_else(|p| p.into_inner()).len()
     }
 
     /// The request limits in force.
@@ -154,8 +172,70 @@ impl<S: MetadataStore + 'static> Node<S> {
         opened
     }
 
+    fn mapping_key(hash: &Digest) -> String {
+        Layout::new(DEPLOYMENT)
+            .expect("the deployment name is valid")
+            .mapping(hash)
+    }
+
+    fn cached(&self, hash: &Digest) -> Option<Arc<Mapping>> {
+        let shared = self.shared.lock().unwrap_or_else(|p| p.into_inner());
+        shared.get(hash).map(Arc::clone)
+    }
+
+    fn remember(&self, hash: Digest, mapping: &Arc<Mapping>) {
+        let mut shared = self.shared.lock().unwrap_or_else(|p| p.into_inner());
+        if shared.len() < MAX_SHARED_MAPPINGS {
+            shared.insert(hash, Arc::clone(mapping));
+        }
+    }
+
+    /// Store a mapping as one immutable object under its content hash and return
+    /// the node's shared copy with its hash. Identical mappings write the object
+    /// once; a node that has already stored or verified it writes nothing.
+    fn share(&self, mapping: Mapping) -> Result<(Arc<Mapping>, Digest), ApiError> {
+        let hash = mapping.hash();
+        if let Some(found) = self.cached(&hash) {
+            return Ok((found, hash));
+        }
+        hsearch_index::put_shared(
+            &*self.store,
+            &Self::mapping_key(&hash),
+            &mapping.to_object()?,
+        )?;
+        let mapping = Arc::new(mapping);
+        self.remember(hash, &mapping);
+        Ok((mapping, hash))
+    }
+
+    /// An index's mapping, resolved only through that index's own stored
+    /// reference. Mappings an earlier node wrote inline are read as they are.
+    fn load_mapping(&self, name: &str) -> Result<Arc<Mapping>, ApiError> {
+        let stored = hsearch_index::get_mapping(&*self.store, name)?;
+        if Mapping::is_inline(&stored) {
+            return Ok(Arc::new(Mapping::decode(&stored)?));
+        }
+        let corrupt = |reason| ApiError::new(500, "corrupt_exception", reason);
+        let hash = Mapping::parse_reference(&stored)
+            .ok_or_else(|| corrupt("stored mapping reference is unreadable"))?;
+        if let Some(found) = self.cached(&hash) {
+            return Ok(found);
+        }
+        let object = hsearch_index::get_shared(&*self.store, &Self::mapping_key(&hash)).map_err(
+            |error| match error {
+                hsearch_index::Error::NotFound => {
+                    corrupt("the shared mapping an index names is missing")
+                }
+                other => ApiError::from(other),
+            },
+        )?;
+        let mapping = Arc::new(Mapping::from_object(&object, &hash)?);
+        self.remember(hash, &mapping);
+        Ok(mapping)
+    }
+
     fn open(&self, name: &str) -> Result<Arc<Entry>, ApiError> {
-        let mapping = Mapping::decode(&hsearch_index::get_mapping(&*self.store, name)?)?;
+        let mapping = self.load_mapping(name)?;
         let index = Index::open(
             Arc::clone(&self.store),
             name,
@@ -195,7 +275,8 @@ impl<S: MetadataStore + 'static> Node<S> {
                 Err(error) => Err(error),
             };
             index.map_err(ApiError::from).and_then(|index| {
-                hsearch_index::put_mapping(&*self.store, name, &mapping.encode())?;
+                let (mapping, hash) = self.share(mapping.clone())?;
+                hsearch_index::put_mapping(&*self.store, name, &Mapping::reference(&hash))?;
                 *guard = Some(Arc::new(Entry { index, mapping }));
                 Ok(())
             })
@@ -474,4 +555,56 @@ fn item_result(action: &str, index: &str, result: &hsearch_index::ItemResult) ->
     };
     json!({action: {"_index": index, "_id": result.id, "_version": result.version,
                     "result": text, "status": status}})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hsearch_object::memory::{MemoryLimits, MemoryStore};
+
+    fn store() -> Arc<MemoryStore> {
+        Arc::new(
+            MemoryStore::new(MemoryLimits {
+                objects: 4096,
+                versions: 16384,
+                version_bytes: 64 << 20,
+                identities: 16384,
+                identity_bytes: 64 << 20,
+            })
+            .unwrap(),
+        )
+    }
+
+    fn dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("hsearch-node-unit-{label}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn indexes_with_one_mapping_hold_one_parsed_copy_across_a_restart() {
+        let (store, one, two) = (store(), dir("copy1"), dir("copy2"));
+        let body = json!({"mappings": {"properties": {"a": {"type": "keyword"}}}});
+        let other = json!({"mappings": {"properties": {"b": {"type": "keyword"}}}});
+        let node = Node::new(Arc::clone(&store), one.clone());
+        for name in ["a", "b", "c"] {
+            node.create(name, &body).unwrap();
+        }
+        node.create("d", &other).unwrap();
+        let held = |node: &Node<MemoryStore>| {
+            ["a", "b", "c", "d"].map(|n| node.entry(n).unwrap().mapping.clone())
+        };
+        let before = held(&node);
+        assert!(Arc::ptr_eq(&before[0], &before[1]) && Arc::ptr_eq(&before[1], &before[2]));
+        assert!(!Arc::ptr_eq(&before[0], &before[3]));
+        assert_eq!(
+            node.shared_mapping_count(),
+            2,
+            "one parsed copy per distinct mapping"
+        );
+        // After a restart the indexes open from their references and share again.
+        let restarted = Node::new(store, two.clone());
+        let after = held(&restarted);
+        assert!(Arc::ptr_eq(&after[0], &after[1]) && Arc::ptr_eq(&after[1], &after[2]));
+        assert_eq!(restarted.shared_mapping_count(), 2);
+        let _ = (std::fs::remove_dir_all(one), std::fs::remove_dir_all(two));
+    }
 }

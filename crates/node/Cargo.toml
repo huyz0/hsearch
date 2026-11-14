@@ -12,6 +12,7 @@ name = "hsearch-node"
 path = "src/main.rs"
 
 [dependencies]
+hsearch-format = { path = "../format" }
 hsearch-object = { path = "../object" }
 hsearch-engine = { path = "../engine" }
 hsearch-index = { path = "../index" }
