@@ -191,6 +191,7 @@ fn propose_and_commit(g: &mut Group, li: usize, tag: &[u8]) -> Option<Duration> 
             return Some(t.elapsed());
         }
         g.tick();
+        std::thread::sleep(Duration::from_millis(1));
     }
     None
 }
@@ -276,7 +277,9 @@ fn schedules(logger: &Logger) {
     let old = li as u64 + 1;
     g.cut.push(old);
     let t = Instant::now();
-    let _ = g.nodes[li].propose(vec![], b"amb".to_vec());
+    g.nodes[li]
+        .propose(vec![], b"amb".to_vec())
+        .expect("the cut leader accepts the proposal into its log");
     g.pump();
     let mut new_leader = None;
     while t.elapsed() < Duration::from_secs(30) {

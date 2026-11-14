@@ -2233,7 +2233,7 @@
           "goal": "Measure what a wrap/unwrap/rotation path costs in requests, latency and failure behaviour on a real KMS, because no local or emulated provider can show it. Found while closing M02.10, whose experiments could not include it.",
           "deliverables": [
             "Request counts, latency histograms and throttle/denial/timeout behaviour of wrap and unwrap through the KeyProvider contract against a real provider, with the DEK cache on and off and every attempt counted",
-            "A cost and per-request-path statement (cold cache, warm cache, rotation, revoked key) feeding the M02.04 and M02.07 envelopes"
+            "A cost and per-request-path statement (cold cache, warm cache, rotation, revoked key) revisiting the M02.04 and M02.07 envelopes (M02 closes without a KMS number; the M02.04 rationale states that gap and M05.08 is where it is filled)"
           ],
           "validation": [
             "Bounded run with a frozen envelope (calls, duration, spend) recorded beside the raw output; raw failures and ambiguous outcomes retained",

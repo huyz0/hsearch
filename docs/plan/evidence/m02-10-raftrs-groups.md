@@ -29,9 +29,12 @@ Idle CPU is about 0.002% of a core per group in this single-threaded loop.
 
 Arithmetic, not measurement: 50M groups at 11 KiB is about 525 GiB resident, and about 395M idle
 heartbeat requests/s. So raft-rs's per-group memory is roughly 40x smaller than the openraft
-run's (about 440 KiB), and group memory alone no longer rules a group-per-index out on a large
-fleet, but the idle heartbeat rate is identical and is what a group per index cannot afford
-without coalescing heartbeats per node pair, which neither library does for the application.
+run's (about 440 KiB), and group memory alone is no longer the obvious blocker for a group-per-index. The 11 KiB is a
+residency floor (in-memory storage, near-empty log, no snapshots, no network buffers, no durable
+log), not a full per-group cost, and the figures are not like-for-like with openraft's. The idle
+heartbeat rate is about the same and is what a group per index cannot afford without coalescing
+heartbeats per node pair; neither library exposed such coalescing in the APIs read for this
+experiment (not checked against their source or issue trackers).
 Linear extrapolation from 600 groups; larger counts were not run.
 
 ## Schedules (one group of 3)
@@ -48,7 +51,7 @@ Linear extrapolation from 600 groups; larger counts were not run.
 Notes and limits:
 - One observation per schedule. Failover near 0.95 s sits inside the 600-1200 ms election window
   plus a tick; it is not a bound. A proposal made on the cut leader was **not applied anywhere
-  after the heal**: the new leader's log won. That shows what happened once, in this timing; a
+  after the heal**: the new leader's log won (inferred: the proposal was accepted on the cut leader, but its later truncation was not observed directly). That shows what happened once, in this timing; a
   client must still treat a timeout as unknown.
 - No message loss, delay, duplication, reordering or asymmetric partition schedule was run for
   raft-rs (openraft got loss and delay): only a clean cut and heal.
