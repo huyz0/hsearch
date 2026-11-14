@@ -1,7 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/s3", "crates/index", "crates/node", "crates/testkit", "xtask"]
-default-members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/s3", "crates/index", "crates/node"]
+members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/s3", "crates/index", "crates/node", "crates/module-abi", "crates/module-native", "crates/testkit", "xtask"]
+default-members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/s3", "crates/index", "crates/node", "crates/module-abi", "crates/module-native"]
+
+# D18: `unsafe` is allowed in exactly one crate, and inside it in exactly one module (`mod sys`). That crate
+# restates the lint set in its own manifest; tools/workspace.py check refuses any other crate that does not
+# inherit [workspace.lints], and refuses this list changing without the tool changing with it.
+[workspace.metadata.unsafe]
+crates = ["hsearch-module-native"]
 
 [workspace.package]
 version = "0.1.0"

@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 FLOOR="${1:-90}"
 # Production crates; hsearch-testkit and xtask are test/tooling support and are excluded.
-CRATES=(hsearch-types hsearch-observe hsearch-engine hsearch-object hsearch-s3 hsearch-index hsearch-node)
+CRATES=(hsearch-types hsearch-observe hsearch-engine hsearch-object hsearch-s3 hsearch-index hsearch-node hsearch-module-abi hsearch-module-native)
 fail=0
 for crate in "${CRATES[@]}"; do
   echo "== $crate (floor ${FLOOR}% lines)"
