@@ -3,19 +3,19 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Barrier, Mutex};
 
+use lucene_aggs::metric_aggs::{self as aggs, MetricSpec, NEED_ALL, Source, ValueKind};
+use lucene_aggs::terms_agg;
 use lucene_analysis::{Analyzer, StandardAnalyzer};
 use lucene_codecs::stored_fields::FieldValue;
 use lucene_index::buffered_updates::Term;
 use lucene_index::document::{Document, KeywordField, LongField, Store, StringField, TextField};
 use lucene_index::index_writer::IndexWriter;
 use lucene_index::segment_info::LuceneVersion;
-use lucene_search::aggs::{self, MetricSpec, NEED_ALL, Source, ValueKind};
 use lucene_search::directory_reader::DirectoryReader;
 use lucene_search::index_searcher::IndexSearcher;
 use lucene_search::query::{
     BooleanQuery, Clause, MatchAllDocsQuery, PhraseQuery, PointsRangeQuery, TermQuery,
 };
-use lucene_search::terms_agg;
 use lucene_search::top_field::{SortField, SortType};
 use lucene_store::{ByteBuffersDirectory, Directory};
 
