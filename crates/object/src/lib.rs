@@ -6,9 +6,11 @@
 
 mod context;
 pub mod memory;
+mod upload;
 mod value;
 
 pub use context::{Budget, Cancellation, RequestContext, Usage};
+pub use upload::{LargeObjectWriter, MAX_PARTS, MIN_PART};
 pub use value::{ByteRange, Metadata, Mutation, ObjectKey, Payload, RequestId, VersionToken};
 
 use std::future::Future;

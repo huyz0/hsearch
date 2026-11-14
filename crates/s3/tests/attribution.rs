@@ -762,8 +762,8 @@ fn a_multipart_upload_attributes_each_request_and_matches_the_transport_log() {
     let store = provider.store();
     let ctx = context();
     let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
-    upload.put_part(&ctx, b"payload").unwrap();
-    let (version, length) = upload.complete(&ctx).unwrap();
+    upload.put_part(&store, &ctx, b"payload").unwrap();
+    let (version, length) = upload.complete(&store, &ctx).unwrap();
     assert_eq!((version.as_bytes(), length), (&b"v9\n\"c-1\""[..], 7));
     let ledger = store.ledger();
     assert_eq!(ledger.logical_calls(Role::Payload), 3);
@@ -786,8 +786,8 @@ fn a_completion_that_answers_200_with_an_error_body_is_not_a_commit() {
     let store = provider.store();
     let ctx = context();
     let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
-    upload.put_part(&ctx, b"payload").unwrap();
-    assert_eq!(upload.complete(&ctx), Err(Error::Unavailable));
+    upload.put_part(&store, &ctx, b"payload").unwrap();
+    assert_eq!(upload.complete(&store, &ctx), Err(Error::Unavailable));
 }
 
 #[test]
@@ -804,8 +804,8 @@ fn a_completion_without_a_version_id_is_an_unknown_outcome_not_a_refusal() {
     let store = provider.store();
     let ctx = context();
     let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
-    upload.put_part(&ctx, b"payload").unwrap();
-    assert_eq!(upload.complete(&ctx), Err(Error::UnknownOutcome));
+    upload.put_part(&store, &ctx, b"payload").unwrap();
+    assert_eq!(upload.complete(&store, &ctx), Err(Error::UnknownOutcome));
 }
 
 #[test]
@@ -814,7 +814,7 @@ fn an_abort_is_a_delete_attempt_that_matches_the_transport_log() {
     let store = provider.store();
     let ctx = context();
     let upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
-    upload.abort(&ctx).unwrap();
+    upload.abort(&store, &ctx).unwrap();
     let ledger = store.ledger();
     assert_eq!(ledger.attempts_by_verb(Verb::Delete), 1);
     assert!(reconcile(&ledger, &provider.verbs()).is_empty());
@@ -833,7 +833,10 @@ fn a_throttled_part_is_not_repeated_by_the_retry_policy() {
     let store = provider.store().with_retry(retrying(3));
     let ctx = context();
     let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
-    assert_eq!(upload.put_part(&ctx, b"payload"), Err(Error::Throttled));
+    assert_eq!(
+        upload.put_part(&store, &ctx, b"payload"),
+        Err(Error::Throttled)
+    );
     assert_eq!(upload.parts(), 0);
     assert_eq!(store.ledger().attempts_by_verb(Verb::Put), 1);
 }
@@ -860,8 +863,8 @@ fn a_200_completion_error_body_is_classified_by_its_code() {
         let store = provider.store();
         let ctx = context();
         let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
-        upload.put_part(&ctx, b"payload").unwrap();
-        assert_eq!(upload.complete(&ctx), Err(want), "{code}");
+        upload.put_part(&store, &ctx, b"payload").unwrap();
+        assert_eq!(upload.complete(&store, &ctx), Err(want), "{code}");
     }
 }
 
@@ -879,8 +882,8 @@ fn an_upload_id_with_url_special_bytes_is_encoded_in_every_request() {
     let store = provider.store();
     let ctx = context();
     let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
-    upload.put_part(&ctx, b"payload").unwrap();
-    upload.abort(&ctx).unwrap();
+    upload.put_part(&store, &ctx, b"payload").unwrap();
+    upload.abort(&store, &ctx).unwrap();
     let seen = provider.requests();
     assert!(
         seen.iter()
