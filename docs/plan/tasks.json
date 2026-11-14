@@ -1741,8 +1741,13 @@
             "M03.02"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
-          "evidence": []
+          "status": "in_progress",
+          "evidence": [
+            {
+              "path": "evidence/m03-02-rustfs-probe.md",
+              "result": "Lost response after commit and lost request resolved by identity on real RustFS 1.0.4 through a fault-injecting TCP proxy; multipart failure leaves no visible object, bad completion refused (400), conditional completion refused (412). MinIO second target NOT run: no vetted image obtainable."
+            }
+          ]
         },
         {
           "id": "M03.09",

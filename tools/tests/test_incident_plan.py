@@ -25,6 +25,7 @@ class IncidentPlanTests(unittest.TestCase):
             if tid.startswith("M20."):
                 self.tasks[tid]["status"] = "planned"
         milestones["M20"]["status"] = "planned"
+        self.tasks["M03.10"]["status"] = "planned"  # Depends on M03.02; keep this model pre-acceptance.
         self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.
         milestones["M01"]["status"] = "in_progress"
 
