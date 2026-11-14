@@ -43,6 +43,12 @@ const DT_NULL: i64 = 0;
 const DT_NEEDED: i64 = 1;
 const DT_STRTAB: i64 = 5;
 const DT_STRSZ: i64 = 10;
+const DT_RPATH: i64 = 15;
+const DT_RUNPATH: i64 = 29;
+const DT_DEPAUDIT: i64 = 0x6000_000c;
+const DT_AUDIT: i64 = 0x6000_000d;
+const DT_AUXILIARY: i64 = 0x7fff_fffd;
+const DT_FILTER: i64 = 0x7fff_ffff;
 
 /// Why an image was not scanned to the end.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +57,9 @@ pub enum ElfError {
     NotSharedObject,
     /// A table is out of range, truncated or over a fixed bound.
     Malformed,
+    /// The image names a library search path, audit library or filter, all of
+    /// which resolve code the pinned hash does not cover.
+    SearchPath,
 }
 
 fn le16(b: &[u8], at: usize) -> u16 {
@@ -127,6 +136,9 @@ pub fn needed<R: ReadAt + ?Sized>(image: &R) -> Result<Vec<String>, ElfError> {
             DT_NEEDED => offsets.push(val),
             DT_STRTAB => strtab = Some(val),
             DT_STRSZ => strsz = val,
+            DT_RPATH | DT_RUNPATH | DT_DEPAUDIT | DT_AUDIT | DT_AUXILIARY | DT_FILTER => {
+                return Err(ElfError::SearchPath);
+            }
             _ => {}
         }
     }
@@ -176,6 +188,7 @@ fn name_at<R: ReadAt + ?Sized>(
 /// True for a library the loader allows a module to need: libc, libm, the
 /// glibc split libraries older toolchains still list, the compiler runtime and
 /// the dynamic loader. Everything else is code the pinned hash does not cover.
+/// A name with a slash is a path to the dynamic loader, never a library name.
 #[must_use]
 pub fn allowed_dependency(name: &str) -> bool {
     const EXACT: [&str; 7] = [
@@ -187,10 +200,15 @@ pub fn allowed_dependency(name: &str) -> bool {
         "librt.so.1",
         "libutil.so.1",
     ];
-    EXACT.contains(&name)
-        || (name.starts_with("ld-linux") && name.contains(".so"))
-        || name.starts_with("ld-musl-")
-        || name.starts_with("libc.musl-")
+    const LOADERS: [&str; 5] = [
+        "ld-linux-x86-64.so.2",
+        "ld-linux-aarch64.so.1",
+        "ld-linux-armhf.so.3",
+        "ld-musl-x86_64.so.1",
+        "ld-musl-aarch64.so.1",
+    ];
+    const MUSL_LIBC: [&str; 2] = ["libc.musl-x86_64.so.1", "libc.musl-aarch64.so.1"];
+    EXACT.contains(&name) || LOADERS.contains(&name) || MUSL_LIBC.contains(&name)
 }
 
 #[cfg(test)]
@@ -332,6 +350,31 @@ mod tests {
             needed(image(&[long.as_str()]).as_slice()),
             Err(ElfError::Malformed)
         );
+    }
+
+    #[test]
+    fn refuses_search_paths_audit_libraries_and_filters() {
+        // Append a dynamic entry of the given tag in place of DT_NULL's slot: the
+        // builder reserves three trailing entries (STRTAB, STRSZ, NULL), so patch STRSZ's tag.
+        for tag in [
+            DT_RPATH,
+            DT_RUNPATH,
+            DT_AUDIT,
+            DT_DEPAUDIT,
+            DT_AUXILIARY,
+            DT_FILTER,
+        ] {
+            let mut bytes = image(&["libc.so.6"]);
+            let dyn_off = 64 + 2 * PHDR_SIZE;
+            // entries: NEEDED, STRTAB, STRSZ, NULL. Turn the NULL into the tag and add no terminator
+            // after it by relying on the section ending there.
+            bytes[dyn_off + 3 * 16..dyn_off + 3 * 16 + 8].copy_from_slice(&tag.to_le_bytes());
+            assert_eq!(
+                needed(bytes.as_slice()),
+                Err(ElfError::SearchPath),
+                "tag {tag:#x}"
+            );
+        }
     }
 
     #[test]

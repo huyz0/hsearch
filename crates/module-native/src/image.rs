@@ -1,7 +1,7 @@
 //! Staging: one read of the module file into a sealed in-memory file.
 //!
-//! The file is opened once, streamed through a fixed buffer into a `memfd` while
-//! it is hashed, and the hash is compared with the pin. The library is then
+//! The file is opened once and streamed through a fixed buffer into a `memfd`,
+//! which is sealed; the sealed bytes are then hashed and compared with the pin. The library is then
 //! loaded from the sealed copy, never from the path, so the bytes that were
 //! hashed are the bytes that run (no check-then-use gap). Memory is the fixed
 //! buffer; the library itself lives in the memfd, not on the heap.
@@ -11,6 +11,7 @@ use crate::elf;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::os::unix::fs::FileExt;
 use std::path::Path;
 
 const CHUNK: usize = 64 * 1024;
@@ -44,6 +45,10 @@ impl Staged {
 pub fn stage(path: &Path, pin: &[u8; 32], max_bytes: u64) -> Result<Staged, LoadError> {
     use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
     let io = |_| LoadError::Io("cannot read the module file");
+    // Checked before opening: opening a FIFO would block the loader forever.
+    if !std::fs::metadata(path).map_err(io)?.is_file() {
+        return Err(LoadError::Io("the module path is not a regular file"));
+    }
     let mut source = File::open(path).map_err(io)?;
     if !source.metadata().map_err(io)?.is_file() {
         return Err(LoadError::Io("the module path is not a regular file"));
@@ -54,7 +59,7 @@ pub fn stage(path: &Path, pin: &[u8; 32], max_bytes: u64) -> Result<Staged, Load
     )
     .map_err(|_| LoadError::Io("cannot create a sealed copy (memfd_create)"))?;
     let mut copy = File::from(fd);
-    let (mut hasher, mut total, mut buf) = (Sha256::new(), 0u64, vec![0u8; CHUNK]);
+    let (mut total, mut buf) = (0u64, vec![0u8; CHUNK]);
     loop {
         let n = source.read(&mut buf).map_err(io)?;
         if n == 0 {
@@ -64,25 +69,37 @@ pub fn stage(path: &Path, pin: &[u8; 32], max_bytes: u64) -> Result<Staged, Load
         if total > max_bytes {
             return Err(LoadError::TooLarge);
         }
-        hasher.update(&buf[..n]);
         copy.write_all(&buf[..n])
             .map_err(|_| LoadError::Io("cannot write the sealed copy"))?;
     }
-    let digest: [u8; 32] = hasher.finalize().into();
-    if digest != *pin {
-        return Err(LoadError::HashMismatch);
-    }
+    // Seal first, then hash the sealed bytes: nothing can change them between the
+    // hash and the load, even through another descriptor onto the same memfd.
     fcntl_add_seals(
         &copy,
         SealFlags::SEAL | SealFlags::SHRINK | SealFlags::GROW | SealFlags::WRITE,
     )
     .map_err(|_| LoadError::Io("cannot seal the copy"))?;
+    let mut hasher = Sha256::new();
+    let mut offset = 0u64;
+    while offset < total {
+        let n = usize::try_from((total - offset).min(CHUNK as u64)).unwrap_or(CHUNK);
+        copy.read_exact_at(&mut buf[..n], offset).map_err(io)?;
+        hasher.update(&buf[..n]);
+        offset += n as u64;
+    }
+    let digest: [u8; 32] = hasher.finalize().into();
+    if digest != *pin {
+        return Err(LoadError::HashMismatch);
+    }
     // Scan the sealed bytes, which are the ones that will be mapped.
     let needed = elf::needed(&copy).map_err(|e| match e {
         elf::ElfError::NotSharedObject => {
             LoadError::BadImage("not a 64-bit little-endian shared object")
         }
         elf::ElfError::Malformed => LoadError::BadImage("malformed dynamic section"),
+        elf::ElfError::SearchPath => {
+            LoadError::BadImage("library search path, audit or filter entries are not allowed")
+        }
     })?;
     if let Some(bad) = needed.into_iter().find(|n| !elf::allowed_dependency(n)) {
         return Err(LoadError::DisallowedDependency(bad));

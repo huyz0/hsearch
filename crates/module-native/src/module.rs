@@ -10,7 +10,7 @@ use hsearch_module_abi::{
 use std::collections::VecDeque;
 use std::fmt;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -19,6 +19,9 @@ use std::time::{Duration, Instant};
 /// writes into them has overrun its buffer, which is detected and fails it.
 const GUARD: usize = 16;
 const GUARD_BYTE: u8 = 0xA5;
+/// Loads that got past staging, process-wide; each keeps a mapping and a descriptor forever.
+static LOADS: AtomicUsize = AtomicUsize::new(0);
+const MAX_LOADS_PER_PROCESS: usize = 256;
 /// Most worker threads for one module; keeps call ids' slot field in 16 bits.
 const MAX_WORKERS: u32 = 1024;
 
@@ -307,6 +310,13 @@ impl NativeModule {
             return Err(LoadError::ConfigTooLarge);
         }
         let staged = image::stage(path, &config.sha256, config.max_library_bytes)?;
+        // Past staging, a load keeps its descriptor and mapping for the life of the process,
+        // so attempts are capped: a supervisor retrying a refused module cannot leak without bound.
+        if LOADS.fetch_add(1, Ordering::AcqRel) >= MAX_LOADS_PER_PROCESS {
+            return Err(LoadError::Unsupported(
+                "too many module loads in this process",
+            ));
+        }
         let library = open_staged(&staged)?;
         staged.keep_open();
         // The version is read and judged before any other symbol is resolved.
@@ -388,25 +398,27 @@ impl NativeModule {
             exited: Condvar::new(),
             policy: config.policy,
         });
-        let handles = (0..workers)
-            .map(|i| {
-                let inner = Arc::clone(&inner);
-                std::thread::Builder::new()
-                    .name(format!("hsearch-ext-{}-{i}", inner.desc.name))
-                    .spawn(move || worker(&inner))
-            })
-            .collect::<Result<Vec<_>, _>>();
-        // A thread that cannot start leaves the pool smaller than `live`; fail
-        // the module rather than run with a count that lies.
-        match handles {
-            Ok(workers) => Self { inner, workers },
-            Err(_) => {
-                inner.failed.store(true, Ordering::Release);
-                Self {
-                    inner,
-                    workers: Vec::new(),
-                }
+        let mut handles = Vec::with_capacity(workers);
+        for i in 0..workers {
+            let worker_inner = Arc::clone(&inner);
+            match std::thread::Builder::new()
+                .name(format!("hsearch-ext-{}-{i}", inner.desc.name))
+                .spawn(move || worker(&worker_inner))
+            {
+                Ok(handle) => handles.push(handle),
+                Err(_) => break,
             }
+        }
+        if handles.len() < workers {
+            // A pool smaller than promised: fail the module, and make `live` true to
+            // the threads that exist so `close` can still finish.
+            *lock(&inner.live) = handles.len();
+            inner.failed.store(true, Ordering::Release);
+            inner.stop_workers();
+        }
+        Self {
+            inner,
+            workers: handles,
         }
     }
 
@@ -439,7 +451,7 @@ impl NativeModule {
         self.inner.host_state.dropped_logs()
     }
 
-    /// Runs one call and appends its result to `out` (cleared first).
+    /// Runs one call and leaves its result in `out` (cleared first, empty on error).
     ///
     /// # Errors
     /// A typed [`CallError`] naming the module and point; the module stays
@@ -476,7 +488,10 @@ impl NativeModule {
             return Err(err(FailureKind::Limit, "invalid output bound"));
         }
         let timeout_ms = u32::try_from(request.timeout.as_millis()).unwrap_or(u32::MAX);
-        let deadline = Instant::now() + request.timeout;
+        let Some(deadline) = Instant::now().checked_add(request.timeout) else {
+            return Err(err(FailureKind::Limit, "the timeout is too large"));
+        };
+        out.clear();
         let Some(idx) = lock(&inner.free).pop() else {
             return Err(err(FailureKind::Busy, "the module's queue is full"));
         };
@@ -542,7 +557,6 @@ impl NativeModule {
         let outcome = s.result.take();
         let result = match outcome {
             Some(Ok((len, retried))) => {
-                out.clear();
                 out.extend_from_slice(&s.out[..len]);
                 if retried {
                     // A grown buffer is not kept: the retry path is rare and the
@@ -568,8 +582,7 @@ impl NativeModule {
     /// hung call exits without it".
     #[must_use]
     pub fn close(mut self, wait: Duration) -> bool {
-        self.inner.shutdown.store(true, Ordering::Release);
-        self.inner.work.notify_all();
+        self.inner.stop_workers();
         let deadline = Instant::now() + wait;
         let mut live = lock(&self.inner.live);
         while *live > 0 {
@@ -595,12 +608,20 @@ impl NativeModule {
 impl Drop for NativeModule {
     fn drop(&mut self) {
         // Idle workers exit on their own; a hung one holds the module open.
-        self.inner.shutdown.store(true, Ordering::Release);
-        self.inner.work.notify_all();
+        self.inner.stop_workers();
     }
 }
 
 impl Inner {
+    /// Sets the flag under the queue lock so a worker between its check and its
+    /// wait cannot miss the wake-up.
+    fn stop_workers(&self) {
+        let queue = lock(&self.queue);
+        self.shutdown.store(true, Ordering::Release);
+        drop(queue);
+        self.work.notify_all();
+    }
+
     fn convert(&self, fail: Fail, cancelled: bool) -> CallError {
         let name = self.desc.name.as_str();
         match fail {
@@ -647,6 +668,7 @@ impl Inner {
 
     fn run(&self, idx: usize) {
         let slot = &self.slots[idx];
+        let id = ((self.seq.fetch_add(1, Ordering::Relaxed) + 1) << SLOT_BITS) | idx as u64;
         let (kind, point, timeout_ms, bound, limit, mut input, mut out) = {
             let mut s = lock(&slot.state);
             if s.phase == Phase::Abandoned {
@@ -655,6 +677,9 @@ impl Inner {
                 self.release(idx);
                 return;
             }
+            // Handed to the call before it is visible as Running, so a deadline that fires
+            // right after cannot have its cancel wiped by this call starting.
+            self.host_state.slots[idx].begin(id);
             s.phase = Phase::Running;
             let (input, out) = (std::mem::take(&mut s.input), std::mem::take(&mut s.out));
             s.lent = (input.capacity() + out.capacity()) as u64;
@@ -668,9 +693,9 @@ impl Inner {
                 out,
             )
         };
-        let id = ((self.seq.fetch_add(1, Ordering::Relaxed) + 1) << SLOT_BITS) | idx as u64;
-        self.host_state.slots[idx].begin(id);
-        let result = self.execute(kind, point, &input, timeout_ms, id, bound, limit, &mut out);
+        let result = self.execute(
+            slot, kind, point, &input, timeout_ms, id, bound, limit, &mut out,
+        );
         self.host_state.slots[idx].end();
         input.clear();
         let mut s = lock(&slot.state);
@@ -690,6 +715,7 @@ impl Inner {
     #[allow(clippy::too_many_arguments)]
     fn execute(
         &self,
+        slot: &CallSlot,
         kind: u32,
         point: usize,
         input: &[u8],
@@ -735,6 +761,9 @@ impl Inner {
                         return Err(Fail::Malformed("the module needed a larger buffer twice"));
                     }
                     cap = need;
+                    // The retry's larger buffer is lent too: keep quarantine accounting exact.
+                    let grown = (cap + GUARD).saturating_sub(out.len()) as u64;
+                    lock(&slot.state).lent += grown;
                 }
                 c if status::is_defined(c) => {
                     let keep = (len as usize)

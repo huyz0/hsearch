@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -142,6 +143,26 @@ def unsafe_boundary(root, manifests):
         need(rust.get("unsafe_code") == "deny", f"The unsafe crate must `deny` unsafe_code so only one module opts in: {name}")
         need(rust.get("missing_docs") == "deny" and clippy.get("all") == "deny",
              f"The unsafe crate must keep the rest of the workspace lint set: {name}")
+
+
+def unsafe_sources(files):
+    """`files` maps a path relative to the unsafe crate's src/ to its text. The `unsafe` keyword may appear
+    only in sys.rs, and `allow(unsafe_code)` only once, in lib.rs, on `mod sys`: a manifest `deny` can be
+    overridden from inside the crate, so the manifest check alone does not hold the boundary."""
+    strip = lambda text: "\n".join(line.split("//")[0] for line in text.splitlines())
+    for name, text in files.items():
+        code = strip(text)
+        if name != "sys.rs":
+            need(re.search(r"\bunsafe\b", code) is None, f"`unsafe` outside sys.rs: {name}")
+        if name != "lib.rs":
+            need("allow(unsafe_code)" not in code.replace(" ", ""), f"allow(unsafe_code) outside lib.rs: {name}")
+    lib = strip(files["lib.rs"]).replace(" ", "")
+    need(lib.count("allow(unsafe_code)") == 1 and "#[allow(unsafe_code)]\nmodsys;" in lib,
+         "lib.rs must allow unsafe_code exactly once, on `mod sys`")
+
+
+def unsafe_source_files():
+    return {p.name: p.read_text(encoding="utf-8") for p in (ROOT / "crates/module-native/src").glob("*.rs")}
 
 
 def manifests_of(metadata):
@@ -288,6 +309,23 @@ def selftest(data, tree):
     unsafe_case("loader crate drops missing_docs", "rest of the workspace lint set", lambda r, m: m["hsearch-module-native"]["lints"]["rust"].pop("missing_docs"))
     unsafe_case("exception list widened", "must list exactly", lambda r, m: r["workspace"]["metadata"]["unsafe"].update(crates=["hsearch-module-native", "hsearch-object"]))
     unsafe_case("workspace stops forbidding", "must forbid", lambda r, m: r["workspace"]["lints"]["rust"].update(unsafe_code="deny"))
+    sources = unsafe_source_files()
+
+    def source_case(label, expected, change):
+        files = dict(sources)
+        change(files)
+        try:
+            unsafe_sources(files)
+        except PolicyError as exc:
+            need(expected in str(exc), f"Wrong rejection for {label}: {exc}")
+        else:
+            raise PolicyError(f"Unsafe control accepted: {label}")
+        controls.append(label)
+
+    source_case("unsafe block in module.rs", "outside sys.rs", lambda f: f.update({"module.rs": f["module.rs"] + "\nfn x() { unsafe { } }\n"}))
+    source_case("module-wide allow", "outside lib.rs", lambda f: f.update({"module.rs": "#![allow(unsafe_code)]\n" + f["module.rs"]}))
+    source_case("second allow in lib.rs", "exactly once", lambda f: f.update({"lib.rs": f["lib.rs"] + "\n#[allow(unsafe_code)]\nmod other;\n"}))
+    source_case("allow moved off mod sys", "exactly once", lambda f: f.update({"lib.rs": f["lib.rs"].replace("#[allow(unsafe_code)]\nmod sys;", "mod sys;")}))
     print(f"PASS: {len(controls)} dependency-policy negative controls: {', '.join(controls)}")
 
 
@@ -299,6 +337,7 @@ def main():
         data, tree = inputs()
         validate(data, tree)
         unsafe_boundary(tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8")), manifests_of(data))
+        unsafe_sources(unsafe_source_files())
         if args.command == "inventory":
             path = ROOT / "docs/plan/dependencies.json"
             path.write_text(json.dumps(inventory(data), indent=2) + "\n", encoding="utf-8", newline="\n")
