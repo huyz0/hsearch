@@ -19,7 +19,7 @@ M02 and M03 run beside M20: they freeze the numbers and formats that M20 leaves 
 | ID | Requirement | Tasks | Note |
 | --- | --- | --- | --- |
 | PR-01 | 10M indexes, skewed sizes | M02.08 (done), M13.01, M13.02, M17.03 | Large-index threshold frozen in M02.05 |
-| PR-02 | Adaptive shard count, online split | M03.09, M13.03, M13.02 | Small-index lane sharing decided in M03.09 |
+| PR-02 | Adaptive shard count, online split | M03.09, M13.03, M13.02 | Small-index lane sharing decided in M03.09 (option B, modelled; M03.08 measures) |
 | PR-03 | Per-index quotas and noisy-neighbour isolation | M07.08, M13.02, M02.05 | 20% bound is proposed, confirmed in M02.05 |
 | PR-04 | Cold indexes cost nothing idle | M13.01, M13.05, M02.05 | Cold-wake target set in M02.05 |
 
