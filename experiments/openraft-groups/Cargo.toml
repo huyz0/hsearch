@@ -11,5 +11,5 @@ publish = false
 [dependencies]
 openraft = { version = "=0.10.0", features = ["tokio-rt"] }
 openraft-memstore = "=0.10.0"
-tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros"] }
-anyerror = "0.1"
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "time", "sync", "macros"] }
+anyerror = "=0.1.13"

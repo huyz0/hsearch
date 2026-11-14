@@ -41,12 +41,19 @@ impl Net {
         if p == 0 {
             return false;
         }
-        // xorshift on a shared seed: deterministic given a single-threaded schedule, adequate here.
-        let mut x = self.rng.load(Ordering::Relaxed) | 1;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.rng.store(x, Ordering::Relaxed);
+        // xorshift advanced atomically. Which RPC draws which value depends on task scheduling, so
+        // the loss pattern is seeded but NOT reproducible run to run.
+        let next = |mut x: u64| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let prev = self
+            .rng
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| Some(next(x | 1)))
+            .unwrap();
+        let x = next(prev | 1);
         x % 1000 < p
     }
     fn blocked(&self, from: Key, to: Key) -> bool {
@@ -59,6 +66,7 @@ impl Net {
             self.dropped.fetch_add(1, Ordering::Relaxed);
             return Err(unreachable("dropped"));
         }
+        // Delays the request only; the response is not delayed, so an exchange costs `d`, not 2*d.
         let d = self.delay_ms.load(Ordering::Relaxed);
         if d > 0 {
             tokio::time::sleep(Duration::from_millis(d)).await;
@@ -247,11 +255,26 @@ async fn main() {
         max_rss_kib / 1024
     );
 
-    println!("## Group scaling (3 members per group, in-memory log, no network delay)\n");
-    println!("| groups | RSS MiB | KiB/group | idle CPU % of 1 core | RPC/s idle | leaders in | write p50 ms | write p99 ms |\n|---|---|---|---|---|---|---|---|");
-    for groups in [1u32, 10, 100, 300, 600] {
+    // One group count per process (`scale <n>`) so no step inherits another's retained heap;
+    // `schedules` runs the failure schedules. No argument prints usage.
+    let arg: Vec<String> = std::env::args().skip(1).collect();
+    if arg.first().map(String::as_str) == Some("schedules") {
+        schedules().await;
+        return;
+    }
+    let Some(groups) = arg
+        .get(1)
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|_| arg[0] == "scale")
+    else {
+        println!("usage: openraft-groups scale <groups> | schedules");
+        return;
+    };
+    let empty = rss_kib();
+    println!("| groups | RSS MiB | (RSS - empty-runtime RSS) KiB/group | idle CPU % of 1 core | RPC/s idle | setup+leaders s | write p50 ms | write p99 ms |");
+    {
         let net = Arc::new(Net::default());
-        let base = rss_kib();
+        let base = empty;
         let t = Instant::now();
         let mut all = Vec::new();
         for g in 0..groups {
@@ -307,11 +330,13 @@ async fn main() {
             }
         }
         if rss > max_rss_kib {
-            println!("\nRSS ceiling reached at {groups} groups; stopping the sweep.");
-            break;
+            println!(
+                "\nRSS {} MiB is over the {} MiB ceiling for {groups} groups.",
+                rss / 1024,
+                max_rss_kib / 1024
+            );
         }
     }
-    schedules().await;
 }
 
 async fn schedules() {
@@ -324,7 +349,7 @@ async fn schedules() {
             .await
             .expect("leader");
         println!(
-            "### one-way RPC delay {delay} ms: leader elected in {:.0} ms\n",
+            "### {delay} ms added to each request (response undelayed): leader elected in {:.0} ms\n",
             up.as_secs_f64() * 1000.0
         );
 
@@ -370,12 +395,10 @@ async fn schedules() {
         let amb_res = amb.await.expect("join");
         let mut resumed = None;
         if let Some((ni, _)) = nl {
-            let s = Instant::now();
-            others[ni]
-                .client_write(ClientRequest::make_request("c", 20_000))
+            // The new leader may refuse for a moment (lease), so retry; the figure includes that wait.
+            resumed = write_retry(&others[ni], 20_000, Duration::from_secs(10))
                 .await
-                .expect("write on new leader");
-            resumed = Some(s.elapsed());
+                .ok();
         }
         println!(
             "partition leader: in-flight write on the cut leader -> {}; new leader after {} ; first write on new leader took {}",
