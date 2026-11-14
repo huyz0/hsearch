@@ -3,8 +3,9 @@ mod support;
 
 use hsearch_object::memory::{Fault, MemoryLimits, MemoryStore};
 use hsearch_object::{
-    ByteRange, Error, MetadataStore, Mutation, ObjectBackend, ObjectInfo, ObjectKey, Operation,
-    Payload, Precondition, RequestContext, RetryAction, VersionToken, WriteReceipt, retry_action,
+    ByteRange, Error, LargeObjectWriter, MetadataStore, Mutation, ObjectBackend, ObjectInfo,
+    ObjectKey, Operation, Payload, Precondition, RequestContext, RetryAction, VersionToken,
+    WriteReceipt, retry_action,
 };
 use std::sync::{Arc, Barrier};
 use support::{context, limited, mutation, run};
@@ -20,6 +21,16 @@ fn limits() -> MemoryLimits {
 }
 fn backend() -> MemoryStore {
     MemoryStore::new(limits()).unwrap()
+}
+
+/// Room for one 5 MiB part and the identity the store keeps of its completion.
+fn upload_backend() -> MemoryStore {
+    MemoryStore::new(MemoryLimits {
+        version_bytes: 32 * 1024 * 1024,
+        identity_bytes: 32 * 1024 * 1024,
+        ..limits()
+    })
+    .unwrap()
 }
 
 #[test]
@@ -418,5 +429,102 @@ fn same_conformance_predicate_refuses_unconditional_overwrite() {
     assert_eq!(
         support::conditional_history(&Unconditional(backend())),
         Err("stale CAS overwrote")
+    );
+}
+
+#[test]
+fn a_create_only_upload_passes_the_shared_probe() {
+    assert_eq!(support::upload_history(&upload_backend()), Ok(()));
+}
+
+/// Completes without creating anything: the probe must see that the object never appeared.
+struct Forgetful(MemoryStore);
+impl ObjectBackend for Forgetful {
+    fn head<'a>(&'a self, cx: &'a RequestContext, key: &'a ObjectKey) -> Operation<'a, ObjectInfo> {
+        self.0.head(cx, key)
+    }
+    fn create<'a>(
+        &'a self,
+        cx: &'a RequestContext,
+        req: &'a Mutation,
+    ) -> Operation<'a, WriteReceipt> {
+        self.0.create(cx, req)
+    }
+    fn read_range<'a>(
+        &'a self,
+        cx: &'a RequestContext,
+        key: &'a ObjectKey,
+        version: &'a VersionToken,
+        range: ByteRange,
+    ) -> Operation<'a, Payload> {
+        self.0.read_range(cx, key, version, range)
+    }
+}
+impl LargeObjectWriter for Forgetful {
+    type Upload = <MemoryStore as LargeObjectWriter>::Upload;
+    fn begin_upload<'a>(
+        &'a self,
+        cx: &'a RequestContext,
+        key: &'a ObjectKey,
+    ) -> Operation<'a, Self::Upload> {
+        self.0.begin_upload(cx, key)
+    }
+    fn put_part<'a>(
+        &'a self,
+        cx: &'a RequestContext,
+        upload: &'a mut Self::Upload,
+        bytes: &'a [u8],
+    ) -> Operation<'a, ()> {
+        self.0.put_part(cx, upload, bytes)
+    }
+    fn complete_upload<'a>(
+        &'a self,
+        _cx: &'a RequestContext,
+        _upload: &'a Self::Upload,
+    ) -> Operation<'a, (VersionToken, u64)> {
+        Box::pin(async move { Ok((VersionToken::new(b"fake").unwrap(), 0)) })
+    }
+    fn abort_upload<'a>(
+        &'a self,
+        cx: &'a RequestContext,
+        upload: &'a Self::Upload,
+    ) -> Operation<'a, ()> {
+        self.0.abort_upload(cx, upload)
+    }
+}
+
+#[test]
+fn the_upload_probe_refuses_a_writer_whose_completion_creates_nothing() {
+    assert_eq!(
+        support::upload_history(&Forgetful(upload_backend())),
+        Err("completed object missing")
+    );
+}
+
+#[test]
+fn a_memory_upload_is_bounded_and_closed_after_abort() {
+    let store = upload_backend();
+    let ctx = limited(64 * 1024 * 1024, 64 * 1024 * 1024, 100);
+    let key = ObjectKey::new(b"bounded").unwrap();
+    let mut up = run(store.begin_upload(&ctx, &key)).unwrap();
+    let part = vec![1u8; hsearch_object::MIN_PART];
+    for _ in 0..3 {
+        run(store.put_part(&ctx, &mut up, &part)).unwrap();
+    }
+    // 15 MiB held; the next part would pass the 16 MiB payload bound.
+    assert_eq!(
+        run(store.put_part(&ctx, &mut up, &part)),
+        Err(Error::BudgetExceeded)
+    );
+    // A part spends the request budget before it is held.
+    let tight = limited(4, 1024, 10);
+    assert_eq!(
+        run(store.put_part(&tight, &mut up, b"x")),
+        Err(Error::BudgetExceeded)
+    );
+    run(store.abort_upload(&ctx, &up)).unwrap();
+    assert_eq!(
+        run(store.put_part(&ctx, &mut up, b"x")),
+        Err(Error::NotFound)
     );
 }

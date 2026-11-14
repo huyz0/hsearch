@@ -56,7 +56,7 @@ impl Wake for Unpark {
 
 /// Run one backend future to completion on this thread. The futures here are
 /// one provider call each; there is no runtime to enter.
-fn block_on<T>(future: impl Future<Output = T>) -> T {
+pub(crate) fn block_on<T>(future: impl Future<Output = T>) -> T {
     let mut future = std::pin::pin!(future);
     let waker = Waker::from(Arc::new(Unpark(std::thread::current())));
     let mut cx = Context::from_waker(&waker);

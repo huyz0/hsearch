@@ -6,8 +6,9 @@
 //! evidence or silently changing exact-version reads. No background work runs.
 
 use crate::{
-    ByteRange, Error, MetadataStore, Mutation, ObjectBackend, ObjectInfo, ObjectKey, Operation,
-    Payload, Precondition, RequestContext, RequestId, VersionToken, WriteReceipt,
+    ByteRange, Error, LargeObjectWriter, MAX_PARTS, MIN_PART, Metadata, MetadataStore, Mutation,
+    ObjectBackend, ObjectInfo, ObjectKey, Operation, Payload, Precondition, RequestContext,
+    RequestId, VersionToken, WriteReceipt,
 };
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{
@@ -16,6 +17,7 @@ use std::sync::{
 };
 
 static NEXT_BACKEND: AtomicU64 = AtomicU64::new(1);
+static NEXT_UPLOAD: AtomicU64 = AtomicU64::new(1);
 
 /// Finite retained data limits. Bounds include all historical object versions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -165,7 +167,18 @@ impl MemoryStore {
     }
 
     fn write(&self, context: &RequestContext, request: &Mutation) -> Result<WriteReceipt, Error> {
-        context.charge_request(request_bytes(request))?;
+        self.write_charging(context, request, request_bytes(request))
+    }
+
+    /// `write`, charging the request budget `request_charge` bytes: a completed upload's body
+    /// was already charged part by part, so completing it costs only the control request.
+    fn write_charging(
+        &self,
+        context: &RequestContext,
+        request: &Mutation,
+        request_charge: u64,
+    ) -> Result<WriteReceipt, Error> {
+        context.charge_request(request_charge)?;
         let mut state = self.state.lock().map_err(|_| Error::Unavailable)?;
         context.check()?;
         // Replay precedes precondition evaluation: a successful create's retry
@@ -342,6 +355,103 @@ impl MetadataStore for MemoryStore {
             let receipt = Self::replay(&state, request)?.ok_or(Error::ResolutionUnavailable)?;
             context.charge_response(receipt_bytes(receipt))?;
             Ok(receipt.clone())
+        })
+    }
+}
+
+/// An open upload against a [`MemoryStore`]. The parts are held here, bounded by the
+/// 16 MiB payload limit the store itself enforces, so this is a double, not a streaming store.
+#[derive(Debug)]
+pub struct MemoryUpload {
+    key: ObjectKey,
+    data: Vec<u8>,
+    parts: u32,
+    short: bool,
+    closed: std::sync::atomic::AtomicBool,
+}
+
+impl LargeObjectWriter for MemoryStore {
+    type Upload = MemoryUpload;
+
+    fn begin_upload<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        key: &'a ObjectKey,
+    ) -> Operation<'a, MemoryUpload> {
+        Box::pin(async move {
+            context.charge_request(key.len() as u64)?;
+            context.check()?;
+            Ok(MemoryUpload {
+                key: key.clone(),
+                data: Vec::new(),
+                parts: 0,
+                short: false,
+                closed: std::sync::atomic::AtomicBool::new(false),
+            })
+        })
+    }
+
+    fn put_part<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        upload: &'a mut MemoryUpload,
+        bytes: &'a [u8],
+    ) -> Operation<'a, ()> {
+        Box::pin(async move {
+            if upload.closed.load(Ordering::Relaxed) {
+                return Err(Error::NotFound);
+            }
+            if bytes.is_empty() || upload.short || upload.parts >= MAX_PARTS {
+                return Err(Error::InvalidInput);
+            }
+            context.charge_request(upload.key.len() as u64 + bytes.len() as u64)?;
+            context.check()?;
+            if upload.data.len() + bytes.len() > 16 * 1024 * 1024 {
+                return Err(Error::BudgetExceeded);
+            }
+            upload.data.extend_from_slice(bytes);
+            upload.parts += 1;
+            upload.short = bytes.len() < MIN_PART;
+            Ok(())
+        })
+    }
+
+    fn complete_upload<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        upload: &'a MemoryUpload,
+    ) -> Operation<'a, (VersionToken, u64)> {
+        Box::pin(async move {
+            if upload.closed.load(Ordering::Relaxed) {
+                return Err(Error::NotFound);
+            }
+            if upload.parts == 0 {
+                return Err(Error::InvalidInput);
+            }
+            let request = Mutation {
+                request_id: RequestId::new(
+                    format!("upload-{}", NEXT_UPLOAD.fetch_add(1, Ordering::Relaxed)).as_bytes(),
+                )?,
+                key: upload.key.clone(),
+                payload: Payload::new(&upload.data)?,
+                metadata: Metadata::new(b"")?,
+                precondition: Precondition::Absent,
+            };
+            let receipt = self.write_charging(context, &request, upload.key.len() as u64 + 64)?;
+            upload.closed.store(true, Ordering::Relaxed);
+            Ok((receipt.object.version, receipt.object.length))
+        })
+    }
+
+    fn abort_upload<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        upload: &'a MemoryUpload,
+    ) -> Operation<'a, ()> {
+        Box::pin(async move {
+            context.charge_request(upload.key.len() as u64)?;
+            upload.closed.store(true, Ordering::Relaxed);
+            Ok(())
         })
     }
 }

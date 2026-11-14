@@ -1896,15 +1896,15 @@
           "goal": "Make the adapter's multipart upload reachable from the engine without an engine-to-s3 edge: an additive hsearch-object trait for create-only large uploads, implemented by S3Store and the memory store, and the engine writer that lucene-rust's BlobStore::writer calls for segment files.",
           "deliverables": [
             "An additive hsearch-object trait for a create-only upload (begin, part, complete, abort) in the contract's async Operation style, with the memory store as its reference and a shared conformance probe",
-            "S3Store implements it over Multipart; the engine's write-side BlobStore wrapper overrides writer() so a large segment file is streamed in parts, never buffered whole, and aborts on failure"
+            "S3Store implements it over Multipart; the engine provides the OutputSink a write-capable BlobStore::writer returns, so a large segment file is streamed in parts, never buffered whole, and aborts on failure"
           ],
           "validation": [
             "The shared probe passes on the memory store and on real RustFS and fails a deliberately broken upload (completes without all parts, or overwrites).",
-            "A segment file larger than the part size is written through BlobStore::writer with bounded memory (peak buffered bytes at most one part, measured) and every part and control request attributed.",
+            "A segment file larger than the part size is written through the sink with bounded memory (peak buffered bytes equal to one part, measured on real RustFS) and every part and control request attributed by the store's ledger.",
             "Normal independent review of the code and the claimed results, and green CI."
           ],
           "definition_of_done": [
-            "A segment file of any size reaches the object store through the engine's BlobStore writer with bounded memory, create-only, and every request attributed."
+            "A segment file of any size reaches the object store through the engine's upload sink with bounded memory, create-only, and every request attributed; the publish path that owns the BlobStore returning it is M04/M06.02."
           ],
           "depends_on": [
             "M03.10"
@@ -1915,6 +1915,10 @@
             {
               "path": "evidence/m03-10-adapter-multipart.md",
               "result": "Origin: the adapter's Multipart exists but only hsearch-s3 can name it, and the engine's ObjectBlobStore is read-only by design; this task adds the seam between them."
+            },
+            {
+              "path": "evidence/m03-14-upload-seam.md",
+              "result": "LargeObjectWriter trait with memory and S3 implementations and a shared probe (green on memory and real RustFS, rejects a broken writer); ObjectUploadSink holds one part at most: a 40 MiB file reached RustFS with a 5 MiB peak buffer, 9 part PUTs and 2 POSTs on the ledger. Provisional; MinIO and real S3 not run; the sink is not yet reached by a publish path."
             }
           ]
         },
@@ -2503,7 +2507,8 @@
           "title": "Publish segments and archive coordinates",
           "goal": "Make every published base recoverable.",
           "deliverables": [
-            "Pinned engine commit uploads, manifest/root publisher, schema/key dependencies"
+            "Pinned engine commit uploads, manifest/root publisher, schema/key dependencies",
+            "Segment files are written through the engine's ObjectUploadSink (M03.14), create-only, never buffered whole"
           ],
           "validation": [
             "Crash at every upload/reference/CAS boundary; verify all root dependencies before open."
