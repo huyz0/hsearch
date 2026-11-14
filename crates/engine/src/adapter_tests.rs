@@ -1,5 +1,6 @@
 //! Private boundary controls use real native commits, then inject read failure.
 use super::*;
+use crate::MAX_TERMS;
 use crate::adapter_test_support as support;
 use std::sync::atomic::Ordering;
 use support::FaultDirectory;
@@ -276,4 +277,60 @@ fn poisoned_native_owner_and_actual_release_failure_preserve_both_statuses() {
         Err(Error::Checkpoint)
     ));
     assert_eq!(snapshot.get("id", &[]).unwrap().unwrap().version, 1);
+}
+
+fn text_schema(fields: usize) -> Schema {
+    let names = ["t0", "t1", "t2"];
+    let declared: Vec<_> = names[..fields]
+        .iter()
+        .map(|n| (*n, crate::Kind::Text))
+        .collect();
+    Schema::new(1, &declared).unwrap()
+}
+
+fn put_texts(schema: &Schema, texts: &[&str]) -> Result<PreparedBatch> {
+    let names = ["t0", "t1", "t2"];
+    let fields: Vec<_> = texts
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (names[i], Value::String(t)))
+        .collect();
+    schema.prepare(
+        "request",
+        &[Mutation::Put {
+            id: "id",
+            version: 1,
+            fields: &fields,
+        }],
+    )
+}
+
+#[test]
+fn the_term_bound_counts_analyzed_tokens_not_bytes_across_all_text_fields() {
+    let one = text_schema(1);
+    // Short text: bytes alone prove it is within the bound.
+    assert!(put_texts(&one, &["quick brown fox"]).is_ok());
+    // Many bytes, few tokens: within the bound.
+    assert!(put_texts(&one, &[&"word ".repeat(MAX_TERMS)]).is_ok());
+    // One token over the bound, with long words and with one-byte words.
+    assert!(matches!(
+        put_texts(&one, &[&"word ".repeat(MAX_TERMS + 1)]),
+        Err(Error::Limit)
+    ));
+    assert!(matches!(
+        put_texts(&one, &[&"a ".repeat(MAX_TERMS + 1)]),
+        Err(Error::Limit)
+    ));
+    // Boundary of the byte shortcut: exactly 128 and 129 bytes, both within the token bound.
+    assert!(put_texts(&one, &[&"a".repeat(MAX_TERMS)]).is_ok());
+    assert!(put_texts(&one, &[&"a".repeat(MAX_TERMS + 1)]).is_ok());
+    assert!(put_texts(&one, &[&"a ".repeat(MAX_TERMS / 2)]).is_ok());
+    // The bound is per document, across fields: each field alone is fine.
+    let three = text_schema(3);
+    let fifty = "a ".repeat(50);
+    assert!(put_texts(&three, &[&fifty, &fifty, "x"]).is_ok());
+    assert!(matches!(
+        put_texts(&three, &[&fifty, &fifty, &fifty]),
+        Err(Error::Limit)
+    ));
 }

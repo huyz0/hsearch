@@ -249,7 +249,20 @@ fn main() {
         }
         "verify" => {
             let key = ObjectKey::new(b"probe/restart").unwrap();
-            let info = block(store.head(&ctx(), &key)).expect("object survived restart");
+            // RustFS answers HTTP before its storage is ready after a restart, so a
+            // transient refusal is retried for a bounded 30 s; NotFound still fails at once.
+            let mut attempts = 0;
+            let info = loop {
+                match block(store.head(&ctx(), &key)) {
+                    Err(hsearch_object::Error::Unavailable | hsearch_object::Error::Throttled)
+                        if attempts < 60 =>
+                    {
+                        attempts += 1;
+                        std::thread::sleep(Duration::from_millis(500));
+                    }
+                    other => break other.expect("object survived restart"),
+                }
+            };
             let bytes = block(store.read_range(
                 &ctx(),
                 &key,

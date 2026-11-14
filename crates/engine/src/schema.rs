@@ -188,6 +188,17 @@ impl Schema {
             }
             validate(self.kind(name)?, *value)?;
         }
+        // A token is at least one byte, so text of at most MAX_TERMS bytes cannot
+        // exceed the term bound and needs no analysis pass. Only longer text pays for
+        // the exact count (an analysis whose tokens are then discarded).
+        let text_bytes: usize = fields
+            .iter()
+            .filter_map(|(name, value)| match (self.kind(name), value) {
+                (Ok(Kind::Text), Value::String(s)) => Some(s.len()),
+                _ => None,
+            })
+            .sum();
+        let count_terms = text_bytes > MAX_TERMS;
         let mut document = Document::new();
         document.add(KeywordField::new("_hs_id", id, Store::Yes));
         document.add(LongField::new("_hs_version", version, Store::Yes));
@@ -198,9 +209,11 @@ impl Schema {
                     document.add(KeywordField::new(*name, *s, Store::Yes))
                 }
                 (Kind::Text, Value::String(s)) => {
-                    analyzed_terms += analyze_text(s)?.len();
-                    if analyzed_terms > MAX_TERMS {
-                        return Err(Error::Limit);
+                    if count_terms {
+                        analyzed_terms += analyze_text(s)?.len();
+                        if analyzed_terms > MAX_TERMS {
+                            return Err(Error::Limit);
+                        }
                     }
                     document.add(TextField::new(*name, *s, Store::Yes));
                 }
