@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -21,16 +22,25 @@ LAYERS = {
     "hsearch-s3": {"hsearch-object"},
     "hsearch-index": {"hsearch-object", "hsearch-engine"},
     "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3"},
+    "hsearch-module-abi": set(),
+    "hsearch-module-native": {"hsearch-module-abi"},
     "hsearch-testkit": set(),
     "xtask": set(),
 }
-PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-node"}
+PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-node",
+              "hsearch-module-abi", "hsearch-module-native"}
+# D18: the one crate whose manifest may relax the workspace `unsafe_code = "forbid"`. Inside it the
+# `unsafe_code = "deny"` lint leaves exactly one `#[allow]`, on `mod sys` (the compiler enforces that).
+UNSAFE_CRATES = {"hsearch-module-native"}
 EXTERNAL = {name: set() for name in LAYERS}
 EXTERNAL["hsearch-engine"] = {"lucene-aggs", "lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store"}
 # Signing and a blocking HTTP client, exact-pinned in crates/s3/Cargo.toml. No TLS stack yet.
 EXTERNAL["hsearch-s3"] = {"hmac", "sha2", "ureq"}
 # JSON bodies, a blocking HTTP/1.1 server (plain HTTP, no TLS) and a safe arena for query lowering, exact-pinned in crates/node/Cargo.toml.
 EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
+# Extension module contract (JSON descriptor) and the native loader: dynamic library open, SHA-256 pin and a sealed memfd copy.
+EXTERNAL["hsearch-module-abi"] = {"serde_json"}
+EXTERNAL["hsearch-module-native"] = {"libloading", "rustix", "sha2"}
 TEST_FEATURES = {"test-util", "test-support", "asserting"}
 
 
@@ -115,6 +125,49 @@ def validate(metadata, production_tree):
                  f"Missing upstream license declaration: {package['name']}")
     for forbidden in ("hsearch-testkit", *sorted(TEST_FEATURES)):
         need(forbidden not in production_tree, f"Release dependency/feature leak: {forbidden}")
+
+
+def unsafe_boundary(root, manifests):
+    """Every crate inherits the workspace lints (`unsafe_code = "forbid"`) except the declared loader crate,
+    which restates the same set with `deny` so that one module can opt in."""
+    declared = set(root.get("workspace", {}).get("metadata", {}).get("unsafe", {}).get("crates", []))
+    need(declared == UNSAFE_CRATES, f"Workspace [workspace.metadata.unsafe] must list exactly {sorted(UNSAFE_CRATES)}")
+    need(root["workspace"]["lints"]["rust"]["unsafe_code"] == "forbid", "Workspace must forbid unsafe_code")
+    for name, manifest in manifests.items():
+        lints = manifest.get("lints")
+        if name not in UNSAFE_CRATES:
+            need(lints == {"workspace": True}, f"Only {sorted(UNSAFE_CRATES)} may leave the workspace lints: {name}")
+            continue
+        need(lints is not None and not lints.get("workspace"), f"The unsafe crate must state its own lints: {name}")
+        rust, clippy = lints.get("rust", {}), lints.get("clippy", {})
+        need(rust.get("unsafe_code") == "deny", f"The unsafe crate must `deny` unsafe_code so only one module opts in: {name}")
+        need(rust.get("missing_docs") == "deny" and clippy.get("all") == "deny",
+             f"The unsafe crate must keep the rest of the workspace lint set: {name}")
+
+
+def unsafe_sources(files):
+    """`files` maps a path relative to the unsafe crate's src/ to its text. The `unsafe` keyword may appear
+    only in sys.rs, and `allow(unsafe_code)` only once, in lib.rs, on `mod sys`: a manifest `deny` can be
+    overridden from inside the crate, so the manifest check alone does not hold the boundary."""
+    strip = lambda text: "\n".join(line.split("//")[0] for line in text.splitlines())
+    for name, text in files.items():
+        code = strip(text)
+        if name != "sys.rs":
+            need(re.search(r"\bunsafe\b", code) is None, f"`unsafe` outside sys.rs: {name}")
+        if name != "lib.rs":
+            need("allow(unsafe_code)" not in code.replace(" ", ""), f"allow(unsafe_code) outside lib.rs: {name}")
+    lib = strip(files["lib.rs"]).replace(" ", "")
+    need(lib.count("allow(unsafe_code)") == 1 and "#[allow(unsafe_code)]\nmodsys;" in lib,
+         "lib.rs must allow unsafe_code exactly once, on `mod sys`")
+
+
+def unsafe_source_files():
+    return {p.name: p.read_text(encoding="utf-8") for p in (ROOT / "crates/module-native/src").glob("*.rs")}
+
+
+def manifests_of(metadata):
+    owned = {p["name"]: Path(p["manifest_path"]) for p in metadata["packages"] if p["id"] in set(metadata["workspace_members"])}
+    return {name: tomllib.loads(path.read_text(encoding="utf-8")) for name, path in owned.items()}
 
 
 def cargo(*args):
@@ -237,6 +290,42 @@ def selftest(data, tree):
     else:
         raise PolicyError("Unowned path mislabeled as workspace in inventory")
     controls.append("unowned path inventory")
+    root, manifests = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8")), manifests_of(data)
+
+    def unsafe_case(label, expected, change):
+        r, m = copy.deepcopy(root), copy.deepcopy(manifests)
+        change(r, m)
+        try:
+            unsafe_boundary(r, m)
+        except PolicyError as exc:
+            need(expected in str(exc), f"Wrong rejection for {label}: {exc}")
+        else:
+            raise PolicyError(f"Unsafe control accepted: {label}")
+        controls.append(label)
+
+    unsafe_case("second crate leaves workspace lints", "Only", lambda r, m: m["hsearch-object"].update(lints={"rust": {"unsafe_code": "allow"}}))
+    unsafe_case("loader crate inherits workspace lints", "state its own lints", lambda r, m: m["hsearch-module-native"].update(lints={"workspace": True}))
+    unsafe_case("loader crate allows unsafe crate-wide", "`deny`", lambda r, m: m["hsearch-module-native"]["lints"]["rust"].update(unsafe_code="allow"))
+    unsafe_case("loader crate drops missing_docs", "rest of the workspace lint set", lambda r, m: m["hsearch-module-native"]["lints"]["rust"].pop("missing_docs"))
+    unsafe_case("exception list widened", "must list exactly", lambda r, m: r["workspace"]["metadata"]["unsafe"].update(crates=["hsearch-module-native", "hsearch-object"]))
+    unsafe_case("workspace stops forbidding", "must forbid", lambda r, m: r["workspace"]["lints"]["rust"].update(unsafe_code="deny"))
+    sources = unsafe_source_files()
+
+    def source_case(label, expected, change):
+        files = dict(sources)
+        change(files)
+        try:
+            unsafe_sources(files)
+        except PolicyError as exc:
+            need(expected in str(exc), f"Wrong rejection for {label}: {exc}")
+        else:
+            raise PolicyError(f"Unsafe control accepted: {label}")
+        controls.append(label)
+
+    source_case("unsafe block in module.rs", "outside sys.rs", lambda f: f.update({"module.rs": f["module.rs"] + "\nfn x() { unsafe { } }\n"}))
+    source_case("module-wide allow", "outside lib.rs", lambda f: f.update({"module.rs": "#![allow(unsafe_code)]\n" + f["module.rs"]}))
+    source_case("second allow in lib.rs", "exactly once", lambda f: f.update({"lib.rs": f["lib.rs"] + "\n#[allow(unsafe_code)]\nmod other;\n"}))
+    source_case("allow moved off mod sys", "exactly once", lambda f: f.update({"lib.rs": f["lib.rs"].replace("#[allow(unsafe_code)]\nmod sys;", "mod sys;")}))
     print(f"PASS: {len(controls)} dependency-policy negative controls: {', '.join(controls)}")
 
 
@@ -247,6 +336,8 @@ def main():
     try:
         data, tree = inputs()
         validate(data, tree)
+        unsafe_boundary(tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8")), manifests_of(data))
+        unsafe_sources(unsafe_source_files())
         if args.command == "inventory":
             path = ROOT / "docs/plan/dependencies.json"
             path.write_text(json.dumps(inventory(data), indent=2) + "\n", encoding="utf-8", newline="\n")
@@ -257,7 +348,7 @@ def main():
             expected = json.dumps(inventory(data), indent=2) + "\n"
             need((ROOT / "docs/plan/dependencies.json").read_text(encoding="utf-8") == expected,
                  "Dependency inventory is stale; run tools/workspace.py inventory")
-            print("PASS: dependency ownership, all-edge cycle check, exact engine pin, release feature boundary, license inventory")
+            print("PASS: dependency ownership, all-edge cycle check, exact engine pin, release feature boundary, single unsafe crate, license inventory")
         return 0
     except (PolicyError, OSError, KeyError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
         print(f"FAIL: {error}", file=sys.stderr)

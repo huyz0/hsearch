@@ -3557,8 +3557,13 @@
             "M24.01"
           ],
           "owner": "extensions/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m24-02-native-loader.md",
+              "result": "Native loader crate hsearch-module-native (unsafe only in mod sys, with a written safety proof) over the shared hsearch-module-abi crate; workspace.py and AGENTS.md name the single exception. 26 loader tests against real C shared libraries (valid, wrong version without other symbols resolved, missing symbol, malformed buffers, overrun, hang with quarantine, busy, dependency refusal, hash pin), layout held to layout.json. Miri, ASAN, TSAN and valgrind clean on x86_64 Linux; six mutations caught; line coverage 98.09% and 96.11%. Pooled call p50 28.6 us at 64 B against 27 ns direct: the thread hop, which is the platform floor (bare ping-pong 26.2 us), provisional on a 4-vCPU VM; zero allocations per steady-state call. Linux x86_64 only: not run on aarch64 or macOS; not yet wired to a node (M24.04)."
+            }
+          ]
         },
         {
           "id": "M24.03",
