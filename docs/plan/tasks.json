@@ -1823,6 +1823,60 @@
           ]
         },
         {
+          "id": "M03.12",
+          "title": "Attribute retries and write verbs in the S3 adapter",
+          "goal": "Make every retry and every write verb the adapter sends visible in the attribution ledger, without ever repeating a write that may have committed.",
+          "deliverables": [
+            "A retry policy under the adapter that repeats reads after a throttle, a 5xx or a failed connect, and repeats a write only when no connection was made, with every attempt attributed and flagged and charged to the request budget",
+            "POST (multipart control) attribution through the probe helper and a hairpin path exercised through the adapter"
+          ],
+          "validation": [
+            "Inject throttling, connection loss, server errors and a lost response under the retry policy and assert attempts, retries and bytes against the scripted provider's transport log",
+            "A write is never repeated after a status or an unknown outcome; a refused connection sends nothing; a retry past the attempt, byte or deadline limit returns the last real failure",
+            "Normal independent review of the code and the claimed results, and green CI."
+          ],
+          "definition_of_done": [
+            "Retries and write verbs are attributed independently of logical calls and no write that may have committed is repeated; what is not done here (real SDK and multipart path, independent transport classification, conflicts under retry, tenant feed, telemetry) is listed with an owner in M03.13 and M08.02"
+          ],
+          "depends_on": [
+            "M03.07"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-12-retry-attribution.md",
+              "result": "S3Store::with_retry: reads retried after 429, 500, 502-599 or no connection; a write only when no connection was made (a status such as 503 does not prove a write did not commit, so it is returned and the caller replays the same request id through the conditional-write path); never after an unknown outcome. Each attempt attributed and flagged as a retry (3 attempts of one read: 1 call, 3 attempts, 2 retries, 3 HEADs in the provider log); retries charged to the context's attempt and byte budget and the last real failure returned when the budget or deadline is spent; backoff capped at the remaining deadline; POST attributed as a write verb; a hairpin path classified and priced apart; 22 tests in the file, mutations seen red for each rule. Provisional: the retry layer is the adapter's own, no real SDK ran, no real multipart path exists, and the provider log is written in this repo. Remainder: M03.13 and M08.02."
+            }
+          ]
+        },
+        {
+          "id": "M03.13",
+          "title": "Attribute a real retrying client and multipart path against an independent log",
+          "goal": "Test attribution where the adapter does not control the retries or the classification: a real retrying SDK or client, a real multipart upload, and a transport log that classifies requests by its own rules.",
+          "deliverables": [
+            "A real S3 SDK or retrying HTTP client under the adapter's attribution, with its hidden attempts counted and flagged, run against the pinned RustFS and MinIO images",
+            "A multipart upload path in the adapter (M03.10 only probed it) with every part and control request attributed",
+            "A transport log that classifies LIST, multipart and conditional requests by parsing the wire without reusing the adapter's verb rules, and a reconciliation that compares outcomes and bytes as well as verbs",
+            "Conflicts and lost races exercised under the retrying layer, with each attempt attributed"
+          ],
+          "validation": [
+            "Counts agree exactly between the ledger and the independent log under injected throttling, connection loss, conflicts and a lost response",
+            "A deliberately mis-classifying adapter path makes the reconciliation fail (seen red)",
+            "Normal independent review of the code and the claimed results, and green CI."
+          ],
+          "definition_of_done": [
+            "Hidden SDK attempts, multipart requests and conflict resolution are attributed and agree with an independent record; any residual is explained, not rounded away"
+          ],
+          "depends_on": [
+            "M03.12",
+            "M03.10"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
           "id": "M03.09",
           "title": "Decide commit-domain sharing under tenant = index",
           "goal": "Resolve the open design question in product-requirements conflict 3 before formats freeze: with one tenant per index, may small indexes share a fenced append lane?",
@@ -1936,8 +1990,13 @@
             "M03.01"
           ],
           "owner": "cost/architecture/operations",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-07-attribution.md",
+              "result": "Implemented in hsearch-s3: logical calls (counted at every public entry, including calls refused before the wire) and attempts counted apart by role, verb and outcome with encoded bytes; directed traffic ledger by role, direction, endpoint, price class and payer with a transfer counted once, bounded keys, transfers and tenants, a scoped tenant drill-down, bytes refused by a bound kept as unknown, unknown (not free) pricing for a missing path, payer or rate, DNS-only paths failing acceptance, and the byte unit carried in the rate; redirects are not followed so no request hides. Adapter attempt counts agree with a scripted provider's transport log (one written in this repo, comparing verbs only) for a clean write, a lost race (1 call, 2 attempts), an empty-read/throttle/success sequence and a redirect; 34 tests, mutations seen red, hsearch-s3 line coverage 97.9%. Provisional and partial against the validation list: SDK retries are caller-repeated calls and flags, not a real retrying client; NAT and hairpin paths and double-counted endpoint charges are exercised only in the ledger's unit tests, no real route inspection or provider usage was used; request size is a lower bound computed not read. The remainder is M03.12 (retries, now done), M03.13 (a real SDK and multipart), M08.02 (tenant feed and telemetry) and M15.07."
+            }
+          ]
         },
         {
           "id": "M03.08",
@@ -3401,7 +3460,8 @@
           "title": "Instrument all critical stages",
           "goal": "Make latency, resource and durability gaps attributable.",
           "deliverables": [
-            "Mutation/query/storage/cache/crypto/replication spans and metrics, trace links and profiles"
+            "Mutation/query/storage/cache/crypto/replication spans and metrics, trace links and profiles",
+            "Feed tenant identity into the S3 traffic ledger (M03.07) from request context and export its counters as bounded instruments in hsearch-observe, with no tenant or endpoint labels on metrics"
           ],
           "validation": [
             "Inspect end-to-end request timing, exporter stall, counter accuracy and sampling behavior."
@@ -3615,8 +3675,13 @@
             "M24.01"
           ],
           "owner": "extensions/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m24-03-wasm-runtime.md",
+              "result": "WASM host crate hsearch-module-wasm on wasmtime 50.0.1 (exact pin, Cranelift only, no WASI) over the shared hsearch-module-abi crate; linker grants only hsearch_host_v1.log and .cancelled, so any other import is refused at load; limits on declared memory maximum, fuel, wall-clock deadline (epoch), host calls and stack; a trap or breach discards that instance, counts a strike and leaves the module serving, three strikes in 60 s fail it. 36 tests over WAT modules (trap, stack overflow, fuel, deadline, memory, forbidden import, host-call budget, version and descriptor refusals, init on every instance, strikes, concurrency, queueing); two independent reviews fixed (init on every instance, load timeout, no strike for caller deadlines, shutdown, slot guard, bounded memory reservation); thirteen mutations caught; line coverage 95.93%. Runtime chosen by measurement: wasmtime about 8x faster than wasmi per byte (133 ns vs 884 ns at 64 B) at the cost of 112 crates, a 214 s clean build and a 13 MB stripped binary; fuel and epoch add 30-45% and 15-30% on a tight loop. Host call 555 ns p50 at 64 B (no thread hop). Provisional on a 4-vCPU VM, Linux x86_64 only, not yet wired to a node (M24.04)."
+            }
+          ]
         },
         {
           "id": "M24.04",
@@ -4715,7 +4780,8 @@
           "goal": "Validate that the modeled savings survive actual cloud paths, SKU rules and provider charging.",
           "deliverables": [
             "S3/GCS/Azure rate/path profiles and scoped usage/billing export reconciliation with explained residuals",
-            "Infrastructure endpoint/route and LB/NAT/PrivateLink/TGW checks, explicit GB/GiB and sender/receiver payer mappings"
+            "Infrastructure endpoint/route and LB/NAT/PrivateLink/TGW checks, explicit GB/GiB and sender/receiver payer mappings",
+            "Real route-inspection and transport-log evidence fed into the M03.07 traffic ledger paths (a DNS-only path is rejected), the M03.07 key role fed by the KMS adapters, and real provider usage compared with the ledger"
           ],
           "validation": [
             "Compare meter projections to real provider usage and available billing exports for normal, retry, idle, failover and cross-cluster workloads",

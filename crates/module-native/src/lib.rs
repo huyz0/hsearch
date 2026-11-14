@@ -20,4 +20,5 @@ mod module;
 mod sys;
 
 pub use host::{LogRecord, LogSink};
-pub use module::{LoadConfig, LoadError, ModuleState, NativeModule, Policy, Request};
+pub use hsearch_module_abi::Request;
+pub use module::{LoadConfig, LoadError, ModuleState, NativeModule, Policy};

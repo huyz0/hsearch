@@ -25,11 +25,12 @@ LAYERS = {
     "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3"},
     "hsearch-module-abi": set(),
     "hsearch-module-native": {"hsearch-module-abi"},
+    "hsearch-module-wasm": {"hsearch-module-abi"},
     "hsearch-testkit": set(),
     "xtask": set(),
 }
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-node",
-              "hsearch-module-abi", "hsearch-module-native"}
+              "hsearch-module-abi", "hsearch-module-native", "hsearch-module-wasm"}
 # D18: the one crate whose manifest may relax the workspace `unsafe_code = "forbid"`. Inside it the
 # `unsafe_code = "deny"` lint leaves exactly one `#[allow]`, on `mod sys` (the compiler enforces that).
 UNSAFE_CRATES = {"hsearch-module-native"}
@@ -44,6 +45,8 @@ EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 # Extension module contract (JSON descriptor) and the native loader: dynamic library open, SHA-256 pin and a sealed memfd copy.
 EXTERNAL["hsearch-module-abi"] = {"serde_json"}
 EXTERNAL["hsearch-module-native"] = {"libloading", "rustix", "sha2"}
+# The WASM host: wasmtime (Cranelift, no WASI, no component model) and the SHA-256 pin. Safe Rust only.
+EXTERNAL["hsearch-module-wasm"] = {"wasmtime", "sha2"}
 TEST_FEATURES = {"test-util", "test-support", "asserting"}
 
 
