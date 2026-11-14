@@ -71,11 +71,7 @@ Notes and limits:
   the fixed polls.
 
 ## Not done
-- No raft-rs run: it is a no-I/O library and needs an application harness for storage, network
-  and scheduling, so a comparable number would measure that harness. The contract comparison is in
-  [m02-10-quorum-candidates.md](m02-10-quorum-candidates.md).
-- No object-store log under either library, no multi-process or real-network run, no restart
-  or snapshot schedule, no CPU/RAM/disk/PID envelope beyond the RSS check.
+- raft-rs was run separately with its own harness: [m02-10-raftrs-groups.md](m02-10-raftrs-groups.md). The two are not like-for-like drivers, and raft-rs's per-group memory there is about 40x smaller; the per-group figure here includes openraft's async runtime tasks and channels.
 - No object-store path accounting under raft (KMS moved to M05.08); M02.10 stays
   `in_progress`. No runtime authority is selected here; that is M02.04.
 
