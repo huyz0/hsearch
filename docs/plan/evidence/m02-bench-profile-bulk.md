@@ -32,13 +32,13 @@ Test: `the_term_bound_counts_analyzed_tokens_not_bytes_across_all_text_fields`.
 Reading, from the raw output below (a later full rerun than the one first recorded here, after the control and open-loop sections were added; every section was rerun, so the numbers differ slightly from the earlier run):
 - PUT by size, one writer: about 4.8 ms p50 before bytes matter (1 KiB 204/s, 16 KiB 204/s, 3.2 MiB/s); throughput rises to 96-105 MiB/s at 4 and 16 MiB; p99 is 102 ms at 4 MiB and 187 ms at 16 MiB. Packing many documents into one PUT is worth it for request count and cost; 4 MiB and 16 MiB are close, and earlier runs ordered them differently, so no best size is claimed beyond "megabytes".
 - Concurrent 64 KiB PUTs to distinct keys saturate near 16-32 writers (692-742/s).
-- Open-loop sweep (fixed arrival rate, distinct keys, 32 workers; latency is from the scheduled arrival so queueing shows): 64 KiB holds p99 under 30 ms up to 500/s, reaches p99 286 ms at 800/s, and is past saturation at 1200/s (p50 1.5 s, p99 2.9 s, all completed only because a drain of one cell length was allowed). 1 MiB holds p50 15 ms, p99 24-82 ms through 120/s (120 MiB/s); 4 MiB holds p50 41-46 ms through 30/s (121 MiB/s). Throughput limit on this VM is therefore about 700-750 small PUTs/s or about 120 MiB/s, and the closed-loop tables above agree with the open-loop knee. `done/s` here is completions over the offered window and equals the offered rate whenever the cell drained; saturation shows in the latency columns, not in `done/s`.
+- Open-loop sweep (fixed arrival rate, distinct keys, 32 workers; latency from the scheduled arrival so queueing shows; `completed/s` divides by the time to the last completion; no errors, nothing unstarted): 64 KiB keeps p50 7-12 ms through 500/s, is saturated at 800/s (completes about 715/s, p50 359 ms) and at 1200/s (about 706/s, p50 1.8 s, p99 3.5 s), so about 710 small PUTs/s is the completion limit on this VM and it matches the closed-loop 692-742. 1 MiB (p50 17-22 ms) and 4 MiB (p50 42-46 ms) show no queueing up to the highest rates offered, 120/s and 30/s, which is about 120 MiB/s: no knee was found for large payloads, so 120 MiB/s is a lower bound on this VM and the closed-loop maximum (105 MiB/s) was below it. p99 in the sweep varies run to run by a factor of two or more at low rates (the 64 KiB p99 at 200/s was 17 ms in one run and 130 ms in another), so only p50 and the saturation point are quoted.
 - One hot key sustains roughly 78-92 commits/s here. Attempts per cell are attempts/s x 5: about half of attempts conflict at 4 writers (386 of about 770) and 37% at 8 (231 of about 615); 95 of about 575 (17%) at 16, plus 27 other errors. "Other errors" are counted apart from conflicts; the one variant recorded (process-wide list, printed once at the end) is `ResolutionUnavailable`, not attributed per row.
 - Matched workloads (16 KiB commits; sparse one writer paced at 50 ms; busy 16 writers on own keys; skewed 16 writers, 90% on one hot key). Uncontended a commit is exactly one PUT at any concurrency (sparse 16/s, busy 358/s). Under the hot key each commit costs about 1.29 PUT, 1.38 HEAD and 0.29 LIST (a LIST is priced like a PUT), throughput falls to 59 commits/s and p99 reaches 3.6 s. Conflicts and other errors are totals over the 5 s cell; attempts/s and commits/s are rates. Hot keys, not writer count, drive cost. Across the two full runs the skewed cell gave 1.19-1.29 PUT and 0.19-0.29 LIST per commit, so the per-commit extra cost has run-to-run spread of that size.
 - **Control and direct probe (answers the open ETag question).** The control repeats the contended loop with identical bodies. A direct probe updates from version v1 with identical bytes twice: the second update from the same stale v1 was ACCEPTED, and the 16-writer identical-body loop had 0 conflicts. So on RustFS 1.0.4 an `If-Match` update that rewrites identical bytes is not fenced by the stale version: the content hash, not the version, decides the precondition. The earlier "about 180 commits/s per key, conflicts low" result was therefore this failure mode, not a measurement of a working CAS. Consequence for the commit protocol: a commit body or key must carry a unique per-commit value (for example the new sequence number inside the body), never rely on content-addressed ETag equality for fencing; whether other S3 implementations behave the same is not tested.
 - The 958 LISTs and 2423 HEADs in the final counters are whole-run totals across all sections (the contended and skewed cells produce them); only the per-commit columns above are attributed. KMS path accounting needs a real provider and is tracked as M05.08.
 
-Raw output:
+Raw output (the open-loop section is from a separate `BENCH_ONLY=open_loop` run after its columns were corrected to count errors and to divide completions by the time to the last completion; the first full run's open-loop table had `done/s` divided by the offered window and could not show failures, so it was replaced):
 
 ```
 cpus: 4, seconds per cell: 5
@@ -93,19 +93,19 @@ probe: first update from v1 with identical bytes: accepted; second update from t
 
 ## Open-loop PUT sweep (fixed arrival rate, distinct keys, 32 workers)
 
-| payload | offered/s | done/s | p50 ms | p99 ms | dropped | MiB/s |
-|---|---|---|---|---|---|---|
-| 64 KiB | 200 | 200 | 6.5 | 17.5 | 0 | 12.5 |
-| 64 KiB | 500 | 500 | 8.6 | 21.5 | 0 | 31.3 |
-| 64 KiB | 800 | 800 | 50.2 | 286.2 | 0 | 50.0 |
-| 64 KiB | 1200 | 1200 | 1525.4 | 2909.4 | 0 | 75.0 |
-| 1024 KiB | 30 | 30 | 16.4 | 29.0 | 0 | 30.2 |
-| 1024 KiB | 60 | 60 | 15.3 | 24.0 | 0 | 60.2 |
-| 1024 KiB | 90 | 90 | 15.6 | 41.9 | 0 | 90.2 |
-| 1024 KiB | 120 | 120 | 15.3 | 81.5 | 0 | 120.2 |
-| 4096 KiB | 10 | 10 | 46.3 | 57.8 | 0 | 40.8 |
-| 4096 KiB | 20 | 20 | 41.1 | 50.3 | 0 | 80.8 |
-| 4096 KiB | 30 | 30 | 41.6 | 112.8 | 0 | 120.8 |
+| payload | offered/s | completed/s | errors | p50 ms | p99 ms | unstarted | MiB/s |
+|---|---|---|---|---|---|---|---|
+| 64 KiB | 200 | 197 | 0 | 7.4 | 129.5 | 0 | 12.3 |
+| 64 KiB | 500 | 499 | 0 | 11.8 | 152.3 | 0 | 31.2 |
+| 64 KiB | 800 | 715 | 0 | 359.4 | 620.1 | 0 | 44.7 |
+| 64 KiB | 1200 | 706 | 0 | 1803.5 | 3499.6 | 0 | 44.1 |
+| 1024 KiB | 30 | 30 | 0 | 18.4 | 30.0 | 0 | 30.1 |
+| 1024 KiB | 60 | 60 | 0 | 21.6 | 144.8 | 0 | 59.9 |
+| 1024 KiB | 90 | 90 | 0 | 17.5 | 73.9 | 0 | 89.9 |
+| 1024 KiB | 120 | 120 | 0 | 16.8 | 54.8 | 0 | 119.9 |
+| 4096 KiB | 10 | 10 | 0 | 46.0 | 58.5 | 0 | 40.5 |
+| 4096 KiB | 20 | 20 | 0 | 42.8 | 65.8 | 0 | 80.0 |
+| 4096 KiB | 30 | 30 | 0 | 42.3 | 59.5 | 0 | 119.8 |
 
 requests: RequestCounts { get: 1, put: 39432, head: 2423, list: 958, delete: 0 }
 other error variants seen: ["ResolutionUnavailable"]

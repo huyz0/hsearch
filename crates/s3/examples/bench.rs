@@ -506,7 +506,7 @@ fn control(s: &Arc<S3Store>, seconds: f64) {
 fn open_loop(s: &Arc<S3Store>, seconds: f64) {
     println!("\n## Open-loop PUT sweep (fixed arrival rate, distinct keys, 32 workers)\n");
     println!(
-        "| payload | offered/s | done/s | p50 ms | p99 ms | dropped | MiB/s |\n|---|---|---|---|---|---|---|"
+        "| payload | offered/s | completed/s | errors | p50 ms | p99 ms | unstarted | MiB/s |\n|---|---|---|---|---|---|---|---|"
     );
     for (size, rates) in [
         (64usize << 10, vec![200.0_f64, 500.0, 800.0, 1200.0]),
@@ -519,16 +519,21 @@ fn open_loop(s: &Arc<S3Store>, seconds: f64) {
             let rx = Arc::new(std::sync::Mutex::new(rx));
             let lats = Arc::new(std::sync::Mutex::new(Vec::<f64>::new()));
             let stop = Arc::new(AtomicBool::new(false));
+            let start = Instant::now();
             let started = Arc::new(AtomicU64::new(0));
+            let failed = Arc::new(AtomicU64::new(0));
+            let last_done = Arc::new(std::sync::Mutex::new(Duration::ZERO));
             let workers: Vec<_> = (0..32)
                 .map(|_| {
-                    let (s2, rx2, l2, b2, st, started2) = (
+                    let (s2, rx2, l2, b2, st, started2, failed2, last2) = (
                         Arc::clone(s),
                         Arc::clone(&rx),
                         Arc::clone(&lats),
                         Arc::clone(&body),
                         Arc::clone(&stop),
                         Arc::clone(&started),
+                        Arc::clone(&failed),
+                        Arc::clone(&last_done),
                     );
                     std::thread::spawn(move || {
                         loop {
@@ -544,6 +549,9 @@ fn open_loop(s: &Arc<S3Store>, seconds: f64) {
                                     );
                                     if block(s2.create(&ctx(), &m)).is_ok() {
                                         l2.lock().unwrap().push(at.elapsed().as_secs_f64() * 1e3);
+                                        *last2.lock().unwrap() = start.elapsed();
+                                    } else {
+                                        failed2.fetch_add(1, Ordering::Relaxed);
                                     }
                                 }
                                 Err(_) if st.load(Ordering::Relaxed) => break,
@@ -553,7 +561,6 @@ fn open_loop(s: &Arc<S3Store>, seconds: f64) {
                     })
                 })
                 .collect();
-            let start = Instant::now();
             let mut sent = 0u64;
             while start.elapsed().as_secs_f64() < seconds {
                 let due = Duration::from_secs_f64(sent as f64 / rate);
@@ -567,7 +574,7 @@ fn open_loop(s: &Arc<S3Store>, seconds: f64) {
             // Give queued work one more cell-length to drain, then count what never started.
             let drain = Instant::now();
             while drain.elapsed().as_secs_f64() < seconds
-                && lats.lock().unwrap().len() < sent as usize
+                && (lats.lock().unwrap().len() as u64) + failed.load(Ordering::Relaxed) < sent
             {
                 std::thread::sleep(Duration::from_millis(20));
             }
@@ -579,13 +586,17 @@ fn open_loop(s: &Arc<S3Store>, seconds: f64) {
             let mut lat = lats.lock().unwrap().clone();
             lat.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let done = lat.len() as f64;
+            // Completions over the time until the last one finished: below saturation this is
+            // the offered window, past it the longer drain, so it shows the real completion rate.
+            let span = last_done.lock().unwrap().as_secs_f64().max(seconds);
             println!(
-                "| {} KiB | {rate:.0} | {:.0} | {:.1} | {:.1} | {dropped} | {:.1} |",
+                "| {} KiB | {rate:.0} | {:.0} | {} | {:.1} | {:.1} | {dropped} | {:.1} |",
                 size >> 10,
-                done / seconds,
+                done / span,
+                failed.load(Ordering::Relaxed),
                 percentile(&lat, 0.5),
                 percentile(&lat, 0.99),
-                done * size as f64 / seconds / (1 << 20) as f64
+                done * size as f64 / span / (1 << 20) as f64
             );
         }
     }

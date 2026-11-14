@@ -10,20 +10,20 @@ Status: see "What is not established". Every number is `provisional` (4-CPU sand
 
 ## Costs (from [m02-bench-profile-bulk.md](m02-bench-profile-bulk.md), raw output included)
 
-- A PUT has a fixed cost of about 4-5 ms before bytes matter: 16 KiB moves about 3 MiB/s, 4-16 MiB about 90-100 MiB/s. Batching documents into megabyte-scale PUTs is what makes request count and cost tolerable.
+- A PUT has a fixed cost of about 4.8 ms before bytes matter: 16 KiB moves about 3.2 MiB/s, 4-16 MiB about 96-105 MiB/s. Batching documents into megabyte-scale PUTs is what makes request count and cost tolerable.
 - Uncontended commit: 1.00 PUT per commit for sparse (16/s) and busy (352/s, 16 writers on their own keys).
-- One hot key: about 50-100 commits/s regardless of writer count; with 90% of attempts on one key a commit costs about 1.19 PUT, 1.25 HEAD and 0.19 LIST, throughput falls to 58/s and p99 to 3.7 s. A LIST is priced like a PUT. Cost is driven by hot keys, not writer count. Design consequence: shard the head per index or coalesce writers per head, never let many writers race on one head.
+- One hot key: about 78-92 commits/s from 2 to 16 writers (50-85/s at one writer); with 90% of attempts on one key a commit costs about 1.2-1.3 PUT, 1.3-1.4 HEAD and 0.2-0.3 LIST (two runs), throughput falls to about 59/s and p99 to about 3.6 s. A LIST is priced like a PUT. Cost is driven by hot keys, not writer count. Design consequence: shard the head per index or coalesce writers per head, never let many writers race on one head.
 
 ## Ambiguous outcomes and failure limits
 
-- Under the hot key the adapter's unknown-outcome resolution (list and probe recent versions within a bound) sometimes runs out and returns `ResolutionUnavailable` (the skewed matched cell had 14 'other errors' in 5 s and the 16-writer contended cell 20; the one variant recorded is process-wide, so the split per row is not attributed). A commit protocol must treat that as unknown and be idempotent on retry; this is parked in [the plan README](../README.md).
+- Under the hot key the adapter's unknown-outcome resolution (list and probe recent versions within a bound) sometimes runs out and returns `ResolutionUnavailable` (the skewed matched cell had 10-14 'other errors' in 5 s across runs and the 16-writer contended cell 20-27; the one variant recorded is process-wide, so the split per row is not attributed). A commit protocol must treat that as unknown and be idempotent on retry; this is parked in [the plan README](../README.md).
 - An earlier contended-CAS result was invalid (identical bodies) because `If-Match` compares a content-hash ETag, so an update rewriting identical bytes is not fenced. **Probed and confirmed (14 November, RustFS 1.0.4):** an update with identical bytes from a stale version is accepted and 16 identical-body writers saw zero conflicts, so a commit must carry a unique per-commit value in the body or key and never rely on the ETag of unchanged content for fencing. Other S3 implementations are not tested.
 - Both Raft harnesses showed a write proposed on a cut leader applied on no member after the heal (one observation each; raft-rs's truncation was inferred, not observed). A client that times out, or proposes on a node it cannot confirm is leader, must still treat the outcome as unknown (the raft-rs harness has no client timeout; it only proposed on the cut leader).
 - Failover after a leader cut took about 0.7-0.95 s (raft-rs, 600-1200 ms election window, 50 ms ticks) and about 2.0-2.3 s (openraft, in-process); one observation per run, not bounds.
 
 ## Open-loop batching and what a batch buys
 
-The open-loop sweep (raw output in the bench evidence) shows the object API's limit on this VM: about 700-750 small PUTs a second, or about 120 MiB/s, past which latency is queueing (64 KiB at 1200/s: p50 1.5 s). Below the knee a PUT costs about 6-8 ms p50 at 64 KiB, about 15 ms at 1 MiB and about 41-46 ms at 4 MiB. Batching to megabyte-scale PUTs moves the same bytes with about 16-64x fewer requests. The size to choose is a latency-versus-cost trade the commit protocol makes (visibility target under 500 ms p50 leaves room for batching windows of tens of milliseconds, not seconds).
+The open-loop sweep (raw output in the bench evidence) shows the object API's limit on this VM for small PUTs: about 710 a second (64 KiB at 800/s offered completes 715/s with p50 359 ms; at 1200/s p50 is 1.8 s). Large payloads showed no queueing up to the highest rate offered (about 120 MiB/s at 1 MiB and 4 MiB), so 120 MiB/s is a lower bound, not a knee. Below saturation a PUT costs about 7-12 ms p50 at 64 KiB, about 17-22 ms at 1 MiB and about 42-46 ms at 4 MiB. Batching to megabyte-scale PUTs moves the same bytes with about 16-64x fewer requests. The size to choose is a latency-versus-cost trade the commit protocol makes (visibility target under 500 ms p50 leaves room for batching windows of tens of milliseconds, not seconds).
 
 ## Quorum follower bytes (arithmetic, separate from object API batching)
 
@@ -31,7 +31,7 @@ If a Raft quorum were used, the leader sends each entry to every follower: a 3-m
 
 ## Scope of the attempts counted
 
-Payload PUTs and per-key compare-and-set heads are counted request by request (PUT/HEAD/GET/LIST per commit). No root or page object exists until the commit protocol is designed (M06), so the per-key head here is the stand-in for the root; page-path accounting is that task's. KMS: M05.08.
+Payload PUTs and per-key compare-and-set heads are counted request by request (PUT/HEAD/GET/LIST per commit). No root or page object exists until the commit protocol is designed (M06), so the per-key head is the stand-in for the root and **page-path accounting is not done here; it belongs to that task**. The network path is the arithmetic above, not a byte estimate. KMS: M05.08. The KMS clause of M02.04's validation was moved to M05.08 at the coordinator's direction on 14 November; the root/page and byte-estimate limits above are open and stated, not removed.
 
 ## What is not established
 
