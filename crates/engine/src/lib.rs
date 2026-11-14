@@ -9,9 +9,7 @@ mod remote;
 pub use local::{LocalFiles, with_local_engine};
 pub use remote::{CachedDirectory, RemoteError, RemoteFiles};
 mod range;
-pub use range::{
-    Access, RangeCache, RangeError, RangeFiles, RangeInput, RangeLimits, RangeStats, TraceKind,
-};
+pub use range::{ManifestEntry, ObjectBlobStore};
 mod schema;
 pub use aggregations::{Bucket, Metrics};
 mod adapter;

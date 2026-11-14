@@ -34,12 +34,19 @@ pub fn schema() -> Schema {
 /// Write 40 documents with the engine into a local directory, commit, and
 /// upload every native file except the lock to `store`.
 pub fn write_documents() -> (Scratch, Vec<(String, Vec<u8>)>) {
+    write_documents_in(4)
+}
+
+/// The same, in `batches` engine batches of ten documents each.
+pub fn write_documents_in(batches: usize) -> (Scratch, Vec<(String, Vec<u8>)>) {
     let scratch = Scratch::new("write");
     std::fs::create_dir_all(&scratch.0).unwrap();
     let directory = EngineDirectory::new(FsDirectory::open(&scratch.0));
-    let schema = schema();
+    let schema = schema()
+        .with_limits(hsearch_engine::Limits::scale())
+        .unwrap();
     let engine = Engine::open(&directory, schema.clone(), None).unwrap();
-    for batch in 0..4 {
+    for batch in 0..batches {
         let ids: Vec<String> = (0..10).map(|i| format!("d{}", batch * 10 + i)).collect();
         let tags: Vec<String> = (0..10).map(|i| format!("t{}", i % 3)).collect();
         let owned: Vec<(String, i64, String, i64)> = (0..10)

@@ -1,125 +1,102 @@
-//! M02.03 benchmark: `RangeCache` over an in-memory source, so the numbers are
-//! the cache's own cost (lookup, copies, eviction) with the network removed.
+//! M02.03 benchmark: the cost `ObjectBlobStore` adds to one range request, with
+//! the network removed (an in-memory backend), at the sizes the page cache sends.
 //! Run `cargo run --release -p hsearch-engine --example range_bench`.
-use hsearch_engine::{RangeCache, RangeFiles, RangeLimits, RemoteError};
-use std::time::Instant;
+use hsearch_engine::{ManifestEntry, ObjectBlobStore};
+use hsearch_object::memory::{MemoryLimits, MemoryStore};
+use hsearch_object::{
+    Budget, ByteRange, Cancellation, Metadata, Mutation, ObjectBackend, ObjectKey, Payload,
+    Precondition, RequestContext, RequestId,
+};
+use lucene_store::BlobStore;
+use std::future::Future;
+use std::sync::Arc;
+use std::task::{Context, Poll, Wake, Waker};
+use std::time::{Duration, Instant};
 
-struct Memory(Vec<u8>);
-impl RangeFiles for Memory {
-    fn read_at(&self, _name: &str, offset: u64, buf: &mut [u8]) -> Result<(), RemoteError> {
-        let start = usize::try_from(offset).map_err(|_| RemoteError::Unavailable)?;
-        buf.copy_from_slice(
-            self.0
-                .get(start..start + buf.len())
-                .ok_or(RemoteError::Unavailable)?,
-        );
-        Ok(())
+struct W(std::thread::Thread);
+impl Wake for W {
+    fn wake(self: Arc<Self>) {
+        self.0.unpark();
     }
 }
-
-fn limits(page: usize, cache: u64, run: usize, trace: usize) -> RangeLimits {
-    RangeLimits {
-        page_bytes: page,
-        cache_bytes: cache,
-        max_run_pages: run,
-        trace_events: trace,
+fn block_on<T>(f: impl Future<Output = T>) -> T {
+    let mut f = std::pin::pin!(f);
+    let w = Waker::from(Arc::new(W(std::thread::current())));
+    loop {
+        if let Poll::Ready(v) = f.as_mut().poll(&mut Context::from_waker(&w)) {
+            return v;
+        }
+        std::thread::park();
     }
 }
 
 fn main() {
-    const FILE: usize = 256 << 20;
+    const FILE: usize = 8 << 20;
     let data: Vec<u8> = (0..FILE)
         .map(|i| (i.wrapping_mul(2654435761) >> 7) as u8)
         .collect();
-    let manifest = vec![("f".to_owned(), FILE as u64)];
-    println!("file {} MiB, in-memory source (no network)", FILE >> 20);
-    for (page, run) in [(4 << 10, 16), (64 << 10, 16), (64 << 10, 4), (1 << 20, 4)] {
-        let cache_bytes = 32u64 << 20; // 1/8 of the file
-        let cache = RangeCache::new(
-            Memory(data.clone()),
-            manifest.clone(),
-            limits(page, cache_bytes, run, 0),
-        )
-        .unwrap();
-        let input = cache.input("f").unwrap();
-        // Cold sequential scan, 1 MiB reads (8x the cache in total).
-        let mut buf = vec![0u8; 1 << 20];
-        let start = Instant::now();
-        for at in (0..FILE).step_by(buf.len()) {
-            input.read_at(at as u64, &mut buf).unwrap();
+    let backend = MemoryStore::new(MemoryLimits {
+        objects: 8,
+        versions: 8,
+        version_bytes: 64 << 20,
+        identities: 8,
+        identity_bytes: 64 << 20,
+    })
+    .unwrap();
+    let ctx = RequestContext::new(
+        Duration::from_secs(60),
+        Cancellation::default(),
+        Budget {
+            request_bytes: u64::MAX / 4,
+            response_bytes: u64::MAX / 4,
+            attempts: u32::MAX,
+        },
+    )
+    .unwrap();
+    let key = ObjectKey::new(b"f").unwrap();
+    let receipt = block_on(backend.create(
+        &ctx,
+        &Mutation {
+            request_id: RequestId::new(b"r").unwrap(),
+            key: key.clone(),
+            payload: Payload::new(&data).unwrap(),
+            metadata: Metadata::new(&[]).unwrap(),
+            precondition: Precondition::Absent,
+        },
+    ))
+    .unwrap();
+    let version = receipt.object.version;
+    let entry = ManifestEntry {
+        key: key.clone(),
+        version: version.clone(),
+        length: FILE as u64,
+    };
+    let store =
+        ObjectBlobStore::new(backend, [("f".to_owned(), entry)], Duration::from_secs(30)).unwrap();
+    println!("in-memory backend, {} MiB object (no network)", FILE >> 20);
+    for size in [4usize << 10, 64 << 10, 256 << 10, 1 << 20] {
+        let n = 20_000usize.min((1usize << 30) / size);
+        let at = |i: usize| ((i * 7919 * size) % (FILE - size)) as u64;
+        let t = Instant::now();
+        for i in 0..n {
+            let v = store.get_range("f", at(i), size).unwrap();
+            std::hint::black_box(&v);
         }
-        let scan = start.elapsed();
-        let s = cache.stats();
+        let wrapped = t.elapsed();
+        // The same reads straight on the backend: the floor the wrapper sits on.
+        let t = Instant::now();
+        for i in 0..n {
+            let range = ByteRange::new(at(i), size as u64).unwrap();
+            let read = store.backend().read_range(&ctx, &key, &version, range);
+            std::hint::black_box(&block_on(read).unwrap());
+        }
+        let direct = t.elapsed();
         println!(
-            "page {:>7} run {:>2}: scan {:>6.0} MB/s, {} GETs ({} B/GET), bound {} KiB",
-            page,
-            run,
-            FILE as f64 / scan.as_secs_f64() / 1e6,
-            s.gets,
-            s.get_bytes / s.gets.max(1),
-            cache.memory_bound_bytes() >> 10
-        );
-        // Random 4 KiB reads over the whole file: working set 8x the cache.
-        let mut small = [0u8; 4096];
-        let mut state = 99u64;
-        let before = cache.stats();
-        let reads = 200_000u64;
-        let start = Instant::now();
-        for _ in 0..reads {
-            state = state
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            let at = (state >> 20) % (FILE as u64 - 4096);
-            input.read_at(at, &mut small).unwrap();
-        }
-        let random = start.elapsed();
-        let after = cache.stats();
-        println!(
-            "      random 4 KiB x{reads}: {:>6.0} ns/read, hit rate {:.1}%, {} GETs ({:.2} GET/read), {:.1}x bytes read amplification",
-            random.as_nanos() as f64 / reads as f64,
-            100.0 * (after.hits - before.hits) as f64
-                / ((after.hits - before.hits) + (after.misses - before.misses)) as f64,
-            after.gets - before.gets,
-            (after.gets - before.gets) as f64 / reads as f64,
-            (after.get_bytes - before.get_bytes) as f64 / (reads * 4096) as f64
-        );
-        // Warm: a 4 MiB hot set that fits, 4 KiB reads.
-        let hot = 4u64 << 20;
-        for at in (0..hot).step_by(4096) {
-            input.read_at(at, &mut small).unwrap();
-        }
-        let start = Instant::now();
-        for i in 0..reads {
-            let at = (i * 4096) % hot;
-            input.read_at(at, &mut small).unwrap();
-        }
-        let warm = start.elapsed();
-        println!(
-            "      warm hot-set 4 KiB x{reads}: {:>6.0} ns/read, {:.1} GB/s",
-            warm.as_nanos() as f64 / reads as f64,
-            reads as f64 * 4096.0 / warm.as_secs_f64() / 1e9
-        );
-    }
-    // Trace overhead on the warm path.
-    for trace in [0usize, 4096, 2_100_000] {
-        let cache = RangeCache::new(
-            Memory(data[..8 << 20].to_vec()),
-            vec![("f".to_owned(), 8 << 20)],
-            limits(64 << 10, 16 << 20, 4, trace),
-        )
-        .unwrap();
-        let input = cache.input("f").unwrap();
-        let mut small = [0u8; 4096];
-        for at in (0..8u64 << 20).step_by(4096) {
-            input.read_at(at, &mut small).unwrap();
-        }
-        let start = Instant::now();
-        for i in 0..1_000_000u64 {
-            input.read_at((i * 4096) % (8 << 20), &mut small).unwrap();
-        }
-        println!(
-            "trace_events {trace:>4}: warm {:.0} ns/read",
-            start.elapsed().as_nanos() as f64 / 1e6
+            "{size:>8} B request: via BlobStore {:>8.0} ns ({:.1} GB/s), backend alone {:>8.0} ns, wrapper adds {:>6.0} ns",
+            wrapped.as_nanos() as f64 / n as f64,
+            n as f64 * size as f64 / wrapped.as_secs_f64() / 1e9,
+            direct.as_nanos() as f64 / n as f64,
+            (wrapped.as_nanos() as f64 - direct.as_nanos() as f64) / n as f64
         );
     }
 }
