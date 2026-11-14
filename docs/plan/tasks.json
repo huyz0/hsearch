@@ -1644,8 +1644,13 @@
             "M02.02"
           ],
           "owner": "engine/architecture",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m02-12-lucene-rust-vector-audit.md",
+              "result": "Pinned rev 46e280bc has HNSW and Lucene scalar quantization only; IVF, disk HNSW and BBQ/OSQ exist on main 918cee02 (204 commits later), so M23.02 and M23.03 need a pin bump. IVF range reads confirmed (the 'not confirmed' cell refuted). Pin and main vector tests pass; one CPU-floor gap found and closed upstream in lucene-rust#307 (merged). Provisional, one shared x86 VM, ARM and SVE unrun."
+            }
+          ]
         }
       ]
     },
