@@ -9,6 +9,10 @@
  * Ownership, in one rule: the host owns every buffer that crosses the
  * boundary and lends it for one call. A module never returns memory the host
  * must free, and never keeps a pointer it was lent after the call returns.
+ * The one exception is the hs_host_v1 struct handed to hs_module_init: it
+ * lives until hs_module_shutdown returns, so a module may keep that pointer.
+ * hs_slice and hs_out have no struct_size and can never grow; only the two
+ * structs that carry struct_size may gain fields in a minor version.
  */
 #ifndef HSEARCH_MODULE_H
 #define HSEARCH_MODULE_H
@@ -20,8 +24,12 @@
 extern "C" {
 #endif
 
-#if defined(_WIN32)
+/* A module defines HS_MODULE_BUILD when it builds the exports; a host that
+ * includes this header to resolve them does not. */
+#if defined(_WIN32) && defined(HS_MODULE_BUILD)
 #define HS_EXPORT __declspec(dllexport)
+#elif defined(_WIN32)
+#define HS_EXPORT __declspec(dllimport)
 #else
 #define HS_EXPORT __attribute__((visibility("default")))
 #endif
@@ -80,14 +88,17 @@ typedef struct hs_out {
 
 /* The only services a module is granted. There is no file, socket, clock,
  * randomness or environment access: a pure module needs none, and a call must
- * be reproducible from its input. Callbacks may be called from any thread
- * that is inside hs_module_call and only during that call. */
+ * be reproducible from its input. Callbacks are made only from inside
+ * hs_module_call, on the calling thread, and name the call by the call_id the
+ * host put in hs_call, so concurrent calls are told apart. */
 typedef struct hs_host_v1 {
   uint32_t struct_size; /* sizeof of the host's version of this struct */
   uint32_t reserved0;   /* zero */
   void *ctx;            /* passed back as the first argument of each callback */
-  void (*log)(void *ctx, uint32_t level, const uint8_t *msg, uint64_t len);
-  int32_t (*cancelled)(void *ctx); /* nonzero when the caller gave up */
+  void (*log)(void *ctx, uint64_t call_id, uint32_t level, const uint8_t *msg,
+              uint64_t len);
+  /* Nonzero when the caller of that call gave up. */
+  int32_t (*cancelled)(void *ctx, uint64_t call_id);
 } hs_host_v1;
 
 /* One call into an extension point. */
@@ -98,6 +109,7 @@ typedef struct hs_call {
   hs_slice input;       /* the point's input encoding */
   uint32_t timeout_ms;  /* advisory for native modules, enforced for WASM */
   uint32_t reserved0;   /* zero */
+  uint64_t call_id;     /* unique among in-flight calls; names this call in callbacks */
 } hs_call;
 
 /* Exports. Names are the contract (HS_SYM_*); a module exports exactly these. */

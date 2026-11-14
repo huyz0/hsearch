@@ -2,6 +2,14 @@
 #include <stdio.h>
 #include "hsearch_module.h"
 
+/* No implicit padding: each struct ends exactly where its last field ends. */
+_Static_assert(sizeof(hs_slice) == offsetof(hs_slice, len) + sizeof(uint64_t), "hs_slice padding");
+_Static_assert(sizeof(hs_out) == offsetof(hs_out, len) + sizeof(uint64_t), "hs_out padding");
+_Static_assert(sizeof(hs_host_v1) == offsetof(hs_host_v1, cancelled) + sizeof(void *), "hs_host_v1 padding");
+_Static_assert(sizeof(hs_call) == offsetof(hs_call, call_id) + sizeof(uint64_t), "hs_call padding");
+_Static_assert(offsetof(hs_call, reserved0) + sizeof(uint32_t) == offsetof(hs_call, call_id), "hs_call gap");
+_Static_assert(offsetof(hs_host_v1, reserved0) + sizeof(uint32_t) == offsetof(hs_host_v1, ctx), "hs_host_v1 gap");
+
 #define F(s, f) printf("    \"%s.%s\": %zu,\n", #s, #f, offsetof(s, f))
 #define S(s) printf("    \"%s.size\": %zu,\n", #s, sizeof(s))
 
@@ -12,8 +20,8 @@ int main(void) {
   S(hs_host_v1); F(hs_host_v1, struct_size); F(hs_host_v1, reserved0);
   F(hs_host_v1, ctx); F(hs_host_v1, log); F(hs_host_v1, cancelled);
   S(hs_call); F(hs_call, struct_size); F(hs_call, kind); F(hs_call, point);
-  F(hs_call, input); F(hs_call, timeout_ms);
-  printf("    \"hs_call.reserved0\": %zu\n  },\n", offsetof(hs_call, reserved0));
+  F(hs_call, input); F(hs_call, timeout_ms); F(hs_call, reserved0);
+  printf("    \"hs_call.call_id\": %zu\n  },\n", offsetof(hs_call, call_id));
   printf("  \"limits\": {\"buffer\": %u, \"descriptor\": %u, \"config\": %u, \"error_detail\": %u},\n",
          HS_MAX_BUFFER_BYTES, HS_MAX_DESCRIPTOR_BYTES, HS_MAX_CONFIG_BYTES, HS_MAX_ERROR_DETAIL_BYTES);
   printf("  \"kinds\": {\"analyzer\": %u, \"query\": %u, \"ingest\": %u, \"scoring\": %u},\n",

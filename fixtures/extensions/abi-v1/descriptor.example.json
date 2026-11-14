@@ -6,7 +6,17 @@
   "max_concurrent_calls": 8,
   "io_bytes": 65536,
   "extension_points": [
-    {"kind": "analyzer", "id": "lowercase_ascii", "version": "1.0.0", "deterministic": true},
-    {"kind": "query", "id": "prefix_any", "version": "1.0.0", "deterministic": true}
+    {
+      "kind": "analyzer",
+      "id": "lowercase_ascii",
+      "version": "1.0.0",
+      "deterministic": true
+    },
+    {
+      "kind": "query",
+      "id": "terms_lowercase",
+      "version": "1.0.0",
+      "deterministic": true
+    }
   ]
 }

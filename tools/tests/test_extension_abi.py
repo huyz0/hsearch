@@ -11,9 +11,12 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import extension_wire as wire  # noqa: E402
 ABI = ROOT / "fixtures/extensions/abi-v1"
 PROBE = ROOT / "tools/tests/fixtures/extension_abi_probe.c"
 SPEC = ROOT / "docs/plan/extension-modules.md"
@@ -40,19 +43,18 @@ def probe(flags=()):
 
 class AbiHeader(unittest.TestCase):
     def test_layout_matches_golden(self):
-        self.assertEqual(probe(), load("layout.json"))
+        golden = load("layout.json")
+        golden.pop("signatures")  # held by test_signatures_match_golden
+        self.assertEqual(probe(), golden)
 
-    def test_layout_has_no_implicit_padding(self):
-        layout = load("layout.json")["layout"]
-        # Last field and its width: the struct ends where its last field ends.
-        for struct, last, width in [("hs_slice", "len", 8), ("hs_out", "len", 8),
-                                    ("hs_host_v1", "cancelled", 8), ("hs_call", "reserved0", 4)]:
-            self.assertEqual(layout[f"{struct}.size"], layout[f"{struct}.{last}"] + width, struct)
-
-    def test_every_struct_leads_with_or_declares_its_own_size_for_growth(self):
-        layout = load("layout.json")["layout"]
-        self.assertEqual(layout["hs_host_v1.struct_size"], 0)
-        self.assertEqual(layout["hs_call.struct_size"], 0)
+    def test_signatures_match_golden(self):
+        # Declarations as written in the header, whitespace-normalised, so a changed
+        # parameter or return type fails here and not only a changed struct layout.
+        text = re.sub(r"\s+", " ", re.sub(r"/\*.*?\*/", "", (ABI / "hsearch_module.h").read_text(), flags=re.S))
+        text = text.replace("( ", "(").replace(" )", ")").replace(" ,", ",")
+        for signature in load("layout.json")["signatures"]:
+            normal = re.sub(r"\s+", " ", signature)
+            self.assertIn(normal, text, signature)
 
     def test_limits_are_ordered(self):
         limits = load("layout.json")["limits"]
@@ -78,7 +80,9 @@ class WasmHostInterface(unittest.TestCase):
     def test_c_and_wasm_call_the_same_things(self):
         # Same entry points, with the C pointers replaced by the guest's two regions.
         wasm = {e["name"]: e for e in load("wasm-host-interface.json")["exports"]}
-        self.assertEqual(len(wasm["hs_module_call"]["params"]), 4)
+        self.assertEqual(len(wasm["hs_module_call"]["params"]), 4)  # kind, point_len, input_len, timeout_ms
+        self.assertEqual(wasm["hs_module_init"]["params"], ["i32 config_len"])
+        self.assertEqual(wasm["hs_module_describe"]["params"], [])
         self.assertEqual(wasm["hs_module_call"]["results"], ["i32"])
 
 
@@ -109,13 +113,29 @@ class Descriptor(unittest.TestCase):
         self.assertEqual(load("wasm-host-interface.json")["version"], f"{major}.{minor}")
 
 
+class WireVectors(unittest.TestCase):
+    def test_reference_encoder_reproduces_every_vector(self):
+        vectors = load("wire-vectors.json")
+        self.assertEqual({v["kind"] for v in vectors}, {"analyzer", "query", "ingest", "scoring"})
+        for vector in vectors:
+            self.assertEqual(wire.encode_vector(vector).hex(), vector["hex"], vector["name"])
+
+    def test_analyzer_vector_is_the_hand_computed_bytes(self):
+        # count 2; "ab" len 2 pos 0 start 0 end 2; "c" len 1 pos 1 start 3 end 4. Little-endian.
+        expected = ("02000000" "02000000" "6162" "00000000" "00000000" "02000000"
+                    "01000000" "63" "01000000" "03000000" "04000000")
+        entry = next(v for v in load("wire-vectors.json") if v["name"] == "analyzer-output")
+        self.assertEqual(entry["hex"], expected)
+
+
 class Specification(unittest.TestCase):
     def test_spec_states_the_abi_version_and_limits(self):
         text = SPEC.read_text(encoding="utf-8")
         golden = load("layout.json")
         self.assertIn(f"ABI version {golden['abi_version'] >> 16}.{golden['abi_version'] & 0xFFFF}", text)
-        for name in golden["status"]:
-            self.assertIn(name, text, name)
+        for name, number in golden["status"].items():
+            self.assertRegex(text, rf"`{name}` \| {number} \|", name)
+        self.assertIn("16 KiB", text)
         for symbol in golden["symbols"]:
             self.assertIn(symbol, text, symbol)
 

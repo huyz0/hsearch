@@ -14,13 +14,14 @@
         "hs_host_v1.ctx": 8,
         "hs_host_v1.log": 16,
         "hs_host_v1.cancelled": 24,
-        "hs_call.size": 48,
+        "hs_call.size": 56,
         "hs_call.struct_size": 0,
         "hs_call.kind": 4,
         "hs_call.point": 8,
         "hs_call.input": 24,
         "hs_call.timeout_ms": 40,
-        "hs_call.reserved0": 44
+        "hs_call.reserved0": 44,
+        "hs_call.call_id": 48
     },
     "limits": {
         "buffer": 16777216,
@@ -50,5 +51,14 @@
         "hs_module_describe",
         "hs_module_call",
         "hs_module_shutdown"
+    ],
+    "signatures": [
+        "HS_EXPORT uint32_t hs_abi_version(void);",
+        "HS_EXPORT int32_t hs_module_init(const hs_host_v1 *host, hs_slice config);",
+        "HS_EXPORT int32_t hs_module_describe(hs_out *out);",
+        "HS_EXPORT int32_t hs_module_call(const hs_call *call, hs_out *out);",
+        "HS_EXPORT void hs_module_shutdown(void);",
+        "void (*log)(void *ctx, uint64_t call_id, uint32_t level, const uint8_t *msg, uint64_t len);",
+        "int32_t (*cancelled)(void *ctx, uint64_t call_id);"
     ]
 }

@@ -4,19 +4,89 @@
   "format": "core WebAssembly module, wasm32, no component model, no WASI",
   "import_module": "hsearch_host_v1",
   "imports": [
-    {"name": "log", "params": ["i32 level", "i32 ptr", "i32 len"], "results": []},
-    {"name": "cancelled", "params": [], "results": ["i32"]}
+    {
+      "name": "log",
+      "params": [
+        "i32 level",
+        "i32 ptr",
+        "i32 len"
+      ],
+      "results": []
+    },
+    {
+      "name": "cancelled",
+      "params": [],
+      "results": [
+        "i32"
+      ]
+    }
   ],
   "exports": [
-    {"name": "memory", "kind": "memory"},
-    {"name": "hs_abi_version", "params": [], "results": ["i32"]},
-    {"name": "hs_module_init", "params": ["i32 config_len"], "results": ["i32"]},
-    {"name": "hs_module_describe", "params": [], "results": ["i32"]},
-    {"name": "hs_module_call", "params": ["i32 kind", "i32 point_len", "i32 input_len", "i32 timeout_ms"], "results": ["i32"]},
-    {"name": "hs_module_shutdown", "params": [], "results": []},
-    {"name": "hs_input_region", "params": [], "results": ["i32 ptr"]},
-    {"name": "hs_output_region", "params": [], "results": ["i32 ptr"]},
-    {"name": "hs_output_len", "params": [], "results": ["i32"]}
+    {
+      "name": "memory",
+      "kind": "memory"
+    },
+    {
+      "name": "hs_abi_version",
+      "params": [],
+      "results": [
+        "i32"
+      ]
+    },
+    {
+      "name": "hs_module_init",
+      "params": [
+        "i32 config_len"
+      ],
+      "results": [
+        "i32"
+      ]
+    },
+    {
+      "name": "hs_module_describe",
+      "params": [],
+      "results": [
+        "i32"
+      ]
+    },
+    {
+      "name": "hs_module_call",
+      "params": [
+        "i32 kind",
+        "i32 point_len",
+        "i32 input_len",
+        "i32 timeout_ms"
+      ],
+      "results": [
+        "i32"
+      ]
+    },
+    {
+      "name": "hs_module_shutdown",
+      "params": [],
+      "results": []
+    },
+    {
+      "name": "hs_input_region",
+      "params": [],
+      "results": [
+        "i32 ptr"
+      ]
+    },
+    {
+      "name": "hs_output_region",
+      "params": [],
+      "results": [
+        "i32 ptr"
+      ]
+    },
+    {
+      "name": "hs_output_len",
+      "params": [],
+      "results": [
+        "i32"
+      ]
+    }
   ],
   "status_codes": {
     "HS_OK": 0,
@@ -32,6 +102,9 @@
     "Any import outside import_module hsearch_host_v1 refuses the module at link time",
     "Any export outside this list is ignored; any missing export refuses the module",
     "The module exports at most one memory; it is not shared and has a maximum declared",
-    "The input region holds point id bytes then input bytes; the output region holds the result; each is io_bytes long and owned by the guest"
+    "The input region holds point id bytes then input bytes; the output region holds the result; each is io_bytes long and owned by the guest",
+    "A WASM call is never concurrent within one instance; max_concurrent_calls is realised as that many instances, so memory is up to max_concurrent_calls times the per-instance limit",
+    "HS_E_BUFFER_TOO_SMALL from a WASM module is final: the regions are fixed, so the host refuses with a limit error and never retries; io_bytes must not exceed HS_MAX_BUFFER_BYTES",
+    "hs_abi_version returns an i32 holding the same (major << 16) | minor value as the C u32"
   ]
 }
