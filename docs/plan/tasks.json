@@ -1509,8 +1509,13 @@
             "M02.02"
           ],
           "owner": "engine/architecture",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m02-03-range-inputs.md",
+              "result": "lucene-rust (pin 8c010db7) already has PageCache/CachedBlobDirectory/pager, so no upstream patch and no hsearch cache: ObjectBlobStore (BlobStore over ObjectBackend + manifest, no LIST/HEAD, version-pinned) and Snapshot::open_blob in hsearch-engine. Tested with working set 8x the disk budget, a range error at every request (never a wrong answer), shared-cache reopen with 0 requests. Finding: laziness needs userfaultfd and varies per run; fallback reads files whole. Provisional numbers, in-memory backend."
+            }
+          ]
         },
         {
           "id": "M02.04",

@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Pinned Lucene Rust boundary for hsearch"
 
 [dependencies]
+hsearch-object = { path = "../object" }
 lucene-aggs.workspace = true
 lucene-analysis.workspace = true
 lucene-codecs.workspace = true
@@ -16,7 +17,6 @@ lucene-search.workspace = true
 lucene-store.workspace = true
 
 [dev-dependencies]
-hsearch-object = { path = "../object" }
 hsearch-s3 = { path = "../s3" }
 hsearch-testkit.workspace = true
 

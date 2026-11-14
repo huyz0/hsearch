@@ -17,7 +17,10 @@ ENGINE_SOURCE = f"git+https://github.com/huyz0/lucene-rust?rev={ENGINE_REV}#{ENG
 LAYERS = {
     "hsearch-types": set(),
     "hsearch-observe": {"hsearch-types"},
-    "hsearch-engine": set(),
+    # M02.03: the engine serves snapshots by range through lucene-rust's page cache, and its one
+    # `BlobStore` (ObjectBlobStore) reads through hsearch-object's `ObjectBackend`. Only the engine may
+    # name Lucene traits, so the adapter lives here; object does not depend on engine (no cycle).
+    "hsearch-engine": {"hsearch-object"},
     "hsearch-object": set(),
     "hsearch-s3": {"hsearch-object"},
     "hsearch-index": {"hsearch-object", "hsearch-engine"},
