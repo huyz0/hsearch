@@ -24,28 +24,40 @@ was deleted. **No upstream lucene-rust change is needed for range reads.**
 
 ## Validation (`tests/ranged_snapshot.rs`, backend = counting/failing test double over `MemoryStore`)
 
+All page sizes are 4 KiB and read-ahead is fixed at one page (`download_window: Some(page)`); see finding 1.
+
 - Answers (count and sorted hit ids for All, term and range, with a doc-values sort and a stored-field projection) equal
-  the local directory's; zero HEAD calls; no LIST exists on the backend trait at all.
+  the local directory's; zero HEAD calls; the backend trait has no LIST at all.
+- **Range-native, asserted** wherever lucene-rust can demand-fill 4 KiB pages (`userfaultfd`, true here and on the
+  Linux CI runner): open plus every query fetch under half of the files. Measured, identical in repeated runs, on
+  387,159 B in 33 files: open 41 requests/67,671 B (17%), then a term query 8 requests/32,768 B, a range query
+  2 requests/8,192 B, a doc-values sort 1 request/4,096 B, stored-field projection 0, a repeated query 0. The
+  test asserts the 50% bound only when the pager is active; elsewhere files are read whole and the test says so.
+- No byte is requested twice: per file the traced ranges are disjoint, and the cache's `fetched_bytes` equals the trace.
 - A second open through a shared `PageCache` sends **0** requests (served from the disk tier).
-- Working set 198,595 B against a 24,824 B disk budget, three full query rounds: answers exact, `disk_footprint_bytes`
-  (24,576) never above the budget; the over-budget pages are re-fetched (23 requests, 315,451 B).
-- A range error injected at each of the 17 range requests of an open plus query round: every outcome is an error or an
+- Working set 198,595 B against a 12,412 B disk budget, three full query rounds: answers exact, `disk_footprint_bytes`
+  (12,288) never above the budget, and the pages read (59,331 B) exceed the budget, so the cache had to evict.
+- A range error injected at each of the range requests of an open plus query round: every outcome is an error or an
   exact answer, never a wrong one, and a fresh attempt after the fault succeeds exactly.
-- A manifest naming a wrong version, a missing file, or a deadline over five minutes is an error.
-- Per-query trace (2,000 batches, 387,159 B in 33 files, 4 KiB pages): no page is fetched twice, the cache's
-  `fetched_bytes` equals the request trace, and a repeated query sends nothing. Measured request bytes by phase (runs
-  differ, see below): open 223-387 KB, then a term query 2 requests/32 KiB, a doc-values sort 1 request/16 KiB, range
-  and stored-field queries 0.
+- A manifest naming a wrong version, a missing file, or a deadline over five minutes is an error. A cache whose
+  `max_request` or `page_size` exceeds the store's 16 MiB cap is refused at `open_blob`.
+- Not tested: the real `S3Store` path (its truncation and short-body behaviour), two manifests under one namespace,
+  memory bounds of pinned files (pinned extensions are read whole into memory and pinned on disk, so they may
+  exceed `disk_budget`; this PR sets none), and a request larger than the cap.
 
 ## Findings about upstream behaviour (reported, not fixed here)
 
-1. **Laziness depends on `userfaultfd` and varies run to run.** `CachedBlobDirectory` reads a file whole into
-   `Input::Owned` when the process-wide pager is unavailable, when a file is at most two pages, or when `page_size` is not a
-   multiple of the OS page (4 KiB): with 256 B to 1 KiB pages every file was fetched whole at open. With 4 KiB pages the
-   same fixture fetched between 223 KB and the full 387 KB at open across repeated runs. The DoD item "no full-file heap
-   allocation" therefore holds only where the pager runs; elsewhere the fallback is a full-file `Vec`. A bounded fallback
-   (a disk-tier mapping instead of a heap copy) is an upstream follow-up, additive to `Input`, and is not done here.
-2. The tests assert only invariants that hold in every environment; laziness is printed, not asserted.
+1. **Read-ahead is tuned from measured latency.** With `download_window: None` (the default) the cache picks a window
+   between one page and `max_request` from the store's latency and throughput. Against a near-zero-latency backend
+   it picked windows that fetched whole files: the same fixture fetched 190-387 KB at open across identical runs.
+   Fixing the window to one page made it deterministic (67,671 B). Production should set the window deliberately
+   against measured S3 latency (M04.02), because a large window trades GET count against bytes fetched.
+2. **Without `userfaultfd`, or when `page_size` is not a multiple of the OS page, or for a file of at most two pages,
+   files are read whole into `Input::Owned`**: with 256 B-1 KiB pages every file was fetched whole at open. The DoD item
+   "no full-file heap allocation" holds only where the pager runs and the page size fits. A bounded fallback (a disk-tier
+   mapping instead of a heap copy) is an upstream follow-up, additive to `Input`, and is not done here.
+3. The cache keys a page by namespace, file name and length, not version, and a disk tier can outlive a snapshot, so
+   `open_blob`'s namespace must be derived from the manifest's root version (documented on the function).
 
 ## Benchmark and trade-offs (provisional: 4 vCPU container, release build, in-memory backend so only the wrapper's cost shows)
 
@@ -59,8 +71,9 @@ was deleted. **No upstream lucene-rust change is needed for range reads.**
 | 1 MiB | 123 us | 62 us | 61 us |
 
 The addition is a fixed ~100 ns (context, poll, manifest lookup) plus one copy of the payload into the `Vec` the
-`BlobStore` trait returns (`Payload` has no way to hand over its buffer; `hsearch-object` is outside this task). Against a
-real object-store GET (milliseconds) it is under 0.1%. Not profiled with a sampling profiler.
+`BlobStore` trait returns (`Payload` has no way to hand over its buffer; `hsearch-object` is outside this task). On `S3Store`
+the response body is already copied once into the `Payload`, so a request is copied twice after the network. Against a
+real object-store GET (milliseconds) the wrapper's share is small, but that is estimated, not measured on S3. Not profiled with a sampling profiler.
 
 - Memory: nothing here allocates beyond one `Vec` per request, at most `PageCacheConfig::max_request` (and 16 MiB by the
   store's own cap), times the cache's request concurrency. Bounds on resident memory and disk are the cache's

@@ -68,8 +68,21 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
     }
 }
 
+/// Keep the kind: the cache and Lucene tell "no such file" and a refused request
+/// apart from a transient failure worth retrying.
 fn object_error(error: hsearch_object::Error) -> lucene_store::Error {
-    lucene_store::Error::Io(io::Error::other(format!("object read failed: {error:?}")))
+    use hsearch_object::Error as E;
+    let kind = match error {
+        E::NotFound => io::ErrorKind::NotFound,
+        E::PermissionDenied => io::ErrorKind::PermissionDenied,
+        E::InvalidInput | E::InvalidRange | E::BudgetExceeded => io::ErrorKind::InvalidInput,
+        E::Throttled | E::DeadlineExceeded | E::Unavailable => io::ErrorKind::TimedOut,
+        _ => io::ErrorKind::Other,
+    };
+    lucene_store::Error::Io(io::Error::new(
+        kind,
+        format!("object read failed: {error:?}"),
+    ))
 }
 
 fn read_only() -> lucene_store::Error {
@@ -137,7 +150,8 @@ impl<B: ObjectBackend> BlobStore for ObjectBlobStore<B> {
 
     fn get(&self, name: &str) -> lucene_store::Result<Input> {
         let length = self.entry(name)?.length;
-        let length = usize::try_from(length).map_err(|_| read_only())?;
+        let length = usize::try_from(length)
+            .map_err(|_| object_error(hsearch_object::Error::BudgetExceeded))?;
         Ok(Input::Owned(self.get_range(name, 0, length)?))
     }
 
@@ -193,12 +207,21 @@ impl Snapshot {
     /// `namespace` tells this store's files apart in a cache shared by several.
     /// Opening costs whatever `store.list_with_sizes` costs, and nothing else if
     /// it answers from a manifest, as [`ObjectBlobStore`] does.
+    ///
+    /// The cache keys a page by namespace, file name and length, not by version, and
+    /// a disk tier can outlive a snapshot: derive `namespace` from the manifest
+    /// (its root version), or two manifests that share a name and length would share
+    /// pages. A cache whose requests could exceed the store's 16 MiB cap is refused.
     pub fn open_blob<S: BlobStore + 'static>(
         store: S,
         cache: Arc<PageCache>,
         namespace: &str,
         schema: Schema,
     ) -> Result<Self> {
+        let config = cache.config();
+        if config.max_request as u64 > MAX_REQUEST || config.page_size as u64 > MAX_REQUEST {
+            return Err(Error::Limit);
+        }
         let directory = EngineDirectory::new(CachedBlobDirectory::new(store, cache, namespace));
         Snapshot::open_committed(&directory, schema)
     }
