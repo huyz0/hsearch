@@ -179,120 +179,133 @@ fn main() {
         std::thread::available_parallelism().map_or(0, |n| n.get())
     );
 
-    println!("## PUT by payload size, one writer, distinct keys (batching)\n");
-    println!("| payload | PUT/s | MiB/s | p50 ms | p99 ms |\n|---|---|---|---|---|");
-    for size in [
-        1usize << 10,
-        16 << 10,
-        256 << 10,
-        1 << 20,
-        4 << 20,
-        16 << 20,
-    ] {
-        let body = Arc::new(vec![7u8; size]);
-        let s2 = Arc::clone(&s);
-        let (_, ops, lat, elapsed) = run(1, seconds, Duration::ZERO, move |_, i| {
-            let m = mutation(
-                &format!("sz{size}-{i}"),
-                &format!("size{size}/{i}"),
-                &body,
-                Precondition::Absent,
+    // BENCH_ONLY=open_loop (or control, matched) runs just that section.
+    let only = std::env::var("BENCH_ONLY").unwrap_or_default();
+    let want = |name: &str| only.is_empty() || only == name;
+    if want("tables") {
+        println!("## PUT by payload size, one writer, distinct keys (batching)\n");
+        println!("| payload | PUT/s | MiB/s | p50 ms | p99 ms |\n|---|---|---|---|---|");
+        for size in [
+            1usize << 10,
+            16 << 10,
+            256 << 10,
+            1 << 20,
+            4 << 20,
+            16 << 20,
+        ] {
+            let body = Arc::new(vec![7u8; size]);
+            let s2 = Arc::clone(&s);
+            let (_, ops, lat, elapsed) = run(1, seconds, Duration::ZERO, move |_, i| {
+                let m = mutation(
+                    &format!("sz{size}-{i}"),
+                    &format!("size{size}/{i}"),
+                    &body,
+                    Precondition::Absent,
+                );
+                block(s2.create(&ctx(), &m)).is_ok()
+            });
+            println!(
+                "| {} KiB | {:.0} | {:.1} | {:.1} | {:.1} |",
+                size >> 10,
+                ops as f64 / elapsed,
+                ops as f64 * size as f64 / elapsed / (1 << 20) as f64,
+                percentile(&lat, 0.5),
+                percentile(&lat, 0.99)
             );
-            block(s2.create(&ctx(), &m)).is_ok()
-        });
-        println!(
-            "| {} KiB | {:.0} | {:.1} | {:.1} | {:.1} |",
-            size >> 10,
-            ops as f64 / elapsed,
-            ops as f64 * size as f64 / elapsed / (1 << 20) as f64,
-            percentile(&lat, 0.5),
-            percentile(&lat, 0.99)
-        );
-    }
+        }
 
-    println!("\n## Concurrent PUTs of 64 KiB to distinct keys\n");
-    println!("| writers | PUT/s | p50 ms | p99 ms |\n|---|---|---|---|");
-    for writers in [1usize, 2, 4, 8, 16, 32] {
-        let body = Arc::new(vec![7u8; 64 << 10]);
-        let s2 = Arc::clone(&s);
-        let (_, ops, lat, elapsed) = run(writers, seconds, Duration::ZERO, move |t, i| {
-            let m = mutation(
-                &format!("cw{writers}-{t}-{i}"),
-                &format!("conc{writers}/{t}/{i}"),
-                &body,
-                Precondition::Absent,
+        println!("\n## Concurrent PUTs of 64 KiB to distinct keys\n");
+        println!("| writers | PUT/s | p50 ms | p99 ms |\n|---|---|---|---|");
+        for writers in [1usize, 2, 4, 8, 16, 32] {
+            let body = Arc::new(vec![7u8; 64 << 10]);
+            let s2 = Arc::clone(&s);
+            let (_, ops, lat, elapsed) = run(writers, seconds, Duration::ZERO, move |t, i| {
+                let m = mutation(
+                    &format!("cw{writers}-{t}-{i}"),
+                    &format!("conc{writers}/{t}/{i}"),
+                    &body,
+                    Precondition::Absent,
+                );
+                block(s2.create(&ctx(), &m)).is_ok()
+            });
+            println!(
+                "| {writers} | {:.0} | {:.1} | {:.1} |",
+                ops as f64 / elapsed,
+                percentile(&lat, 0.5),
+                percentile(&lat, 0.99)
             );
-            block(s2.create(&ctx(), &m)).is_ok()
-        });
-        println!(
-            "| {writers} | {:.0} | {:.1} | {:.1} |",
-            ops as f64 / elapsed,
-            percentile(&lat, 0.5),
-            percentile(&lat, 0.99)
-        );
-    }
+        }
 
-    println!("\n## Contended compare-and-set on one 1 KiB key\n");
-    println!(
-        "| writers | attempts/s | winners/s | conflicts | other errors | p50 ms | p99 ms |\n|---|---|---|---|---|---|---|"
-    );
-    for writers in [1usize, 2, 4, 8, 16] {
-        let key = format!("cas{writers}");
-        let first = block(s.create(
-            &ctx(),
-            &mutation(
-                &format!("{key}-seed"),
-                &key,
-                &[0u8; 1024],
-                Precondition::Absent,
-            ),
-        ))
-        .unwrap();
-        let head = Arc::new(std::sync::Mutex::new(first.object.version));
-        let (conflicts, other) = (Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0)));
-        let (s2, head2, c2, o2) = (
-            Arc::clone(&s),
-            Arc::clone(&head),
-            Arc::clone(&conflicts),
-            Arc::clone(&other),
-        );
-        let key2 = key.clone();
-        let (ops, wins, lat, elapsed) = run(writers, seconds, Duration::ZERO, move |t, i| {
-            // Each attempt names the head it last saw, as a writer without a lock would.
-            let seen = head2.lock().unwrap().clone();
-            let m = mutation(
-                &format!("{key2}-{t}-{i}"),
-                &key2,
-                &unique_body(1024, t, i),
-                Precondition::Matches(seen),
-            );
-            match block(s2.compare_exchange(&ctx(), &m)) {
-                Ok(receipt) => {
-                    *head2.lock().unwrap() = receipt.object.version;
-                    true
-                }
-                Err(Error::Conflict) => {
-                    c2.fetch_add(1, Ordering::Relaxed);
-                    false
-                }
-                Err(error) => {
-                    note_error(&error);
-                    o2.fetch_add(1, Ordering::Relaxed);
-                    false
-                }
-            }
-        });
+        println!("\n## Contended compare-and-set on one 1 KiB key\n");
         println!(
-            "| {writers} | {:.0} | {:.0} | {} | {} | {:.1} | {:.1} |",
-            ops as f64 / elapsed,
-            wins as f64 / elapsed,
-            conflicts.load(Ordering::Relaxed),
-            other.load(Ordering::Relaxed),
-            percentile(&lat, 0.5),
-            percentile(&lat, 0.99)
+            "| writers | attempts/s | winners/s | conflicts | other errors | p50 ms | p99 ms |\n|---|---|---|---|---|---|---|"
         );
+        for writers in [1usize, 2, 4, 8, 16] {
+            let key = format!("cas{writers}");
+            let first = block(s.create(
+                &ctx(),
+                &mutation(
+                    &format!("{key}-seed"),
+                    &key,
+                    &[0u8; 1024],
+                    Precondition::Absent,
+                ),
+            ))
+            .unwrap();
+            let head = Arc::new(std::sync::Mutex::new(first.object.version));
+            let (conflicts, other) = (Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0)));
+            let (s2, head2, c2, o2) = (
+                Arc::clone(&s),
+                Arc::clone(&head),
+                Arc::clone(&conflicts),
+                Arc::clone(&other),
+            );
+            let key2 = key.clone();
+            let (ops, wins, lat, elapsed) = run(writers, seconds, Duration::ZERO, move |t, i| {
+                // Each attempt names the head it last saw, as a writer without a lock would.
+                let seen = head2.lock().unwrap().clone();
+                let m = mutation(
+                    &format!("{key2}-{t}-{i}"),
+                    &key2,
+                    &unique_body(1024, t, i),
+                    Precondition::Matches(seen),
+                );
+                match block(s2.compare_exchange(&ctx(), &m)) {
+                    Ok(receipt) => {
+                        *head2.lock().unwrap() = receipt.object.version;
+                        true
+                    }
+                    Err(Error::Conflict) => {
+                        c2.fetch_add(1, Ordering::Relaxed);
+                        false
+                    }
+                    Err(error) => {
+                        note_error(&error);
+                        o2.fetch_add(1, Ordering::Relaxed);
+                        false
+                    }
+                }
+            });
+            println!(
+                "| {writers} | {:.0} | {:.0} | {} | {} | {:.1} | {:.1} |",
+                ops as f64 / elapsed,
+                wins as f64 / elapsed,
+                conflicts.load(Ordering::Relaxed),
+                other.load(Ordering::Relaxed),
+                percentile(&lat, 0.5),
+                percentile(&lat, 0.99)
+            );
+        }
     }
-    matched(&s, seconds, &nonce.to_string());
+    if want("matched") {
+        matched(&s, seconds, &nonce.to_string());
+    }
+    if want("control") {
+        control(&s, seconds);
+    }
+    if want("open_loop") {
+        open_loop(&s, seconds);
+    }
     println!("\nrequests: {:?}", s.counts());
     println!("other error variants seen: {:?}", ERRORS.lock().unwrap());
 }
@@ -402,5 +415,189 @@ fn matched(s: &Arc<S3Store>, seconds: f64, nonce: &str) {
             per(after.get, before.get),
             per(after.list, before.list),
         );
+    }
+}
+
+/// Deliberately failing control for the contended compare-and-set table: the same loop, but every
+/// attempt writes the SAME body. If `If-Match` is an ETag (content hash) comparison, a stale head
+/// still matches, so conflicts collapse toward zero and the CAS fences nothing. The expected
+/// outcome of this control is therefore "no conflicts at 16 writers", which would be wrong for a
+/// fencing primitive; the distinct-body table above is the real measurement.
+fn control(s: &Arc<S3Store>, seconds: f64) {
+    println!("\n## Control (expected to expose missing fencing): identical bodies, one hot key\n");
+    let key = "control-identical";
+    let body = vec![9u8; 1024];
+    let first = block(s.create(
+        &ctx(),
+        &mutation("control-seed", key, &body, Precondition::Absent),
+    ))
+    .unwrap();
+    // Direct probe: update from v1 twice with identical bytes; a fenced CAS refuses the second.
+    let v1 = first.object.version.clone();
+    let a = block(s.compare_exchange(
+        &ctx(),
+        &mutation("probe-a", key, &body, Precondition::Matches(v1.clone())),
+    ));
+    let b = block(s.compare_exchange(
+        &ctx(),
+        &mutation("probe-b", key, &body, Precondition::Matches(v1)),
+    ));
+    println!(
+        "probe: first update from v1 with identical bytes: {}; second update from the same stale v1: {}\n",
+        if a.is_ok() { "accepted" } else { "refused" },
+        match &b {
+            Ok(_) => "ACCEPTED (stale head not fenced)".to_string(),
+            Err(Error::Conflict) => "refused with Conflict (fenced)".to_string(),
+            Err(e) => format!("error {e:?}"),
+        }
+    );
+    println!(
+        "| writers | attempts/s | winners/s | conflicts | other errors |\n|---|---|---|---|---|"
+    );
+    let head = Arc::new(std::sync::Mutex::new(
+        a.map(|r| r.object.version)
+            .unwrap_or_else(|_| first.object.version.clone()),
+    ));
+    let (conflicts, other) = (Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0)));
+    let (s2, h2, c2, o2, body2) = (
+        Arc::clone(s),
+        Arc::clone(&head),
+        Arc::clone(&conflicts),
+        Arc::clone(&other),
+        body.clone(),
+    );
+    let (ops, wins, _, elapsed) = run(16, seconds, Duration::ZERO, move |t, i| {
+        let seen = h2.lock().unwrap().clone();
+        let m = mutation(
+            &format!("control-{t}-{i}"),
+            key,
+            &body2,
+            Precondition::Matches(seen),
+        );
+        match block(s2.compare_exchange(&ctx(), &m)) {
+            Ok(r) => {
+                *h2.lock().unwrap() = r.object.version;
+                true
+            }
+            Err(Error::Conflict) => {
+                c2.fetch_add(1, Ordering::Relaxed);
+                false
+            }
+            Err(e) => {
+                note_error(&e);
+                o2.fetch_add(1, Ordering::Relaxed);
+                false
+            }
+        }
+    });
+    println!(
+        "| 16 | {:.0} | {:.0} | {} | {} |",
+        ops as f64 / elapsed,
+        wins as f64 / elapsed,
+        conflicts.load(Ordering::Relaxed),
+        other.load(Ordering::Relaxed)
+    );
+}
+
+/// Open-loop batching sweep: PUTs arrive at a fixed rate whether or not earlier ones finished, on
+/// distinct keys, served by up to 32 workers. Latency is measured from the scheduled arrival, so
+/// queueing past saturation shows up (a closed loop hides it). `dropped` counts arrivals still
+/// unstarted when the cell ended.
+fn open_loop(s: &Arc<S3Store>, seconds: f64) {
+    println!("\n## Open-loop PUT sweep (fixed arrival rate, distinct keys, 32 workers)\n");
+    println!(
+        "| payload | offered/s | completed/s | errors | p50 ms | p99 ms | unstarted | MiB/s |\n|---|---|---|---|---|---|---|---|"
+    );
+    for (size, rates) in [
+        (64usize << 10, vec![200.0_f64, 500.0, 800.0, 1200.0]),
+        (1 << 20, vec![30.0, 60.0, 90.0, 120.0]),
+        (4 << 20, vec![10.0, 20.0, 30.0]),
+    ] {
+        for rate in rates {
+            let body = Arc::new(vec![5u8; size]);
+            let (tx, rx) = std::sync::mpsc::channel::<(u64, Instant)>();
+            let rx = Arc::new(std::sync::Mutex::new(rx));
+            let lats = Arc::new(std::sync::Mutex::new(Vec::<f64>::new()));
+            let stop = Arc::new(AtomicBool::new(false));
+            let start = Instant::now();
+            let started = Arc::new(AtomicU64::new(0));
+            let failed = Arc::new(AtomicU64::new(0));
+            let last_done = Arc::new(std::sync::Mutex::new(Duration::ZERO));
+            let workers: Vec<_> = (0..32)
+                .map(|_| {
+                    let (s2, rx2, l2, b2, st, started2, failed2, last2) = (
+                        Arc::clone(s),
+                        Arc::clone(&rx),
+                        Arc::clone(&lats),
+                        Arc::clone(&body),
+                        Arc::clone(&stop),
+                        Arc::clone(&started),
+                        Arc::clone(&failed),
+                        Arc::clone(&last_done),
+                    );
+                    std::thread::spawn(move || {
+                        loop {
+                            let job = rx2.lock().unwrap().recv_timeout(Duration::from_millis(50));
+                            match job {
+                                Ok((i, at)) => {
+                                    started2.fetch_add(1, Ordering::Relaxed);
+                                    let m = mutation(
+                                        &format!("ol{size}-{rate}-{i}"),
+                                        &format!("openloop{size}/{rate}/{i}"),
+                                        &b2,
+                                        Precondition::Absent,
+                                    );
+                                    if block(s2.create(&ctx(), &m)).is_ok() {
+                                        l2.lock().unwrap().push(at.elapsed().as_secs_f64() * 1e3);
+                                        *last2.lock().unwrap() = start.elapsed();
+                                    } else {
+                                        failed2.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                                Err(_) if st.load(Ordering::Relaxed) => break,
+                                Err(_) => {}
+                            }
+                        }
+                    })
+                })
+                .collect();
+            let mut sent = 0u64;
+            while start.elapsed().as_secs_f64() < seconds {
+                let due = Duration::from_secs_f64(sent as f64 / rate);
+                if let Some(wait) = due.checked_sub(start.elapsed()) {
+                    std::thread::sleep(wait);
+                }
+                let at = start + due;
+                tx.send((sent, at)).unwrap();
+                sent += 1;
+            }
+            // Give queued work one more cell-length to drain, then count what never started.
+            let drain = Instant::now();
+            while drain.elapsed().as_secs_f64() < seconds
+                && (lats.lock().unwrap().len() as u64) + failed.load(Ordering::Relaxed) < sent
+            {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            stop.store(true, Ordering::Relaxed);
+            for w in workers {
+                w.join().unwrap();
+            }
+            let dropped = sent - started.load(Ordering::Relaxed);
+            let mut lat = lats.lock().unwrap().clone();
+            lat.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let done = lat.len() as f64;
+            // Completions over the time until the last one finished: below saturation this is
+            // the offered window, past it the longer drain, so it shows the real completion rate.
+            let span = last_done.lock().unwrap().as_secs_f64().max(seconds);
+            println!(
+                "| {} KiB | {rate:.0} | {:.0} | {} | {:.1} | {:.1} | {dropped} | {:.1} |",
+                size >> 10,
+                done / span,
+                failed.load(Ordering::Relaxed),
+                percentile(&lat, 0.5),
+                percentile(&lat, 0.99),
+                done * size as f64 / span / (1 << 20) as f64
+            );
+        }
     }
 }

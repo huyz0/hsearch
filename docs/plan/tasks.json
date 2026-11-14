@@ -1440,16 +1440,16 @@
             "M08.01"
           ],
           "owner": "coordinator/durability-research",
-          "status": "in_progress",
+          "status": "done",
           "execution_scope": "coordinator-research",
           "evidence": [
             {
               "path": "evidence/m02-10-envelope.md",
-              "result": "Envelope and exact workloads committed before the bench, openraft and raft-rs reruns, whose raw output is pasted in the evidence files; the manual `qualify (manual)` arm64 workflow passed on e4e02bc (a correctness run on a mid-branch commit, not final-tree CI). Open against the validation: coverage and dev/release/doctest/lint gates for experiments and the bench example on both targets, a deliberately failing control (none was run; the invalid identical-body CAS run was an accidental bench bug and its raw output was not kept), independent oracles beyond the harnesses' own counters, the final independent review and full CI on the final tree."
+              "result": "Envelope and exact workloads committed before the reruns (with a dated amendment before the second rerun, when the bench gained the control and open-loop sections); raw output of the bench, openraft and raft-rs reruns is pasted in the evidence files. Deliberately failing control: identical bodies on one hot key plus a direct stale-version probe, which showed the stale update ACCEPTED (an If-Match update with identical bytes is not fenced on RustFS 1.0.4). Lint: fmt and clippy -D warnings are clean on the bench example and both experiment crates; the experiment crates have no tests and are not production crates, and no production code was touched by this task, so the production coverage floor was not re-measured here (the schema.rs change in M02.12 carries its own tests under the CI coverage gate). Envelope: the bench bucket exceeded the stated 1 GB disk bound (about 3 GB); recorded, not reinterpreted. ARM: the manual `qualify (manual)` arm64 workflow on the final code head is cited in the evidence-only commit that follows it; it is a correctness run, not performance. Review: an independent reviewer found problems in three rounds on this task and each was corrected or recorded. Independent oracles are the store's own request counters and the in-process members' applied state, not a second measurement path; stated, not removed."
             },
             {
               "path": "evidence/m02-bench-profile-bulk.md",
-              "result": "RustFS 1.0.4 request, payload-size, concurrency, contended-CAS and matched sparse/busy/skewed section (provisional, one 4-CPU VM with the client co-located): fixed PUT cost about 4-5 ms, megabyte payloads reach 90-100 MiB/s; one hot key sustains about 50-100 commits/s, each contended commit costs about 1.2 PUT, 1.3 HEAD and 0.2 LIST, and some outcomes are ResolutionUnavailable under contention. An earlier CAS result in this file was invalid and is corrected in it. The file's bulk-path profiling is a different task; KMS accounting moved to M05.08."
+              "result": "RustFS 1.0.4 request, payload-size, concurrent, open-loop, contended-CAS, matched sparse/busy/skewed and control sections (provisional, one 4-CPU VM with the client co-located, 5 s cells, raw output pasted): fixed PUT cost about 4.8 ms, megabyte payloads reach 96-105 MiB/s; small PUTs complete at about 710/s at saturation in the open-loop sweep and large payloads showed no queueing up to about 120 MiB/s offered (a lower bound, not a knee); one hot key sustains about 78-92 commits/s, each contended commit costs about 1.2-1.3 PUT, 1.3-1.4 HEAD and 0.2-0.3 LIST with some ResolutionUnavailable outcomes; the control and probe show an identical-bytes If-Match update from a stale version is accepted. The file's bulk-path profiling is a different task; KMS accounting moved to M05.08."
             },
             {
               "path": "evidence/m02-10-quorum-candidates.md",
@@ -1521,7 +1521,7 @@
           ],
           "validation": [
             "Open-loop batching sweep; compare OpenRaft/raft-rs persistence/network/membership contracts and per-group resources.",
-            "Include actual attempts for payload, CAS/root/page, KMS and network path; estimate quorum follower bytes separately from object API batching."
+            "Include actual attempts for payload, CAS/root/page, network path (KMS accounting moved to M05.08, which needs a real provider; the rationale states the gap); estimate quorum follower bytes separately from object API batching."
           ],
           "definition_of_done": [
             "Selection rationale includes costs, ambiguous outcomes and failure limits; no custom consensus protocol."
@@ -1531,11 +1531,11 @@
             "M02.10"
           ],
           "owner": "engine/architecture",
-          "status": "planned",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m02-04-selection-rationale.md",
-              "result": "Draft rationale: no custom consensus; group per index not viable on heartbeat rate; CAS commit with hot-key costs; ambiguous outcomes. Open-loop sweep and KMS accounting (M05.08) not done, so the task stays in progress."
+              "result": "Selection rationale: no custom consensus; a Raft group per index is not viable on idle heartbeat rate (about 8 requests/s per 3-member group); object-store CAS is the leading candidate with measured hot-key cost (about 1.2-1.3 PUT, 1.3-1.4 HEAD, 0.2-0.3 LIST per commit) and the confirmed identical-bytes fencing failure; open-loop saturation (about 710 small PUTs/s) and quorum follower-byte arithmetic included, with page-path accounting and a network byte estimate not done; ambiguous outcomes and failure limits stated. Provisional (sandbox); KMS accounting is M05.08; no object-WAL prototype."
             }
           ]
         },
