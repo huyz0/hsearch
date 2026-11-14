@@ -21,7 +21,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | [M02: API-scoped engine, catalog and cost feasibility](milestones/M02.md) | planned | 6/12 | M01 |
 | [M03: Storage semantics, cost-aware formats and metadata](milestones/M03.md) | planned | 2/10 | M01 |
 | [M04: Lucene Rust bridge and committed readers](milestones/M04.md) | planned | 0/6 | M02, M03 |
-| [M05: mTLS, tenant policy and BYOK](milestones/M05.md) | planned | 0/7 | M03 |
+| [M05: mTLS, tenant policy and BYOK](milestones/M05.md) | planned | 0/8 | M03 |
 | [M06: Object-durable search store on RustFS](milestones/M06.md) | planned | 0/7 | M04, M05 |
 | [M21: Document and mapping semantics](milestones/M21.md) | planned | 0/7 | M06 |
 | [M22: Pinned views, index management and background jobs](milestones/M22.md) | planned | 0/5 | M21 |

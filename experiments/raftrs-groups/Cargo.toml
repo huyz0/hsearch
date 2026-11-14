@@ -1,0 +1,13 @@
+# M02.10 experiment: standalone on purpose, like experiments/openraft-groups. Not a workspace
+# member, so raft-rs and its dependency tree never reach the product build, cargo-deny or coverage.
+[package]
+name = "raftrs-groups"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+raft = { version = "=0.7.0", default-features = false, features = ["protobuf-codec"] }
+slog = "=2.7.0"
