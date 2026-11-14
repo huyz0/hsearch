@@ -1777,6 +1777,37 @@
           ]
         },
         {
+          "id": "M03.11",
+          "title": "Fence commits with a unique per-commit token and probe it across S3 targets",
+          "goal": "Close the fencing gap M02.10 found: on RustFS 1.0.4 an If-Match update with identical bytes from a stale version is accepted, so a conditional write is not fenced by content-hash ETag equality.",
+          "deliverables": [
+            "A commit rule and adapter support so every conditional write that must fence carries a unique per-commit token (a sequence number or nonce inside the body, or a per-commit key), never relying on ETag equality of unchanged content",
+            "A conformance probe, in the shared contract suite, that updates from the same stale version twice with identical bytes and with distinct bytes, and records which stores fence which case",
+            "The probe run against the pinned RustFS, the pinned MinIO image from M03.10 and a real S3 bucket, with the observed outcome recorded beside the M02.10 evidence"
+          ],
+          "validation": [
+            "The stale-identical-bytes case is a named test that fails (red) against a deliberately unfenced adapter path before the rule exists, then passes with the token rule.",
+            "Each store's observed outcome is recorded; a store that does not fence distinct-body stale updates is a blocking finding for M06's commit protocol, not a footnote.",
+            "Real-S3 run has a frozen envelope (requests, spend) recorded beside the raw output and is labelled provisional if the account or region is not production.",
+            "Normal independent review of the code and the claimed results, and green CI."
+          ],
+          "definition_of_done": [
+            "No commit path accepts a stale conditional write on identical bytes; the per-commit token rule is stated where the commit protocol (M06) consumes it, and the fencing behaviour of RustFS, MinIO and S3 is measured, not assumed."
+          ],
+          "depends_on": [
+            "M03.10",
+            "M02.10"
+          ],
+          "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": [
+            {
+              "path": "evidence/m02-bench-profile-bulk.md",
+              "result": "Origin: the M02.10 control and direct probe showed a stale If-Match update with identical bytes accepted on RustFS 1.0.4, and 16 identical-body writers saw zero conflicts. Other S3 implementations were not tested."
+            }
+          ]
+        },
+        {
           "id": "M03.09",
           "title": "Decide commit-domain sharing under tenant = index",
           "goal": "Resolve the open design question in product-requirements conflict 3 before formats freeze: with one tenant per index, may small indexes share a fenced append lane?",
