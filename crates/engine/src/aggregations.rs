@@ -1,7 +1,7 @@
 //! Complete finite aggregations over the same native query/snapshot.
 use crate::{Error, Kind, MAX_FIELDS, Query, Result, Snapshot};
-use lucene_search::aggs::{self, MetricSpec, NEED_ALL, Source, ValueKind};
-use lucene_search::terms_agg;
+use lucene_aggs::metric_aggs::{self as aggs, MetricSpec, NEED_ALL, Source, ValueKind};
+use lucene_aggs::terms_agg;
 
 /// Exact metric state for one numeric/date field.
 #[derive(Clone, Debug, PartialEq)]

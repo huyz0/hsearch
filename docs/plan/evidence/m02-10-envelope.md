@@ -17,6 +17,6 @@ Workloads, exact:
 - openraft: `experiments/openraft-groups` `scale 100`, `scale 300`, `scale 600`, then `schedules`.
 - raft-rs: `experiments/raftrs-groups` `scale 100`, `scale 300`, `scale 600`, then `schedules`.
 
-Request counts expected, stated before running: one PUT per uncontended commit (busy and sparse), more than one PUT plus HEAD/LIST per commit under the hot key; raft idle requests scale linearly in groups at the library's heartbeat tick, about 8 a second per group at a 125 ms heartbeat.
+Request counts expected, stated before running: one PUT per uncontended commit (busy and sparse), more than one PUT plus HEAD/LIST per commit under the hot key; raft idle requests scale linearly in groups at the library's heartbeat tick, about 8 a second per 3-member group at the 250 ms heartbeat the runs use (two followers, so 125 ms would give about 16).
 
 What would invalidate a run: a run that exceeds a bound, a raft-rs/openraft process killed by the OOM killer, or a store restart during a cell.

@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Pinned Lucene Rust boundary for hsearch"
 
 [dependencies]
+lucene-aggs.workspace = true
 lucene-analysis.workspace = true
 lucene-codecs.workspace = true
 lucene-index.workspace = true
