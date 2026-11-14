@@ -21,15 +21,15 @@ Provisional: every number below was measured on one shared cloud VM (Intel Xeon 
 
 | Row | Verdict | Evidence |
 | --- | --- | --- |
-| HNSW | **Confirmed at the pin and main.** Concurrent build and merge at hsearch segment sizes: **unrun**. | Tests above pass. `hnsw_concurrent.rs` (1,105 lines) exists at the pin and its tests are in the 100 passing. Bench `knn_multi_segment`: 4,000-doc single segment 174 µs; four segments sequential 1.31 ms, concurrent 2.69 ms (concurrent search is slower than sequential at this size, provisional); k=100 3.72 ms vs 3.86 ms. No bench builds or merges at hsearch segment sizes. |
+| HNSW | **Confirmed at the pin and main.** Concurrent build and merge at hsearch segment sizes: **unrun**. | Tests above pass. `crates/lucene-codecs/src/hnsw_concurrent.rs` exists at the pin (690 lines, inline `mod tests`; 1,105 lines on main). Its tests fall under the `lucene-codecs hnsw` filter, but I did not list them separately. Bench `knn_multi_segment`: 4,000-doc single segment 174 µs; four segments sequential 1.31 ms, concurrent 2.69 ms (concurrent search is slower than sequential at this size, provisional); k=100 3.72 ms vs 3.86 ms. No bench builds or merges at hsearch segment sizes. |
 | HNSW + quantization | **Confirmed**, but split: Lucene scalar quantization is at the pin (`scalar_quantized_vectors.rs`, 30 `quantiz` tests); BBQ/OSQ/RaBitQ quantizers are `main` only. | `lucene-vector-quant`: 53 tests pass. `ivf_path` scorer group at 100 d, one block: BBQ 617 ns, OSQ2 677 ns, OSQ4 3.24 µs, SQ7 3.18 µs, RaBitQ 602 ns, ERQ3 1.12 µs, ERQ4 1.41 µs. |
 | HNSW disk-based | **Confirmed on main only.** Range reads from the object store: the `RangeSource` trait and `prefetch` exist, so the engine side is ready; the hsearch implementation is **unrun**. | `lucene-disk-hnsw`: 26 tests pass, recall asserted at >= 0.9 per vector encoding (`tests/disk_hnsw.rs:227`). `examples/disk_hnsw_bench` needs a SIFT/GIST-style dataset that is not in this environment: **unrun**. |
-| IVF | **Confirmed on main only.** Update and delete: IVF is write-once per segment, as the table says. Deletes are applied at search through the `accept` filter and dropped at merge (`merge.rs` takes only live docs). No in-place update exists, by design. | `lucene-ivf`: 91 tests pass, recall asserted >= 0.9 (`tests/ivf.rs:154,188`), merge recall and reuse-versus-recluster tests included. |
+| IVF | **Confirmed on main only.** Update and delete: IVF is write-once per segment, as the table says. Deletes are applied at search through the `accept` filter and dropped at merge (`merge.rs` takes only live docs). No in-place update exists, by design. | `lucene-ivf`: 91 tests pass, recall asserted >= 0.9 for 10 quantizer factories on 32-d synthetic data, n=3000 (`tests/ivf.rs:154`, estimate-only recall >= 0.4 at line 156; the filtered-search check at line 188 compares against exact search; line 754 asserts only >= 0.5), merge recall and reuse-versus-recluster tests included. |
 | IVF + quantization | **Confirmed on main only.** One `Quantizer` trait shared with HNSW and disk HNSW. | `auto_quantizer.rs` and the 53 quantizer tests pass. |
 | IVF disk-based | **Refuted: the "not confirmed" cell was wrong.** The `.ivm/.ivp/.ivv` layout is built for range reads: one contiguous range per probed cluster, one small range per reranked candidate, `.ivm` kept in memory, codes at 1 bit per dimension plus 16 B (BBQ). A separate disk layout is not needed. The remaining gap is on hsearch's side: a `RangeSource` over the object store with a page cache. | `crates/lucene-ivf/src/lib.rs` module docs and `reader.rs` `RangeSource`. Request counts per query were not measured here: **unrun**. |
-| Sparse and multi-vector | Present on main (`lucene-sparse`, `lucene-tensor`); not audited, out of scope for PR-22. | Not run. |
+| Sparse and multi-vector | Crates present on main; **unrun** (out of scope for PR-22). | Not run. |
 | SIMD | **Partly refuted.** Compile-time AVX2 and NEON kernels: confirmed (`target_feature` gates in `simd.rs`; `.cargo/config.toml` sets x86-64-v3). AVX-512: run-time detected but only for specific kernels (fast-scan `lut16_accumulate32_wide`, bitset expansion, compaction, MaxSim), through `cpu.rs` with a `LUCENE_RUST_SIMD` cap; float dot, L2 and cosine are AVX2/FMA, not AVX-512. **No startup check of the CPU floor existed**; closed by lucene-rust#307 (merged as `02dcad21`). SVE: nothing exists (grep finds none); whether it pays on Graviton4 is **unrun**, needs the hardware. NEON: compile-checked locally; the PR's CI `gate (arm64)` and `lucene-search in release (arm64)` jobs passed, so the NEON tests ran on ARM, but no NEON benchmark was run. | `vector_kernels` bench, SIMD against scalar: dot 768 d 31.7 ns vs 198 ns (6.3x); L2 768 d 37.7 vs 160 ns (4.2x); cosine 768 d 66 vs 579 ns (8.8x); nibble LUT 768 d 165 ns vs 5.83 µs (35x); quantize residual 768 d 304 ns vs 3.68 µs (12x); gather of 32 random 100-d rows 1.93 µs with prefetch vs 3.41 µs without (768 d: 10.1 vs 10.9 µs). |
-| Encryption | Not in scope of this task (row not audited). | Not run. |
+| Encryption | **Unrun**: not audited in this task; the per-index key mapping gap stays open for the BYOK task. | Not run. |
 
 ## Quantizer settings OpenSearch mappings can expose
 
@@ -49,13 +49,13 @@ Corpora that exist today are synthetic test corpora inside lucene-rust's tests; 
 | HNSW float | 0.95 at ef 100 | proposed; upstream tests assert only coarse floors |
 | HNSW + quantized | 0.90 after exact rerank | proposed |
 | Disk HNSW | 0.90 | upstream test floor, `disk_hnsw.rs:227` |
-| IVF + quantized | 0.90 at calibrated depth | upstream test floor, `ivf.rs:154,188` |
+| IVF + quantized | 0.90 at calibrated depth | upstream test floor, `ivf.rs:154` (synthetic 32-d) |
 
 Only the disk-HNSW and IVF floors are measured upstream; the HNSW rows are proposals and are marked unrun.
 
 ## Gaps, upstream changes and waiting tasks
 
-| Gap | Additive upstream change | Waiting task |
+| Gap | Additive upstream change | Owner / waiting task |
 | --- | --- | --- |
 | Startup CPU-floor check missing (confirmed) | [huyz0/lucene-rust#307](https://github.com/huyz0/lucene-rust/pull/307), merged `02dcad21`, all 18 CI checks green incl. arm64: `cpu::{missing_baseline, check_baseline}`, additive, tested; nothing calls it yet, the node wires it in | node startup in M20 follow-ups; M23.01 |
 | Pin lacks IVF, disk HNSW, BBQ/OSQ (confirmed) | none to write: bump the pin after checking the bridge contract and old-index corpus (PR-53) | M23.02, M23.03 |
@@ -65,3 +65,5 @@ Only the disk-HNSW and IVF floors are measured upstream; the HNSW rows are propo
 | SVE on Graviton4, NEON speedups (benchmarks unrun) | needs ARM hardware; manual ARM CI only, per project rule | M23 follow-up |
 
 Not done, so as to be clear: no upstream benchmark run reached a standard corpus; the `disk_hnsw_bench`, `knn_formats` and `hnsw_quant_bench` examples all need a dataset that is not here.
+
+Owner for every upstream item above is `engine/architecture` (the M02.12 owner); the `main` revision in this file is `918cee02`, before #307 landed.
