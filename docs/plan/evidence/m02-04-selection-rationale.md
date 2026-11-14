@@ -1,6 +1,6 @@
 # M02.04 selection rationale: durability and metadata candidates
 
-Status: draft from the M02.10 evidence, which is itself not closed. M02.04 stays planned: see "What is not established". Every number is `provisional` (4-CPU sandbox VM, RustFS 1.0.4 in Docker, in-process Raft harnesses) and relative only.
+Status: see "What is not established". Every number is `provisional` (4-CPU sandbox VM, RustFS 1.0.4 in Docker, in-process Raft harnesses) and relative only.
 
 ## Decision
 
@@ -17,13 +17,24 @@ Status: draft from the M02.10 evidence, which is itself not closed. M02.04 stays
 ## Ambiguous outcomes and failure limits
 
 - Under the hot key the adapter's unknown-outcome resolution (list and probe recent versions within a bound) sometimes runs out and returns `ResolutionUnavailable` (the skewed matched cell had 14 'other errors' in 5 s and the 16-writer contended cell 20; the one variant recorded is process-wide, so the split per row is not attributed). A commit protocol must treat that as unknown and be idempotent on retry; this is parked in [the plan README](../README.md).
-- An earlier contended-CAS result was invalid (identical bodies). The likely cause is that `If-Match` compares a content-hash ETag, so an update rewriting identical bytes is not fenced. **Not probed.** Until it is, a commit must carry a unique per-commit value in the body or key and never rely on the ETag of unchanged content alone.
+- An earlier contended-CAS result was invalid (identical bodies) because `If-Match` compares a content-hash ETag, so an update rewriting identical bytes is not fenced. **Probed and confirmed (14 November, RustFS 1.0.4):** an update with identical bytes from a stale version is accepted and 16 identical-body writers saw zero conflicts, so a commit must carry a unique per-commit value in the body or key and never rely on the ETag of unchanged content for fencing. Other S3 implementations are not tested.
 - Both Raft harnesses showed a write proposed on a cut leader applied on no member after the heal (one observation each; raft-rs's truncation was inferred, not observed). A client that times out, or proposes on a node it cannot confirm is leader, must still treat the outcome as unknown (the raft-rs harness has no client timeout; it only proposed on the cut leader).
 - Failover after a leader cut took about 0.7-0.95 s (raft-rs, 600-1200 ms election window, 50 ms ticks) and about 2.0-2.3 s (openraft, in-process); one observation per run, not bounds.
 
+## Open-loop batching and what a batch buys
+
+The open-loop sweep (raw output in the bench evidence) shows the object API's limit on this VM: about 700-750 small PUTs a second, or about 120 MiB/s, past which latency is queueing (64 KiB at 1200/s: p50 1.5 s). Below the knee a PUT costs about 6-8 ms p50 at 64 KiB, about 15 ms at 1 MiB and about 41-46 ms at 4 MiB. Batching to megabyte-scale PUTs moves the same bytes with about 16-64x fewer requests. The size to choose is a latency-versus-cost trade the commit protocol makes (visibility target under 500 ms p50 leaves room for batching windows of tens of milliseconds, not seconds).
+
+## Quorum follower bytes (arithmetic, separate from object API batching)
+
+If a Raft quorum were used, the leader sends each entry to every follower: a 3-member group sends 2x the entry bytes over the network, a 5-member group 4x, on top of one durable write per member. That is replication traffic between nodes, priced separately from object requests (which batching reduces); it is not measured here, and cross-AZ transfer pricing is not applied.
+
+## Scope of the attempts counted
+
+Payload PUTs and per-key compare-and-set heads are counted request by request (PUT/HEAD/GET/LIST per commit). No root or page object exists until the commit protocol is designed (M06), so the per-key head here is the stand-in for the root; page-path accounting is that task's. KMS: M05.08.
+
 ## What is not established
 
-- **No open-loop batching sweep.** The size sweep is closed-loop with one writer; M02.04's validation asks for an open-loop one.
-- **No KMS number.** KMS path accounting needs a real provider and is M05.08, which comes after M02. M02.04's validation still lists KMS accounting, so M02.04 cannot close on this evidence unless that line is waived or moved to M05.08 by an explicit plan change; the M02.04 and M02.07 envelopes must be revisited when M05.08 reports.
+- **KMS number**: needs a real provider and is M05.08 (comes after M02); M02.04's KMS clause points there.
 - No object-WAL prototype, no object-store-backed Raft log, no real network, restarts or loss schedule for raft-rs, no real-provider or multi-AZ cost.
-- ARM: the manual `qualify (manual)` workflow (suite `arm64`) passed on commit e4e02bc, a correctness run; the performance numbers here are x86_64 sandbox only.
+- ARM: the manual `qualify (manual)` workflow (suite `arm64`) is a correctness run; the performance numbers here are x86_64 sandbox only.
