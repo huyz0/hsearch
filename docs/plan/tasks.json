@@ -1600,8 +1600,17 @@
             "M08.01"
           ],
           "owner": "engine/architecture",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m02-05-baseline-runs.md",
+              "result": "Two fresh back-to-back runs of the object-store bench against digest-pinned RustFS 1.0.4 on the 4-CPU sandbox with raw output, commit and environment; provisional, relative only."
+            },
+            {
+              "path": "decisions/M02.05-benchmark-and-failure-contracts.md",
+              "result": "Contracts frozen: open-loop Poisson arrivals with warm-up, steady, overload and recovery phases, p99 only from windows of 10,000 or more requests, 3 interleaved repeats with ranges; receipt-ledger and capacity-model design; G06 scale-efficiency, latency and cost thresholds. Baseline reproduced twice in two fresh back-to-back RustFS runs (raw output, commit, image digest in evidence/m02-05-baseline-runs.md): rates and medians within about 13%, 16 MiB p99 differs 2.8x, so no p99 is judged from short cells; no receipt writer exists yet Each of PR-03/04/08/13/29/31/35/39/40/42 confirmed, frozen as a protocol-backed default, or left open with an owner; PR-29 (p50 5 s, p99 15 s, with a stated budget split) and PR-35 (2 s pause) decided before M07.10 and M07.11. Targets and tolerances, not measurements; PR-29 and PR-35 reachability is unproven and PR-39/40/42 values are chosen defaults; no real-provider or multi-worker claim is made."
+            }
+          ]
         },
         {
           "id": "M02.06",
@@ -1819,6 +1828,30 @@
           ]
         },
         {
+          "id": "M03.12",
+          "title": "Finish attribution: retrying client, multipart, tenant feed and bounded telemetry",
+          "goal": "Close what M03.07's ledger left open so attribution covers the paths a real deployment uses, not only the adapter's own single-attempt calls.",
+          "deliverables": [
+            "A retrying client layer (or a real SDK) under the adapter, with every retry attempt attributed and flagged, and the transport-log comparison repeated through it",
+            "Multipart and POST attribution, and the tenant identity passed to the traffic ledger from the request context so drill-down is fed by the adapter",
+            "Bounded OpenTelemetry instruments for the ledger in hsearch-observe (cardinality-bounded, no tenant labels on metrics)"
+          ],
+          "validation": [
+            "Inject throttling, connection loss and conflicts under the retrying layer and assert attempts, retries and bytes against an independent transport log that classifies requests without reusing the adapter's rules",
+            "A NAT/hairpin byte path reported by both ends is charged once through the adapter, and a wrong-unit rate is rejected at the boundary",
+            "Normal independent review of the code and the claimed results, and green CI."
+          ],
+          "definition_of_done": [
+            "Retries, multipart and tenant-scoped traffic are attributed independently of logical calls, and the exported telemetry stays within a fixed cardinality bound."
+          ],
+          "depends_on": [
+            "M03.07"
+          ],
+          "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
           "id": "M03.09",
           "title": "Decide commit-domain sharing under tenant = index",
           "goal": "Resolve the open design question in product-requirements conflict 3 before formats freeze: with one tenant per index, may small indexes share a fenced append lane?",
@@ -1831,7 +1864,7 @@
             "Run the M02.07 trace workloads at 10M indexes (modelled, labelled as such) and a small-index write storm; test revocation of a lane-mate's key on the M03.04 model"
           ],
           "definition_of_done": [
-            "The decision forbids a per-index request floor (PR-01, PR-11) and any weakening of the per-index isolation and key boundary, and says what it costs",
+            "The decision forbids an idle per-index request, timer or object (PR-01, PR-11), states that cost scaling with active BYOK indexes remains under option B, and forbids any weakening of the per-index isolation and key boundary, and says what it costs",
             "The id is M03.09 only because ids are stable; it runs before M03.03 and M03.08 implements it"
           ],
           "depends_on": [
@@ -1839,8 +1872,17 @@
             "M03.01"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "decisions/M03.09-commit-domain-sharing.md",
+              "result": "Accepted decision: indexes share a fenced append lane only with an identical policy tuple (key identity, residency, durability profile, format version); option B now (default-key indexes share in groups of at most 1,000, BYOK indexes keep their own lane), option C (per-index payload encryption) recorded as the path once reviewed (trigger: BYOK above about 25%). Modelled at 10M indexes with 90% idle: a lane per index costs about 4x the requests per write and retains 20M fence/tail objects; sharing costs about 0.49 requests per write. A revocable key must not wrap a shared lane (small stand-in model counterexample; not a proof). Deviation from the validation clause: the lane-mate revocation test ran on a stand-in model (lane_model.py) with new synthetic Poisson workloads, not on the M03.04 model (it does not exist yet) or the M02.07 traces; M03.04 carries the histories as a binding deliverable. Costs stated: blast radius of the group size, noisy neighbours bounded not removed, BYOK pays per-index lanes until C."
+            },
+            {
+              "path": "evidence/m03-09-lane-sharing-model.md",
+              "result": "Modelled (not measured) lane_model.py comparison of options A/B/C on a steady small-index load and a write storm at PR-01 scale, a BYOK-share sensitivity, a hot-index workload for the promotion rule (share plus volume floor), and a small exhaustive lane-mate key-revocation search with a deliberately broken control and a recovery-policy control; tables generated by the tool, 11 tests. KMS is counted per batch (upper bound) and the 5% BYOK share is an assumption. M03.08 must measure it."
+            }
+          ]
         },
         {
           "id": "M03.03",
@@ -1849,7 +1891,8 @@
           "deliverables": [
             "Format specifications, parsers/encoders, size limits and golden corpus",
             "Versioned API/profile/schema, opaque version and bounded cursor/pin identity requirements from the early scale model",
-            "Fleet format-version record in the object store, changed by conditional write, and the unknown-mandatory-capability refusal rule (PR-10, PR-52); per-index object layout and a mapping object keyed by content hash (PR-43); size limits that admit documents up to 200 MB (PR-40)"
+            "Fleet format-version record in the object store, changed by conditional write, and the unknown-mandatory-capability refusal rule (PR-10, PR-52); per-index object layout and a mapping object keyed by content hash (PR-43); size limits that admit documents up to 200 MB (PR-40)",
+            "Lane identity per the M03.09 decision: the policy tuple (key identity, residency, durability profile, format version) plus a group id; record AAD carrying the index id; a lane member set with a group-size ceiling (default 1,000 indexes)"
           ],
           "validation": [
             "Every-byte truncation/corruption and oversized/overflow fuzz inputs; roundtrip plus independent fixture checks."
@@ -1878,10 +1921,12 @@
           "validation": [
             "Enumerate suspended writer, pin-vs-GC, conflict, response-loss and old-incarnation histories; seed broken fence control.",
             "Model grouped membership/hot-stream promotion, independently stale descriptors, bounded checkpoint-page publication and unknown cross-head outcomes.",
-            "Extend the small M00 model to own-term establishment, multiple owners/epochs, same-term reopen, retained fences/tail locators, checkpoint reclamation and authoritative read barriers; preserve failing unsafe controls."
+            "Extend the small M00 model to own-term establishment, multiple owners/epochs, same-term reopen, retained fences/tail locators, checkpoint reclamation and authoritative read barriers; preserve failing unsafe controls.",
+            "Include the M03.09 lane-mate key-revocation histories (docs/plan/tools/lane_model.py revocation_search): a revoked index's blocks are skipped on recovery and its lane-mates stay readable; a revocable key wrapping a shared lane is the seeded broken control"
           ],
           "definition_of_done": [
-            "Safety invariants hold within published bounds; model limitations and production mapping are explicit."
+            "Safety invariants hold within published bounds; model limitations and production mapping are explicit.",
+            "The M03.09 lane-mate revocation histories pass on this model, including recovery that skips a revoked index's blocks, with AAD/replay, key rotation and reinstated-key histories added, and the revocable-key-wraps-a-shared-lane control fails"
           ],
           "depends_on": [
             "M03.03"
@@ -1911,8 +1956,13 @@
             "M03.01"
           ],
           "owner": "cost/architecture/operations",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-07-attribution.md",
+              "result": "Implemented in hsearch-s3: logical calls (counted at every public entry, including calls refused before the wire) and attempts counted apart by role, verb and outcome with encoded bytes; directed traffic ledger by role, direction, endpoint, price class and payer with a transfer counted once, bounded keys, transfers and tenants, a scoped tenant drill-down, bytes refused by a bound kept as unknown, unknown (not free) pricing for a missing path, payer or rate, DNS-only paths failing acceptance, and the byte unit carried in the rate; redirects are not followed so no request hides. Adapter attempt counts agree with a scripted provider's transport log (one written in this repo, comparing verbs only) for a clean write, a lost race (1 call, 2 attempts), an empty-read/throttle/success sequence and a redirect; 34 tests, mutations seen red, hsearch-s3 line coverage 97.9%. Provisional and partial against the validation list: SDK retries are caller-repeated calls and flags, not a real retrying client; NAT and hairpin paths and double-counted endpoint charges are exercised only in the ledger's unit tests, no real route inspection or provider usage was used; request size is a lower bound computed not read. The remainder is M03.12 and M15.07."
+            }
+          ]
         },
         {
           "id": "M03.08",
@@ -1920,12 +1970,13 @@
           "goal": "Implement the researched ordered conditional-create WAL, compatible batching and amortized checkpoint protocol, proving the full activation/GC/reader boundary.",
           "deliverables": [
             "Fenced ordered-slot log prototype with one in-flight append, failure poisoning, own-term establishment, retained fences/tail locator and explicit unknown outcomes",
-            "Domains shared only as M03.09 allows (tenant = index; same key, residency and durability policy), bounded batching, inline initial wrapped-key format, amortized dirty-only checkpoints and fenced hot-stream promotion",
+            "Domains shared as the M03.09 decision allows (option B: indexes with an identical policy tuple share lanes of at most 1,000 indexes; a BYOK index keeps its own lane; lane join/leave and hot-index promotion at about a quarter of a lane's bytes), bounded batching, inline initial wrapped-key format, amortized dirty-only checkpoints and fenced hot-stream promotion",
             "Payload-plus-head-CAS comparison implementation and complete attempt/page/key/recovery accounting"
           ],
           "validation": [
             "Model suspend/resume, concurrent membership change, ambiguous CAS, page growth, pin/GC races and promotion crashes",
-            "Sweep sparse/busy/skewed small streams, incompatible crypto policies, metadata-page/envelope overhead, retry and rebuild amplification"
+            "Sweep sparse/busy/skewed small streams, incompatible crypto policies, metadata-page/envelope overhead, retry and rebuild amplification",
+            "Measure requests per acknowledged write on the small-index sweep reporting default-key and BYOK lanes separately and comparing the default-key PUTs per write with the M03.09 modelled 0.25 (KMS is a model upper bound, not compared), the largest hot-index share of a lane among lanes with real volume, promotion behaviour and lane re-establish time after a poison"
           ],
           "definition_of_done": [
             "Selected fenced protocol preserves unique authority, ordered committed identities and bounded replay/discovery across full fault histories; the small planning model is not its runtime proof",
@@ -4689,7 +4740,8 @@
           "goal": "Validate that the modeled savings survive actual cloud paths, SKU rules and provider charging.",
           "deliverables": [
             "S3/GCS/Azure rate/path profiles and scoped usage/billing export reconciliation with explained residuals",
-            "Infrastructure endpoint/route and LB/NAT/PrivateLink/TGW checks, explicit GB/GiB and sender/receiver payer mappings"
+            "Infrastructure endpoint/route and LB/NAT/PrivateLink/TGW checks, explicit GB/GiB and sender/receiver payer mappings",
+            "Real route-inspection and transport-log evidence fed into the M03.07 traffic ledger paths (a DNS-only path is rejected), the M03.07 key role fed by the KMS adapters, and real provider usage compared with the ledger"
           ],
           "validation": [
             "Compare meter projections to real provider usage and available billing exports for normal, retry, idle, failover and cross-cluster workloads",
