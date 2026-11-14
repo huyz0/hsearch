@@ -11,7 +11,7 @@ import sys
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE_REV = "46e280bc2a208544fb36ecd95932e89cd8bc5618"
+ENGINE_REV = "8c010db716b405f40a06f5d5573f1bd0270bfabf"
 ENGINE_SOURCE = f"git+https://github.com/huyz0/lucene-rust?rev={ENGINE_REV}#{ENGINE_REV}"
 LAYERS = {
     "hsearch-types": set(),
@@ -26,7 +26,7 @@ LAYERS = {
 }
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-node"}
 EXTERNAL = {name: set() for name in LAYERS}
-EXTERNAL["hsearch-engine"] = {"lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store"}
+EXTERNAL["hsearch-engine"] = {"lucene-aggs", "lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store"}
 # Signing and a blocking HTTP client, exact-pinned in crates/s3/Cargo.toml. No TLS stack yet.
 EXTERNAL["hsearch-s3"] = {"hmac", "sha2", "ureq"}
 # JSON bodies, a blocking HTTP/1.1 server (plain HTTP, no TLS) and a safe arena for query lowering, exact-pinned in crates/node/Cargo.toml.
