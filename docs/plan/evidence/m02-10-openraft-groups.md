@@ -26,7 +26,7 @@ process) and about 7 idle RPC/s per group, which is the two followers' heartbeat
 zero-cost in-process network; a real network and serialisation add to it.
 
 Arithmetic, not measurement: at the project target of 1M tenants x about 50 indexes, one quorum
-group per index would be 50M groups, about 19 TiB of resident group state and about 350M idle
+group per index would be 50M groups, about 19 TiB of resident group state and about 360M idle
 heartbeat RPC/s at these settings. A group per index is therefore not viable on this evidence
 even before durability cost; any quorum use would have to be per shard-set or per node, with
 heartbeats amortised. This is an estimate from linear extrapolation of 600 groups, and the
