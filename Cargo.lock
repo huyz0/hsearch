@@ -45,6 +45,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
+name = "cc"
+version = "1.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33ef9e3e8154a45c7a95cff4c1299702106ad94062d7bb85fdc5d3a5afd91d45"
+dependencies = [
+ "find-msvc-tools",
+ "jobserver",
+ "libc",
+ "shlex",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -148,6 +160,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
+name = "find-msvc-tools"
+version = "0.1.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
+
+[[package]]
+name = "getrandom"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "r-efi",
+]
+
+[[package]]
 name = "hmac"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -163,6 +192,7 @@ dependencies = [
  "hsearch-object",
  "hsearch-s3",
  "hsearch-testkit",
+ "lucene-aggs",
  "lucene-analysis",
  "lucene-codecs",
  "lucene-index",
@@ -259,6 +289,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 
 [[package]]
+name = "jobserver"
+version = "0.1.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
+dependencies = [
+ "getrandom",
+ "libc",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -271,9 +311,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
+name = "lucene-aggs"
+version = "0.1.0"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
+dependencies = [
+ "lucene-analysis",
+ "lucene-codecs",
+ "lucene-index",
+ "lucene-search",
+ "lucene-store",
+ "lucene-util",
+ "rayon",
+]
+
+[[package]]
 name = "lucene-analysis"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc2a208544fb36ecd95932e89cd8bc5618"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
 dependencies = [
  "lucene-util",
  "miniz_oxide",
@@ -285,25 +339,55 @@ dependencies = [
 [[package]]
 name = "lucene-codecs"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc2a208544fb36ecd95932e89cd8bc5618"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
 dependencies = [
  "crc32fast",
  "lucene-store",
  "lucene-util",
- "lz4_flex",
- "miniz_oxide",
+ "lucene-zstd",
+ "memchr",
+ "thiserror",
+]
+
+[[package]]
+name = "lucene-disk-hnsw"
+version = "0.1.0"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
+dependencies = [
+ "lucene-codecs",
+ "lucene-ivf",
+ "lucene-store",
+ "lucene-util",
+ "lucene-vector-quant",
+ "rayon",
  "thiserror",
 ]
 
 [[package]]
 name = "lucene-index"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc2a208544fb36ecd95932e89cd8bc5618"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
 dependencies = [
  "lucene-analysis",
  "lucene-codecs",
+ "lucene-disk-hnsw",
+ "lucene-ivf",
+ "lucene-spatial3d",
  "lucene-store",
  "lucene-util",
+ "lucene-vector-quant",
+ "rayon",
+ "thiserror",
+]
+
+[[package]]
+name = "lucene-ivf"
+version = "0.1.0"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
+dependencies = [
+ "lucene-store",
+ "lucene-util",
+ "lucene-vector-quant",
  "rayon",
  "thiserror",
 ]
@@ -311,24 +395,45 @@ dependencies = [
 [[package]]
 name = "lucene-search"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc2a208544fb36ecd95932e89cd8bc5618"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
 dependencies = [
  "lucene-analysis",
  "lucene-codecs",
+ "lucene-disk-hnsw",
  "lucene-index",
+ "lucene-ivf",
+ "lucene-spatial3d",
+ "lucene-spatial4j",
  "lucene-store",
  "lucene-util",
  "miniz_oxide",
- "quick-xml",
  "rayon",
  "thiserror",
- "unicode-segmentation",
+]
+
+[[package]]
+name = "lucene-spatial3d"
+version = "0.1.0"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
+dependencies = [
+ "lucene-util",
+ "thiserror",
+]
+
+[[package]]
+name = "lucene-spatial4j"
+version = "0.1.0"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
+dependencies = [
+ "lucene-spatial3d",
+ "lucene-util",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-store"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc2a208544fb36ecd95932e89cd8bc5618"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
 dependencies = [
  "crc32fast",
  "libc",
@@ -340,19 +445,27 @@ dependencies = [
 [[package]]
 name = "lucene-util"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=46e280bc2a208544fb36ecd95932e89cd8bc5618#46e280bc2a208544fb36ecd95932e89cd8bc5618"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
 dependencies = [
- "crc32fast",
  "thiserror",
 ]
 
 [[package]]
-name = "lz4_flex"
-version = "0.11.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
+name = "lucene-vector-quant"
+version = "0.1.0"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
 dependencies = [
- "twox-hash",
+ "lucene-util",
+ "thiserror",
+]
+
+[[package]]
+name = "lucene-zstd"
+version = "0.1.0"
+source = "git+https://github.com/huyz0/lucene-rust?rev=8c010db716b405f40a06f5d5573f1bd0270bfabf#8c010db716b405f40a06f5d5573f1bd0270bfabf"
+dependencies = [
+ "thiserror",
+ "zstd-safe",
 ]
 
 [[package]]
@@ -386,21 +499,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
+name = "pkg-config"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "quick-xml"
-version = "0.39.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
-dependencies = [
- "memchr",
 ]
 
 [[package]]
@@ -411,6 +521,12 @@ checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "r-efi"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rayon"
@@ -515,6 +631,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shlex"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -569,12 +691,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "twox-hash"
-version = "2.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
-
-[[package]]
 name = "typed-arena"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -591,12 +707,6 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
-
-[[package]]
-name = "unicode-segmentation"
-version = "1.13.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
 
 [[package]]
 name = "ureq"
@@ -638,3 +748,22 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zstd-safe"
+version = "7.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "498d94ad68720c89b4fbe41b9090850651e68cb2dd9210ce7ffbff3a94653819"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.1.3+zstd.1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f729a06d0257428fd9d997ac8db7e1407bd0262ab016b085b36bc52957c0052d"
+dependencies = [
+ "cc",
+ "pkg-config",
+]
