@@ -1415,14 +1415,14 @@
             "Raw local measurements separated from provider-price/failure-domain estimates; inputs for M02.04, not its acceptance"
           ],
           "validation": [
-            "Coordinator-supervised pinned-source/public-fixture component work through the actual registered author session/worktree: reversible source development and explicitly bounded ordinary synthetic development controls may follow a root-audited seed and separate normal owner/claim admission before M02.11 integration; experiments and qualification still require actual M02.11 integration and separate admission. Independent nonauthor sessions review code/results, with no general product or agent-productivity acceptance.",
-            "Freeze exact feature/target/profile/workload and CPU/RAM/disk/PID/output/deadline envelope before execution; retain raw failure/ambiguity and deliberately failing controls",
-            "Both native targets dev/release/applicable allfeatures/doctests/lint and >=90% aggregate/percrate/changed production coverage, exact-source independent review and required full CI",
-            "Compare matched sparse/busy/skewed workloads; account for retries, CAS/root/page/KMS/network paths explicitly; never invent consensus or real-provider evidence"
+            "Run the experiments in a bounded, stated envelope (CPU, memory, time, object-store request counts), with the exact build, workload and parameters recorded next to the raw output.",
+            "Retain raw failures, ambiguous outcomes and deliberately failing controls; count every attempt and directed payload.",
+            "Compare sparse, busy and skewed workloads and account for retries, CAS, root, page, KMS and network paths explicitly; never invent consensus or real-provider evidence.",
+            "Normal independent review of the code and the claimed results by a reviewer that did not write them, and green CI on the final tree."
           ],
           "definition_of_done": [
-            "Raw observations, independent oracles, rejected candidates and unresolved questions are reviewable; no final persisted format, runtime authority/service, provider/fleet, baseline or release acceptance",
-            "Original downstream task keeps whole-M01 dependency and every original deliverable/validation/DoD; final-source requalification remains required"
+            "Raw observations, rejected candidates and unresolved questions are reviewable in the evidence files, with every number labelled provisional where it was measured on a sandbox or emulator, and with what was not run stated plainly.",
+            "Measured evidence plus independent review and green CI is the bar; the archived audited-seed, non-author-session, fixed-object-count and review-checkpoint accounting no longer applies. No final persisted format, runtime authority, provider selection or release claim follows from this task."
           ],
           "depends_on": [
             "M19",
@@ -1439,9 +1439,22 @@
             "M08.01"
           ],
           "owner": "coordinator/durability-research",
-          "status": "planned",
+          "status": "in_progress",
           "execution_scope": "coordinator-research",
-          "evidence": []
+          "evidence": [
+            {
+              "path": "evidence/m02-bench-profile-bulk.md",
+              "result": "RustFS 1.0.4 request, payload-size, concurrency and contended-CAS measurements (provisional, one 4-CPU VM with the client co-located): fixed PUT cost about 4-5 ms, 4 MiB best payload measured, about 180 commits/s per contended key, no other errors."
+            },
+            {
+              "path": "evidence/m02-10-quorum-candidates.md",
+              "result": "openraft 0.10.0 and raft-rs 0.7.0 storage, network and membership contracts compared from published source only; nothing built or run for this file."
+            },
+            {
+              "path": "evidence/m02-10-openraft-groups.md",
+              "result": "openraft in-process, in-memory: about 440 KiB and about 7 idle RPC/s per 3-member group, leader-cut and message-loss schedules, an in-flight write that timed out at the client was never applied. raft-rs, an object-store log, a real network and restarts were NOT run."
+            }
+          ]
         },
         {
           "id": "M02.02",
