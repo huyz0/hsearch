@@ -60,6 +60,7 @@ const SLOW_DOWN: Reply = Reply {
 struct Provider {
     addr: String,
     log: Arc<Mutex<Vec<(String, usize)>>>,
+    targets: Arc<Mutex<Vec<String>>>,
 }
 
 impl Provider {
@@ -67,16 +68,19 @@ impl Provider {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap().to_string();
         let log = Arc::new(Mutex::new(Vec::new()));
+        let targets = Arc::new(Mutex::new(Vec::new()));
+        let paths = Arc::clone(&targets);
         let (seen, queue) = (
             Arc::clone(&log),
             Arc::new(Mutex::new(VecDeque::from(script))),
         );
         std::thread::spawn(move || {
             for mut client in listener.incoming().flatten() {
-                let Some((method, size)) = read_request(&mut client) else {
+                let Some((method, size, target)) = read_request(&mut client) else {
                     continue;
                 };
                 seen.lock().unwrap().push((method, size));
+                paths.lock().unwrap().push(target);
                 let reply = queue.lock().unwrap().pop_front().unwrap_or(Reply {
                     status: 200,
                     headers: &[],
@@ -95,7 +99,7 @@ impl Provider {
                 let _ = client.write_all(text.as_bytes());
             }
         });
-        Self { addr, log }
+        Self { addr, log, targets }
     }
 
     fn store(&self) -> S3Store {
@@ -126,12 +130,17 @@ impl Provider {
             .collect()
     }
 
+    /// Request targets (path and query, lower-cased as the log reads them), in order.
+    fn requests(&self) -> Vec<String> {
+        self.targets.lock().unwrap().clone()
+    }
+
     fn wire_bytes(&self) -> usize {
         self.log.lock().unwrap().iter().map(|(_, n)| n).sum()
     }
 }
 
-fn read_request(client: &mut std::net::TcpStream) -> Option<(String, usize)> {
+fn read_request(client: &mut std::net::TcpStream) -> Option<(String, usize, String)> {
     let mut request = Vec::new();
     let mut chunk = [0u8; 8192];
     loop {
@@ -157,13 +166,13 @@ fn read_request(client: &mut std::net::TcpStream) -> Option<(String, usize)> {
             // A provider bills a GET with a `versions` query as a LIST, so the log classifies it so.
             let mut line = head.split(' ');
             let method = line.next()?.to_ascii_uppercase();
-            let target = line.next()?;
+            let target = line.next()?.to_owned();
             let method = if method == "GET" && target.contains("versions") {
                 "LIST".to_owned()
             } else {
                 method
             };
-            return Some((method, request.len()));
+            return Some((method, request.len(), target));
         }
     }
 }
@@ -717,4 +726,166 @@ fn a_hairpin_path_through_the_adapter_is_classified_and_priced_apart() {
         ..Rates::default()
     };
     assert!(traffic.price(&rates).complete());
+}
+
+const UPLOAD_STARTED: Reply = Reply {
+    status: 200,
+    headers: &[],
+    body: "<InitiateMultipartUploadResult><UploadId>u1</UploadId></InitiateMultipartUploadResult>",
+};
+const PART_STORED: Reply = Reply {
+    status: 200,
+    headers: &[("ETag", "\"p1\"")],
+    body: "",
+};
+const NO_CONTENT: Reply = Reply {
+    status: 204,
+    headers: &[],
+    body: "",
+};
+
+fn upload_key() -> ObjectKey {
+    ObjectKey::new(b"big").unwrap()
+}
+
+#[test]
+fn a_multipart_upload_attributes_each_request_and_matches_the_transport_log() {
+    let provider = Provider::start(vec![
+        UPLOAD_STARTED,
+        PART_STORED,
+        Reply {
+            status: 200,
+            headers: &[("x-amz-version-id", "v9")],
+            body: "<CompleteMultipartUploadResult><ETag>&quot;c-1&quot;</ETag></CompleteMultipartUploadResult>",
+        },
+    ]);
+    let store = provider.store();
+    let ctx = context();
+    let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
+    upload.put_part(&ctx, b"payload").unwrap();
+    let (version, length) = upload.complete(&ctx).unwrap();
+    assert_eq!((version.as_bytes(), length), (&b"v9\n\"c-1\""[..], 7));
+    let ledger = store.ledger();
+    assert_eq!(ledger.logical_calls(Role::Payload), 3);
+    assert_eq!(ledger.attempts_by_verb(Verb::Post), 2);
+    assert_eq!(ledger.attempts_by_verb(Verb::Put), 1);
+    assert!(reconcile(&ledger, &provider.verbs()).is_empty());
+}
+
+#[test]
+fn a_completion_that_answers_200_with_an_error_body_is_not_a_commit() {
+    let provider = Provider::start(vec![
+        UPLOAD_STARTED,
+        PART_STORED,
+        Reply {
+            status: 200,
+            headers: &[("x-amz-version-id", "v9")],
+            body: "<Error><Code>InternalError</Code></Error>",
+        },
+    ]);
+    let store = provider.store();
+    let ctx = context();
+    let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
+    upload.put_part(&ctx, b"payload").unwrap();
+    assert_eq!(upload.complete(&ctx), Err(Error::Unavailable));
+}
+
+#[test]
+fn a_completion_without_a_version_id_is_an_unknown_outcome_not_a_refusal() {
+    let provider = Provider::start(vec![
+        UPLOAD_STARTED,
+        PART_STORED,
+        Reply {
+            status: 200,
+            headers: &[],
+            body: "<CompleteMultipartUploadResult><ETag>&quot;c-1&quot;</ETag></CompleteMultipartUploadResult>",
+        },
+    ]);
+    let store = provider.store();
+    let ctx = context();
+    let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
+    upload.put_part(&ctx, b"payload").unwrap();
+    assert_eq!(upload.complete(&ctx), Err(Error::UnknownOutcome));
+}
+
+#[test]
+fn an_abort_is_a_delete_attempt_that_matches_the_transport_log() {
+    let provider = Provider::start(vec![UPLOAD_STARTED, NO_CONTENT]);
+    let store = provider.store();
+    let ctx = context();
+    let upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
+    upload.abort(&ctx).unwrap();
+    let ledger = store.ledger();
+    assert_eq!(ledger.attempts_by_verb(Verb::Delete), 1);
+    assert!(reconcile(&ledger, &provider.verbs()).is_empty());
+}
+
+#[test]
+fn a_throttled_part_is_not_repeated_by_the_retry_policy() {
+    let provider = Provider::start(vec![
+        UPLOAD_STARTED,
+        Reply {
+            status: 503,
+            headers: &[],
+            body: "",
+        },
+    ]);
+    let store = provider.store().with_retry(retrying(3));
+    let ctx = context();
+    let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
+    assert_eq!(upload.put_part(&ctx, b"payload"), Err(Error::Throttled));
+    assert_eq!(upload.parts(), 0);
+    assert_eq!(store.ledger().attempts_by_verb(Verb::Put), 1);
+}
+
+#[test]
+fn a_200_completion_error_body_is_classified_by_its_code() {
+    for (code, want) in [
+        ("PreconditionFailed", Error::Conflict),
+        ("InvalidPart", Error::InvalidInput),
+        ("NoSuchUpload", Error::NotFound),
+        ("InternalError", Error::Unavailable),
+    ] {
+        let body: &'static str =
+            Box::leak(format!("<Error xmlns=\"x\"><Code>{code}</Code></Error>").into_boxed_str());
+        let provider = Provider::start(vec![
+            UPLOAD_STARTED,
+            PART_STORED,
+            Reply {
+                status: 200,
+                headers: &[("x-amz-version-id", "v9")],
+                body,
+            },
+        ]);
+        let store = provider.store();
+        let ctx = context();
+        let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
+        upload.put_part(&ctx, b"payload").unwrap();
+        assert_eq!(upload.complete(&ctx), Err(want), "{code}");
+    }
+}
+
+#[test]
+fn an_upload_id_with_url_special_bytes_is_encoded_in_every_request() {
+    let provider = Provider::start(vec![
+        Reply {
+            status: 200,
+            headers: &[],
+            body: "<R><UploadId>ab+c/d==</UploadId></R>",
+        },
+        PART_STORED,
+        NO_CONTENT,
+    ]);
+    let store = provider.store();
+    let ctx = context();
+    let mut upload = store.begin_multipart(&ctx, &upload_key()).unwrap();
+    upload.put_part(&ctx, b"payload").unwrap();
+    upload.abort(&ctx).unwrap();
+    let seen = provider.requests();
+    assert!(
+        seen.iter()
+            .skip(1)
+            .all(|line| line.contains("uploadid=ab%2bc%2fd%3d%3d")),
+        "{seen:?}"
+    );
 }

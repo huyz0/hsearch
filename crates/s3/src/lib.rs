@@ -11,6 +11,7 @@
 //! - Bucket versioning: the version token is `<versionId>\n<ETag>`, so reads are
 //!   pinned to an exact immutable version and a stale version never reads newer
 //!   bytes. A response without a version id is [`Error::Unsupported`].
+//! - Create-only multipart upload ([`Multipart`]) for objects too large for one body.
 //! - Ranged `GetObject` and `HeadObject`; `ListObjectVersions` on the recovery
 //!   path only.
 //!
@@ -37,11 +38,13 @@
 //!   bounded by the context deadline, not interrupted.
 
 mod ledger;
+mod multipart;
 mod sigv4;
 mod traffic;
 mod xml;
 
 pub use ledger::{Cell, Ledger, Outcome, Role, Verb};
+pub use multipart::{MAX_PARTS, MIN_PART, Multipart};
 pub use traffic::{
     Class, Direction, Evidence, MAX_KEYS, MAX_NAME, MAX_TENANTS, MAX_TRANSFERS, Mismatch, Path,
     Payer, Place, Priced, Rate, Rates, Rejection, Totals, TrafficError, TrafficLedger, Transfer,
