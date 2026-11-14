@@ -53,8 +53,14 @@ fn main() {
             .collect();
         let t = Instant::now();
         let out = node
-            .bulk(body.as_bytes(), Some("orders"), Wait::Searchable)
-            .expect("bulk");
+            .bulk(
+                body.as_bytes(),
+                Some(body.len() as u64),
+                Some("orders"),
+                Wait::Searchable,
+            )
+            .expect("bulk")
+            .1;
         assert_eq!(out["errors"], json!(false));
         worst = worst.max(t.elapsed().as_secs_f64() * 1000.0);
     }
@@ -63,5 +69,11 @@ fn main() {
         "{docs} docs, batch {batch}: {secs:.2}s, {:.0} docs/s, slowest bulk {worst:.0} ms",
         docs as f64 / secs
     );
+    // Linux: peak resident memory of the process, store included.
+    if let Ok(text) = std::fs::read_to_string("/proc/self/status")
+        && let Some(line) = text.lines().find(|l| l.starts_with("VmHWM:"))
+    {
+        println!("peak RSS: {}", line.trim_start_matches("VmHWM:").trim());
+    }
     let _ = std::fs::remove_dir_all(dir);
 }

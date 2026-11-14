@@ -75,7 +75,7 @@ pub fn doc(id: usize) -> String {
 }
 
 /// Decode an HTTP/1.1 chunked body.
-fn unchunk(mut rest: &str) -> String {
+pub fn unchunk(mut rest: &str) -> String {
     let mut out = String::new();
     loop {
         let (size, after) = rest.split_once("\r\n").unwrap();

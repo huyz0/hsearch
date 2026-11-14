@@ -6,14 +6,16 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use hsearch_engine::{Outcome, StoredValue};
+use hsearch_format::{Digest, Layout};
 use hsearch_index::{Field, Index, Op, Wait};
 use hsearch_object::MetadataStore;
 use serde_json::{Map, Value, json};
 use typed_arena::Arena;
 
 use crate::ApiError;
-use crate::bulk::{self, Action};
-use crate::mapping::{Mapping, typed};
+use crate::bulk::{self, Action, Item};
+use crate::limits::{Limits, MemoryGate};
+use crate::mapping::{Mapping, typed_owned};
 use crate::search::{self, Source};
 
 /// Operations per call to the write path, below its slot bound.
@@ -21,14 +23,25 @@ const CHUNK: usize = 1000;
 
 struct Entry {
     index: Index,
-    mapping: Mapping,
+    /// One parsed copy per node, shared by every index with this mapping.
+    mapping: Arc<Mapping>,
 }
+
+/// The deployment name this single-process node keys shared objects under.
+const DEPLOYMENT: &str = "local";
+/// Parsed shared mappings kept per node. Beyond this a mapping is still
+/// served, parsed per index, so the cache cannot grow with the index count.
+const MAX_SHARED_MAPPINGS: usize = 4096;
 
 /// One node: a store, a scratch directory and the indexes opened so far.
 pub struct Node<S> {
     store: Arc<S>,
     data_dir: PathBuf,
     indexes: Mutex<HashMap<String, Slot>>,
+    limits: Limits,
+    gate: MemoryGate,
+    /// Shared mappings this node has stored or verified, by content hash.
+    shared: Mutex<HashMap<Digest, Arc<Mapping>>>,
 }
 
 /// One index's place in the node. The map lock is held only to find or add a
@@ -57,6 +70,7 @@ fn check_id(id: &str) -> Result<(), ApiError> {
 /// Index names follow the write path's rule, checked here for a clear error.
 pub(crate) fn valid_index(name: &str) -> Result<(), ApiError> {
     if name.is_empty()
+        || name == "v1"
         || name.len() > 64
         || !name
             .bytes()
@@ -65,7 +79,7 @@ pub(crate) fn valid_index(name: &str) -> Result<(), ApiError> {
         return Err(ApiError::new(
             400,
             "invalid_index_name_exception",
-            "index names are 1-64 of [a-z0-9_-]",
+            "index names are 1-64 of [a-z0-9_-]; v1 is reserved",
         ));
     }
     Ok(())
@@ -80,13 +94,36 @@ fn json_value(value: &StoredValue) -> Value {
 }
 
 impl<S: MetadataStore + 'static> Node<S> {
-    /// A node over `store`, keeping scratch engines under `data_dir`.
+    /// A node over `store`, keeping scratch engines under `data_dir`, with the
+    /// default request limits.
     pub fn new(store: Arc<S>, data_dir: PathBuf) -> Self {
-        Self {
+        Self::with_limits(store, data_dir, Limits::default()).expect("the default limits are valid")
+    }
+
+    /// A node with explicit request limits, refused if they cannot work.
+    pub fn with_limits(store: Arc<S>, data_dir: PathBuf, limits: Limits) -> Result<Self, String> {
+        limits.validate()?;
+        Ok(Self {
             store,
             data_dir,
             indexes: Mutex::new(HashMap::new()),
-        }
+            gate: MemoryGate::new(limits.memory_budget_bytes),
+            shared: Mutex::new(HashMap::new()),
+            limits,
+        })
+    }
+
+    /// How many distinct parsed mappings this node holds: one per distinct
+    /// mapping in use, however many indexes share it.
+    #[must_use]
+    pub fn shared_mapping_count(&self) -> usize {
+        self.shared.lock().unwrap_or_else(|p| p.into_inner()).len()
+    }
+
+    /// The request limits in force.
+    #[must_use]
+    pub fn limits(&self) -> &Limits {
+        &self.limits
     }
 
     fn scratch(&self, name: &str) -> PathBuf {
@@ -136,8 +173,70 @@ impl<S: MetadataStore + 'static> Node<S> {
         opened
     }
 
+    fn mapping_key(hash: &Digest) -> String {
+        Layout::new(DEPLOYMENT)
+            .expect("the deployment name is valid")
+            .mapping(hash)
+    }
+
+    fn cached(&self, hash: &Digest) -> Option<Arc<Mapping>> {
+        let shared = self.shared.lock().unwrap_or_else(|p| p.into_inner());
+        shared.get(hash).map(Arc::clone)
+    }
+
+    fn remember(&self, hash: Digest, mapping: &Arc<Mapping>) {
+        let mut shared = self.shared.lock().unwrap_or_else(|p| p.into_inner());
+        if shared.len() < MAX_SHARED_MAPPINGS {
+            shared.insert(hash, Arc::clone(mapping));
+        }
+    }
+
+    /// Store a mapping as one immutable object under its content hash and return
+    /// the node's shared copy with its hash. Identical mappings write the object
+    /// once; a node that has already stored or verified it writes nothing.
+    fn share(&self, mapping: Mapping) -> Result<(Arc<Mapping>, Digest), ApiError> {
+        let hash = mapping.hash();
+        if let Some(found) = self.cached(&hash) {
+            return Ok((found, hash));
+        }
+        hsearch_index::put_shared(
+            &*self.store,
+            &Self::mapping_key(&hash),
+            &mapping.to_object()?,
+        )?;
+        let mapping = Arc::new(mapping);
+        self.remember(hash, &mapping);
+        Ok((mapping, hash))
+    }
+
+    /// An index's mapping, resolved only through that index's own stored
+    /// reference. Mappings an earlier node wrote inline are read as they are.
+    fn load_mapping(&self, name: &str) -> Result<Arc<Mapping>, ApiError> {
+        let stored = hsearch_index::get_mapping(&*self.store, name)?;
+        if Mapping::is_inline(&stored) {
+            return Ok(Arc::new(Mapping::decode(&stored)?));
+        }
+        let corrupt = |reason| ApiError::new(500, "corrupt_exception", reason);
+        let hash = Mapping::parse_reference(&stored)
+            .ok_or_else(|| corrupt("stored mapping reference is unreadable"))?;
+        if let Some(found) = self.cached(&hash) {
+            return Ok(found);
+        }
+        let object = hsearch_index::get_shared(&*self.store, &Self::mapping_key(&hash)).map_err(
+            |error| match error {
+                hsearch_index::Error::NotFound => {
+                    corrupt("the shared mapping an index names is missing")
+                }
+                other => ApiError::from(other),
+            },
+        )?;
+        let mapping = Arc::new(Mapping::from_object(&object, &hash)?);
+        self.remember(hash, &mapping);
+        Ok(mapping)
+    }
+
     fn open(&self, name: &str) -> Result<Arc<Entry>, ApiError> {
-        let mapping = Mapping::decode(&hsearch_index::get_mapping(&*self.store, name)?)?;
+        let mapping = self.load_mapping(name)?;
         let index = Index::open(
             Arc::clone(&self.store),
             name,
@@ -177,7 +276,8 @@ impl<S: MetadataStore + 'static> Node<S> {
                 Err(error) => Err(error),
             };
             index.map_err(ApiError::from).and_then(|index| {
-                hsearch_index::put_mapping(&*self.store, name, &mapping.encode())?;
+                let (mapping, hash) = self.share(mapping.clone())?;
+                hsearch_index::put_mapping(&*self.store, name, &Mapping::reference(&hash))?;
                 *guard = Some(Arc::new(Entry { index, mapping }));
                 Ok(())
             })
@@ -214,38 +314,100 @@ impl<S: MetadataStore + 'static> Node<S> {
         }
     }
 
-    /// `POST /_bulk` and `POST /{index}/_bulk`.
+    /// `POST /_bulk` and `POST /{index}/_bulk`, streamed: the body is read one
+    /// item at a time and written in batches bounded by the buffer, so memory
+    /// does not grow with the body. `body_bytes` is the declared length, if any.
+    ///
+    /// A broken stream or a limit crossed mid-body refuses the request. Batches
+    /// already written stay written, and the error body carries their per-item
+    /// results in `items`; a body that fails inside its first batch commits nothing.
     pub fn bulk(
         &self,
         body: impl std::io::Read,
+        body_bytes: Option<u64>,
         default_index: Option<&str>,
         wait: Wait,
-    ) -> Result<Value, ApiError> {
+    ) -> Result<(u16, Value), ApiError> {
         let started = Instant::now();
-        let items = bulk::parse(body, default_index)?;
-        let mut responses: Vec<Option<Value>> = vec![None; items.len()];
+        let _permit = self
+            .gate
+            .reserve(self.limits.request_cost(body_bytes.unwrap_or(u64::MAX)))?;
+        let mut stream = bulk::Stream::new(body, self.limits);
+        let flush_bytes = self.limits.buffer_bytes / 2;
+        let mut batch: Vec<Item> = Vec::new();
+        let mut pending = 0;
+        let mut responses: Vec<Value> = Vec::new();
         let mut errors = false;
+        loop {
+            match stream.next(default_index) {
+                Ok(Some(item)) => {
+                    pending += item.bytes;
+                    batch.push(item);
+                }
+                Ok(None) => break,
+                Err(mut error) => {
+                    if responses.is_empty() {
+                        return Err(error);
+                    }
+                    // Earlier batches are written: say which items they were, so
+                    // the client knows what succeeded and what to resend.
+                    error.reason = format!(
+                        "{}; {} earlier items were already applied",
+                        error.reason,
+                        responses.len()
+                    );
+                    return Ok((
+                        error.status,
+                        json!({"error": error.object(), "status": error.status,
+                               "took": started.elapsed().as_millis() as u64,
+                               "errors": true, "items": responses}),
+                    ));
+                }
+            }
+            if batch.len() >= CHUNK || pending >= flush_bytes {
+                errors |= self.run_batch(&mut batch, wait, &mut responses);
+                pending = 0;
+            }
+        }
+        errors |= self.run_batch(&mut batch, wait, &mut responses);
+        if responses.is_empty() {
+            return Err(ApiError::bad("the bulk body has no actions"));
+        }
+        Ok((
+            200,
+            json!({
+                "took": started.elapsed().as_millis() as u64,
+                "errors": errors,
+                "items": responses,
+            }),
+        ))
+    }
+
+    /// Write one batch, appending a response per item in order and emptying the
+    /// batch. Returns whether any item failed.
+    fn run_batch(&self, items: &mut Vec<Item>, wait: Wait, out: &mut Vec<Value>) -> bool {
+        let mut errors = false;
+        let mut responses: Vec<Option<Value>> = vec![None; items.len()];
         let mut i = 0;
         while i < items.len() {
             // A run of consecutive valid items for one index is one write.
-            let name = &items[i].index;
-            let entry = valid_index(name).and_then(|()| self.entry(name));
+            let name = items[i].index.clone();
+            let entry = valid_index(&name).and_then(|()| self.entry(&name));
             let mut ops: Vec<Op> = Vec::new();
             let mut slots: Vec<usize> = Vec::new();
             let mut j = i;
-            while j < items.len() && items[j].index == *name && ops.len() < CHUNK {
-                let item = &items[j];
-                let verdict = match (&entry, &item.work) {
-                    (Err(e), _) | (_, Err(e)) => Err(e.clone()),
+            while j < items.len() && items[j].index == name && ops.len() < CHUNK {
+                let item = &mut items[j];
+                let work = std::mem::replace(&mut item.work, Ok((Action::Delete, None)));
+                let verdict = match (&entry, work) {
+                    (Err(e), _) => Err(e.clone()),
+                    (_, Err(e)) => Err(e),
                     (Ok(_), Ok(_)) if check_id(&item.id).is_err() => {
                         Err(check_id(&item.id).unwrap_err())
                     }
-                    (Ok(entry), Ok((Action::Delete, _))) => {
-                        let _ = entry;
-                        Ok(Op::Delete {
-                            id: item.id.clone(),
-                        })
-                    }
+                    (Ok(_), Ok((Action::Delete, _))) => Ok(Op::Delete {
+                        id: item.id.clone(),
+                    }),
                     (Ok(entry), Ok((Action::Index, Some(source)))) => {
                         document(&entry.mapping, &item.id, source)
                     }
@@ -258,29 +420,27 @@ impl<S: MetadataStore + 'static> Node<S> {
                     }
                     Err(error) => {
                         errors = true;
-                        responses[j] = Some(item_error(&item.action, name, &item.id, &error));
+                        responses[j] = Some(item_error(&item.action, &name, &item.id, &error));
                     }
                 }
                 j += 1;
             }
             if let (Ok(entry), false) = (&entry, ops.is_empty()) {
-                for (slot, result) in slots.iter().zip(self.write(name, entry, &ops, wait)) {
+                for (slot, result) in slots.iter().zip(self.write(&name, entry, &ops, wait)) {
                     errors |= result.is_err();
                     responses[*slot] = Some(match result {
-                        Ok(result) => item_result(&items[*slot].action, name, &result),
+                        Ok(result) => item_result(&items[*slot].action, &name, &result),
                         Err(error) => {
-                            item_error(&items[*slot].action, name, &items[*slot].id, &error)
+                            item_error(&items[*slot].action, &name, &items[*slot].id, &error)
                         }
                     });
                 }
             }
             i = j;
         }
-        Ok(json!({
-            "took": started.elapsed().as_millis() as u64,
-            "errors": errors,
-            "items": responses.into_iter().flatten().collect::<Vec<_>>(),
-        }))
+        items.clear();
+        out.extend(responses.into_iter().flatten());
+        errors
     }
 
     /// `GET /{index}/_doc/{id}`, from the latest searchable view.
@@ -353,15 +513,16 @@ impl<S: MetadataStore + 'static> Node<S> {
     }
 }
 
-/// Build the write path's operation from a source object, in schema order.
-fn document(mapping: &Mapping, id: &str, source: &Value) -> Result<Op, ApiError> {
-    let object = source.as_object().ok_or_else(|| {
-        ApiError::new(
+/// Build the write path's operation from a source object, in schema order. The
+/// source is consumed: its strings move into the operation instead of being copied.
+fn document(mapping: &Mapping, id: &str, source: Value) -> Result<Op, ApiError> {
+    let Value::Object(mut object) = source else {
+        return Err(ApiError::new(
             400,
             "mapper_parsing_exception",
             "the source must be a JSON object",
-        )
-    })?;
+        ));
+    };
     if let Some(extra) = object.keys().find(|k| mapping.kind(k).is_none()) {
         return Err(ApiError::new(
             400,
@@ -371,14 +532,14 @@ fn document(mapping: &Mapping, id: &str, source: &Value) -> Result<Op, ApiError>
     }
     let mut fields = Vec::with_capacity(mapping.fields.len());
     for (name, kind) in &mapping.fields {
-        let value = object.get(name).ok_or_else(|| {
+        let value = object.remove(name).ok_or_else(|| {
             ApiError::new(
                 400,
                 "mapper_parsing_exception",
                 format!("field [{name}] is required: every mapped field must be present"),
             )
         })?;
-        fields.push(typed(*kind, value).map_err(|why| {
+        fields.push(typed_owned(*kind, value).map_err(|why| {
             ApiError::new(
                 400,
                 "mapper_parsing_exception",
@@ -406,4 +567,56 @@ fn item_result(action: &str, index: &str, result: &hsearch_index::ItemResult) ->
     };
     json!({action: {"_index": index, "_id": result.id, "_version": result.version,
                     "result": text, "status": status}})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hsearch_object::memory::{MemoryLimits, MemoryStore};
+
+    fn store() -> Arc<MemoryStore> {
+        Arc::new(
+            MemoryStore::new(MemoryLimits {
+                objects: 4096,
+                versions: 16384,
+                version_bytes: 64 << 20,
+                identities: 16384,
+                identity_bytes: 64 << 20,
+            })
+            .unwrap(),
+        )
+    }
+
+    fn dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("hsearch-node-unit-{label}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn indexes_with_one_mapping_hold_one_parsed_copy_across_a_restart() {
+        let (store, one, two) = (store(), dir("copy1"), dir("copy2"));
+        let body = json!({"mappings": {"properties": {"a": {"type": "keyword"}}}});
+        let other = json!({"mappings": {"properties": {"b": {"type": "keyword"}}}});
+        let node = Node::new(Arc::clone(&store), one.clone());
+        for name in ["a", "b", "c"] {
+            node.create(name, &body).unwrap();
+        }
+        node.create("d", &other).unwrap();
+        let held = |node: &Node<MemoryStore>| {
+            ["a", "b", "c", "d"].map(|n| node.entry(n).unwrap().mapping.clone())
+        };
+        let before = held(&node);
+        assert!(Arc::ptr_eq(&before[0], &before[1]) && Arc::ptr_eq(&before[1], &before[2]));
+        assert!(!Arc::ptr_eq(&before[0], &before[3]));
+        assert_eq!(
+            node.shared_mapping_count(),
+            2,
+            "one parsed copy per distinct mapping"
+        );
+        // After a restart the indexes open from their references and share again.
+        let restarted = Node::new(store, two.clone());
+        let after = held(&restarted);
+        assert!(Arc::ptr_eq(&after[0], &after[1]) && Arc::ptr_eq(&after[1], &after[2]));
+        assert_eq!(restarted.shared_mapping_count(), 2);
+        let _ = (std::fs::remove_dir_all(one), std::fs::remove_dir_all(two));
+    }
 }

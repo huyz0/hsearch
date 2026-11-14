@@ -80,7 +80,7 @@ Root: `generation u64 | index[16] | engine_format str | mapping sha256[32] | cov
 
 ## Mapping (kind 6) — PR-43
 
-`sha256[32] | canonical bytes` at `v1/<d>/mappings/<hex sha256>`. The hash is over the canonical bytes only. Decode recomputes and refuses a mismatch; `decode_expecting` also requires the hash a referrer (a root's `mapping`, or the key) named. Identical canonical mappings share one object. **Not delivered here: canonicalisation** (key order, defaults) belongs to the mapping owner; this crate addresses the bytes it is given, so PR-43's "two key orders, one hash" test belongs to that owner. The key name reveals mapping equality to anyone who can list the bucket, which PR-43 accepts; principals reach a mapping only through their own index's descriptor, and the per-principal authorization test PR-43 asks for is M05's.
+`sha256[32] | canonical bytes` at `v1/<d>/mappings/<hex sha256>`. The hash is over the canonical bytes only. Decode recomputes and refuses a mismatch; `decode_expecting` also requires the hash a referrer (a root's `mapping`, or the key) named. Identical canonical mappings share one object. **Not delivered here: canonicalisation** (key order, defaults) belongs to the mapping owner; this crate addresses the bytes it is given, so PR-43's "two key orders, one hash" test belongs to that owner. The node's `Mapping::encode` is that owner's canonical form today (M21.02, [evidence](evidence/m21-02-shared-mappings.md)). The key name reveals mapping equality to anyone who can list the bucket, which PR-43 accepts; principals reach a mapping only through their own index's descriptor, and the per-principal authorization test PR-43 asks for is M05's.
 
 ## Pin (kind 7) and cursor (kind 8)
 

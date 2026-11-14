@@ -654,6 +654,7 @@ name = "hsearch-node"
 version = "0.1.0"
 dependencies = [
  "hsearch-engine",
+ "hsearch-format",
  "hsearch-index",
  "hsearch-object",
  "hsearch-s3",

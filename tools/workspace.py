@@ -25,7 +25,7 @@ LAYERS = {
     "hsearch-s3": {"hsearch-object"},
     "hsearch-index": {"hsearch-object", "hsearch-engine"},
     "hsearch-format": set(),
-    "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3"},
+    "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3", "hsearch-format"},
     "hsearch-module-abi": set(),
     "hsearch-module-native": {"hsearch-module-abi"},
     "hsearch-module-wasm": {"hsearch-module-abi"},
