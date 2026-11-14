@@ -1560,8 +1560,13 @@
             "M02.04"
           ],
           "owner": "cost/architecture/operations",
-          "status": "planned",
-          "evidence": []
+          "status": "in_progress",
+          "evidence": [
+            {
+              "path": "evidence/m02-07-cost-calibration.md",
+              "result": "Versioned provenance-checked rate-card schema and four-profile, four-workload priced envelope model (cost_calibration.py with tests): batching wait is the main cost dial (busy 1 s about a quarter of 250 ms), KMS wraps are about 37% of object-profile request cost, three-zone journal pays about 9.8 MiB/s cross-AZ on busy load, recovery replay-tail bytes set the RTO more than request price, Poisson/window model within 1.5% of simulation, idle prices to zero. Provisional, illustrative rate card; KMS (M05.08) and journal latency not measured. Awaiting independent review and CI."
+            }
+          ]
         },
         {
           "id": "M02.05",

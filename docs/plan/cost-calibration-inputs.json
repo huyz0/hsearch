@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "currency": "USD",
+  "notice": "Operator-replaceable inputs. The rate card is the 2026-11-01 illustrative AWS example set from research/cost-economics.md, NOT a regional quote; the measured block is provisional sandbox data from evidence/m02-bench-profile-bulk.md. Prices are data: replace entries, keep source/as_of/unit.",
+  "rate_card": {
+    "provider": "aws-example",
+    "region": "us-east-2-example",
+    "as_of": "2026-11-01",
+    "status": "illustrative_inputs_not_a_deployable_price_card",
+    "period_seconds": 2592000,
+    "requests": {
+      "put":  {"usd_per_1000": "0.005",  "unit": "request", "source": "https://aws.amazon.com/s3/pricing/", "as_of": "2026-11-01"},
+      "get":  {"usd_per_1000": "0.0004", "unit": "request", "source": "https://aws.amazon.com/s3/pricing/", "as_of": "2026-11-01"},
+      "head": {"usd_per_1000": "0.0004", "unit": "request", "source": "https://aws.amazon.com/s3/pricing/", "as_of": "2026-11-01"},
+      "list": {"usd_per_1000": "0.005",  "unit": "request", "source": "https://aws.amazon.com/s3/pricing/", "as_of": "2026-11-01"},
+      "kms":  {"usd_per_1000": "0.003",  "unit": "request", "source": "https://aws.amazon.com/kms/pricing/", "as_of": "2026-11-01"}
+    },
+    "traffic": {
+      "cross_az": {"sender_usd_per_billing_gb": "0.01", "receiver_usd_per_billing_gb": "0.01", "billing_gb_bytes": 1073741824, "unit": "billing GB, 2^30 bytes, one directed payload", "source": "https://aws.amazon.com/blogs/networking-and-content-delivery/optimizing-data-transfer-costs-when-using-aws-network-load-balancer/", "as_of": "2026-11-01"}
+    }
+  },
+  "measured": {
+    "label": "provisional: RustFS 1.0.4 in Docker on a 4-CPU sandbox VM shared with the client; relative only",
+    "evidence": "evidence/m02-bench-profile-bulk.md",
+    "small_put_saturation_per_s": 710,
+    "put_p50_ms": {"64KiB": 12, "1MiB": 22, "4MiB": 46},
+    "large_payload_mib_s_lower_bound": 120,
+    "uncontended_put_per_commit": 1.0,
+    "hot_key_per_commit": {"put": 1.29, "head": 1.38, "list": 0.29}
+  },
+  "workloads": {
+    "sparse": {"source": "cost_research.trace", "streams": 10000, "records_per_s": 100, "record_bytes": 1024, "seconds": 30},
+    "busy": {"source": "cost_research.trace", "streams": 1000, "records_per_s": 5000, "record_bytes": 1024, "seconds": 30},
+    "skewed": {"source": "cost_research.trace", "streams": 1000, "records_per_s": 5000, "record_bytes": 1024, "seconds": 30, "hot_share": 0.8, "hot_tenants": 1},
+    "recovery": {"active_domains": 1000, "tail_batches_per_domain": 64, "checkpoint_gets_per_domain": 2, "cold_list_per_domain": 1, "batch_bytes": 4194304, "note": "one cell loss; bounded cold-recovery LIST is the charged fallback"}
+  },
+  "profiles": {
+    "object-economy":   {"max_wait_s": 1.0,  "commit": "fenced-append-regional", "cross_az_copies": 0, "archive_wait_s": null},
+    "object-resilient": {"max_wait_s": 0.25, "commit": "fenced-append-regional", "cross_az_copies": 0, "archive_wait_s": null},
+    "latency-ha":       {"max_wait_s": 0.25, "commit": "quorum-journal-3-zones", "cross_az_copies": 2, "archive_wait_s": 5.0},
+    "latency-zonal":    {"max_wait_s": 0.25, "commit": "quorum-journal-1-zone",  "cross_az_copies": 0, "archive_wait_s": 5.0}
+  },
+  "seeds": [7, 19, 43]
+}
