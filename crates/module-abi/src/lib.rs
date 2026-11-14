@@ -9,10 +9,14 @@
 
 mod descriptor;
 mod error;
+mod log;
+mod request;
 mod version;
 
 pub use descriptor::{Descriptor, DescriptorError, ExtensionPoint, Kind};
 pub use error::{CallError, FailureKind, MAX_ERROR_DETAIL_BYTES};
+pub use log::{LogRecord, LogSink};
+pub use request::Request;
 pub use version::{ENGINE_API_VERSION, Version, abi_accepted, pack_abi};
 
 /// ABI major in this header's `HS_ABI_VERSION_MAJOR`.
