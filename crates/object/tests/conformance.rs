@@ -401,6 +401,19 @@ impl MetadataStore for Unconditional {
 }
 
 #[test]
+fn stale_updates_are_refused_whatever_the_bytes() {
+    assert_eq!(support::stale_update_history(&backend()), Ok(()));
+}
+
+#[test]
+fn the_stale_update_predicate_refuses_a_backend_that_does_not_fence() {
+    assert_eq!(
+        support::stale_update_history(&Unconditional(backend())),
+        Err("stale update accepted after the object advanced")
+    );
+}
+
+#[test]
 fn same_conformance_predicate_refuses_unconditional_overwrite() {
     assert_eq!(
         support::conditional_history(&Unconditional(backend())),

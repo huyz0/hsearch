@@ -37,7 +37,7 @@ UNSAFE_CRATES = {"hsearch-module-native"}
 EXTERNAL = {name: set() for name in LAYERS}
 EXTERNAL["hsearch-engine"] = {"lucene-aggs", "lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store"}
 # Signing and a blocking HTTP client, exact-pinned in crates/s3/Cargo.toml. No TLS stack yet.
-EXTERNAL["hsearch-s3"] = {"hmac", "sha2", "ureq"}
+EXTERNAL["hsearch-s3"] = {"hmac", "md-5", "sha2", "ureq"}
 # Content hashes of mapping objects and manifest page digests (SHA-256), exact-pinned in crates/format/Cargo.toml.
 EXTERNAL["hsearch-format"] = {"sha2"}
 # JSON bodies, a blocking HTTP/1.1 server (plain HTTP, no TLS) and a safe arena for query lowering, exact-pinned in crates/node/Cargo.toml.

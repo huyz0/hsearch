@@ -54,6 +54,46 @@ fn public_contract_history() {
 }
 
 #[test]
+fn stale_updates_are_refused_whatever_the_bytes() {
+    let Some(store) = store() else { return };
+    assert_eq!(support::stale_update_history(&store), Ok(()));
+}
+
+/// A, B, A: the object is back to the first version's bytes, so the first version's ETag is
+/// current again and `If-Match` accepts a writer holding the very first token. The adapter
+/// cannot see this; only a unique token inside the payload fences it (M06). Pinned as the
+/// observed RustFS 1.0.4 behaviour so a provider that starts fencing it is noticed.
+#[test]
+fn aba_is_not_fenced_without_a_token_in_the_payload() {
+    let Some(store) = store() else { return };
+    let ctx = context();
+    let a1 = run(store.create(
+        &ctx,
+        &mutation(b"a1", b"aba", b"AAAA", Precondition::Absent),
+    ))
+    .unwrap()
+    .object
+    .version;
+    let b = run(store.compare_exchange(
+        &ctx,
+        &mutation(b"b", b"aba", b"BBBB", Precondition::Matches(a1.clone())),
+    ))
+    .unwrap()
+    .object
+    .version;
+    run(store.compare_exchange(
+        &ctx,
+        &mutation(b"a2", b"aba", b"AAAA", Precondition::Matches(b)),
+    ))
+    .unwrap();
+    let stale = mutation(b"c", b"aba", b"CCCC", Precondition::Matches(a1));
+    assert!(
+        run(store.compare_exchange(&ctx, &stale)).is_ok(),
+        "RustFS now fences ABA by version id: the commit rule may relax"
+    );
+}
+
+#[test]
 fn simultaneous_cas_has_one_winner() {
     let Some(store) = store() else { return };
     let store = Arc::new(store);
