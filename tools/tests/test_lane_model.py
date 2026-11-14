@@ -65,6 +65,35 @@ class LaneModelTests(unittest.TestCase):
         self.assertIn("revoke_key_a", broken["counterexample"])
         self.assertEqual(broken["record"], "b")  # the lane-mate is the casualty
 
+    def test_hottest_share_ignores_cold_lanes_with_a_lucky_double_hit(self):
+        cold = {("grp", 0): lm.Counter({1: 2, 2: 1, 3: 1, 4: 1, 5: 15})}   # 20 records, 75% on one index
+        self.assertEqual(lm.hottest_share(cold, 1000), 0.0)
+        busy = {("grp", 1): lm.Counter({1: 1500, 2: 500})}
+        self.assertAlmostEqual(lm.hottest_share(busy, 1000), 0.75)
+        own = {("idx", 7): lm.Counter({7: 5000})}                           # a lane per index is not a share
+        self.assertEqual(lm.hottest_share(own, 1000), 0.0)
+
+    def test_promotion_needs_both_a_share_and_a_volume_floor(self):
+        sparse = {("grp", 0): lm.Counter({9: 3})}                          # 100% share of 3 records
+        self.assertEqual(lm.promotion_candidates(sparse, CFG), [])
+        hot = {("grp", 0): lm.Counter({9: 900, 1: 100, 2: 100})}           # 82% of 1,100
+        self.assertEqual(lm.promotion_candidates(hot, CFG), [(("grp", 0), 9)])
+        even = {("grp", 0): lm.Counter({i: 10 for i in range(200)})}       # busy, nobody above a quarter
+        self.assertEqual(lm.promotion_candidates(even, CFG), [])
+
+    def test_skewed_load_does_not_promote_but_one_hot_index_does(self):
+        rows = {(r["workload"], r["option"]): r for r in lm.compare(DATA)["rows"]}
+        self.assertEqual(rows[("steady_small", B)]["promoted_indexes"], 0)
+        self.assertLess(rows[("steady_small", B)]["max_index_share_of_busy_lane"], 0.01)
+        self.assertGreaterEqual(rows[("one_hot_index", B)]["promoted_indexes"], 1)
+        self.assertGreater(rows[("one_hot_index", B)]["max_index_share_of_busy_lane"], 0.9)
+
+    def test_recovery_that_fails_the_lane_on_a_revoked_block_breaks_lane_mates(self):
+        failing = lm.revocation_search("per_index_dek", recovery="fail")
+        self.assertFalse(failing["safe"])
+        self.assertIn("recovery failed", failing["why"])
+        self.assertTrue(lm.revocation_search("per_index_dek", recovery="skip")["safe"])
+
 
 if __name__ == "__main__":
     unittest.main()

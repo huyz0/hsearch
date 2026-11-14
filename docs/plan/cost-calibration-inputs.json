@@ -174,8 +174,19 @@
         "seconds": 30,
         "hot_fraction_of_indexes": 1.0,
         "hot_share": 0.0
+      },
+      "one_hot_index": {
+        "records_per_s": 2000,
+        "record_bytes": 1024,
+        "seconds": 30,
+        "hot_fraction_of_indexes": 1e-06,
+        "hot_share": 0.5,
+        "hot_offset": 1
       }
     },
-    "profile": "object-resilient"
+    "profile": "object-resilient",
+    "min_records_for_share": 1000,
+    "promote_share": 0.25,
+    "promote_floor_records": 1000
   }
 }

@@ -37,7 +37,10 @@ def trace(spec, indexes_active, seed):
         if t >= spec["seconds"]:
             return events
         pool = hot if rng.random() < spec["hot_share"] else indexes_active
-        events.append((t, rng.randrange(pool), spec["record_bytes"]))
+        index = rng.randrange(pool)
+        if pool == hot:
+            index += spec.get("hot_offset", 0)  # a hot index that is not the BYOK-flagged index 0
+        events.append((t, index, spec["record_bytes"]))
 
 
 def lane_of(option, index, cfg):
@@ -67,10 +70,37 @@ def run_option(option, events, cfg, wait, seconds, ckpt):
     if option == OPTIONS[2]:
         byok_records = sum(1 for _, i, _ in events if is_byok(i, cfg["byok_fraction"]))
         wraps += byok_records / seconds  # upper bound: every BYOK record carries its own wrap
-    worst = max((max(c.values()) / sum(c.values()) for c in shares.values() if sum(c.values()) >= 20), default=0.0)
+    worst = hottest_share(shares, cfg.get("min_records_for_share", 1000))
     return {"batches_per_s": batches_s, "put_per_s": puts, "kms_per_s": wraps,
             "lanes_active": len(domain_ids), "writes_per_s": len(events) / seconds,
-            "max_index_share_of_busy_lane": worst}
+            "max_index_share_of_busy_lane": worst,
+            "promoted_indexes": len(promotion_candidates(shares, cfg))}
+
+
+def hottest_share(shares, min_records):
+    """Largest single-index share of any lane that saw at least `min_records` records.
+
+    A lane with a handful of records says nothing (two hits on one index of twenty reads as 10%),
+    so only lanes with enough volume count.
+    """
+    return max((max(c.values()) / sum(c.values()) for lane, c in shares.items()
+                if lane[0] == "grp" and sum(c.values()) >= min_records), default=0.0)
+
+
+def promotion_candidates(shares, cfg):
+    """Indexes the promotion rule would move to their own lane over this window.
+
+    The rule is a share AND a floor: one index above `promote_share` of its lane's records, in a lane
+    with at least `promote_floor_records` records in the window. Without the floor a lane in which a
+    single index wrote once would show a 100% share and be promoted for nothing.
+    """
+    out = []
+    for lane, c in shares.items():
+        total = sum(c.values())
+        if total < cfg["promote_floor_records"] or lane[0] == "idx":
+            continue
+        out.extend((lane, i) for i, n in c.items() if n / total > cfg["promote_share"])
+    return out
 
 
 def lanes_total(option, cfg):
@@ -125,13 +155,14 @@ def compare(data):
                          "retained_objects_total": lanes * cfg["retained_objects_per_lane"],
                          "blast_radius_indexes": blast_radius(option, cfg),
                          "max_index_share_of_busy_lane": round(r["max_index_share_of_busy_lane"], 3),
+                         "promoted_indexes": r["promoted_indexes"],
                          "usd_per_30_days": str(total.quantize(Decimal("0.01")))})
     return {"rows": rows, "idle_requests_per_s": 0,
             "idle_note": "dirty-only batching and no per-index timers: a 90% idle index issues no request in any option (checked by the empty-trace test); idle objects retained per lane are listed, and they are what option A multiplies"}
 
 
 # ---- key revocation model -------------------------------------------------------------------
-def revocation_search(sharing, length=5):
+def revocation_search(sharing, length=5, recovery="skip"):
     """Exhaustively explore histories on one lane shared by indexes a and b.
 
     `sharing` is how the lane's payload is protected, as the key whose revocation makes a record
@@ -140,8 +171,14 @@ def revocation_search(sharing, length=5):
       lane_dek_default: both indexes use the one default key, so neither has a key of its own to
                         revoke separately; revoking the default key is deployment-wide by definition.
       lane_dek_a_byok:  BROKEN CONTROL: one lane DEK wrapped by a's BYOK key while b shares the lane.
-    Invariant checked after every history ending in recovery: a record is readable exactly when its
-    own key is not revoked (a revoked key never exposes data, and never takes a lane-mate's down).
+    `recovery` is what lane recovery does on a block whose key is revoked: "skip" it, or "fail" the
+    whole lane. Invariant checked after every history ending in recovery: the lane recovers, and a
+    record is readable exactly when its own key is not revoked.
+
+    Limits: this is a stand-in for the M03.04 authority model, not a proof of the cryptography. For the
+    per-index and default-key sharings `protect` equals `own` by construction, so those two cases check
+    the recovery policy and the rule that no revocable key wraps a shared lane; they do not check AAD
+    or replay across indexes, key rotation, or a revoked-then-reinstated key (M03.04 and M05).
     """
     own = {"per_index_dek": {"a": "key_a", "b": "key_b"},
            "lane_dek_default": {"a": "default", "b": "default"},
@@ -164,6 +201,9 @@ def revocation_search(sharing, length=5):
             elif op.startswith("revoke_"):
                 revoked.add(op[len("revoke_"):])
         checked += 1
+        if recovery == "fail" and any(protect[r] in revoked for r in acked):
+            return {"safe": False, "histories": checked, "counterexample": list(history), "record": None,
+                    "why": "recovery failed the whole lane on a block whose key is revoked"}
         for rec in acked:
             readable = protect[rec] not in revoked
             should = own[rec] not in revoked
@@ -183,10 +223,28 @@ def report(result):
     return "\n".join(lines)
 
 
+def sensitivity_report(rows):
+    lines = ["| BYOK share | B | C | lanes at 10M, B | lanes at 10M, C |", "|---|---|---|---|---|"]
+    for r in rows:
+        lines.append(f"| {int(r['byok_fraction'] * 100)}% | {r['B']} | {r['C']} | {r['B_lanes_at_scale']:,} | {r['C_lanes_at_scale']:,} |")
+    return "\n".join(lines)
+
+
+def revocation_report(rev):
+    lines = []
+    for name, r in rev.items():
+        if r["safe"]:
+            lines.append(f"- `{name}`: safe over {r['histories']} histories.")
+        else:
+            lines.append(f"- `{name}`: unsafe, first counterexample after {r['histories']} histories: {r['counterexample']} ({r['why']}).")
+    return "\n".join(lines)
+
+
 def selftest():
     assert revocation_search("per_index_dek")["safe"]
     assert revocation_search("lane_dek_default")["safe"]
     assert not revocation_search("lane_dek_a_byok")["safe"]
+    assert not revocation_search("per_index_dek", recovery="fail")["safe"]
     print("PASS: revocation model (two safe sharing rules, one deliberately broken control)")
 
 
@@ -195,6 +253,7 @@ def main():
     parser.add_argument("--input", type=Path, default=cc.DEFAULT)
     parser.add_argument("--selftest", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--markdown", action="store_true", help="all three generated sections, as the evidence file embeds them")
     args = parser.parse_args()
     if args.selftest:
         selftest()
@@ -203,7 +262,12 @@ def main():
     result = compare(data)
     result["byok_sensitivity"] = byok_sensitivity(data)
     result["revocation"] = {s: revocation_search(s) for s in ("per_index_dek", "lane_dek_default", "lane_dek_a_byok")}
-    print(json.dumps(result, indent=2) if args.json else report(result))
+    result["revocation"]["per_index_dek_recovery_fails_lane"] = revocation_search("per_index_dek", recovery="fail")
+    if args.markdown:
+        print(report(result), "\n\nBYOK sensitivity (requests per write, steady_small):\n\n", sensitivity_report(result["byok_sensitivity"]),
+              "\n\nRevocation search (histories of 5 operations ending in recovery):\n\n", revocation_report(result["revocation"]), sep="")
+    else:
+        print(json.dumps(result, indent=2) if args.json else report(result))
 
 
 if __name__ == "__main__":
