@@ -25,7 +25,7 @@ Run commands yourself and report what they printed. Never claim a test passed, a
 ## Rules
 
 - Only `hsearch-engine` imports Lucene crates. `hsearch-types` is independent of adapters; `hsearch-observe` depends only on types. Testkit is a dev dependency only. (`tools/workspace.py check`)
-- Exact pins for dependencies, toolchain and images. No upstream test features in production. `unsafe` is forbidden.
+- Exact pins for dependencies, toolchain and images. No upstream test features in production. `unsafe` is forbidden in every crate except `hsearch-module-native` (D18: dynamic library loading, one `mod sys` with a written safety proof; `tools/workspace.py check` refuses any other crate that leaves the workspace lints).
 - Keep committed / applied / searchable / archived distinct ([architecture](docs/plan/architecture.md)). No speculative work in the search path. Bound allocation, queues, fan-out, parsing and diagnostics. No plaintext secrets.
 - Product tasks need >=90% line coverage per production crate and a review of the final tree. Never lower a threshold or delete a test to make a check pass.
 - Reviews: one independent reviewer by default; add the architecture/security role only for security-, format- or durability-sensitive code. At most two planned rounds, hard ceiling three, then split or redesign. ([review-gates](docs/plan/review-gates.md))
