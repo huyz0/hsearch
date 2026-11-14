@@ -49,7 +49,10 @@ pub(crate) fn context() -> RequestContext {
 
 /// An index name: one short path component, so keys cannot escape the prefix.
 pub(crate) fn valid_name(name: &str) -> bool {
-    !name.is_empty()
+    // `v1` is reserved: its prefix `v1/` holds the shared objects, which no
+    // index may own.
+    name != "v1"
+        && !name.is_empty()
         && name.len() <= 64
         && name
             .bytes()

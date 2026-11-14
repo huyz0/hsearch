@@ -12,6 +12,8 @@ use crate::ApiError;
 pub const MAX_DOCUMENT_CEILING: u64 = 200 * 1024 * 1024;
 /// Smallest streaming buffer: it must hold one action line and its metadata.
 pub const MIN_BUFFER_BYTES: usize = 64 * 1024;
+/// Largest streaming buffer: one request may not claim more than this.
+pub const MAX_BUFFER_BYTES: usize = 1 << 30;
 /// What a request holds beyond its raw buffer: the parsed value and the write
 /// operation derived from it, each about one buffer's worth in the worst case.
 pub const COST_FACTOR: u64 = 3;
@@ -59,6 +61,11 @@ impl Limits {
         if self.max_bulk_items == 0 {
             return Err("the bulk item limit must be positive".into());
         }
+        if self.buffer_bytes > MAX_BUFFER_BYTES {
+            return Err(format!(
+                "the buffer must be at most {MAX_BUFFER_BYTES} bytes"
+            ));
+        }
         if self.buffer_bytes < MIN_BUFFER_BYTES {
             return Err(format!(
                 "the buffer must be at least {MIN_BUFFER_BYTES} bytes"
@@ -74,7 +81,8 @@ impl Limits {
     /// full buffer's worth. A small body costs little, so small bulks stay concurrent.
     #[must_use]
     pub fn request_cost(&self, body_bytes: u64) -> u64 {
-        COST_FACTOR * body_bytes.min(self.buffer_bytes as u64) + MIN_BUFFER_BYTES as u64
+        COST_FACTOR.saturating_mul(body_bytes.min(self.buffer_bytes as u64))
+            + MIN_BUFFER_BYTES as u64
     }
 }
 

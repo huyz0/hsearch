@@ -130,7 +130,6 @@ pub(crate) fn route<S: MetadataStore + 'static>(
                 None
             };
             node.bulk(request.as_reader(), declared, default, wait)
-                .map(|v| (200, v))
         }
         [index] if !index.is_empty() && !index.starts_with('_') => {
             if method != Method::Put {

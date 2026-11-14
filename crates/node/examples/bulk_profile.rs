@@ -59,7 +59,8 @@ fn main() {
                 Some("orders"),
                 Wait::Searchable,
             )
-            .expect("bulk");
+            .expect("bulk")
+            .1;
         assert_eq!(out["errors"], json!(false));
         worst = worst.max(t.elapsed().as_secs_f64() * 1000.0);
     }

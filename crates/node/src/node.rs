@@ -70,6 +70,7 @@ fn check_id(id: &str) -> Result<(), ApiError> {
 /// Index names follow the write path's rule, checked here for a clear error.
 pub(crate) fn valid_index(name: &str) -> Result<(), ApiError> {
     if name.is_empty()
+        || name == "v1"
         || name.len() > 64
         || !name
             .bytes()
@@ -78,7 +79,7 @@ pub(crate) fn valid_index(name: &str) -> Result<(), ApiError> {
         return Err(ApiError::new(
             400,
             "invalid_index_name_exception",
-            "index names are 1-64 of [a-z0-9_-]",
+            "index names are 1-64 of [a-z0-9_-]; v1 is reserved",
         ));
     }
     Ok(())
@@ -317,16 +318,16 @@ impl<S: MetadataStore + 'static> Node<S> {
     /// item at a time and written in batches bounded by the buffer, so memory
     /// does not grow with the body. `body_bytes` is the declared length, if any.
     ///
-    /// A structurally broken stream refuses the request. Batches already written
-    /// stay written and the error says how many items that was; a body that
-    /// breaks inside its first batch commits nothing.
+    /// A broken stream or a limit crossed mid-body refuses the request. Batches
+    /// already written stay written, and the error body carries their per-item
+    /// results in `items`; a body that fails inside its first batch commits nothing.
     pub fn bulk(
         &self,
         body: impl std::io::Read,
         body_bytes: Option<u64>,
         default_index: Option<&str>,
         wait: Wait,
-    ) -> Result<Value, ApiError> {
+    ) -> Result<(u16, Value), ApiError> {
         let started = Instant::now();
         let _permit = self
             .gate
@@ -345,14 +346,22 @@ impl<S: MetadataStore + 'static> Node<S> {
                 }
                 Ok(None) => break,
                 Err(mut error) => {
-                    if !responses.is_empty() {
-                        error.reason = format!(
-                            "{}; {} earlier items were already applied",
-                            error.reason,
-                            responses.len()
-                        );
+                    if responses.is_empty() {
+                        return Err(error);
                     }
-                    return Err(error);
+                    // Earlier batches are written: say which items they were, so
+                    // the client knows what succeeded and what to resend.
+                    error.reason = format!(
+                        "{}; {} earlier items were already applied",
+                        error.reason,
+                        responses.len()
+                    );
+                    return Ok((
+                        error.status,
+                        json!({"error": error.object(), "status": error.status,
+                               "took": started.elapsed().as_millis() as u64,
+                               "errors": true, "items": responses}),
+                    ));
                 }
             }
             if batch.len() >= CHUNK || pending >= flush_bytes {
@@ -364,11 +373,14 @@ impl<S: MetadataStore + 'static> Node<S> {
         if responses.is_empty() {
             return Err(ApiError::bad("the bulk body has no actions"));
         }
-        Ok(json!({
-            "took": started.elapsed().as_millis() as u64,
-            "errors": errors,
-            "items": responses,
-        }))
+        Ok((
+            200,
+            json!({
+                "took": started.elapsed().as_millis() as u64,
+                "errors": errors,
+                "items": responses,
+            }),
+        ))
     }
 
     /// Write one batch, appending a response per item in order and emptying the

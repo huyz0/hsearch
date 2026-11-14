@@ -212,6 +212,8 @@ fn routes_parameters_and_bodies_outside_the_subset_are_refused_by_name() {
     assert_eq!(kind(call(addr, "GET", "/Bad%20Name/_search", "{}")).0, 400);
     assert_eq!(kind(call(addr, "GET", "/orders/_doc/%zz", "")).0, 400);
     assert_eq!(kind(call(addr, "PUT", "/_orders", MAPPING)).0, 404);
+    // `v1` is reserved: its prefix holds the shared objects.
+    assert_eq!(kind(call(addr, "PUT", "/v1", MAPPING)).0, 400);
     assert_eq!(kind(call(addr, "PUT", "/newidx", "not json")).0, 400);
     assert_eq!(
         kind(call(
@@ -292,10 +294,17 @@ fn bulk_items_fail_alone_and_limits_are_one_over_refused() {
     let (_, all) = call(addr, "POST", "/orders/_search", r#"{"size":0}"#);
     assert_eq!(all["hits"]["total"]["value"], json!(2));
 
-    // One over the item limit and one over the byte limit are refused whole.
+    // One over the item limit is refused with 413; the batches already written
+    // are reported item by item in the body (a count cannot be known up front).
     let item = "{\"delete\":{\"_id\":\"1\"}}\n";
     let over_items = item.repeat(MAX_BULK_ITEMS + 1);
-    assert_eq!(call(addr, "POST", "/orders/_bulk", &over_items).0, 413);
+    let (status, over) = call(addr, "POST", "/orders/_bulk", &over_items);
+    assert_eq!(status, 413);
+    assert_eq!(
+        over["items"].as_array().unwrap().len(),
+        MAX_BULK_ITEMS,
+        "{over}"
+    );
     let at_limit = item.repeat(MAX_BULK_ITEMS);
     assert_eq!(call(addr, "POST", "/orders/_bulk", &at_limit).0, 200);
     assert_eq!(Limits::default().max_bulk_bytes, MAX_BULK_BYTES);
@@ -442,6 +451,12 @@ fn a_broken_stream_after_the_first_batch_says_how_many_items_were_applied() {
         "{reason}"
     );
     assert!((1000..2500).contains(&applied), "{applied}");
+    assert_eq!(
+        out["items"].as_array().unwrap().len(),
+        applied,
+        "the applied items are reported"
+    );
+    assert_eq!(out["errors"], json!(true));
     assert_eq!(
         call(addr, "GET", &format!("/orders/_doc/d{}", applied - 1), "").0,
         200

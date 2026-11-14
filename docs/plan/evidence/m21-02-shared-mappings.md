@@ -15,6 +15,7 @@ Provisional: in-memory object store behind a request-counting wrapper, one node,
 
 The form chosen is **reach a shared object only through the index's own reference**, with the object named by its content hash:
 
+0. The prefix `v1/` is reserved: an index cannot be named `v1`, and `put_shared`/`get_shared` accept only `v1/<deployment>/mappings/<64 hex>`, so no index owns the shared prefix and the API cannot touch an index's own keys (review finding; tests in `crates/index/tests/memory.rs` and `tests/http.rs`).
 1. An index's reference lives under that index's own key prefix, so the authorization that guards the index guards the reference. The shared prefix `v1/<deployment>/mappings/` is read by the node's service identity only and is never granted to index principals (M05 owns that grant; this node reads a shared object only after reading the reference of the index it is serving).
 2. The object's name is the SHA-256 of its content, so naming it requires already holding the mapping. A principal of index B who knows only B cannot name A's object, and a guess confirms only that someone holds a mapping the guesser already wrote.
 3. Integrity: a reference whose object fails its hash is refused with 500, never served; an existing object under a hash whose bytes differ is refused at create (a collision, or a planted object), never replaced.

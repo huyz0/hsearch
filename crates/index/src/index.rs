@@ -176,17 +176,25 @@ pub fn get_mapping<S: MetadataStore + 'static>(store: &S, name: &str) -> Result<
     crate::writer::get_mapping(store, name)
 }
 
-/// A shared key is a path of `[a-z0-9-]` components under `v1/`, so it can never
-/// fall inside an index's prefix: an index name has no `/`.
+/// A shared key is exactly `v1/<deployment>/mappings/<64 lowercase hex>`. The
+/// prefix `v1/` is reserved, so no index name can own it, and nothing else of
+/// an index's keys can be named through this API.
 fn valid_shared_key(key: &str) -> bool {
-    key.len() <= 256
-        && key.starts_with("v1/")
-        && key.split('/').all(|part| {
-            !part.is_empty()
-                && part
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        })
+    let parts: Vec<&str> = key.split('/').collect();
+    let [v1, deployment, kind, hash] = parts.as_slice() else {
+        return false;
+    };
+    *v1 == "v1"
+        && !deployment.is_empty()
+        && deployment.len() <= 63
+        && deployment
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && *kind == "mappings"
+        && hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Create one immutable object shared by many indexes at `key` (for example a

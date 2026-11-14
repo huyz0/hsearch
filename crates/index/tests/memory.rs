@@ -451,9 +451,22 @@ fn mappings_are_stored_once_under_a_derived_key() {
 }
 
 #[test]
+fn the_name_v1_is_reserved_so_no_index_owns_the_shared_prefix() {
+    let store = store();
+    assert_eq!(
+        hsearch_index::put_mapping(&*store, "v1", b"x").err(),
+        Some(Error::Invalid)
+    );
+    assert_eq!(
+        hsearch_index::get_mapping(&*store, "v1").err(),
+        Some(Error::Invalid)
+    );
+}
+
+#[test]
 fn a_shared_object_is_stored_once_and_a_different_body_under_its_key_is_refused() {
     let store = store();
-    let key = "v1/local/mappings/abcd";
+    let key = "v1/local/mappings/0000000000000000000000000000000000000000000000000000000000000000";
     assert_eq!(
         hsearch_index::get_shared(&*store, key).err(),
         Some(Error::NotFound)

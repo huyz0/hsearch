@@ -81,6 +81,7 @@ impl<R: Read> Stream<R> {
         let mut total: u64 = 0;
         let mut kept = true;
         let mut ending: u64 = 0;
+        let mut previous: u8 = 0;
         loop {
             let available = self
                 .reader
@@ -91,7 +92,8 @@ impl<R: Read> Stream<R> {
             }
             let (take, found) = match available.iter().position(|b| *b == b'\n') {
                 Some(at) => {
-                    ending = 1 + u64::from(at > 0 && available[at - 1] == b'\r');
+                    let before = if at > 0 { available[at - 1] } else { previous };
+                    ending = 1 + u64::from(before == b'\r');
                     (at + 1, true)
                 }
                 None => (available.len(), false),
@@ -108,6 +110,7 @@ impl<R: Read> Stream<R> {
                 kept = false;
                 self.line.clear();
             }
+            previous = available[take - 1];
             self.reader.consume(take);
             if found {
                 break;
@@ -133,22 +136,25 @@ impl<R: Read> Stream<R> {
     /// source line is that item's error.
     pub(crate) fn next(&mut self, default_index: Option<&str>) -> Result<Option<Item>, ApiError> {
         let cap = MAX_ACTION_LINE.min(self.limits.buffer_bytes);
-        let text = loop {
+        let action: Value = loop {
             match self.read_line(cap)? {
                 Line::End => return Ok(None),
                 Line::Oversized(_) => {
                     return Err(ApiError::parse("an action line is too long"));
                 }
                 Line::Text if self.line.is_empty() => {}
-                Line::Text => break std::mem::take(&mut self.line),
+                Line::Text => {
+                    if self.items == self.limits.max_bulk_items {
+                        return Err(too_big("item"));
+                    }
+                    self.items += 1;
+                    // Parsed in place: the buffer stays this stream's, to be reused.
+                    let parsed = serde_json::from_slice(&self.line);
+                    self.line.clear();
+                    break parsed.map_err(|_| ApiError::parse("malformed bulk action line"))?;
+                }
             }
         };
-        if self.items == self.limits.max_bulk_items {
-            return Err(too_big("item"));
-        }
-        self.items += 1;
-        let action: Value = serde_json::from_slice(&text)
-            .map_err(|_| ApiError::parse("malformed bulk action line"))?;
         let object = action
             .as_object()
             .filter(|o| o.len() == 1)
@@ -211,14 +217,60 @@ impl<R: Read> Stream<R> {
             Line::Oversized(n) => Ok(Err(too_large(n, configured, self.limits.buffer_bytes))),
             Line::Text => {
                 *bytes = self.line.len();
-                let parsed = serde_json::from_slice::<Value>(&self.line).map_err(|_| {
-                    ApiError::new(400, "mapper_parsing_exception", "malformed source line")
-                });
+                let parsed = match shape(&self.line) {
+                    Some(reason) => Err(ApiError::new(400, "mapper_parsing_exception", reason)),
+                    None => serde_json::from_slice::<Value>(&self.line).map_err(|_| {
+                        ApiError::new(400, "mapper_parsing_exception", "malformed source line")
+                    }),
+                };
                 self.line.clear();
                 Ok(parsed)
             }
         }
     }
+}
+
+/// Most top-level members a source may carry: the mapping allows 14 fields, so a
+/// document with more than this can only be refused, and parsing it first would
+/// cost many times its raw size.
+const MAX_MEMBERS: usize = 256;
+
+/// A cheap pass over a source line, before any value is built, that refuses what
+/// the parsed form would amplify: nesting (the mapping holds scalars only) and
+/// very many members. `None` means the shape is acceptable; the parser still
+/// decides whether it is valid JSON.
+fn shape(line: &[u8]) -> Option<&'static str> {
+    let (mut depth, mut members) = (0usize, 0usize);
+    let (mut in_string, mut escaped) = (false, false);
+    for &b in line {
+        if in_string {
+            match (escaped, b) {
+                (true, _) => escaped = false,
+                (false, b'\\') => escaped = true,
+                (false, b'"') => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                depth += 1;
+                if depth > 1 {
+                    return Some("nested objects and arrays are not supported by this mapping");
+                }
+            }
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            b',' if depth == 1 => {
+                members += 1;
+                if members >= MAX_MEMBERS {
+                    return Some("the source has more members than any mapping allows");
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The structured refusal of a document over a limit, naming that limit.
@@ -422,5 +474,50 @@ mod tests {
         );
         let mut stream = Stream::new(body.as_bytes(), Limits::default());
         assert_eq!(stream.next(Some("d")).unwrap_err().status, 400);
+    }
+
+    #[test]
+    fn amplifying_shapes_are_refused_before_a_value_is_built() {
+        let nested = format!("[{}]", "1,".repeat(1000));
+        let many = format!(
+            "{{{}\"z\":1}}",
+            (0..300).map(|i| format!("\"k{i}\":1,")).collect::<String>()
+        );
+        let body = format!(
+            "{{\"index\":{{\"_id\":\"1\"}}}}\n{{\"a\":{nested}}}\n{{\"index\":{{\"_id\":\"2\"}}}}\n{many}\n{{\"index\":{{\"_id\":\"3\"}}}}\n{{\"a\":\"[{{,}}]\\\"[\",\"b\":2}}\n"
+        );
+        let items = all(&body, Limits::default());
+        for refused in &items[..2] {
+            assert_eq!(
+                refused.work.as_ref().unwrap_err().kind,
+                "mapper_parsing_exception"
+            );
+        }
+        // Brackets and commas inside a string, escaped quotes included, are text.
+        assert!(items[2].work.is_ok());
+    }
+
+    #[test]
+    fn a_crlf_split_across_reads_reports_the_exact_size() {
+        struct Split<'a>(&'a [u8], bool);
+        impl Read for Split<'_> {
+            fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+                // Break just before the "\n" of the first "\r\n".
+                let at = self.0.windows(2).position(|w| w == b"\r\n");
+                let n = match at {
+                    Some(at) if !self.1 => (at + 1).min(out.len()),
+                    _ => self.0.len().min(out.len()),
+                };
+                self.1 = true;
+                out[..n].copy_from_slice(&self.0[..n]);
+                self.0 = &self.0[n..];
+                Ok(n)
+            }
+        }
+        let body = format!("{{\"index\":{{\"_id\":\"1\"}}}}\n{}\r\n", doc_of(5000));
+        let mut stream = Stream::new(Split(body.as_bytes(), false), limits(4096, 1 << 20));
+        let item = stream.next(Some("d")).unwrap().unwrap();
+        let refusal = item.work.unwrap_err();
+        assert!(refusal.reason.contains("5000 bytes"), "{}", refusal.reason);
     }
 }
