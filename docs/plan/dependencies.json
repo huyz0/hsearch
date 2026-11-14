@@ -410,6 +410,13 @@
       "checksum": null
     },
     {
+      "name": "md-5",
+      "version": "0.11.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "checksum": "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+    },
+    {
       "name": "memchr",
       "version": "2.8.3",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
