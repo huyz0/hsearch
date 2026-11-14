@@ -9,7 +9,6 @@ use hsearch_object::MetadataStore;
 use serde_json::{Value, json};
 use tiny_http::{Header, Method, Request, Response, Server};
 
-use crate::bulk::MAX_BULK_BYTES;
 use crate::{ApiError, Node};
 
 /// Bodies of non-bulk requests are small: mappings and queries.
@@ -117,10 +116,8 @@ pub(crate) fn route<S: MetadataStore + 'static>(
                 Some("true" | "wait_for" | "") => Wait::Searchable,
                 Some(_) => return Err(ApiError::bad("[refresh] must be true, false or wait_for")),
             };
-            if request
-                .body_length()
-                .is_some_and(|n| n as u64 > MAX_BULK_BYTES)
-            {
+            let declared = request.body_length().map(|n| n as u64);
+            if declared.is_some_and(|n| n > node.limits().max_bulk_bytes) {
                 return Err(ApiError::new(
                     413,
                     "payload_too_large_exception",
@@ -132,7 +129,7 @@ pub(crate) fn route<S: MetadataStore + 'static>(
             } else {
                 None
             };
-            node.bulk(request.as_reader(), default, wait)
+            node.bulk(request.as_reader(), declared, default, wait)
                 .map(|v| (200, v))
         }
         [index] if !index.is_empty() && !index.starts_with('_') => {

@@ -4,7 +4,10 @@
 //! `HSEARCH_S3_SECRET_KEY`, optional `HSEARCH_S3_BUCKET` (default `hsearch`).
 //! Flags: `--listen ADDR` (default 127.0.0.1:9200), `--data-dir DIR` (default
 //! `./hsearch-data`, disposable), `--insecure-no-auth-listen` to allow a
-//! non-loopback address.
+//! non-loopback address. Limits (defaults are the M02.05 values):
+//! `--max-document-bytes` (16 MiB, hard ceiling 200 MiB), `--max-bulk-bytes`
+//! (64 MiB), `--max-bulk-items` (5000), `--buffer-bytes` (8 MiB per request) and
+//! `--memory-budget-bytes` (256 MiB across concurrent bulks).
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -39,7 +42,11 @@ fn run() -> Result<(), String> {
     store
         .prepare_bucket(&context)
         .map_err(|e| format!("preparing the bucket: {e}"))?;
-    let node = Arc::new(Node::new(Arc::new(store), options.data_dir));
+    let node = Arc::new(Node::with_limits(
+        Arc::new(store),
+        options.data_dir,
+        options.limits,
+    )?);
     let running = serve(node, &options.listen, 8, options.insecure)?;
     println!("listening on http://{}", running.addr);
     // Serve until the process is stopped.

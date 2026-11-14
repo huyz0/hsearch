@@ -12,8 +12,9 @@ use serde_json::{Map, Value, json};
 use typed_arena::Arena;
 
 use crate::ApiError;
-use crate::bulk::{self, Action};
-use crate::mapping::{Mapping, typed};
+use crate::bulk::{self, Action, Item};
+use crate::limits::{Limits, MemoryGate};
+use crate::mapping::{Mapping, typed_owned};
 use crate::search::{self, Source};
 
 /// Operations per call to the write path, below its slot bound.
@@ -29,6 +30,8 @@ pub struct Node<S> {
     store: Arc<S>,
     data_dir: PathBuf,
     indexes: Mutex<HashMap<String, Slot>>,
+    limits: Limits,
+    gate: MemoryGate,
 }
 
 /// One index's place in the node. The map lock is held only to find or add a
@@ -80,13 +83,28 @@ fn json_value(value: &StoredValue) -> Value {
 }
 
 impl<S: MetadataStore + 'static> Node<S> {
-    /// A node over `store`, keeping scratch engines under `data_dir`.
+    /// A node over `store`, keeping scratch engines under `data_dir`, with the
+    /// default request limits.
     pub fn new(store: Arc<S>, data_dir: PathBuf) -> Self {
-        Self {
+        Self::with_limits(store, data_dir, Limits::default()).expect("the default limits are valid")
+    }
+
+    /// A node with explicit request limits, refused if they cannot work.
+    pub fn with_limits(store: Arc<S>, data_dir: PathBuf, limits: Limits) -> Result<Self, String> {
+        limits.validate()?;
+        Ok(Self {
             store,
             data_dir,
             indexes: Mutex::new(HashMap::new()),
-        }
+            gate: MemoryGate::new(limits.memory_budget_bytes),
+            limits,
+        })
+    }
+
+    /// The request limits in force.
+    #[must_use]
+    pub fn limits(&self) -> &Limits {
+        &self.limits
     }
 
     fn scratch(&self, name: &str) -> PathBuf {
@@ -214,38 +232,89 @@ impl<S: MetadataStore + 'static> Node<S> {
         }
     }
 
-    /// `POST /_bulk` and `POST /{index}/_bulk`.
+    /// `POST /_bulk` and `POST /{index}/_bulk`, streamed: the body is read one
+    /// item at a time and written in batches bounded by the buffer, so memory
+    /// does not grow with the body. `body_bytes` is the declared length, if any.
+    ///
+    /// A structurally broken stream refuses the request. Batches already written
+    /// stay written and the error says how many items that was; a body that
+    /// breaks inside its first batch commits nothing.
     pub fn bulk(
         &self,
         body: impl std::io::Read,
+        body_bytes: Option<u64>,
         default_index: Option<&str>,
         wait: Wait,
     ) -> Result<Value, ApiError> {
         let started = Instant::now();
-        let items = bulk::parse(body, default_index)?;
-        let mut responses: Vec<Option<Value>> = vec![None; items.len()];
+        let _permit = self
+            .gate
+            .reserve(self.limits.request_cost(body_bytes.unwrap_or(u64::MAX)))?;
+        let mut stream = bulk::Stream::new(body, self.limits);
+        let flush_bytes = self.limits.buffer_bytes / 2;
+        let mut batch: Vec<Item> = Vec::new();
+        let mut pending = 0;
+        let mut responses: Vec<Value> = Vec::new();
         let mut errors = false;
+        loop {
+            match stream.next(default_index) {
+                Ok(Some(item)) => {
+                    pending += item.bytes;
+                    batch.push(item);
+                }
+                Ok(None) => break,
+                Err(mut error) => {
+                    if !responses.is_empty() {
+                        error.reason = format!(
+                            "{}; {} earlier items were already applied",
+                            error.reason,
+                            responses.len()
+                        );
+                    }
+                    return Err(error);
+                }
+            }
+            if batch.len() >= CHUNK || pending >= flush_bytes {
+                errors |= self.run_batch(&mut batch, wait, &mut responses);
+                pending = 0;
+            }
+        }
+        errors |= self.run_batch(&mut batch, wait, &mut responses);
+        if responses.is_empty() {
+            return Err(ApiError::bad("the bulk body has no actions"));
+        }
+        Ok(json!({
+            "took": started.elapsed().as_millis() as u64,
+            "errors": errors,
+            "items": responses,
+        }))
+    }
+
+    /// Write one batch, appending a response per item in order and emptying the
+    /// batch. Returns whether any item failed.
+    fn run_batch(&self, items: &mut Vec<Item>, wait: Wait, out: &mut Vec<Value>) -> bool {
+        let mut errors = false;
+        let mut responses: Vec<Option<Value>> = vec![None; items.len()];
         let mut i = 0;
         while i < items.len() {
             // A run of consecutive valid items for one index is one write.
-            let name = &items[i].index;
-            let entry = valid_index(name).and_then(|()| self.entry(name));
+            let name = items[i].index.clone();
+            let entry = valid_index(&name).and_then(|()| self.entry(&name));
             let mut ops: Vec<Op> = Vec::new();
             let mut slots: Vec<usize> = Vec::new();
             let mut j = i;
-            while j < items.len() && items[j].index == *name && ops.len() < CHUNK {
-                let item = &items[j];
-                let verdict = match (&entry, &item.work) {
-                    (Err(e), _) | (_, Err(e)) => Err(e.clone()),
+            while j < items.len() && items[j].index == name && ops.len() < CHUNK {
+                let item = &mut items[j];
+                let work = std::mem::replace(&mut item.work, Ok((Action::Delete, None)));
+                let verdict = match (&entry, work) {
+                    (Err(e), _) => Err(e.clone()),
+                    (_, Err(e)) => Err(e),
                     (Ok(_), Ok(_)) if check_id(&item.id).is_err() => {
                         Err(check_id(&item.id).unwrap_err())
                     }
-                    (Ok(entry), Ok((Action::Delete, _))) => {
-                        let _ = entry;
-                        Ok(Op::Delete {
-                            id: item.id.clone(),
-                        })
-                    }
+                    (Ok(_), Ok((Action::Delete, _))) => Ok(Op::Delete {
+                        id: item.id.clone(),
+                    }),
                     (Ok(entry), Ok((Action::Index, Some(source)))) => {
                         document(&entry.mapping, &item.id, source)
                     }
@@ -258,29 +327,27 @@ impl<S: MetadataStore + 'static> Node<S> {
                     }
                     Err(error) => {
                         errors = true;
-                        responses[j] = Some(item_error(&item.action, name, &item.id, &error));
+                        responses[j] = Some(item_error(&item.action, &name, &item.id, &error));
                     }
                 }
                 j += 1;
             }
             if let (Ok(entry), false) = (&entry, ops.is_empty()) {
-                for (slot, result) in slots.iter().zip(self.write(name, entry, &ops, wait)) {
+                for (slot, result) in slots.iter().zip(self.write(&name, entry, &ops, wait)) {
                     errors |= result.is_err();
                     responses[*slot] = Some(match result {
-                        Ok(result) => item_result(&items[*slot].action, name, &result),
+                        Ok(result) => item_result(&items[*slot].action, &name, &result),
                         Err(error) => {
-                            item_error(&items[*slot].action, name, &items[*slot].id, &error)
+                            item_error(&items[*slot].action, &name, &items[*slot].id, &error)
                         }
                     });
                 }
             }
             i = j;
         }
-        Ok(json!({
-            "took": started.elapsed().as_millis() as u64,
-            "errors": errors,
-            "items": responses.into_iter().flatten().collect::<Vec<_>>(),
-        }))
+        items.clear();
+        out.extend(responses.into_iter().flatten());
+        errors
     }
 
     /// `GET /{index}/_doc/{id}`, from the latest searchable view.
@@ -353,15 +420,16 @@ impl<S: MetadataStore + 'static> Node<S> {
     }
 }
 
-/// Build the write path's operation from a source object, in schema order.
-fn document(mapping: &Mapping, id: &str, source: &Value) -> Result<Op, ApiError> {
-    let object = source.as_object().ok_or_else(|| {
-        ApiError::new(
+/// Build the write path's operation from a source object, in schema order. The
+/// source is consumed: its strings move into the operation instead of being copied.
+fn document(mapping: &Mapping, id: &str, source: Value) -> Result<Op, ApiError> {
+    let Value::Object(mut object) = source else {
+        return Err(ApiError::new(
             400,
             "mapper_parsing_exception",
             "the source must be a JSON object",
-        )
-    })?;
+        ));
+    };
     if let Some(extra) = object.keys().find(|k| mapping.kind(k).is_none()) {
         return Err(ApiError::new(
             400,
@@ -371,14 +439,14 @@ fn document(mapping: &Mapping, id: &str, source: &Value) -> Result<Op, ApiError>
     }
     let mut fields = Vec::with_capacity(mapping.fields.len());
     for (name, kind) in &mapping.fields {
-        let value = object.get(name).ok_or_else(|| {
+        let value = object.remove(name).ok_or_else(|| {
             ApiError::new(
                 400,
                 "mapper_parsing_exception",
                 format!("field [{name}] is required: every mapped field must be present"),
             )
         })?;
-        fields.push(typed(*kind, value).map_err(|why| {
+        fields.push(typed_owned(*kind, value).map_err(|why| {
             ApiError::new(
                 400,
                 "mapper_parsing_exception",

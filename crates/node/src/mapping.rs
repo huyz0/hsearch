@@ -141,21 +141,27 @@ impl Mapping {
     }
 }
 
-/// Convert one JSON value to the declared kind. No coercion between kinds.
+/// Convert a borrowed JSON value to the declared kind (queries: small values).
 pub(crate) fn typed(kind: Kind, value: &Value) -> Result<Field, String> {
+    typed_owned(kind, value.clone())
+}
+
+/// Convert one JSON value to the declared kind, moving its string instead of
+/// copying it: the ingest path, where a value can be large. No coercion between kinds.
+pub(crate) fn typed_owned(kind: Kind, value: Value) -> Result<Field, String> {
     match (kind, value) {
-        (Kind::Keyword | Kind::Text, Value::String(s)) => Ok(Field::Str(s.clone())),
+        (Kind::Keyword | Kind::Text, Value::String(s)) => Ok(Field::Str(s)),
         (Kind::Integer, Value::Number(n)) => n
             .as_i64()
             .filter(|n| i32::try_from(*n).is_ok())
             .map(Field::Int)
             .ok_or_else(|| "integer out of the 32-bit range".to_string()),
-        (Kind::Boolean, Value::Bool(b)) => Ok(Field::Bool(*b)),
+        (Kind::Boolean, Value::Bool(b)) => Ok(Field::Bool(b)),
         (Kind::Date, Value::Number(n)) => n
             .as_i64()
             .map(Field::Date)
             .ok_or_else(|| "date must be epoch milliseconds".to_string()),
-        (Kind::Date, Value::String(s)) => parse_date(s)
+        (Kind::Date, Value::String(s)) => parse_date(&s)
             .map(Field::Date)
             .ok_or_else(|| "unparseable date".to_string()),
         _ => Err("value does not match the field type".to_string()),

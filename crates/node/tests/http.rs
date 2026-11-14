@@ -1,7 +1,7 @@
 //! The HTTP subset end to end over the in-memory store.
 mod support;
 
-use hsearch_node::{MAX_BULK_BYTES, MAX_BULK_ITEMS, Node, serve};
+use hsearch_node::{Limits, MAX_BULK_BYTES, MAX_BULK_ITEMS, Node, serve};
 use hsearch_object::memory::{MemoryLimits, MemoryStore};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -298,11 +298,7 @@ fn bulk_items_fail_alone_and_limits_are_one_over_refused() {
     assert_eq!(call(addr, "POST", "/orders/_bulk", &over_items).0, 413);
     let at_limit = item.repeat(MAX_BULK_ITEMS);
     assert_eq!(call(addr, "POST", "/orders/_bulk", &at_limit).0, 200);
-    let big = format!(
-        "{{\"index\":{{\"_id\":\"b\"}}}}\n{{\"title\":\"{}\"}}\n",
-        "x".repeat(MAX_BULK_BYTES as usize)
-    );
-    assert_eq!(call(addr, "POST", "/orders/_bulk", &big).0, 413);
+    assert_eq!(Limits::default().max_bulk_bytes, MAX_BULK_BYTES);
     // A malformed action line refuses the request, committing nothing.
     let (status, _) = call(
         addr,
@@ -352,4 +348,181 @@ fn only_loopback_may_be_bound_without_saying_so() {
     assert!(serve(Arc::clone(&node), "not an address", 1, false).is_err());
     let running = serve(node, "0.0.0.0:0", 1, true).unwrap();
     running.shutdown();
+}
+
+fn start_with(store: &Arc<MemoryStore>, dir: &Scratch, limits: Limits) -> hsearch_node::Running {
+    let node = Arc::new(Node::with_limits(Arc::clone(store), dir.0.clone(), limits).unwrap());
+    serve(node, "127.0.0.1:0", 4, false).unwrap()
+}
+
+fn small() -> Limits {
+    Limits {
+        max_document_bytes: 4096,
+        max_bulk_bytes: 256 * 1024,
+        max_bulk_items: 3000,
+        buffer_bytes: 64 * 1024,
+        memory_budget_bytes: 8 << 20,
+    }
+}
+
+/// An index action whose source line is exactly `len` bytes (title padded).
+fn sized(id: &str, len: usize) -> String {
+    let frame = "{\"title\":\"\",\"tag\":\"a\",\"n\":1,\"ok\":true,\"at\":1}";
+    format!(
+        "{{\"index\":{{\"_id\":\"{id}\"}}}}\n{{\"title\":\"{}\",\"tag\":\"a\",\"n\":1,\"ok\":true,\"at\":1}}\n",
+        "x".repeat(len - frame.len())
+    )
+}
+
+fn statuses(body: &Value) -> Vec<u64> {
+    body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| {
+            i.as_object().unwrap().values().next().unwrap()["status"]
+                .as_u64()
+                .unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn a_document_one_byte_over_the_limit_is_refused_by_name_and_nothing_of_it_is_committed() {
+    let (store, dir) = (store(), Scratch::new("doclimit"));
+    let node = start_with(&store, &dir, small());
+    let addr = node.addr;
+    assert_eq!(call(addr, "PUT", "/orders", MAPPING).0, 200);
+    let body = [sized("at", 4096), sized("over", 4097), sized("after", 100)].concat();
+    let (status, out) = call(addr, "POST", "/orders/_bulk?refresh=true", &body);
+    assert_eq!(status, 200, "{out}");
+    assert_eq!(statuses(&out), vec![201, 413, 201], "{out}");
+    let error = &out["items"][1]["index"]["error"];
+    assert_eq!(error["type"], json!("document_too_large_exception"));
+    assert!(
+        error["reason"]
+            .as_str()
+            .unwrap()
+            .contains("limit of 4096 bytes"),
+        "{error}"
+    );
+    assert_eq!(out["errors"], json!(true));
+    assert_eq!(call(addr, "GET", "/orders/_doc/at", "").0, 200);
+    assert_eq!(call(addr, "GET", "/orders/_doc/over", "").0, 404);
+    assert_eq!(call(addr, "GET", "/orders/_doc/after", "").0, 200);
+    node.shutdown();
+}
+
+#[test]
+fn a_broken_stream_after_the_first_batch_says_how_many_items_were_applied() {
+    let (store, dir) = (store(), Scratch::new("partial"));
+    let limits = Limits {
+        max_bulk_bytes: 4 << 20,
+        ..small()
+    };
+    let node = start_with(&store, &dir, limits);
+    let addr = node.addr;
+    assert_eq!(call(addr, "PUT", "/orders", MAPPING).0, 200);
+    // 2,500 valid items then a malformed action: the first two batches of 1,000
+    // are written, the third is dropped with the request.
+    let mut body: String = (0..2500).map(doc).collect();
+    body.push_str("garbage\n");
+    let (status, out) = call(addr, "POST", "/orders/_bulk?refresh=true", &body);
+    assert_eq!(status, 400, "{out}");
+    let reason = out["error"]["reason"].as_str().unwrap();
+    // A batch ends at 1,000 items or half the buffer, whichever comes first.
+    let applied: usize = reason
+        .split("; ")
+        .nth(1)
+        .and_then(|t| t.split(' ').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("{reason}"));
+    assert!(
+        reason.ends_with("earlier items were already applied"),
+        "{reason}"
+    );
+    assert!((1000..2500).contains(&applied), "{applied}");
+    assert_eq!(
+        call(addr, "GET", &format!("/orders/_doc/d{}", applied - 1), "").0,
+        200
+    );
+    assert_eq!(
+        call(addr, "GET", &format!("/orders/_doc/d{applied}"), "").0,
+        404
+    );
+    node.shutdown();
+}
+
+/// Send a request head promising `length` body bytes, then only `sent` of them.
+fn start_stalled(addr: std::net::SocketAddr, length: usize, sent: &str) -> std::net::TcpStream {
+    use std::io::Write;
+    let mut stream = std::net::TcpStream::connect(addr).unwrap();
+    write!(
+        stream,
+        "POST /orders/_bulk HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Length: {length}\r\n\r\n{sent}"
+    )
+    .unwrap();
+    stream.flush().unwrap();
+    stream
+}
+
+#[test]
+fn concurrent_bulks_beyond_the_memory_budget_are_refused_with_429_and_recover() {
+    let (store, dir) = (store(), Scratch::new("gate"));
+    let limits = Limits {
+        // Exactly one full-size request fits.
+        memory_budget_bytes: 3 * 64 * 1024 + 64 * 1024,
+        ..small()
+    };
+    let node = start_with(&store, &dir, limits);
+    let addr = node.addr;
+    assert_eq!(call(addr, "PUT", "/orders", MAPPING).0, 200);
+    let first = doc(1);
+    let total = 200_000;
+    let slow = start_stalled(addr, total, &first);
+    // Give the worker time to reserve, then a second full-size request is refused.
+    let mut refused = None;
+    for _ in 0..200 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let (status, body) = call(addr, "POST", "/orders/_bulk", &"\n".repeat(total));
+        if status == 429 {
+            refused = Some(body);
+            break;
+        }
+    }
+    let body = refused.expect("a second large bulk is refused while the first holds the budget");
+    assert_eq!(
+        body["error"]["type"],
+        json!("es_rejected_execution_exception")
+    );
+    // A small bulk costs little and is still admitted... only when the budget has room,
+    // so finish the first request and check everything is released.
+    {
+        use std::io::{Read, Write};
+        let mut slow = slow;
+        slow.write_all("\n".repeat(total - first.len()).as_bytes())
+            .unwrap();
+        let mut raw = String::new();
+        slow.read_to_string(&mut raw).unwrap();
+        assert!(
+            raw.starts_with("HTTP/1.1 200"),
+            "{}",
+            &raw[..raw.len().min(300)]
+        );
+    }
+    let (status, out) = call(addr, "POST", "/orders/_bulk?refresh=true", &doc(2));
+    assert_eq!((status, &out["errors"]), (200, &json!(false)), "{out}");
+    node.shutdown();
+}
+
+#[test]
+fn a_body_over_the_configured_byte_limit_is_refused_before_it_is_read() {
+    let (store, dir) = (store(), Scratch::new("bytes"));
+    let node = start_with(&store, &dir, small());
+    let addr = node.addr;
+    assert_eq!(call(addr, "PUT", "/orders", MAPPING).0, 200);
+    let body = "{\"delete\":{\"_id\":\"1\"}}\n".repeat(12_000);
+    assert!(body.len() > 256 * 1024);
+    assert_eq!(call(addr, "POST", "/orders/_bulk", &body).0, 413);
+    node.shutdown();
 }
