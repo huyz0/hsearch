@@ -13,4 +13,6 @@ A small change (docs, one crate) takes the same path; there is no separate plann
 
 Not on PRs: native ARM and the capped RustFS sandbox run from `qualify (manual)` (Actions, run workflow). Nothing runs on a schedule.
 
+Performance tests follow the [resource and performance standard](engineering-standards.md#resource-and-performance-standard): a limit-and-one test for every bounded resource, benchmarks in the repository with recorded hardware, workload and before/after numbers (labelled provisional on a shared host), request and byte counts asserted where they can be, and time-to-searchable reported for any benchmark that writes. Benchmarks run by hand or from the manual workflow, not on every PR.
+
 Test policy that stays: differential tests against Java Lucene fixtures, exact version pins, `unsafe` forbidden, no skipped provider/hardware tests reported as passed. Historical CI design is in [archive/ci-testing-history.md](archive/ci-testing-history.md).
