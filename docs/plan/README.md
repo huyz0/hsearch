@@ -72,6 +72,7 @@ Parked items:
 | M20.04 | Socket read timeouts and worker-pool exhaustion by slow clients | M07.08 (API admission) is the closest; it does not mention it yet |
 | M20.04 | Index creation is two writes (root, then mapping) and a stopped writer is reopened only by the node's own request path | M06.05 (lifecycle) is the closest; it does not mention it yet |
 | M20.04 | Bulk `update` action, dynamic mapping, publishing segments from the node over HTTP, TLS, and hit order without a `sort` | M21.06, M21.03, M06.02, M05 and (order) the scoring item above |
+| M02.10 | Under a hot key the unknown-outcome resolution scan can run out of its bound and report `ResolutionUnavailable` (14 in one 5 s cell, about 3 a second, at 16 writers on one hot key); the ETag-vs-identical-bytes fencing question needs a direct probe | M03 (adapter) / M06 (commit protocol): no task states it yet |
 
 Already tracked, so not parked: segment publish and bounded recovery (M06.02, M06.03), multipart and response-loss probes (M03.10), multi-node serving and graceful drain (M07.01, M07.06, M07.11), zero-downtime rolling upgrades (M16.08), authentication, mTLS and BYOK (M05), real-time get (M21.05, M07.12), mapping evolution (M21.04), pinned views and scroll (M22.01).
 

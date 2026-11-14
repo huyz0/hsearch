@@ -1,0 +1,176 @@
+[
+  {
+    "name": "analyzer-output",
+    "kind": "analyzer",
+    "structure": "tokens",
+    "data": [
+      [
+        "ab",
+        0,
+        0,
+        2
+      ],
+      [
+        "c",
+        1,
+        3,
+        4
+      ]
+    ],
+    "hex": "020000000200000061620000000000000000020000000100000063010000000300000004000000"
+  },
+  {
+    "name": "query-input",
+    "kind": "query",
+    "structure": "query_input",
+    "data": {
+      "body": "{\"v\":[\"A\"]}",
+      "schema": [
+        [
+          "tag",
+          1
+        ]
+      ]
+    },
+    "hex": "0b0000007b2276223a5b2241225d7d010000000300000074616701"
+  },
+  {
+    "name": "query-ir-bool",
+    "kind": "query",
+    "structure": "query",
+    "data": {
+      "op": "bool",
+      "minimum_should_match": 1,
+      "must": [
+        {
+          "op": "term",
+          "field": "tag",
+          "value": [
+            "string",
+            "a"
+          ]
+        }
+      ],
+      "filter": [
+        {
+          "op": "range",
+          "field": "n",
+          "lower": [
+            "integer",
+            1
+          ],
+          "upper": [
+            "integer",
+            9
+          ]
+        }
+      ],
+      "should": [
+        {
+          "op": "match",
+          "field": "t",
+          "text": "x y",
+          "phrase": true
+        },
+        {
+          "op": "terms",
+          "field": "tag",
+          "values": [
+            [
+              "string",
+              "b"
+            ],
+            [
+              "boolean",
+              true
+            ]
+          ]
+        }
+      ],
+      "must_not": [
+        {
+          "op": "id",
+          "id": "d1"
+        }
+      ]
+    },
+    "hex": "07010000000100000003030000007461670101000000610100000005010000006e02010000000000000002090000000000000002000000060100000074030000007820790104030000007461670200000001010000006203010100000002020000006431"
+  },
+  {
+    "name": "ingest-input",
+    "kind": "ingest",
+    "structure": "ingest_docs",
+    "data": [
+      [
+        [
+          "a",
+          [
+            "string",
+            "x"
+          ]
+        ],
+        [
+          "n",
+          [
+            "integer",
+            -2
+          ]
+        ]
+      ]
+    ],
+    "hex": "01000000020000000100000061010100000078010000006e02feffffffffffffff"
+  },
+  {
+    "name": "ingest-result",
+    "kind": "ingest",
+    "structure": "ingest_result",
+    "data": [
+      [
+        "keep",
+        [
+          [
+            "a",
+            [
+              "string",
+              "x"
+            ]
+          ]
+        ]
+      ],
+      [
+        "drop"
+      ],
+      [
+        "reject",
+        "bad"
+      ]
+    ],
+    "hex": "0300000000010000000100000061010100000078010203000000626164"
+  },
+  {
+    "name": "scoring-input",
+    "kind": "scoring",
+    "structure": "scoring_input",
+    "data": [
+      [
+        1.0,
+        2.0
+      ],
+      [
+        0.5,
+        -1.5
+      ]
+    ],
+    "hex": "02000000020000000000803f000000400000003f0000c0bf"
+  },
+  {
+    "name": "scoring-output",
+    "kind": "scoring",
+    "structure": "scoring_output",
+    "data": [
+      3.0,
+      -1.0
+    ],
+    "hex": "00004040000080bf"
+  }
+]
