@@ -1,6 +1,6 @@
 # Materialized engine adapter development
 
-This is the M02.02 typed native component, not a service or a milestone acceptance record. The exact upstream revision is `8c010db716b405f40a06f5d5573f1bd0270bfabf`. Only `hsearch-engine` imports the five existing Lucene crates. No dependency revision, lockfile, inventory, shared selector or ledger is changed by this implementation author.
+This is the M02.02 typed native component, not a service or a milestone acceptance record. The exact upstream revision is `8c010db716b405f40a06f5d5573f1bd0270bfabf`. Only `hsearch-engine` imports the Lucene crates (the original five plus `lucene-aggs`, added when the pin moved from `46e280bc`, because aggregations left `lucene-search`). The differential fixture `fixtures/engine-research/java-differential-v1.json` deliberately still records `46e280bc`: it is hash-bound evidence from that revision and is re-recorded by the task that regenerates native receipts.
 
 ## Selected observing-directory source checkpoint: 9 November 2026
 
