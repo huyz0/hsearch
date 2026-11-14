@@ -81,3 +81,7 @@ real object-store GET (milliseconds) the wrapper's share is small, but that is e
 - Each `get_range` blocks its calling thread on the backend future with a std-only `block_on`; `CachedBlobDirectory` already
   prefetches files on its own scoped threads, so no async runtime is entered. A cooperative runtime would need the
   upstream `BlobStore` to be async.
+
+## Update: upstream follow-up (lucene-rust #350)
+
+The three findings above are addressed upstream, additively, and the pin moved to `17a6254c`: without `userfaultfd` a file of 1 MiB or more is streamed into a mapped, unlinked spill file instead of a whole-file heap read (`demand_paging`, `spill_min_bytes`, `spill_budget`); `PageCacheConfig::store_profile` makes the read-ahead window the same every run (the live tuner stayed the default; it fetched 6-36 MiB for one cold six-file open under jittered latency, a profile 24 MiB every run); and `BlobStore::version` is part of every page key. Numbers and trade-offs are in lucene-rust `docs/pluggable-storage.md`. Provisional (sandbox, in-memory store). Not yet adopted here: `ObjectBlobStore` does not report a `version`, and no `store_profile` is set, so behaviour is unchanged apart from the spill fallback.
