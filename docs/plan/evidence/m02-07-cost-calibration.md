@@ -65,6 +65,6 @@ So the tail size actually reached, set by the replay bound and batch size, decid
 
 No universal USD budget or SLA is set.
 
-## Not done (so M02.07 stays open)
+## Not done (moved to planned tasks M06.08, M07.13, M07.14, M07.15)
 
 Dirty-domain counts are reported, but **no query/freshness-choice comparison** (`published`/`at_least`/`latest` barrier and tail-read spend), **no p99 or capacity report beyond the batching-wait floor and the single-process PUT saturation**, no trace-driven recovery workload, no measured RPO/RTO, real provider prices (the card is illustrative; its cross-AZ source is a load-balancer blog post, weak provenance), compute and warm-cache cost, and actual-bill reconciliation (M15).
