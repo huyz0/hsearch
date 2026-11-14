@@ -106,7 +106,13 @@ impl CallError {
             Ok(text) => text,
             Err(e) => std::str::from_utf8(&cut[..e.valid_up_to()]).unwrap_or(""),
         };
-        self.detail = (!valid.is_empty()).then(|| valid.to_owned());
+        // Control characters would forge lines or inject escapes in a log or a client.
+        self.detail = (!valid.is_empty()).then(|| {
+            valid
+                .chars()
+                .map(|c| if c.is_control() { '?' } else { c })
+                .collect()
+        });
         self
     }
 

@@ -4,8 +4,8 @@ use crate::host::{HostState, LogSink, SLOT_BITS, SharedCallbacks};
 use crate::image;
 use crate::sys::{Bound, Host, Library, OpenError};
 use hsearch_module_abi::{
-    ABI_VERSION, CallError, Descriptor, ENGINE_API_VERSION, FailureKind, Kind, MAX_BUFFER_BYTES,
-    MAX_CONFIG_BYTES, MAX_DESCRIPTOR_BYTES, Version, abi_accepted, status,
+    ABI_VERSION, CallError, Descriptor, ENGINE_API_VERSION, FailureKind, MAX_BUFFER_BYTES,
+    MAX_CONFIG_BYTES, MAX_DESCRIPTOR_BYTES, Request, Version, abi_accepted, status,
 };
 use std::collections::VecDeque;
 use std::fmt;
@@ -191,23 +191,6 @@ pub enum ModuleState {
     /// Marked failed: a hang, an overrun or too many strikes. No new calls
     /// until the node restarts.
     Failed,
-}
-
-/// One call into an extension point.
-pub struct Request<'a> {
-    /// The point's kind.
-    pub kind: Kind,
-    /// The point's id, as declared.
-    pub point: &'a str,
-    /// The point's input encoding, borrowed for the call.
-    pub input: &'a [u8],
-    /// The whole call's deadline, from submission: queue wait, run time and the
-    /// cooperative cancel. Also the `timeout_ms` the module is told.
-    pub timeout: Duration,
-    /// The first output buffer: the largest result the point's bounds allow.
-    pub output_bound: u32,
-    /// The most the host will retry a too-small buffer up to; at least `output_bound`.
-    pub output_limit: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,25 +1,10 @@
 //! What a module's callbacks reach: per-call cancellation and a bounded log sink.
 
 use crate::sys::Callbacks;
+pub use hsearch_module_abi::{LogRecord, LogSink};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
-
-/// A module log line after the host bounded it, handed to the node's sink.
-pub struct LogRecord<'a> {
-    /// The module's declared name.
-    pub module: &'a str,
-    /// The call it was logged from.
-    pub call_id: u64,
-    /// `HS_LOG_*` as the module gave it.
-    pub level: u32,
-    /// At most 1 KiB, invalid UTF-8 replaced.
-    pub message: &'a str,
-}
-
-/// Where module log lines go. Called on the worker thread that is running the
-/// module, so it must not block.
-pub type LogSink = Arc<dyn Fn(&LogRecord<'_>) + Send + Sync>;
 
 /// A call slot's cancellation flag and the call id that owns it.
 pub(crate) struct CancelSlot {
