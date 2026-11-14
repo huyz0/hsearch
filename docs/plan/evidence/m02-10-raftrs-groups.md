@@ -81,3 +81,21 @@ cut leader: new leader after 953 ms; first write on it committed
 after heal: the write proposed on the cut leader was applied on members [false, false, false]; commit index per member [203, 203, 203]
 messages sent 1688 (requests 851) dropped 12 (cumulative)
 ```
+
+## Rerun against the frozen envelope
+
+`provisional`; rerun after the envelope in [m02-10-envelope.md](m02-10-envelope.md) was committed. Same shape as the table above: 11 KiB per group at 300 and 600 groups, 795/2373/4698 idle requests/s at 100/300/600 groups, contested election 0.6 s; the cut-leader schedule this time gave a new leader after 702 ms (953 ms before), so the failover figure varies by a few hundred ms between runs, and the cut leader's proposal was again applied on no member.
+
+```
+| 100 | 3 | 14 | 0.2 | 795 | 1.0 | 0.008 | 0.041 |
+| 300 | 5 | 11 | 0.8 | 2373 | 1.7 | 0.005 | 0.039 |
+| 600 | 8 | 11 | 1.4 | 4698 | 3.0 | 0.005 | 0.028 |
+## raft-rs schedules (one group of 3, in-process, 50 ms ticks)
+
+contested election: leader after 602 ms
+steady: commit p50 0.008 ms, p99 0.055 ms (200 proposals, no network delay)
+
+cut leader: new leader after 702 ms; first write on it committed
+after heal: the write proposed on the cut leader was applied on members [false, false, false]; commit index per member [203, 203, 203]
+messages sent 1686 (requests 849) dropped 10 (cumulative)
+```

@@ -111,3 +111,46 @@ loss 10%: 100 ok, 0 error or timeout of 100; p50 12.7 ms p99 222.8 ms; RPCs 1107
 loss 30%: 100 ok, 0 error or timeout of 100; p50 13.0 ms p99 1416.7 ms; RPCs 1546 dropped 182
 
 ```
+
+## Rerun against the frozen envelope
+
+`provisional`; rerun after the envelope in [m02-10-envelope.md](m02-10-envelope.md) was committed. Per-group memory 721/536/489 KiB at 100/300/600 groups (marginal slope still about 440-490 KiB), idle RPC 725/2161/4300 a second, and the cut leader's in-flight write was applied on no member in both delay settings; the new leader took 2284 ms and 2062 ms this time.
+
+```
+cpus: 4, tokio workers: 2, RSS ceiling 1536 MiB
+
+| groups | RSS MiB | (RSS - empty-runtime RSS) KiB/group | idle CPU % of 1 core | RPC/s idle | setup+leaders s | write p50 ms | write p99 ms |
+| 100 | 74 | 721 | 15.0 | 725 | 0.1s (all groups) | 0.06 | 0.23 |
+cpus: 4, tokio workers: 2, RSS ceiling 1536 MiB
+
+| groups | RSS MiB | (RSS - empty-runtime RSS) KiB/group | idle CPU % of 1 core | RPC/s idle | setup+leaders s | write p50 ms | write p99 ms |
+| 300 | 161 | 536 | 31.8 | 2161 | 0.1s (all groups) | 0.08 | 0.32 |
+cpus: 4, tokio workers: 2, RSS ceiling 1536 MiB
+
+| groups | RSS MiB | (RSS - empty-runtime RSS) KiB/group | idle CPU % of 1 core | RPC/s idle | setup+leaders s | write p50 ms | write p99 ms |
+| 600 | 290 | 489 | 55.2 | 4300 | 0.3s (all groups) | 0.07 | 0.41 |
+cpus: 4, tokio workers: 2, RSS ceiling 1536 MiB
+
+
+## Failure and ambiguity schedules (one group of 3)
+
+### 0 ms added to each request (response undelayed): leader elected in 11 ms
+
+steady: commit p50 0.08 ms, p99 0.15 ms (200 writes)
+
+partition leader: in-flight write on the cut leader -> client timeout (outcome unknown to the client); new leader after 2284 ms ; first write on new leader took 0.4 ms
+after heal: last_applied per member [Some(204), Some(204), Some(204)]; the in-flight write (client amb) applied on members [false, false, false] (true = it was applied)
+
+loss 10%: 100 ok, 0 error or timeout of 100; p50 0.2 ms p99 202.2 ms; RPCs 1175 dropped 58
+loss 30%: 100 ok, 0 error or timeout of 100; p50 0.5 ms p99 1603.6 ms; RPCs 1611 dropped 190
+
+### 5 ms added to each request (response undelayed): leader elected in 12 ms
+
+steady: commit p50 12.51 ms, p99 15.86 ms (200 writes)
+
+partition leader: in-flight write on the cut leader -> client timeout (outcome unknown to the client); new leader after 2062 ms ; first write on new leader took 28.4 ms
+after heal: last_applied per member [Some(204), Some(204), Some(204)]; the in-flight write (client amb) applied on members [false, false, false] (true = it was applied)
+
+loss 10%: 100 ok, 0 error or timeout of 100; p50 12.8 ms p99 221.6 ms; RPCs 1112 dropped 53
+loss 30%: 100 ok, 0 error or timeout of 100; p50 27.7 ms p99 1596.5 ms; RPCs 1570 dropped 190
+```
