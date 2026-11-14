@@ -36,6 +36,7 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M02.07"]["status"] = "planned"  # Depends on M02.04; keep the model pre-acceptance.
         self.tasks["M02.05"]["status"] = "planned"  # Depends on M02.07; keep the model pre-acceptance.
         self.tasks["M03.03"]["status"] = "planned"  # Depends on M03.09; keep the model pre-acceptance.
+        self.tasks["M03.04"]["status"] = "planned"  # Depends on M03.03; keep the model pre-acceptance.
         self.tasks["M03.07"]["status"] = "planned"  # Depends on M02.07 and M03.01; keep the model pre-acceptance.
         self.tasks["M03.12"]["status"] = "planned"  # Depends on M03.07; keep the model pre-acceptance.
         self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.

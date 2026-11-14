@@ -2012,8 +2012,13 @@
             "M03.03"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-04-authority-model.md",
+              "result": "Modelled (not measured), exhaustive within stated bounds: lane authority (3 instances, 21,818 states), checkpoint, reclaim and read barrier (2 instances 574,887 states; 3 instances 2,780,069), pin vs GC (197,649), grouped membership, hot-stream promotion with unknown cross-head outcomes and stale descriptors (1,695), and 100,000 key histories a case that include the M03.09 lane-mate revocation histories plus AAD/replay, rotation and reinstated keys. All correct models are safe and all 27 seeded controls are refused (selftest and 21 tests). Found one protocol hazard that becomes a production rule: a successor must seal at the first absent slot at or above the checkpoint cover. Limits and production mapping stated: bounded counts, linearizable-provider abstraction, reclaim-versus-reader joined only through pin_gc, symbolic crypto, no rollback path, no quorum mode, private lanes and non-independent stale descriptors."
+            }
+          ]
         },
         {
           "id": "M03.07",
