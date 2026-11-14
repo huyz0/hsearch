@@ -19,7 +19,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | [M01: Linux workspace and AI harness foundation](milestones/M01.md) | done | 17/21 | M00 |
 | [M20: First runnable slice: RustFS, engine and a minimal endpoint](milestones/M20.md) | done | 6/6 | M01 |
 | [M02: API-scoped engine, catalog and cost feasibility](milestones/M02.md) | planned | 11/12 | M01 |
-| [M03: Storage semantics, cost-aware formats and metadata](milestones/M03.md) | planned | 6/13 | M01 |
+| [M03: Storage semantics, cost-aware formats and metadata](milestones/M03.md) | planned | 6/14 | M01 |
 | [M04: Lucene Rust bridge and committed readers](milestones/M04.md) | planned | 0/6 | M02, M03 |
 | [M05: mTLS, tenant policy and BYOK](milestones/M05.md) | planned | 0/8 | M03 |
 | [M06: Object-durable search store on RustFS](milestones/M06.md) | planned | 0/8 | M04, M05 |
