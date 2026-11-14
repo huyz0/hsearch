@@ -39,16 +39,24 @@ fn module_wat_with(
   {extra_imports}
   {memory}
   (global $out_len (mut i32) (i32.const 0))
+  (global $inited (mut i32) (i32.const 0))
   (data (i32.const 0x21000) "{desc}")
   (func (export "hs_abi_version") (result i32) (i32.const {abi}))
-  (func (export "hs_module_init") (param i32) (result i32) (i32.const {init_status}))
+  (func (export "hs_module_init") (param i32) (result i32) (if (i32.eqz (i32.const {init_status})) (then (global.set $inited (i32.const 1)))) (i32.const {init_status}))
   (func (export "hs_module_describe") (result i32)
     (memory.copy (i32.const 0x11000) (i32.const 0x21000) (i32.const {n}))
     (global.set $out_len (i32.const {n}))
     (i32.const {describe_status}))
   (func (export "hs_module_call") (param $kind i32) (param $plen i32) (param $ilen i32) (param $t i32) (result i32)
     (local $mode i32) (local $i i32)
+    (if (i32.eqz (global.get $inited)) (then (return (i32.const -7))))
     (local.set $mode (i32.load8_u (i32.add (i32.const 0x1000) (local.get $plen))))
+    ;; 'n' report one `cancelled` poll, 'k' poll until it is set then say 1
+    (if (i32.eq (local.get $mode) (i32.const 110)) (then
+      (i32.store8 (i32.const 0x11000) (call $cancelled)) (global.set $out_len (i32.const 1)) (return (i32.const 0))))
+    (if (i32.eq (local.get $mode) (i32.const 107)) (then
+      (loop $k (br_if $k (i32.eqz (call $cancelled))))
+      (i32.store8 (i32.const 0x11000) (i32.const 1)) (global.set $out_len (i32.const 1)) (return (i32.const 0))))
     ;; 'e' echo the input
     (if (i32.eq (local.get $mode) (i32.const 101)) (then
       (memory.copy (i32.const 0x11000) (i32.add (i32.const 0x1000) (local.get $plen)) (local.get $ilen))
@@ -87,7 +95,7 @@ fn module_wat_with(
     (global.set $out_len (i32.const 0))
     (i32.const 0))
   (func $recurse (param i32) (result i32) (i32.add (call $recurse (i32.add (local.get 0) (i32.const 1))) (i32.const 1)))
-  (func (export "hs_module_shutdown"))
+  (func (export "hs_module_shutdown") (call $log (i32.const 3) (i32.const 0x21000) (i32.const 8)))
   (func (export "hs_input_region") (result i32) (i32.const {inr}))
   (func (export "hs_output_region") (result i32) (i32.const {outr}))
   (func (export "hs_output_len") (result i32) (global.get $out_len))
@@ -441,23 +449,40 @@ fn a_call_that_cannot_get_an_instance_before_its_deadline_is_busy() {
 }
 
 #[test]
-fn cancelled_is_visible_to_the_guest_only_after_the_deadline() {
+fn cancelled_is_false_before_the_deadline_and_true_after_it() {
     let m = ok(|c| c.limits.fuel_per_call = u64::MAX / 2);
+    assert_eq!(
+        call(&m, b"n").unwrap(),
+        [0],
+        "a generous deadline: not cancelled"
+    );
     let start = Instant::now();
     let mut out = Vec::new();
-    // The guest polls `cancelled` and returns once it is set: a clean return, or the epoch, but never a hang.
-    let _ = m.call(
+    let r = m.call(
         &Request {
             timeout: Duration::from_millis(80),
-            ..req(b"c")
+            ..req(b"k")
         },
         &mut out,
+    );
+    assert!(
+        start.elapsed() >= Duration::from_millis(60),
+        "{:?}",
+        start.elapsed()
     );
     assert!(
         start.elapsed() < Duration::from_millis(600),
         "{:?}",
         start.elapsed()
     );
+    match r {
+        Ok(()) => assert_eq!(out, [1], "the guest saw `cancelled` and returned"),
+        Err(e) => assert!(
+            e.reason.contains("deadline"),
+            "or the epoch got there first: {}",
+            e.reason
+        ),
+    }
 }
 
 fn refused(wat: &str, edit: impl FnOnce(&mut WasmConfig)) -> LoadError {
@@ -664,7 +689,7 @@ fn a_huge_timeout_is_refused_and_instances_are_counted() {
         )
         .unwrap_err();
     assert_eq!(e.failure, FailureKind::Limit);
-    assert!(m.live_instances() >= 1);
+    assert_eq!(m.live_instances(), 1, "the load-time instance only");
 }
 
 #[test]
@@ -730,4 +755,105 @@ fn a_full_queue_is_busy_at_once() {
     for h in holders {
         h.join().unwrap();
     }
+}
+
+#[test]
+fn every_instance_is_initialised_including_replacements_and_second_instances() {
+    let m = std::sync::Arc::new(ok(|c| c.limits.fuel_per_call = u64::MAX / 2));
+    // A replacement after a trap must be initialised: the module answers -7 until init ran.
+    let _ = call(&m, b"u").unwrap_err();
+    assert_eq!(call(&m, b"ehi").unwrap(), b"ehi");
+    // A second instance, made while the first is busy, must be initialised too.
+    let holder = {
+        let m = m.clone();
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            let _ = m.call(
+                &Request {
+                    timeout: Duration::from_millis(400),
+                    ..req(b"l")
+                },
+                &mut out,
+            );
+        })
+    };
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(call(&m, b"ehi").unwrap(), b"ehi");
+    assert_eq!(m.live_instances(), 2);
+    holder.join().unwrap();
+}
+
+#[test]
+fn a_callers_short_deadline_never_marks_the_module_failed() {
+    let m = ok(|c| c.limits.fuel_per_call = u64::MAX / 2);
+    for _ in 0..5 {
+        let mut out = Vec::new();
+        let e = m
+            .call(
+                &Request {
+                    timeout: Duration::from_millis(5),
+                    ..req(b"l")
+                },
+                &mut out,
+            )
+            .unwrap_err();
+        assert!(e.reason.contains("deadline"), "{}", e.reason);
+    }
+    assert_eq!(m.state(), ModuleState::Ready);
+    assert_eq!(call(&m, b"ehi").unwrap(), b"ehi");
+}
+
+#[test]
+fn a_start_function_that_never_ends_is_stopped_by_the_load_timeout() {
+    let wat = good().replace(
+        "(func (export \"hs_abi_version\")",
+        "(func $s (loop $l (br $l)))\n  (start $s)\n  (func (export \"hs_abi_version\")",
+    );
+    let start = Instant::now();
+    let e = load_wat(&wat, |c| {
+        c.limits.fuel_per_call = u64::MAX / 2;
+        c.limits.load_timeout = Duration::from_millis(100);
+    })
+    .expect_err("refused");
+    assert!(matches!(e, LoadError::Trapped(_)), "{e:?}");
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn dropping_the_module_runs_shutdown_once_and_log_text_is_cleaned() {
+    let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(u32, String)>::new()));
+    let sink: hsearch_module_abi::LogSink = {
+        let lines = lines.clone();
+        std::sync::Arc::new(move |r: &hsearch_module_abi::LogRecord<'_>| {
+            lines.lock().unwrap().push((r.level, r.message.to_owned()));
+        })
+    };
+    let m = ok(|c| c.log = Some(sink));
+    assert!(lines.lock().unwrap().is_empty());
+    drop(m);
+    let seen = lines.lock().unwrap().clone();
+    assert_eq!(seen.len(), 1, "shutdown ran once: {seen:?}");
+    assert_eq!(seen[0].0, 3);
+    assert!(seen[0].1.starts_with("{\"name\""), "{:?}", seen[0].1);
+    assert!(!seen[0].1.chars().any(char::is_control));
+}
+
+#[test]
+fn a_panicking_log_sink_does_not_leak_the_instance_slot() {
+    let sink: hsearch_module_abi::LogSink =
+        std::sync::Arc::new(|_: &hsearch_module_abi::LogRecord<'_>| panic!("sink"));
+    let m = ok(|c| c.log = Some(sink));
+    for _ in 0..3 {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| call(&m, b"h")));
+        assert!(r.is_err(), "the panic reaches the caller");
+    }
+    assert!(
+        m.live_instances() <= 1,
+        "slots were released: {}",
+        m.live_instances()
+    );
 }

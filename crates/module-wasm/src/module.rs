@@ -34,6 +34,8 @@ pub struct Limits {
     pub max_io_bytes: u32,
     /// Resolution of the wall-clock deadline: how often the epoch advances while calls run.
     pub epoch_tick: Duration,
+    /// Wall-clock bound on loading: instantiation, the start function, version, describe and init.
+    pub load_timeout: Duration,
     /// Trapped or limit-breaching calls within `strike_window` that mark the module failed.
     pub strike_limit: usize,
     /// The strike window.
@@ -52,6 +54,7 @@ impl Default for Limits {
             max_instances: 64,
             max_io_bytes: MAX_BUFFER_BYTES,
             epoch_tick: Duration::from_millis(1),
+            load_timeout: Duration::from_secs(5),
             strike_limit: 3,
             strike_window: Duration::from_secs(60),
             log_per_second: 50,
@@ -143,6 +146,8 @@ struct Inner {
     failed: AtomicBool,
     strikes: Mutex<VecDeque<Instant>>,
     ticker: Arc<Ticker>,
+    module_config: Vec<u8>,
+    regions: (usize, usize),
 }
 
 /// A loaded WASM module.
@@ -159,11 +164,25 @@ impl fmt::Debug for WasmModule {
     }
 }
 
-impl Drop for WasmModule {
+impl Drop for Inner {
+    /// Runs `hs_module_shutdown` once, on an idle instance, and stops the ticker.
     fn drop(&mut self) {
-        self.inner.ticker.stop.store(true, Ordering::Release);
-        let _guard = lock(&self.inner.ticker.running);
-        self.inner.ticker.wake.notify_all();
+        let idle = lock(&self.pool).idle.pop();
+        if let Some(mut inst) = idle {
+            let ticker = Arc::clone(&self.ticker);
+            let _guard = TickGuard::new(&ticker);
+            let deadline = Instant::now() + Duration::from_secs(1);
+            if let Ok(shutdown) = instance_func::<(), ()>(&mut inst, "hs_module_shutdown")
+                && inst.store.set_fuel(self.limits.fuel_per_call).is_ok()
+            {
+                inst.store.data_mut().begin(deadline);
+                inst.store.set_epoch_deadline(self.ticks_until(deadline));
+                let _ = shutdown.call(&mut inst.store, ());
+            }
+        }
+        self.ticker.stop.store(true, Ordering::Release);
+        let _guard = lock(&self.ticker.running);
+        self.ticker.wake.notify_all();
     }
 }
 
@@ -177,7 +196,10 @@ fn engine(limits: &Limits) -> Result<Engine, LoadError> {
         .wasm_relaxed_simd(false);
     config.wasm_memory64(false);
     config.max_wasm_stack(512 * 1024);
-    let _ = limits;
+    // Reserve only what a memory may reach, not wasmtime's 64-bit default of 4 GiB plus guard, per instance.
+    config
+        .memory_reservation(limits.max_memory_bytes)
+        .memory_guard_size(64 * 1024);
     Engine::new(&config).map_err(|_| LoadError::Invalid("the engine could not be configured"))
 }
 
@@ -264,11 +286,22 @@ impl WasmModule {
             failed: AtomicBool::new(false),
             strikes: Mutex::new(VecDeque::new()),
             ticker,
+            module_config: Vec::new(),
+            regions: (0, 0),
         };
-        let mut first = inner.instantiate().map_err(|_| {
+        if !spawn_ticker(&inner) {
+            return Err(LoadError::Invalid("the deadline ticker could not start"));
+        }
+        let ticker = Arc::clone(&inner.ticker);
+        let guard = TickGuard::new(&ticker);
+        let load_deadline = Instant::now() + config.limits.load_timeout;
+        let mut first = inner.instantiate(load_deadline).map_err(|_| {
             LoadError::Trapped("the module could not be instantiated within its limits")
         })?;
         let desc = inner.bring_up(&mut first, &config)?;
+        drop(guard);
+        inner.regions = (first.in_ptr, first.out_ptr);
+        inner.module_config = config.module_config.clone();
         inner.gate.set_name(&desc.name);
         inner.max_instances = desc
             .max_concurrent_calls
@@ -280,9 +313,9 @@ impl WasmModule {
             pool.live = 1;
             pool.idle.push(first);
         }
-        let inner = Arc::new(inner);
-        spawn_ticker(&inner);
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
     /// The validated descriptor.
@@ -349,24 +382,41 @@ impl WasmModule {
         let Some(deadline) = Instant::now().checked_add(request.timeout) else {
             return Err(err(FailureKind::Limit, "the timeout is too large"));
         };
-        let mut inst = inner.acquire(deadline).map_err(|(f, r)| err(f, r))?;
+        // The ticker runs from here so that creating an instance is bounded by the deadline too.
         let guard = TickGuard::new(&inner.ticker);
-        let outcome = inner.run(&mut inst, request, deadline, out);
+        let inst = inner.acquire(deadline).map_err(|(f, r)| err(f, r))?;
+        let mut lease = Lease {
+            inner,
+            inst: Some(inst),
+        };
+        let outcome = match lease.inst.as_mut() {
+            Some(inst) => inner.run(inst, request, deadline, out),
+            None => return Err(err(FailureKind::Unavailable, "no instance")),
+        };
         drop(guard);
         match outcome {
             Ok(()) => {
-                inner.give_back(inst);
+                if let Some(inst) = lease.inst.take() {
+                    inner.give_back(inst);
+                }
                 Ok(())
             }
             Err(Fault::Keep(e)) => {
-                inner.give_back(inst);
+                if let Some(inst) = lease.inst.take() {
+                    inner.give_back(inst);
+                }
                 out.clear();
                 Err(e.at(request.kind, request.point))
             }
             Err(Fault::Discard(e)) => {
-                inner.discard();
+                drop(lease);
                 out.clear();
                 inner.strike();
+                Err(e.at(request.kind, request.point))
+            }
+            Err(Fault::Expire(e)) => {
+                drop(lease);
+                out.clear();
                 Err(e.at(request.kind, request.point))
             }
         }
@@ -377,6 +427,22 @@ impl WasmModule {
 enum Fault {
     Keep(CallError),
     Discard(CallError),
+    /// The instance goes and no strike is counted: the caller's own deadline ended the call.
+    Expire(CallError),
+}
+
+/// Holds an instance for the length of a call: if the call unwinds, its slot is released rather than lost.
+struct Lease<'a> {
+    inner: &'a Inner,
+    inst: Option<Inst>,
+}
+
+impl Drop for Lease<'_> {
+    fn drop(&mut self) {
+        if self.inst.take().is_some() {
+            self.inner.discard();
+        }
+    }
 }
 
 struct TickGuard<'a>(&'a Ticker);
@@ -395,14 +461,14 @@ impl Drop for TickGuard<'_> {
     }
 }
 
-fn spawn_ticker(inner: &Arc<Inner>) {
+fn spawn_ticker(inner: &Inner) -> bool {
     let (ticker, engine, tick) = (
         Arc::clone(&inner.ticker),
         inner.engine.clone(),
         inner.limits.epoch_tick,
     );
     let spawned = std::thread::Builder::new()
-        .name(format!("hsearch-wasm-epoch-{}", inner.desc.name))
+        .name("hsearch-wasm-epoch".to_owned())
         .spawn(move || {
             loop {
                 {
@@ -421,14 +487,20 @@ fn spawn_ticker(inner: &Arc<Inner>) {
                 engine.increment_epoch();
             }
         });
-    if spawned.is_err() {
-        // Without the ticker the wall-clock deadline cannot fire; fuel still bounds CPU, but fail closed.
-        inner.failed.store(true, Ordering::Release);
-    }
+    spawned.is_ok()
 }
 
 impl Inner {
-    fn instantiate(&self) -> Result<Inst, ()> {
+    /// Epoch ticks from now to `deadline`, rounded up by one so a deadline never fires early by a partial tick.
+    fn ticks_until(&self, deadline: Instant) -> u64 {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let tick = self.limits.epoch_tick.as_nanos().max(1);
+        u64::try_from(remaining.as_nanos() / tick)
+            .unwrap_or(u64::MAX / 4)
+            .saturating_add(1)
+    }
+
+    fn instantiate(&self, deadline: Instant) -> Result<Inst, ()> {
         let limits = StoreLimitsBuilder::new()
             .memory_size(self.limits.max_memory_bytes as usize)
             .instances(1)
@@ -447,7 +519,7 @@ impl Inner {
         );
         store.limiter(|d| &mut d.limits);
         store.set_fuel(self.limits.fuel_per_call).map_err(|_| ())?;
-        store.set_epoch_deadline(u64::MAX / 4);
+        store.set_epoch_deadline(self.ticks_until(deadline));
         let instance = self
             .linker
             .instantiate(&mut store, &self.module)
@@ -557,8 +629,15 @@ impl Inner {
         if config.module_config.len() > io {
             return Err(LoadError::ConfigTooLarge);
         }
+        self.init(inst, &config.module_config)?;
+        Ok(desc)
+    }
+
+    /// Writes the module section to the input region and calls `hs_module_init`: on every new instance.
+    fn init(&self, inst: &mut Inst, module_config: &[u8]) -> Result<(), LoadError> {
+        let trap = |_| LoadError::Trapped("a load-time call trapped or ran out of fuel");
         inst.memory
-            .write(&mut inst.store, a, &config.module_config)
+            .write(&mut inst.store, inst.in_ptr, module_config)
             .map_err(|_| LoadError::ConfigTooLarge)?;
         let init = instance_func::<i32, i32>(inst, "hs_module_init")?;
         inst.store
@@ -567,13 +646,31 @@ impl Inner {
         let code = init
             .call(
                 &mut inst.store,
-                i32::try_from(config.module_config.len()).unwrap_or(0),
+                i32::try_from(module_config.len()).unwrap_or(0),
             )
             .map_err(trap)?;
         if code != status::OK {
             return Err(LoadError::InitFailed(code));
         }
-        Ok(desc)
+        Ok(())
+    }
+
+    /// A later instance: the same regions as the first, and initialised like it.
+    fn new_instance(&self, deadline: Instant) -> Result<Inst, ()> {
+        let mut inst = self.instantiate(deadline)?;
+        if (inst.in_ptr, inst.out_ptr) != self.regions {
+            return Err(());
+        }
+        let version = instance_func::<(), i32>(&mut inst, "hs_abi_version").map_err(|_| ())?;
+        inst.store
+            .set_fuel(self.limits.fuel_per_call)
+            .map_err(|_| ())?;
+        let abi = version.call(&mut inst.store, ()).map_err(|_| ())?;
+        if u32::from_ne_bytes(abi.to_ne_bytes()) != self.desc.abi.packed() {
+            return Err(());
+        }
+        self.init(&mut inst, &self.module_config).map_err(|_| ())?;
+        Ok(inst)
     }
 
     /// Takes an idle instance, makes one if there is room, or waits for one until `deadline`.
@@ -586,7 +683,7 @@ impl Inner {
             if pool.live < self.max_instances {
                 pool.live += 1;
                 drop(pool);
-                return self.instantiate().map_err(|()| {
+                return self.new_instance(deadline).map_err(|()| {
                     lock(&self.pool).live -= 1;
                     self.returned.notify_one();
                     (
@@ -658,11 +755,7 @@ impl Inner {
         };
         region[..plen].copy_from_slice(request.point.as_bytes());
         region[plen..].copy_from_slice(request.input);
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let tick = self.limits.epoch_tick.as_nanos().max(1);
-        let ticks = u64::try_from(remaining.as_nanos() / tick)
-            .unwrap_or(u64::MAX / 4)
-            .saturating_add(1);
+        let ticks = self.ticks_until(deadline);
         inst.store.data_mut().begin(deadline);
         let timeout_ms = i32::try_from(request.timeout.as_millis()).unwrap_or(i32::MAX);
         if inst.store.set_fuel(self.limits.fuel_per_call).is_err() {
@@ -677,13 +770,13 @@ impl Inner {
         );
         let code = match inst.call.call(&mut inst.store, args) {
             Ok(code) => code,
-            Err(e) => return Err(Fault::Discard(self.classify(inst, &e))),
+            Err(e) => return Err(self.fault(inst, &e)),
         };
         // Reading the length is a guest call too: fresh fuel, the same deadline.
         let _ = inst.store.set_fuel(10_000);
         let len = match inst.out_len.call(&mut inst.store, ()) {
             Ok(len) => len,
-            Err(e) => return Err(Fault::Discard(self.classify(inst, &e))),
+            Err(e) => return Err(self.fault(inst, &e)),
         };
         let io = self.desc.io_bytes as usize;
         let Some(len) = usize::try_from(len).ok().filter(|l| *l <= io) else {
@@ -738,6 +831,18 @@ impl Inner {
     }
 
     /// Maps a trap, fuel or deadline stop, or a host-enforced breach, to a typed error.
+    /// The caller's own deadline ends the call without a strike; everything else the module did counts.
+    fn fault(&self, inst: &Inst, error: &wasmtime::Error) -> Fault {
+        let e = self.classify(inst, error);
+        let expired = inst.store.data().breach.is_none()
+            && matches!(error.downcast_ref::<Trap>(), Some(Trap::Interrupt));
+        if expired {
+            Fault::Expire(e)
+        } else {
+            Fault::Discard(e)
+        }
+    }
+
     fn classify(&self, inst: &Inst, error: &wasmtime::Error) -> CallError {
         let name = self.desc.name.as_str();
         match inst.store.data().breach {

@@ -50,7 +50,12 @@ impl LogGate {
             }
             window.1 += 1;
         }
-        let text = String::from_utf8_lossy(message);
+        // Control characters would forge lines or inject escapes in a line-oriented sink.
+        let text: String = String::from_utf8_lossy(message)
+            .chars()
+            .map(|c| if c.is_control() { '?' } else { c })
+            .collect();
+        let level = level.clamp(1, 4);
         sink(&LogRecord {
             module: self.name.get().map_or("", String::as_str),
             call_id: 0,
@@ -138,8 +143,7 @@ pub(crate) fn linker(engine: &wasmtime::Engine) -> wasmtime::Result<Linker<HostD
     linker.func_wrap(
         "hsearch_host_v1",
         "cancelled",
-        |mut caller: Caller<'_, HostData>| -> wasmtime::Result<i32> {
-            caller.data_mut().count()?;
+        |caller: Caller<'_, HostData>| -> wasmtime::Result<i32> {
             Ok(i32::from(Instant::now() >= caller.data().deadline))
         },
     )?;
