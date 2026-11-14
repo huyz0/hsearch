@@ -108,7 +108,7 @@ Trace engine file opens, random access, metadata reads, and codec locality on ac
 
 ## Object layout and publication
 
-Proposed layout, subject to M03 format ratification:
+Proposed layout, subject to M03 format ratification. The byte layouts and the per-index key layout that replaces the tenant level (tenant = index, M03.09) are specified in [formats.md](formats.md); this block is the earlier sketch:
 
 ```text
 v1/<deployment>/tenants/<tenant_uuid>/

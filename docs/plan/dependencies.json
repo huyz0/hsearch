@@ -186,6 +186,13 @@
       "checksum": null
     },
     {
+      "name": "hsearch-format",
+      "version": "0.1.0",
+      "source": "workspace",
+      "license": "not selected",
+      "checksum": null
+    },
+    {
       "name": "hsearch-index",
       "version": "0.1.0",
       "source": "workspace",
