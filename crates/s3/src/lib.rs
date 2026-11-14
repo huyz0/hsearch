@@ -33,8 +33,17 @@
 //! - **Cancellation** is observed before each call; a call already on the wire is
 //!   bounded by the context deadline, not interrupted.
 
+mod ledger;
 mod sigv4;
+mod traffic;
 mod xml;
+
+pub use ledger::{Cell, Ledger, Outcome, Role, Verb};
+pub use traffic::{
+    Class, Direction, Evidence, MAX_KEYS, MAX_NAME, MAX_TENANTS, MAX_TRANSFERS, Mismatch, Path,
+    Payer, Place, Priced, Rate, Rates, Rejection, Totals, TrafficError, TrafficLedger, Transfer,
+    Unit, Via, encoded_request_bytes, encoded_response_bytes, reconcile,
+};
 
 use hsearch_object::{
     ByteRange, Error, Metadata, MetadataStore, Mutation, ObjectBackend, ObjectInfo, ObjectKey,
@@ -42,6 +51,7 @@ use hsearch_object::{
 };
 use sigv4::{Signer, amz_date, encode, hex, sha256_hex, unhex};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 /// Most versions a recovery scan inspects before giving up.
@@ -115,6 +125,17 @@ enum Op {
 }
 
 impl Op {
+    fn verb(self) -> Verb {
+        match self {
+            Op::Get => Verb::Get,
+            Op::Put => Verb::Put,
+            Op::Head => Verb::Head,
+            Op::List => Verb::List,
+            Op::Delete => Verb::Delete,
+            Op::Post => Verb::Post,
+        }
+    }
+
     fn method(self) -> &'static str {
         match self {
             Op::Get | Op::List => "GET",
@@ -151,6 +172,16 @@ pub struct S3Store {
     signer: Signer,
     agent: ureq::Agent,
     counters: Counters,
+    attribution: Mutex<Attribution>,
+}
+
+/// What the adapter has attributed so far.
+struct Attribution {
+    ledger: Ledger,
+    traffic: TrafficLedger,
+    path: Path,
+    local: Place,
+    next_transfer: u64,
 }
 
 impl std::fmt::Debug for S3Store {
@@ -241,15 +272,97 @@ impl S3Store {
         let agent = ureq::Agent::new_with_config(
             ureq::Agent::config_builder()
                 .http_status_as_error(false)
+                // A redirect would send a second request inside one call that no counter sees.
+                .max_redirects(0)
                 .proxy(None)
                 .build(),
         );
         Ok(Self {
-            config,
             signer,
             agent,
             counters: Counters::default(),
+            attribution: Mutex::new(Attribution {
+                ledger: Ledger::default(),
+                traffic: TrafficLedger::default(),
+                // Until told otherwise the path is unknown, so its traffic is unpriced, not free.
+                path: Path {
+                    endpoint: config.endpoint.clone(),
+                    region: None,
+                    zone: None,
+                    payer: None,
+                    via: Via::Direct,
+                    evidence: Evidence::Declared,
+                },
+                local: Place {
+                    region: String::new(),
+                    zone: String::new(),
+                },
+                next_transfer: 0,
+            }),
+            config,
         })
+    }
+
+    /// Tell the adapter where it runs and what is known about the path to its endpoint, so that
+    /// traffic is classified and priced. Without this the path is unknown.
+    #[must_use]
+    pub fn with_path(self, path: Path, local: Place) -> Self {
+        {
+            let mut guard = self.attribution();
+            guard.path = path;
+            guard.local = local;
+        }
+        self
+    }
+
+    fn attribution(&self) -> std::sync::MutexGuard<'_, Attribution> {
+        self.attribution
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A snapshot of logical calls and attempts, by role, verb and outcome.
+    #[must_use]
+    pub fn ledger(&self) -> Ledger {
+        self.attribution().ledger.clone()
+    }
+
+    /// A snapshot of the directed traffic ledger.
+    #[must_use]
+    pub fn traffic(&self) -> TrafficLedger {
+        self.attribution().traffic.clone()
+    }
+
+    fn logical(&self, role: Role) {
+        self.attribution().ledger.logical(role);
+    }
+
+    fn attribute(&self, role: Role, op: Op, status: Option<u16>, request: u64, response: u64) {
+        let verb = op.verb();
+        let mut guard = self.attribution();
+        let state = &mut *guard;
+        state.ledger.attempt(
+            role,
+            verb,
+            Outcome::classify(verb, status),
+            request,
+            response,
+            false,
+        );
+        for (direction, bytes) in [(Direction::Egress, request), (Direction::Ingress, response)] {
+            state.next_transfer += 1;
+            // A name refusal keeps the bytes as unknown traffic inside the ledger; it must not
+            // fail the storage operation.
+            let _ = state.traffic.record_unique(Transfer {
+                id: state.next_transfer,
+                role,
+                direction,
+                path: &state.path,
+                local: &state.local,
+                tenant: None,
+                bytes,
+            });
+        }
     }
 
     /// Requests sent so far, by operation type.
@@ -284,6 +397,7 @@ impl S3Store {
     fn send(
         &self,
         context: &RequestContext,
+        role: Role,
         op: Op,
         key: Option<&ObjectKey>,
         query: &str,
@@ -323,11 +437,27 @@ impl S3Store {
         if timeout.is_zero() {
             return Err(Error::DeadlineExceeded);
         }
+        let target = if query.is_empty() {
+            path.clone()
+        } else {
+            format!("{path}?{query}")
+        };
+        let mut on_wire = signed.clone();
+        on_wire.push(("authorization".to_owned(), authorization.clone()));
+        let request_size = encoded_request_bytes(op.method(), &target, &on_wire, body.len() as u64);
         self.count(op);
         let outcome = self.dispatch(op, &url, &signed, &authorization, body, timeout);
         let mut response = match outcome {
             Ok(response) => response,
             Err(error) => {
+                // Refused or unresolvable connections sent nothing; any other failure may have
+                // sent the whole request.
+                let sent = match &error {
+                    ureq::Error::ConnectionFailed | ureq::Error::HostNotFound => 0,
+                    ureq::Error::Io(io) if io.kind() == std::io::ErrorKind::ConnectionRefused => 0,
+                    _ => request_size,
+                };
+                self.attribute(role, op, None, sent, 0);
                 return Err(match error {
                     ureq::Error::ConnectionFailed | ureq::Error::HostNotFound => Error::Unavailable,
                     // Refused before any byte was accepted: certified not executed.
@@ -343,13 +473,13 @@ impl S3Store {
             }
         };
         let status = response.status().as_u16();
-        let headers = response
+        let headers: Vec<(String, String)> = response
             .headers()
             .iter()
             .filter_map(|(k, v)| Some((k.as_str().to_owned(), v.to_str().ok()?.to_owned())))
             .collect();
         let body = if op == Op::Head {
-            Vec::new()
+            Ok(Vec::new())
         } else {
             response
                 .body_mut()
@@ -360,8 +490,17 @@ impl S3Store {
                     ureq::Error::BodyExceedsLimit(_) if !mutation => Error::Corrupt,
                     _ if mutation => Error::UnknownOutcome,
                     _ => Error::Unavailable,
-                })?
+                })
         };
+        let body_len = body.as_ref().map_or(0, Vec::len) as u64;
+        self.attribute(
+            role,
+            op,
+            Some(status),
+            request_size,
+            encoded_response_bytes(&headers, body_len),
+        );
+        let body = body?;
         Ok(Reply {
             status,
             headers,
@@ -453,8 +592,18 @@ impl S3Store {
             "DELETE" => Op::Delete,
             _ => return Err(Error::InvalidInput),
         };
+        self.logical(Role::Payload);
         context.charge_request(key.len() as u64 + body.len() as u64 + 64)?;
-        let reply = self.send(context, op, Some(key), query, headers, body, 1 << 20)?;
+        let reply = self.send(
+            context,
+            Role::Payload,
+            op,
+            Some(key),
+            query,
+            headers,
+            body,
+            1 << 20,
+        )?;
         Ok((reply.status, reply.headers, reply.body))
     }
 
@@ -462,15 +611,25 @@ impl S3Store {
     /// compose runs and local development; production buckets are provisioned
     /// outside the data path.
     pub fn prepare_bucket(&self, context: &RequestContext) -> Result<(), Error> {
+        self.logical(Role::Metadata);
         context.charge_request(0)?;
-        let created = self.send(context, Op::Put, None, "", &[], &[], 4096)?;
+        let created = self.send(context, Role::Metadata, Op::Put, None, "", &[], &[], 4096)?;
         // 409 means the bucket already exists and is ours.
         if !(200..300).contains(&created.status) && created.status != 409 {
             return Err(status_error(created.status, false));
         }
         context.charge_request(0)?;
         let body = b"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Status>Enabled</Status></VersioningConfiguration>";
-        let enabled = self.send(context, Op::Put, None, "versioning=", &[], body, 4096)?;
+        let enabled = self.send(
+            context,
+            Role::Metadata,
+            Op::Put,
+            None,
+            "versioning=",
+            &[],
+            body,
+            4096,
+        )?;
         if !(200..300).contains(&enabled.status) {
             return Err(status_error(enabled.status, false));
         }
@@ -480,8 +639,18 @@ impl S3Store {
     /// Require bucket versioning. Without it exact-version reads and identity
     /// resolution are unsound, so this is [`Error::Unsupported`], not a fallback.
     pub fn verify_versioning(&self, context: &RequestContext) -> Result<(), Error> {
+        self.logical(Role::Metadata);
         context.charge_request(0)?;
-        let reply = self.send(context, Op::Get, None, "versioning=", &[], &[], 4096)?;
+        let reply = self.send(
+            context,
+            Role::Metadata,
+            Op::Get,
+            None,
+            "versioning=",
+            &[],
+            &[],
+            4096,
+        )?;
         if !(200..300).contains(&reply.status) {
             return Err(status_error(reply.status, false));
         }
@@ -500,10 +669,20 @@ impl S3Store {
         key: &ObjectKey,
         version: &VersionToken,
     ) -> Result<(), Error> {
+        self.logical(Role::Payload);
         let (version_id, _) = split_token(version)?;
         context.charge_request(key.len() as u64 + version.len() as u64)?;
         let query = format!("versionId={}", encode(version_id.as_bytes(), false));
-        let reply = self.send(context, Op::Delete, Some(key), &query, &[], &[], 4096)?;
+        let reply = self.send(
+            context,
+            Role::Payload,
+            Op::Delete,
+            Some(key),
+            &query,
+            &[],
+            &[],
+            4096,
+        )?;
         match reply.status {
             200..=299 => Ok(()),
             status => Err(status_error(status, true)),
@@ -529,13 +708,14 @@ impl S3Store {
     fn head_version(
         &self,
         context: &RequestContext,
+        role: Role,
         key: &ObjectKey,
         version_id: Option<&str>,
     ) -> Result<(Reply, ObjectInfo), Error> {
         let query = version_id.map_or_else(String::new, |id| {
             format!("versionId={}", encode(id.as_bytes(), false))
         });
-        let reply = self.send(context, Op::Head, Some(key), &query, &[], &[], 0)?;
+        let reply = self.send(context, role, Op::Head, Some(key), &query, &[], &[], 0)?;
         if !(200..300).contains(&reply.status) {
             return Err(status_error(reply.status, false));
         }
@@ -553,6 +733,7 @@ impl S3Store {
     fn find_accepted(
         &self,
         context: &RequestContext,
+        role: Role,
         request: &Mutation,
     ) -> Result<Option<WriteReceipt>, Error> {
         let boundary = match &request.precondition {
@@ -565,7 +746,7 @@ impl S3Store {
             SCAN_LIMIT + 1,
             encode(request.key.as_bytes(), false)
         );
-        let reply = self.send(context, Op::List, None, &query, &[], &[], 1 << 20)?;
+        let reply = self.send(context, role, Op::List, None, &query, &[], &[], 1 << 20)?;
         if !(200..300).contains(&reply.status) {
             return Err(status_error(reply.status, false));
         }
@@ -592,7 +773,7 @@ impl S3Store {
             }
             context.charge_request(request.key.len() as u64 + 40)?;
             let (reply, info) =
-                self.head_version(context, &request.key, Some(&listed.version_id))?;
+                self.head_version(context, role, &request.key, Some(&listed.version_id))?;
             if reply.header(META_REQUEST) != Some(wanted.as_str()) {
                 continue;
             }
@@ -612,7 +793,12 @@ impl S3Store {
         Err(Error::ResolutionUnavailable)
     }
 
-    fn write(&self, context: &RequestContext, request: &Mutation) -> Result<WriteReceipt, Error> {
+    fn write(
+        &self,
+        context: &RequestContext,
+        role: Role,
+        request: &Mutation,
+    ) -> Result<WriteReceipt, Error> {
         if request.metadata.len() > MAX_METADATA {
             return Err(Error::BudgetExceeded);
         }
@@ -634,6 +820,7 @@ impl S3Store {
         ];
         let reply = self.send(
             context,
+            role,
             Op::Put,
             Some(&request.key),
             "",
@@ -662,7 +849,7 @@ impl S3Store {
             }
             // A failed condition may be this very request, accepted earlier whose
             // response was lost: replay precedes conflict, as in the memory double.
-            404 | 409 | 412 => match self.find_accepted(context, request)? {
+            404 | 409 | 412 => match self.find_accepted(context, role, request)? {
                 Some(receipt) => Ok(receipt),
                 None => Err(Error::Conflict),
             },
@@ -678,9 +865,11 @@ impl ObjectBackend for S3Store {
         key: &'a ObjectKey,
     ) -> Operation<'a, ObjectInfo> {
         Box::pin(async move {
+            self.logical(Role::Payload);
             context.charge_request(key.len() as u64)?;
             context.charge_response(TOKEN_BOUND + 8 + MAX_METADATA as u64)?;
-            self.head_version(context, key, None).map(|(_, info)| info)
+            self.head_version(context, Role::Payload, key, None)
+                .map(|(_, info)| info)
         })
     }
 
@@ -690,10 +879,11 @@ impl ObjectBackend for S3Store {
         request: &'a Mutation,
     ) -> Operation<'a, WriteReceipt> {
         Box::pin(async move {
+            self.logical(Role::Payload);
             if request.precondition != Precondition::Absent {
                 return Err(Error::InvalidInput);
             }
-            self.write(context, request)
+            self.write(context, Role::Payload, request)
         })
     }
 
@@ -705,6 +895,7 @@ impl ObjectBackend for S3Store {
         range: ByteRange,
     ) -> Operation<'a, Payload> {
         Box::pin(async move {
+            self.logical(Role::Payload);
             context.charge_request(key.len() as u64 + version.len() as u64 + 16)?;
             let (version_id, _) = split_token(version)?;
             if range.length() > 16 * 1024 * 1024 {
@@ -716,6 +907,7 @@ impl ObjectBackend for S3Store {
             let headers = [("range", format!("bytes={}-{end}", range.offset()))];
             let reply = self.send(
                 context,
+                Role::Payload,
                 Op::Get,
                 Some(key),
                 &query,
@@ -752,7 +944,10 @@ impl MetadataStore for S3Store {
         context: &'a RequestContext,
         request: &'a Mutation,
     ) -> Operation<'a, WriteReceipt> {
-        Box::pin(async move { self.write(context, request) })
+        Box::pin(async move {
+            self.logical(Role::Metadata);
+            self.write(context, Role::Metadata, request)
+        })
     }
 
     fn resolve<'a>(
@@ -761,8 +956,9 @@ impl MetadataStore for S3Store {
         request: &'a Mutation,
     ) -> Operation<'a, WriteReceipt> {
         Box::pin(async move {
+            self.logical(Role::Metadata);
             let receipt = self
-                .find_accepted(context, request)?
+                .find_accepted(context, Role::Metadata, request)?
                 .ok_or(Error::ResolutionUnavailable)?;
             context.charge_response(
                 request.request_id.len() as u64
