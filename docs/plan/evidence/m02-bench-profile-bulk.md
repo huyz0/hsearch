@@ -21,7 +21,7 @@ Test: `the_term_bound_counts_analyzed_tokens_not_bytes_across_all_text_fields`.
 ## Notes from review
 - Short text (at most `MAX_TERMS` bytes) no longer surfaces an analyzer failure at prepare time; it surfaces at the native commit. Longer text keeps the prepare-time error.
 - The boundary test cannot observe the skip itself (behaviour is identical); it pins the 128/129-byte boundary.
-- The bench's PUT/s and MiB/s columns now count successful PUTs only. The s3 bench is M02.10 work, included here as measurement tooling; no result from it is recorded in this PR.
+- The bench's PUT/s and MiB/s columns now count successful PUTs only. The s3 bench is M02.10 work, included here as measurement tooling; its RustFS results are in the section below (added after this note was written).
 - The bulk bench workload (~20 byte text) sits in the skipped regime; longer text still pays two analysis passes.
 
 ## RustFS bench results (M02.10, M02.04 input)
