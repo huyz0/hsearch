@@ -61,6 +61,28 @@ fn mutation(id: &str, key: &str, body: &[u8], precondition: Precondition) -> Mut
     }
 }
 
+/// A body of `len` bytes that differs for every (writer, iteration). `If-Match` compares the
+/// ETag, a content hash: identical bodies share an ETag, so a stale head would still match and
+/// the compare-and-set would fence nothing. A contention number from identical bodies is wrong.
+fn unique_body(len: usize, t: usize, i: u64) -> Vec<u8> {
+    let mut body = vec![7u8; len];
+    body[..8].copy_from_slice(&(t as u64).to_le_bytes());
+    body[8..16].copy_from_slice(&i.to_le_bytes());
+    body
+}
+
+/// Distinct error variants seen by the workers, printed once at the end so "other errors" is
+/// not an unexplained number.
+static ERRORS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn note_error(error: &Error) {
+    let name = format!("{error:?}");
+    let mut seen = ERRORS.lock().unwrap();
+    if !seen.contains(&name) && seen.len() < 16 {
+        seen.push(name);
+    }
+}
+
 fn store(bucket: &str) -> Arc<S3Store> {
     let var = |n: &str| std::env::var(n).unwrap_or_else(|_| panic!("{n} is not set"));
     let store = S3Store::new(S3Config {
@@ -87,6 +109,7 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
 fn run(
     threads: usize,
     seconds: f64,
+    pause: Duration,
     work: impl Fn(usize, u64) -> bool + Send + Sync + 'static,
 ) -> (u64, u64, Vec<f64>, f64) {
     let work = Arc::new(work);
@@ -107,6 +130,10 @@ fn run(
                 barrier.wait();
                 let mut i = 0;
                 while !stop.load(Ordering::Relaxed) {
+                    if !pause.is_zero() {
+                        // Between operations, outside the timed section: open-loop-ish pacing.
+                        std::thread::sleep(pause);
+                    }
                     let started = Instant::now();
                     let won = work(t, i);
                     latencies.push(started.elapsed().as_secs_f64() * 1000.0);
@@ -164,7 +191,7 @@ fn main() {
     ] {
         let body = Arc::new(vec![7u8; size]);
         let s2 = Arc::clone(&s);
-        let (_, ops, lat, elapsed) = run(1, seconds, move |_, i| {
+        let (_, ops, lat, elapsed) = run(1, seconds, Duration::ZERO, move |_, i| {
             let m = mutation(
                 &format!("sz{size}-{i}"),
                 &format!("size{size}/{i}"),
@@ -188,7 +215,7 @@ fn main() {
     for writers in [1usize, 2, 4, 8, 16, 32] {
         let body = Arc::new(vec![7u8; 64 << 10]);
         let s2 = Arc::clone(&s);
-        let (_, ops, lat, elapsed) = run(writers, seconds, move |t, i| {
+        let (_, ops, lat, elapsed) = run(writers, seconds, Duration::ZERO, move |t, i| {
             let m = mutation(
                 &format!("cw{writers}-{t}-{i}"),
                 &format!("conc{writers}/{t}/{i}"),
@@ -230,13 +257,13 @@ fn main() {
             Arc::clone(&other),
         );
         let key2 = key.clone();
-        let (ops, wins, lat, elapsed) = run(writers, seconds, move |t, i| {
+        let (ops, wins, lat, elapsed) = run(writers, seconds, Duration::ZERO, move |t, i| {
             // Each attempt names the head it last saw, as a writer without a lock would.
             let seen = head2.lock().unwrap().clone();
             let m = mutation(
                 &format!("{key2}-{t}-{i}"),
                 &key2,
-                &[1u8; 1024],
+                &unique_body(1024, t, i),
                 Precondition::Matches(seen),
             );
             match block(s2.compare_exchange(&ctx(), &m)) {
@@ -248,7 +275,8 @@ fn main() {
                     c2.fetch_add(1, Ordering::Relaxed);
                     false
                 }
-                Err(_) => {
+                Err(error) => {
+                    note_error(&error);
                     o2.fetch_add(1, Ordering::Relaxed);
                     false
                 }
@@ -264,5 +292,115 @@ fn main() {
             percentile(&lat, 0.99)
         );
     }
+    matched(&s, seconds, &nonce.to_string());
     println!("\nrequests: {:?}", s.counts());
+    println!("other error variants seen: {:?}", ERRORS.lock().unwrap());
+}
+
+/// Matched sparse/busy/skewed workloads: same payload (16 KiB), same duration, same client and
+/// store, same measurement. Only the arrival shape differs:
+/// - sparse: one writer, one commit attempt every 50 ms, its own key;
+/// - busy: 16 closed-loop writers, each on its own key (no contention);
+/// - skewed: 16 closed-loop writers, 90% of attempts on one hot key (shared head, real
+///   contention), 10% on the writer's own key.
+///
+/// Requests per commit are the store's own request counters, per attempt including failures.
+fn matched(s: &Arc<S3Store>, seconds: f64, nonce: &str) {
+    println!("\n## Matched workloads, 16 KiB commits, compare-and-set on a per-key head\n");
+    println!(
+        "| shape | writers | attempts/s | commits/s | conflicts | other errors | p50 ms | p99 ms | PUT/commit | HEAD/commit | GET/commit | LIST/commit |\n|---|---|---|---|---|---|---|---|---|---|---|---|"
+    );
+    for (shape, writers, pause_ms, hot_pct) in [
+        ("sparse", 1usize, 50u64, 0u64),
+        ("busy", 16, 0, 0),
+        ("skewed", 16, 0, 90),
+    ] {
+        let body = vec![3u8; 16 << 10];
+        let hot = format!("matched-{shape}-{nonce}-hot");
+        let first = block(s.create(
+            &ctx(),
+            &mutation(&format!("{hot}-seed"), &hot, &body, Precondition::Absent),
+        ))
+        .unwrap();
+        let hot_head = Arc::new(std::sync::Mutex::new(first.object.version));
+        let own: Arc<Vec<std::sync::Mutex<Option<hsearch_object::VersionToken>>>> =
+            Arc::new((0..writers).map(|_| std::sync::Mutex::new(None)).collect());
+        let (conflicts, other) = (Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0)));
+        let before = s.counts();
+        let (s2, hot2, own2, c2, o2) = (
+            Arc::clone(s),
+            Arc::clone(&hot_head),
+            Arc::clone(&own),
+            Arc::clone(&conflicts),
+            Arc::clone(&other),
+        );
+        let (shape_s, hot_key) = (shape.to_string(), hot.clone());
+        let (_, wins, lat, elapsed) = run(
+            writers,
+            seconds,
+            Duration::from_millis(pause_ms),
+            move |t, i| {
+                let on_hot = hot_pct > 0 && (i * 7 + t as u64 * 13) % 100 < hot_pct;
+                let key = if on_hot {
+                    hot_key.clone()
+                } else {
+                    format!("matched-{shape_s}-{t}-{}", hot_key.len())
+                };
+                let seen = if on_hot {
+                    Some(hot2.lock().unwrap().clone())
+                } else {
+                    own2[t].lock().unwrap().clone()
+                };
+                let precondition = match &seen {
+                    Some(v) => Precondition::Matches(v.clone()),
+                    None => Precondition::Absent,
+                };
+                let m = mutation(
+                    &format!("{key}-{t}-{i}"),
+                    &key,
+                    &unique_body(16 << 10, t, i),
+                    precondition,
+                );
+                let result = if seen.is_some() {
+                    block(s2.compare_exchange(&ctx(), &m))
+                } else {
+                    block(s2.create(&ctx(), &m))
+                };
+                match result {
+                    Ok(receipt) => {
+                        if on_hot {
+                            *hot2.lock().unwrap() = receipt.object.version;
+                        } else {
+                            *own2[t].lock().unwrap() = Some(receipt.object.version);
+                        }
+                        true
+                    }
+                    Err(Error::Conflict) => {
+                        c2.fetch_add(1, Ordering::Relaxed);
+                        false
+                    }
+                    Err(error) => {
+                        note_error(&error);
+                        o2.fetch_add(1, Ordering::Relaxed);
+                        false
+                    }
+                }
+            },
+        );
+        let after = s.counts();
+        let per = |a: u64, b: u64| (a - b) as f64 / wins.max(1) as f64;
+        println!(
+            "| {shape} | {writers} | {:.0} | {:.0} | {} | {} | {:.1} | {:.1} | {:.2} | {:.2} | {:.2} | {:.2} |",
+            lat.len() as f64 / elapsed,
+            wins as f64 / elapsed,
+            conflicts.load(Ordering::Relaxed),
+            other.load(Ordering::Relaxed),
+            percentile(&lat, 0.5),
+            percentile(&lat, 0.99),
+            per(after.put, before.put),
+            per(after.head, before.head),
+            per(after.get, before.get),
+            per(after.list, before.list),
+        );
+    }
 }

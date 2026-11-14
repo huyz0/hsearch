@@ -25,7 +25,9 @@ Test: `the_term_bound_counts_analyzed_tokens_not_bytes_across_all_text_fields`.
 - The bulk bench workload (~20 byte text) sits in the skipped regime; longer text still pays two analysis passes.
 
 ## RustFS bench results (M02.10, M02.04 input)
-`provisional`: RustFS 1.0.4 in Docker on the same 4-CPU sandbox VM as the client, 2 s per cell, `cargo run --release -p hsearch-s3 --example bench`. Relative only.
+`provisional`: RustFS 1.0.4 in Docker on the same 4-CPU sandbox VM as the client, 5 s per cell, `BENCH_SECONDS=5 cargo run --release -p hsearch-s3 --example bench` with the fixed bench below. Relative only.
+
+**Correction (14 November).** An earlier version of this section reported contended compare-and-set as "about 180 commits/s per key, conflicts low". That was wrong: the bench wrote identical bodies after the first update, and the conflict counts went from near zero to hundreds when only the bodies were made distinct. The explanation that fits is that `If-Match` compares the ETag (a content hash) and identical bodies share one, so a stale head still matched and the CAS fenced nothing; a direct probe of that was not run. The bench now writes a distinct body per attempt (`unique_body`) and the numbers below replace the old ones. If that explanation is right, an `If-Match` update that rewrites identical bytes is not fenced by the ETag, so a commit must never rely on the content hash alone (the adapter's token also carries the version id, but the precondition sent is the ETag); that needs its own probe before the format freezes.
 
 | payload | PUT/s | MiB/s | p50 ms | p99 ms |
 |---|---|---|---|---|
@@ -36,8 +38,30 @@ Test: `the_term_bound_counts_analyzed_tokens_not_bytes_across_all_text_fields`.
 | 4 MiB | 24 | 95.2 | 38.4 | 113.9 |
 | 16 MiB | 3 | 46.8 | 163.7 | 800.9 |
 
-Concurrent 64 KiB PUTs to distinct keys: 173/s (1 writer), 570/s (4), 866/s (16), 891/s (32); p99 rises from 10.6 ms to 52.6 ms. Throughput saturates by about 16 writers on this VM.
+(Payload-size rows are from the first run; those do not depend on content and were not rerun.)
 
-Contended compare-and-set on one 1 KiB key: winners/s 112 (1 writer), 177 (2), 181 (4), 178 (8), 157 (16); conflicts stay low (15 of 164 attempts/s at 16 writers), no other errors. One key sustains roughly 180 commits/s here, so a hot index is bounded by CAS round trips, not by contention.
+Concurrent 64 KiB PUTs to distinct keys (second run): 154/s (1 writer), 499 (4), 782 (16), 796 (32); p99 from 13.5 ms to 55.9 ms. Throughput saturates by about 16 writers on this VM.
 
-Reading for the design: a PUT has a fixed cost of about 4-5 ms before bytes matter, so small payloads waste the request: 16 KiB moves 3.3 MiB/s, 4 MiB moves 95 MiB/s on the same store. Group commit that packs many documents into one PUT is therefore worth it for request count and cost; 4 MiB is the best size measured, 16 MiB regressed (p99 800 ms). The whole run issued 10,200 PUTs, 32 HEADs, 26 LISTs and 1 GET. The 26 LISTs were not attributed to a call site in this run.
+Contended compare-and-set on one 1 KiB key, distinct bodies:
+
+| writers | attempts/s | winners/s | conflicts | other errors | p50 ms | p99 ms |
+|---|---|---|---|---|---|---|
+| 1 | 95 | 95 | 0 | 0 | 10.0 | 21.0 |
+| 2 | 127 | 99 | 140 | 0 | 10.8 | 70.6 |
+| 4 | 169 | 84 | 423 | 0 | 16.4 | 82.7 |
+| 8 | 166 | 83 | 431 | 1 | 18.7 | 512.3 |
+| 16 | 118 | 93 | 99 | 25 | 10.2 | 2146.0 |
+
+One hot key sustains roughly 80-100 commits/s here regardless of writer count, and past 2 writers most attempts conflict. "Other errors" were all `ResolutionUnavailable`: after a refused condition the adapter resolves "was it my own earlier request?" by listing and probing recent versions within a scan bound, and under heavy contention the hot key's history outruns that bound, so the outcome is reported as unresolvable (ambiguous), not conflict. That is a finding about the adapter's unknown-outcome path under contention, not yet a defect ruled on.
+
+Matched workloads: the same 16 KiB distinct-body commits, same duration, same client and store; only the arrival shape differs (sparse: 1 writer, one attempt per 50 ms; busy: 16 closed-loop writers on their own keys; skewed: 16 closed-loop writers, 90% of attempts on one hot key with real contention, 10% on their own key). Requests per commit are the store's own counters per attempt, including failures.
+
+| shape | writers | attempts/s | commits/s | conflicts | other errors | p50 ms | p99 ms | PUT/commit | HEAD/commit | LIST/commit |
+|---|---|---|---|---|---|---|---|---|---|---|
+| sparse | 1 | 16 | 16 | 0 | 0 | 11.4 | 39.0 | 1.00 | 0.00 | 0.00 |
+| busy | 16 | 362 | 362 | 0 | 0 | 45.8 | 76.1 | 1.00 | 0.00 | 0.00 |
+| skewed | 16 | 73 | 61 | 52 | 12 | 16.9 | 3596.6 | 1.20 | 1.27 | 0.20 |
+
+Reading: with no contention a commit is exactly one PUT at any concurrency; under a hot key each commit costs about 1.2 PUTs, 1.3 HEADs and 0.2 LISTs because every conflict triggers the identity-resolution list-and-probe (a LIST is priced like a PUT), throughput falls from 362 to 61 commits/s and p99 reaches 3.6 s. Hot keys are the cost driver, not writer count; busy and sparse are linear in commits.
+
+Reading for the design: a PUT has a fixed cost of about 4-5 ms before bytes matter, so small payloads waste the request (16 KiB moves 3.3 MiB/s, 4 MiB moves 95 MiB/s). Packing many documents into one PUT is worth it for request count and cost; 4 MiB was the best size measured and 16 MiB regressed (p99 800 ms). The 26 LISTs and 38 HEADs outside the contended sections were not attributed to call sites in this run. KMS path accounting needs a real provider and is tracked as M05.08.

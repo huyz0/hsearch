@@ -21,7 +21,7 @@ Sources, fetched from crates.io and read only (not built):
 | Runtime coupling | Async runtime abstraction with a tokio implementation behind a feature. | None: no runtime dependency. |
 
 ## What this means for an object-store-only design (not decided)
-- Both candidates assume each member keeps a **local durable log** and talks to peers over a network. Neither has an object-store log. Using either under "the blob store is the only durable tier" would mean writing the storage trait against object storage, and an `append` acknowledged only after a PUT inherits the measured 4-5 ms floor per PUT and the contended-CAS ceiling of about 180 commits/s per key in [m02-bench-profile-bulk.md](m02-bench-profile-bulk.md).
+- Both candidates assume each member keeps a **local durable log** and talks to peers over a network. Neither has an object-store log. Using either under "the blob store is the only durable tier" would mean writing the storage trait against object storage, and an `append` acknowledged only after a PUT inherits the measured 4-5 ms floor per PUT and the corrected contended-CAS ceiling of roughly 80-100 commits/s per hot key (and its identity-resolution cost) in [m02-bench-profile-bulk.md](m02-bench-profile-bulk.md).
 - openraft's callback-based append makes a batched PUT natural to express; raft-rs's `Ready` loop does too, at the cost of the application owning all scheduling and the network.
 - Ambiguous outcomes: the object seam already resolves a lost PUT response by identity (see [m03-02-rustfs-probe.md](m03-02-rustfs-probe.md)); neither library models that, so each would need the storage layer to hide it.
 
@@ -29,4 +29,4 @@ Sources, fetched from crates.io and read only (not built):
 - No ambiguity/failure schedules against either candidate and no per-group CPU/RAM/disk/PID observations: that needs building and running them, which was not done in this pass.
 - M02.10 stays `in_progress`.
 - Version choice is by newest published; a pinned-rev comparison is still owed.
-- The task's matched sparse/busy/skewed comparison and KMS path accounting are not covered by this file.
+- The matched sparse/busy/skewed comparison is in [m02-bench-profile-bulk.md](m02-bench-profile-bulk.md); KMS path accounting moved to M05.08.
