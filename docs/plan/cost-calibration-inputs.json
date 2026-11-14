@@ -24,21 +24,23 @@
     "evidence": "evidence/m02-bench-profile-bulk.md",
     "small_put_saturation_per_s": 710,
     "put_p50_ms": {"64KiB": 12, "1MiB": 22, "4MiB": 46},
-    "large_payload_mib_s_lower_bound": 120,
+    "large_payload_put_mib_s_lower_bound": 120,
     "uncontended_put_per_commit": 1.0,
     "hot_key_per_commit": {"put": 1.29, "head": 1.38, "list": 0.29}
   },
+  "checkpoint": {"puts": 2, "every_batches": 64, "note": "sensitivity input from the M00 experiments, not a frozen production value"},
   "workloads": {
-    "sparse": {"source": "cost_research.trace", "streams": 10000, "records_per_s": 100, "record_bytes": 1024, "seconds": 30},
-    "busy": {"source": "cost_research.trace", "streams": 1000, "records_per_s": 5000, "record_bytes": 1024, "seconds": 30},
-    "skewed": {"source": "cost_research.trace", "streams": 1000, "records_per_s": 5000, "record_bytes": 1024, "seconds": 30, "hot_share": 0.8, "hot_tenants": 1},
-    "recovery": {"active_domains": 1000, "tail_batches_per_domain": 64, "checkpoint_gets_per_domain": 2, "cold_list_per_domain": 1, "batch_bytes": 4194304, "note": "one cell loss; bounded cold-recovery LIST is the charged fallback"}
+    "sparse": {"streams": 10000, "records_per_s": 100, "record_bytes": 1024, "seconds": 30},
+    "busy": {"streams": 1000, "records_per_s": 5000, "record_bytes": 1024, "seconds": 30},
+    "skewed": {"streams": 1000, "records_per_s": 5000, "record_bytes": 1024, "seconds": 30, "hot_share": 0.8, "hot_tenants": 1},
+    "bursty": {"streams": 1000, "records_per_s": 5000, "record_bytes": 1024, "seconds": 30, "burst_on_s": 1, "burst_off_s": 9, "note": "same mean rate as busy, arriving in 1 s bursts every 10 s: tests the Poisson window assumption on non-Poisson traffic"},
+    "recovery": {"active_domains": 1000, "tail_batches_per_domain": 64, "checkpoint_gets_per_domain": 2, "cold_list_per_domain": 1, "reactivation_puts_per_domain": 2, "batch_bytes": 4194304, "assumed_read_mib_s": [50, 120, 500], "note": "one cell loss; bounded cold-recovery LIST is the charged fallback"}
   },
   "profiles": {
-    "object-economy":   {"max_wait_s": 1.0,  "commit": "fenced-append-regional", "cross_az_copies": 0, "archive_wait_s": null},
-    "object-resilient": {"max_wait_s": 0.25, "commit": "fenced-append-regional", "cross_az_copies": 0, "archive_wait_s": null},
-    "latency-ha":       {"max_wait_s": 0.25, "commit": "quorum-journal-3-zones", "cross_az_copies": 2, "archive_wait_s": 5.0},
-    "latency-zonal":    {"max_wait_s": 0.25, "commit": "quorum-journal-1-zone",  "cross_az_copies": 0, "archive_wait_s": 5.0}
+    "object-economy":   {"max_wait_s": 1.0,  "commit": "fenced-append-regional", "commit_to_object": true, "cross_az_copies": 0, "archive_wait_s": null},
+    "object-resilient": {"max_wait_s": 0.25, "commit": "fenced-append-regional", "commit_to_object": true, "cross_az_copies": 0, "archive_wait_s": null},
+    "latency-ha":       {"max_wait_s": 0.25, "commit": "quorum-journal-3-zones", "commit_to_object": false, "cross_az_copies": 2, "archive_wait_s": 5.0},
+    "latency-zonal":    {"max_wait_s": 0.25, "commit": "quorum-journal-1-zone", "commit_to_object": false, "cross_az_copies": 0, "archive_wait_s": 5.0}
   },
   "seeds": [7, 19, 43]
 }

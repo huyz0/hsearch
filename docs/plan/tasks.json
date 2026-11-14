@@ -1564,7 +1564,7 @@
           "evidence": [
             {
               "path": "evidence/m02-07-cost-calibration.md",
-              "result": "Versioned provenance-checked rate-card schema and four-profile, four-workload priced envelope model (cost_calibration.py with tests): batching wait is the main cost dial (busy 1 s about a quarter of 250 ms), KMS wraps are about 37% of object-profile request cost, three-zone journal pays about 9.8 MiB/s cross-AZ on busy load, recovery replay-tail bytes set the RTO more than request price, Poisson/window model within 1.5% of simulation, idle prices to zero. Provisional, illustrative rate card; KMS (M05.08) and journal latency not measured. Awaiting independent review and CI."
+              "result": "Provenance-checked rate-card schema, parameterised workloads (sparse, busy, skewed, bursty, recovery) and four-profile priced envelopes of counted requests, KMS wraps and cross-AZ bytes (cost_calibration.py, 10 tests with exact hand-built traces seen red under mutation): batching wait is the main object-profile cost dial, KMS is about 37% of object-profile cost, the journal profiles are priced for object requests only (volumes and compute omitted), recovery time depends on the replay-tail size reached (no GET throughput measured), and the Poisson window formula is an upper bound on bursty traffic. Provisional, illustrative rate card. Open: query/freshness-choice comparison, p99/capacity beyond the batching floor, trace-driven recovery, measured RPO/RTO."
             }
           ]
         },

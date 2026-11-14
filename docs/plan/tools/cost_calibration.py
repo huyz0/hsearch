@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import re
 import sys
 from decimal import Decimal
@@ -24,6 +25,7 @@ PLAN = Path(__file__).resolve().parents[1]
 DEFAULT = PLAN / "cost-calibration-inputs.json"
 KINDS = ("put", "get", "head", "list", "kms")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+STATUSES = {"illustrative_inputs_not_a_deployable_price_card", "operator_quote"}
 
 
 def check_rate_card(card):
@@ -33,6 +35,8 @@ def check_rate_card(card):
             raise ValueError(f"rate_card: missing {key}")
     if not DATE.match(card["as_of"]):
         raise ValueError("rate_card: as_of must be YYYY-MM-DD")
+    if card["status"] not in STATUSES:
+        raise ValueError(f"rate_card: status must be one of {sorted(STATUSES)}")
     for kind, entry in card.get("requests", {}).items():
         label = f"request {kind}"
         cost_model.number(entry.get("usd_per_1000"), label)
@@ -57,8 +61,27 @@ def legacy_card(card):
 
 
 def workload_trace(name, spec, seed):
-    kind = "sparse" if name == "sparse" else ("skewed" if name == "skewed" else "busy")
-    return cost_research.trace(kind, seed, spec["seconds"])
+    """Seeded arrivals built from the workload's own parameters: streams, rate, record bytes,
+    optional hot share (fraction of arrivals on tenant 0's 50 streams) and optional on/off bursts
+    (burst_on_s of arrivals at burst_factor x rate, then burst_off_s idle, same mean rate)."""
+    rng = random.Random(seed)
+    streams, rate, size = spec["streams"], spec["records_per_s"], spec["record_bytes"]
+    hot = spec.get("hot_share", 0.0)
+    on, off = spec.get("burst_on_s"), spec.get("burst_off_s")
+    factor = (on + off) / on if on else 1.0
+    t, events = 0.0, []
+    while True:
+        if on:
+            t += rng.expovariate(rate * factor)
+            if t % (on + off) >= on:
+                t += (on + off) - (t % (on + off))  # skip the idle gap to the next burst
+        else:
+            t += rng.expovariate(rate)
+        if t >= spec["seconds"]:
+            break
+        stream = rng.randrange(50) if hot and rng.random() < hot else rng.randrange(streams)
+        events.append((t, stream, size))
+    return events
 
 
 def batch_rates(events, wait, seconds):
@@ -66,27 +89,43 @@ def batch_rates(events, wait, seconds):
     return result, result["batches"] / seconds
 
 
-def steady_state(name, spec, profile, seeds):
-    """Mean per-second counts for one streaming workload under one profile."""
-    seconds = spec["seconds"]
-    totals = {k: 0.0 for k in KINDS}
-    bytes_s = 0.0
-    waits = []
+def profile_counts(events, seconds, profile, ckpt):
+    """Per-second counts and cross-AZ bytes for one trace under one profile.
+
+    Object profiles commit one PUT per batch (fenced append). Journal profiles commit to the
+    quorum journal, so only the asynchronous archive batches (and their checkpoints) hit the
+    object store; journal volumes, compute and network framing are NOT priced. Every commit
+    batch still pays one KMS wrap. Checkpoint PUTs are amortized (puts/cadence per object write),
+    not truncated per 30 s trace."""
+    main, batches_s = batch_rates(events, profile["max_wait_s"], seconds)
+    counts = {k: 0.0 for k in KINDS}
+    counts["kms"] = batches_s
+    if profile["commit_to_object"]:
+        object_writes = batches_s
+    else:
+        archive, object_writes = batch_rates(events, profile["archive_wait_s"], seconds)
+    if profile["commit_to_object"] and profile["archive_wait_s"]:
+        archive, archive_s = batch_rates(events, profile["archive_wait_s"], seconds)
+        object_writes += archive_s
+    counts["put"] = object_writes * (1 + ckpt["puts"] / ckpt["every_batches"])
+    cross = sum(e[2] for e in events) / seconds * profile["cross_az_copies"]
+    return counts, cross, main
+
+
+def steady_state(name, spec, profile, seeds, ckpt):
+    """Mean per-second counts, cross-AZ bytes, p95 batch wait and dirty domains over seeds."""
+    acc = {k: 0.0 for k in KINDS}
+    cross = wait = dirty = 0.0
     for seed in seeds:
         events = workload_trace(name, spec, seed)
-        main, batches_s = batch_rates(events, profile["max_wait_s"], seconds)
-        puts = batches_s + main["checkpoint_puts"] / seconds  # fenced append plus amortized checkpoints
-        kms = batches_s
-        if profile["archive_wait_s"]:
-            archive, archive_s = batch_rates(events, profile["archive_wait_s"], seconds)
-            puts += archive_s  # one asynchronous regional archive object per archive window
-        totals["put"] += puts
-        totals["kms"] += kms
-        bytes_s += sum(e[2] for e in events) / seconds
-        waits.append(main["batch_wait_p95_ms"])
+        counts, c, main = profile_counts(events, spec["seconds"], profile, ckpt)
+        for k in KINDS:
+            acc[k] += counts[k]
+        cross += c
+        wait += main["batch_wait_p95_ms"]
+        dirty += main["activated_domains"]
     n = len(seeds)
-    counts = {k: v / n for k, v in totals.items()}
-    return counts, bytes_s / n * profile["cross_az_copies"], sum(waits) / n
+    return {k: v / n for k, v in acc.items()}, cross / n, wait / n, dirty / n
 
 
 def price(card, counts, cross_az_bytes_s):
@@ -101,19 +140,23 @@ def price(card, counts, cross_az_bytes_s):
     return {k: str(v.quantize(Decimal("0.01"))) for k, v in components.items()}, total
 
 
-def recovery(spec, card):
-    """Cost of one cell loss, per event: checkpoint GETs, tail GETs and the bounded cold LIST."""
+def recovery(spec, card, batch_bytes=None):
+    """One cell loss: reactivation PUTs (fence + checkpoint per domain), checkpoint and tail
+    GETs, the bounded cold LIST per domain and a KMS unwrap per domain. `batch_bytes` defaults to
+    the workload's cap (an upper bound); pass a typical batch size for an expected tail."""
     d = spec["active_domains"]
     counts = {"get": d * (spec["checkpoint_gets_per_domain"] + spec["tail_batches_per_domain"]),
-              "list": d * spec["cold_list_per_domain"], "head": 0, "put": 0, "kms": d}
+              "list": d * spec["cold_list_per_domain"], "head": 0,
+              "put": d * spec["reactivation_puts_per_domain"], "kms": d}
     usd = sum(Decimal(card["requests"][k]["usd_per_1000"]) * Decimal(v) / 1000 for k, v in counts.items() if v)
-    tail_bytes = d * spec["tail_batches_per_domain"] * spec["batch_bytes"]
+    tail_bytes = d * spec["tail_batches_per_domain"] * (batch_bytes or spec["batch_bytes"])
     return counts, usd, tail_bytes
 
 
-def recovery_floor_seconds(tail_bytes, measured):
-    """Lower bound on tail-read time from the measured large-payload rate on one process."""
-    return tail_bytes / (measured["large_payload_mib_s_lower_bound"] * 2**20)
+def tail_read_seconds(tail_bytes, mib_s):
+    """Time to read the tail at an ASSUMED single-process rate. No GET throughput was measured;
+    the only measured rate is for PUTs, so this is a sensitivity, not a floor or a bound."""
+    return tail_bytes / (mib_s * 2**20)
 
 
 def poisson_check(rate_per_domain, wait):
@@ -121,23 +164,29 @@ def poisson_check(rate_per_domain, wait):
     return rate_per_domain / (1 + rate_per_domain * wait)
 
 
-def zero_idle(card):
-    counts, cross = {k: 0.0 for k in KINDS}, 0.0
-    return price(card, counts, cross)[1]
+def idle_cost(card, data):
+    """An empty trace through every profile must price to zero."""
+    total = Decimal(0)
+    for profile in data["profiles"].values():
+        counts, cross, _ = profile_counts([], 30, profile, data["checkpoint"])
+        total += price(card, counts, cross)[1]
+    return total
 
 
 def run(data):
     card = check_rate_card(data["rate_card"])
     measured = data["measured"]
+    ckpt = data["checkpoint"]
     rows = []
     for wl in ("sparse", "busy", "skewed"):
         spec = data["workloads"][wl]
         for pname, profile in data["profiles"].items():
-            counts, cross, wait_ms = steady_state(wl, spec, profile, data["seeds"])
+            counts, cross, wait_ms, dirty = steady_state(wl, spec, profile, data["seeds"], ckpt)
             components, total = price(card, counts, cross)
             clients = math.ceil(counts["put"] / measured["small_put_saturation_per_s"])
             row = {"workload": wl, "profile": pname, "requests_per_s": {k: round(v, 2) for k, v in counts.items() if v},
-                   "cross_az_bytes_per_s": round(cross), "freshness_floor_p95_batch_wait_ms": round(wait_ms),
+                   "dirty_domains_per_30s_window": round(dirty), "cross_az_bytes_per_s": round(cross),
+                   "freshness_floor_p95_batch_wait_ms": round(wait_ms),
                    "min_write_processes_at_measured_saturation": max(clients, 1),
                    "usd_per_30_days_components": components, "usd_per_30_days_subtotal": str(total.quantize(Decimal("0.01")))}
             if wl == "skewed":
@@ -145,32 +194,37 @@ def run(data):
                 row["hot_key_sensitivity"] = ("if the hot domain used payload+head CAS with competing writers instead of one ordered lane: "
                     f"x{hot['put']} PUT, +{hot['head']} HEAD and +{hot['list']} LIST per commit on that domain's commits (measured, M02.10)")
             rows.append(row)
-    rec_counts, rec_usd, rec_bytes = recovery(data["workloads"]["recovery"], card)
-    probes = {
-        "idle_usd": str(zero_idle(card)),
-        "poisson_vs_simulation": [],
-    }
-    for wl, wait in (("sparse", 0.25), ("busy", 0.25), ("busy", 1.0)):
+    rspec = data["workloads"]["recovery"]
+    busy_events = workload_trace("busy", data["workloads"]["busy"], data["seeds"][0])
+    typical = cost_research.batch(busy_events, "tenant-key", data["profiles"]["object-resilient"]["max_wait_s"])
+    typical_bytes = typical["records"] * data["workloads"]["busy"]["record_bytes"] / typical["batches"]
+    rec = {}
+    for label, bb in (("cap_upper_bound", None), ("typical_busy_batch", typical_bytes)):
+        counts, usd, tail = recovery(rspec, card, bb)
+        rec[label] = {"requests": counts, "usd": str(usd.quantize(Decimal("0.01"))), "tail_bytes": round(tail),
+                      "tail_read_s_at_assumed_rate": {f"{r} MiB/s": round(tail_read_seconds(tail, r)) for r in rspec["assumed_read_mib_s"]}}
+    checks = {"idle_usd": str(idle_cost(card, data)), "poisson_vs_simulation": []}
+    for wl, wait in (("sparse", 0.25), ("busy", 0.25), ("busy", 1.0), ("bursty", 0.25), ("bursty", 1.0)):
         spec = data["workloads"][wl]
-        events = workload_trace(wl, spec, data["seeds"][0])
-        sim = cost_research.batch(events, "tenant-key", wait)["batches"] / spec["seconds"]
+        sims = [cost_research.batch(workload_trace(wl, spec, sd), "tenant-key", wait)["batches"] / spec["seconds"] for sd in data["seeds"]]
+        sim = sum(sims) / len(sims)
         domains = (spec["streams"] // 50) * 2
         model = domains * poisson_check(spec["records_per_s"] / domains, wait)
-        probes["poisson_vs_simulation"].append({"workload": wl, "wait_s": wait, "simulated_batches_per_s": round(sim, 2),
-                                                "poisson_model_batches_per_s": round(model, 2),
-                                                "relative_difference": round(abs(sim - model) / model, 3)})
-    return {"rows": rows, "recovery_event": {"requests": rec_counts, "usd": str(rec_usd.quantize(Decimal("0.01"))),
-            "tail_bytes_read": rec_bytes,
-            "single_process_read_floor_s": round(recovery_floor_seconds(rec_bytes, measured)),
-            "note": "upper-bound tail (every domain at its replay bound with full 4 MiB batches); one process; a smaller tail bound or parallel readers shortens it"}, "checks": probes, "rate_card": {k: card[k] for k in ("provider", "region", "as_of", "status")}}
+        checks["poisson_vs_simulation"].append({"workload": wl, "wait_s": wait, "simulated_batches_per_s": round(sim, 2),
+            "poisson_model_batches_per_s": round(model, 2), "relative_difference": round(abs(sim - model) / model, 3)})
+    return {"rows": rows, "recovery_event": rec, "checks": checks,
+            "rate_card": {k: card[k] for k in ("provider", "region", "as_of", "status")}}
 
 
 def report(result):
-    lines = ["| workload | profile | PUT/s | KMS/s | cross-AZ MiB/s | p95 batch wait ms | min write processes | USD per 30 days |",
-             "|---|---|---|---|---|---|---|---|"]
+    lines = [f"rate card: {result['rate_card']['provider']} {result['rate_card']['region']} as of "
+             f"{result['rate_card']['as_of']}, status {result['rate_card']['status']}"
+             + (" (NOT A QUOTE)" if result["rate_card"]["status"] != "operator_quote" else ""), "",
+             "| workload | profile | dirty domains / 30 s | PUT/s | KMS/s | cross-AZ MiB/s | p95 batch wait ms | min write processes | USD per 30 days |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for r in result["rows"]:
         q = r["requests_per_s"]
-        lines.append(f"| {r['workload']} | {r['profile']} | {q.get('put', 0)} | {q.get('kms', 0)} | "
+        lines.append(f"| {r['workload']} | {r['profile']} | {r['dirty_domains_per_30s_window']} | {q.get('put', 0)} | {q.get('kms', 0)} | "
                      f"{r['cross_az_bytes_per_s'] / 2**20:.2f} | {r['freshness_floor_p95_batch_wait_ms']} | "
                      f"{r['min_write_processes_at_measured_saturation']} | {Decimal(r['usd_per_30_days_subtotal']):,.2f} |")
     return "\n".join(lines)
@@ -179,7 +233,7 @@ def report(result):
 def selftest():
     data = json.loads(DEFAULT.read_text(encoding="utf-8"))
     card = check_rate_card(data["rate_card"])
-    assert zero_idle(card) == 0
+    assert idle_cost(card, data) == 0
     bad = [lambda c: c["requests"]["put"].pop("source"), lambda c: c["requests"]["put"].update(as_of="yesterday"),
            lambda c: c["requests"]["put"].update(usd_per_1000="-1"), lambda c: c.pop("provider"),
            lambda c: c["traffic"]["cross_az"].pop("unit")]
