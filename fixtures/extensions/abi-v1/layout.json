@@ -1,0 +1,54 @@
+{
+    "abi_version": 65536,
+    "layout": {
+        "hs_slice.size": 16,
+        "hs_slice.ptr": 0,
+        "hs_slice.len": 8,
+        "hs_out.size": 24,
+        "hs_out.ptr": 0,
+        "hs_out.cap": 8,
+        "hs_out.len": 16,
+        "hs_host_v1.size": 32,
+        "hs_host_v1.struct_size": 0,
+        "hs_host_v1.reserved0": 4,
+        "hs_host_v1.ctx": 8,
+        "hs_host_v1.log": 16,
+        "hs_host_v1.cancelled": 24,
+        "hs_call.size": 48,
+        "hs_call.struct_size": 0,
+        "hs_call.kind": 4,
+        "hs_call.point": 8,
+        "hs_call.input": 24,
+        "hs_call.timeout_ms": 40,
+        "hs_call.reserved0": 44
+    },
+    "limits": {
+        "buffer": 16777216,
+        "descriptor": 16384,
+        "config": 65536,
+        "error_detail": 256
+    },
+    "kinds": {
+        "analyzer": 1,
+        "query": 2,
+        "ingest": 3,
+        "scoring": 4
+    },
+    "status": {
+        "HS_OK": 0,
+        "HS_E_BUFFER_TOO_SMALL": -1,
+        "HS_E_INVALID_ARGUMENT": -2,
+        "HS_E_UNSUPPORTED": -3,
+        "HS_E_LIMIT": -4,
+        "HS_E_CANCELLED": -5,
+        "HS_E_MODULE": -6,
+        "HS_E_NOT_INITIALIZED": -7
+    },
+    "symbols": [
+        "hs_abi_version",
+        "hs_module_init",
+        "hs_module_describe",
+        "hs_module_call",
+        "hs_module_shutdown"
+    ]
+}
