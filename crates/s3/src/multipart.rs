@@ -17,17 +17,16 @@
 use crate::ledger::Role;
 use crate::sigv4::encode;
 use crate::{Op, S3Store, token};
-use hsearch_object::{Error, ObjectKey, RequestContext, VersionToken};
+use hsearch_object::{
+    Error, LargeObjectWriter, ObjectKey, Operation, RequestContext, VersionToken,
+};
 
-/// The smallest part S3 accepts, except for the last one.
-pub const MIN_PART: usize = 5 * 1024 * 1024;
-/// The most parts one upload may have.
-pub const MAX_PARTS: u32 = 10_000;
+pub use hsearch_object::{MAX_PARTS, MIN_PART};
 
-/// An open multipart upload.
+/// An open multipart upload: plain data that borrows nothing, so it can sit beside an `Arc` of the
+/// store. Every call names the store it runs against; use it with the store that began it.
 #[derive(Debug)]
-pub struct Multipart<'a> {
-    store: &'a S3Store,
+pub struct Multipart {
     key: ObjectKey,
     id: String,
     etags: Vec<String>,
@@ -48,7 +47,7 @@ impl S3Store {
         &self,
         context: &RequestContext,
         key: &ObjectKey,
-    ) -> Result<Multipart<'_>, Error> {
+    ) -> Result<Multipart, Error> {
         self.logical(Role::Payload);
         context.charge_request(key.len() as u64 + 16)?;
         context.charge_response(1024)?;
@@ -75,7 +74,6 @@ impl S3Store {
             })
             .ok_or(Error::Corrupt)?;
         Ok(Multipart {
-            store: self,
             key: key.clone(),
             id: id.to_owned(),
             etags: Vec::new(),
@@ -85,7 +83,7 @@ impl S3Store {
     }
 }
 
-impl Multipart<'_> {
+impl Multipart {
     /// The provider's upload id, for logs and for finding an orphan to abort.
     #[must_use]
     pub fn id(&self) -> &str {
@@ -106,11 +104,16 @@ impl Multipart<'_> {
 
     /// Upload the next part. Every part but the last must be at least [`MIN_PART`] bytes, and
     /// that is refused here, before the wire, rather than at completion after the bytes were sent.
-    pub fn put_part(&mut self, context: &RequestContext, bytes: &[u8]) -> Result<(), Error> {
+    pub fn put_part(
+        &mut self,
+        store: &S3Store,
+        context: &RequestContext,
+        bytes: &[u8],
+    ) -> Result<(), Error> {
         if bytes.is_empty() || self.short || self.parts() >= MAX_PARTS {
             return Err(Error::InvalidInput);
         }
-        self.store.logical(Role::Payload);
+        store.logical(Role::Payload);
         let query = format!(
             "partNumber={}&uploadId={}",
             self.parts() + 1,
@@ -118,7 +121,7 @@ impl Multipart<'_> {
         );
         context.charge_request(self.key.len() as u64 + query.len() as u64 + bytes.len() as u64)?;
         context.charge_response(1024)?;
-        let reply = self.store.send(
+        let reply = store.send(
             context,
             Role::Payload,
             Op::Put,
@@ -150,11 +153,15 @@ impl Multipart<'_> {
     /// [`Error::UnknownOutcome`]: no answer arrived; the object may exist, so the caller reads
     /// the key (HEAD) before deciding. A second completion of a finished upload is refused by the
     /// provider, so the call is not blindly repeated.
-    pub fn complete(&self, context: &RequestContext) -> Result<(VersionToken, u64), Error> {
+    pub fn complete(
+        &self,
+        store: &S3Store,
+        context: &RequestContext,
+    ) -> Result<(VersionToken, u64), Error> {
         if self.etags.is_empty() {
             return Err(Error::InvalidInput);
         }
-        self.store.logical(Role::Payload);
+        store.logical(Role::Payload);
         let mut xml = String::from("<CompleteMultipartUpload>");
         for (index, etag) in self.etags.iter().enumerate() {
             xml.push_str(&format!(
@@ -169,7 +176,7 @@ impl Multipart<'_> {
         let query = format!("uploadId={}", encode(self.id.as_bytes(), false));
         context.charge_request(self.key.len() as u64 + query.len() as u64 + xml.len() as u64)?;
         context.charge_response(4096)?;
-        let reply = self.store.send(
+        let reply = store.send(
             context,
             Role::Payload,
             Op::Post,
@@ -210,12 +217,12 @@ impl Multipart<'_> {
     }
 
     /// Abort the upload and discard its parts. A missing upload is already gone.
-    pub fn abort(self, context: &RequestContext) -> Result<(), Error> {
-        self.store.logical(Role::Payload);
+    pub fn abort(&self, store: &S3Store, context: &RequestContext) -> Result<(), Error> {
+        store.logical(Role::Payload);
         let query = format!("uploadId={}", encode(self.id.as_bytes(), false));
         context.charge_request(self.key.len() as u64 + query.len() as u64)?;
         context.charge_response(1024)?;
-        let reply = self.store.send(
+        let reply = store.send(
             context,
             Role::Payload,
             Op::Delete,
@@ -229,5 +236,42 @@ impl Multipart<'_> {
             200..=299 | 404 => Ok(()),
             status => Err(crate::status_error(status, true)),
         }
+    }
+}
+
+impl LargeObjectWriter for S3Store {
+    type Upload = Multipart;
+
+    fn begin_upload<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        key: &'a ObjectKey,
+    ) -> Operation<'a, Multipart> {
+        Box::pin(async move { self.begin_multipart(context, key) })
+    }
+
+    fn put_part<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        upload: &'a mut Multipart,
+        bytes: &'a [u8],
+    ) -> Operation<'a, ()> {
+        Box::pin(async move { upload.put_part(self, context, bytes) })
+    }
+
+    fn complete_upload<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        upload: &'a Multipart,
+    ) -> Operation<'a, (VersionToken, u64)> {
+        Box::pin(async move { upload.complete(self, context) })
+    }
+
+    fn abort_upload<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        upload: &'a Multipart,
+    ) -> Operation<'a, ()> {
+        Box::pin(async move { upload.abort(self, context) })
     }
 }

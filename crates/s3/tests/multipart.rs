@@ -64,10 +64,10 @@ fn a_completed_upload_is_one_object_and_every_request_is_attributed() {
         Err(Error::NotFound),
         "invisible before completion"
     );
-    upload.put_part(&ctx, &first).unwrap();
-    upload.put_part(&ctx, &tail).unwrap();
+    upload.put_part(&store, &ctx, &first).unwrap();
+    upload.put_part(&store, &ctx, &tail).unwrap();
     assert_eq!((upload.parts(), upload.length()), (2, MIN_PART as u64 + 10));
-    let (version, length) = upload.complete(&ctx).unwrap();
+    let (version, length) = upload.complete(&store, &ctx).unwrap();
     assert_eq!(length, MIN_PART as u64 + 10);
 
     let info = run(store.head(&ctx, &object)).unwrap();
@@ -108,14 +108,14 @@ fn completing_onto_an_existing_key_is_a_conflict_and_leaves_it_untouched() {
     let ctx = context();
     let object = key(b"once");
     let mut first = store.begin_multipart(&ctx, &object).unwrap();
-    first.put_part(&ctx, b"original").unwrap();
-    let (original, _) = first.complete(&ctx).unwrap();
+    first.put_part(&store, &ctx, b"original").unwrap();
+    let (original, _) = first.complete(&store, &ctx).unwrap();
 
     let mut second = store.begin_multipart(&ctx, &object).unwrap();
-    second.put_part(&ctx, b"replacement").unwrap();
-    assert_eq!(second.complete(&ctx), Err(Error::Conflict));
+    second.put_part(&store, &ctx, b"replacement").unwrap();
+    assert_eq!(second.complete(&store, &ctx), Err(Error::Conflict));
     // The failed completion left the upload open, so its parts can still be discarded.
-    second.abort(&ctx).unwrap();
+    second.abort(&store, &ctx).unwrap();
     assert_eq!(run(store.head(&ctx, &object)).unwrap().version, original);
     assert_eq!(store.ledger().attempts_with(Outcome::Conflict), 1);
 }
@@ -126,8 +126,8 @@ fn an_aborted_upload_leaves_nothing_and_the_abort_is_attributed() {
     let ctx = context();
     let object = key(b"gone");
     let mut upload = store.begin_multipart(&ctx, &object).unwrap();
-    upload.put_part(&ctx, &vec![1u8; MIN_PART]).unwrap();
-    upload.abort(&ctx).unwrap();
+    upload.put_part(&store, &ctx, &vec![1u8; MIN_PART]).unwrap();
+    upload.abort(&store, &ctx).unwrap();
     assert_eq!(run(store.head(&ctx, &object)), Err(Error::NotFound));
     assert_eq!(store.ledger().attempts_by_verb(Verb::Delete), 1);
 }
@@ -139,24 +139,27 @@ fn part_rules_are_enforced_before_the_wire() {
     let mut upload = store.begin_multipart(&ctx, &key(b"rules")).unwrap();
     let before = store.ledger().attempts(Role::Payload);
 
-    assert_eq!(upload.put_part(&ctx, b""), Err(Error::InvalidInput));
-    upload.put_part(&ctx, b"short").unwrap();
+    assert_eq!(upload.put_part(&store, &ctx, b""), Err(Error::InvalidInput));
+    upload.put_part(&store, &ctx, b"short").unwrap();
     let sent = store.ledger().attempts(Role::Payload);
     // Only the last part may be short, so nothing may follow one.
-    assert_eq!(upload.put_part(&ctx, b"more"), Err(Error::InvalidInput));
+    assert_eq!(
+        upload.put_part(&store, &ctx, b"more"),
+        Err(Error::InvalidInput)
+    );
     assert_eq!(
         store.ledger().attempts(Role::Payload),
         sent,
         "refused without a request"
     );
     assert_eq!(sent, before + 1);
-    upload.abort(&ctx).unwrap();
+    upload.abort(&store, &ctx).unwrap();
 
     let empty = store.begin_multipart(&ctx, &key(b"empty")).unwrap();
     let sent = store.ledger().attempts(Role::Payload);
-    assert_eq!(empty.complete(&ctx), Err(Error::InvalidInput));
+    assert_eq!(empty.complete(&store, &ctx), Err(Error::InvalidInput));
     assert_eq!(store.ledger().attempts(Role::Payload), sent);
-    empty.abort(&ctx).unwrap();
+    empty.abort(&store, &ctx).unwrap();
 }
 
 #[test]
@@ -165,11 +168,11 @@ fn an_upload_spends_the_callers_budget() {
     let ctx = support::limited(MIN_PART as u64 / 2, 4 * 1024 * 1024, 100);
     let mut upload = store.begin_multipart(&context(), &key(b"budget")).unwrap();
     assert_eq!(
-        upload.put_part(&ctx, &vec![0u8; MIN_PART]),
+        upload.put_part(&store, &ctx, &vec![0u8; MIN_PART]),
         Err(Error::BudgetExceeded)
     );
     assert_eq!(upload.parts(), 0);
-    upload.abort(&context()).unwrap();
+    upload.abort(&store, &context()).unwrap();
 }
 
 #[test]
@@ -184,7 +187,7 @@ fn aborting_an_upload_that_is_already_gone_succeeds() {
         .probe_request(&ctx, "DELETE", &object, &query, &[], &[])
         .unwrap();
     assert!((200..300).contains(&status));
-    assert_eq!(upload.abort(&ctx), Ok(()));
+    assert_eq!(upload.abort(&store, &ctx), Ok(()));
 }
 
 #[test]

@@ -1,11 +1,11 @@
 //! Reusable public-trait conformance probes. No private memory map is inspected.
 //! Include this module from a provider's integration tests and pass a fresh,
 //! empty factory. Fault-specific tests use a separate explicit control seam.
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 use hsearch_object::{
-    Budget, ByteRange, Cancellation, Error, Metadata, MetadataStore, Mutation, ObjectKey, Payload,
-    Precondition, RequestContext, RequestId,
+    Budget, ByteRange, Cancellation, Error, LargeObjectWriter, MIN_PART, Metadata, MetadataStore,
+    Mutation, ObjectBackend, ObjectKey, Payload, Precondition, RequestContext, RequestId,
 };
 use std::future::Future;
 use std::sync::Arc;
@@ -178,5 +178,80 @@ pub fn stale_update_history<B: MetadataStore>(backend: &B) -> Result<(), &'stati
             return Err("identical update accepted");
         }
     }
+    Ok(())
+}
+
+/// A create-only multipart upload, held to the same predicate by every provider: nothing is
+/// visible before completion, completion creates exactly the concatenated bytes, an existing key
+/// is a conflict that leaves the upload open and the object untouched, abort is idempotent and
+/// leaves nothing, and the part rules are refused. Returns a failure instead of panicking so a
+/// deliberately broken writer is rejected by the same predicate as the healthy one.
+pub fn upload_history<B: LargeObjectWriter>(backend: &B) -> Result<(), &'static str> {
+    let ctx = limited(64 * 1024 * 1024, 64 * 1024 * 1024, 100);
+    let key = ObjectKey::new(b"upload-big").unwrap();
+    let tail = b"the-tail".to_vec();
+    let mut up = run(backend.begin_upload(&ctx, &key)).map_err(|_| "begin failed")?;
+    if run(backend.head(&ctx, &key)) != Err(Error::NotFound) {
+        return Err("visible before completion");
+    }
+    if run(backend.put_part(&ctx, &mut up, b"")) != Err(Error::InvalidInput) {
+        return Err("empty part accepted");
+    }
+    run(backend.put_part(&ctx, &mut up, &vec![9u8; MIN_PART])).map_err(|_| "first part failed")?;
+    run(backend.put_part(&ctx, &mut up, &tail)).map_err(|_| "last part failed")?;
+    if run(backend.put_part(&ctx, &mut up, b"more")) != Err(Error::InvalidInput) {
+        return Err("part after a short part accepted");
+    }
+    let (version, length) =
+        run(backend.complete_upload(&ctx, &up)).map_err(|_| "completion failed")?;
+    let info = run(backend.head(&ctx, &key)).map_err(|_| "completed object missing")?;
+    if length != MIN_PART as u64 + tail.len() as u64 {
+        return Err("completion reported the wrong length");
+    }
+    if info.version != version || info.length != length {
+        return Err("completed object differs from the receipt");
+    }
+    let read = run(backend.read_range(
+        &ctx,
+        &key,
+        &version,
+        ByteRange::new(MIN_PART as u64 - 1, tail.len() as u64 + 1).unwrap(),
+    ))
+    .map_err(|_| "read after completion failed")?;
+    if read.as_bytes() != [&[9u8][..], &tail].concat() {
+        return Err("bytes are not the concatenated parts");
+    }
+
+    // An existing key is never overwritten, and the failed completion leaves the upload open.
+    let mut two = run(backend.begin_upload(&ctx, &key)).map_err(|_| "second begin failed")?;
+    run(backend.put_part(&ctx, &mut two, b"replacement")).map_err(|_| "second part failed")?;
+    if run(backend.complete_upload(&ctx, &two)) != Err(Error::Conflict) {
+        return Err("completion overwrote an existing key");
+    }
+    if run(backend.head(&ctx, &key)).map(|i| i.version) != Ok(version) {
+        return Err("failed completion changed the object");
+    }
+    run(backend.abort_upload(&ctx, &two)).map_err(|_| "abort after conflict failed")?;
+    run(backend.abort_upload(&ctx, &two)).map_err(|_| "abort is not idempotent")?;
+
+    // An aborted upload leaves nothing and cannot be completed.
+    let gone = ObjectKey::new(b"upload-gone").unwrap();
+    let mut three = run(backend.begin_upload(&ctx, &gone)).map_err(|_| "third begin failed")?;
+    run(backend.put_part(&ctx, &mut three, &vec![1u8; MIN_PART])).map_err(|_| "part failed")?;
+    run(backend.abort_upload(&ctx, &three)).map_err(|_| "abort failed")?;
+    if run(backend.head(&ctx, &gone)) != Err(Error::NotFound) {
+        return Err("aborted upload left an object");
+    }
+    if run(backend.complete_upload(&ctx, &three)).is_ok() {
+        return Err("aborted upload completed");
+    }
+
+    // An upload with no parts is not an empty object.
+    let nothing = ObjectKey::new(b"upload-empty").unwrap();
+    let four = run(backend.begin_upload(&ctx, &nothing)).map_err(|_| "fourth begin failed")?;
+    if run(backend.complete_upload(&ctx, &four)) != Err(Error::InvalidInput) {
+        return Err("empty upload completed");
+    }
+    run(backend.abort_upload(&ctx, &four)).map_err(|_| "abort of empty failed")?;
     Ok(())
 }

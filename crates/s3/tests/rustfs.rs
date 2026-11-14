@@ -94,6 +94,12 @@ fn aba_is_not_fenced_without_a_token_in_the_payload() {
 }
 
 #[test]
+fn a_create_only_upload_passes_the_shared_probe() {
+    let Some(store) = store() else { return };
+    assert_eq!(support::upload_history(&store), Ok(()));
+}
+
+#[test]
 fn simultaneous_cas_has_one_winner() {
     let Some(store) = store() else { return };
     let store = Arc::new(store);
