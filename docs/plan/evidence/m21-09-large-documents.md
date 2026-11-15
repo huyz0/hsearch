@@ -19,6 +19,31 @@ One document through `Node::bulk`, wait for searchable, peak RSS over baseline (
 
 Throughput is unchanged (25-29 MiB/s). The node's admission charge stays at 32x, which still covers every measured size, so it is not lowered on one run.
 
-## Not yet done (M21.09 stays open)
+# M21.09 evidence (increment 2): large strings as their own objects
 
-Documents between 4 MiB and 100-200 MiB still need their own object (the log slot is capped at 4 MiB per request by the 16 MiB object payload bound) and a measured admission factor for that range.
+Provisional: same environment as above. Reproduce with `large_field_profile -- <MiB> 1`.
+
+## What changed
+
+A string field over 1 MiB is no longer written into the log slot. The writer first creates its text as create-only chunk objects of at most 8 MiB under `<index>/blob/<epoch>/<attempt>/<seq>/<op>.<field>/<chunk>`, then writes the slot, which holds a 29-byte reference (epoch, attempt, chunk count, length). The slot is written last, so it is what makes the chunks reachable. Replay reads each chunk back, checks the chunk count and total length against the reference (a mismatch is Corrupt) and rebuilds the string. The document ceiling is now the product's 200 MiB (`MAX_INDEXED_DOCUMENT_BYTES`); the node's cap is the smaller of its configured limit and its buffer. Tests: `a_document_over_the_inline_limit_goes_to_chunk_objects_and_replays` (12 MiB, slot under 1 KiB, rebuilt from the store alone), `a_large_string_is_replaced_by_a_reference_and_resolved_on_decode`, and the node's 10 MiB end-to-end test.
+
+## Numbers
+
+One document through `Node::bulk`, wait for searchable, peak RSS over baseline (one run each):
+
+| document | peak over baseline |
+|---|---|
+| 4 MiB | 40.6 MiB (10.2x) |
+| 8 MiB | 74.1 MiB (9.3x) |
+| 12 MiB | 119.2 MiB (9.9x) |
+
+About 10x the document, under the 32x admission charge, so the charge is unchanged.
+
+## Downsides and what is not done
+
+- Chunks are written one after another, so a very large document costs one PUT per 8 MiB before the slot PUT.
+- The attempt number is unique per write attempt, so chunks left by a refused slot write never collide with the retry at the same position (found in review).
+- Replay checks each chunk's length against the reference before allocating it. It still holds every string of one slot in memory, and a slot counts a reference as 29 bytes, so a log written with many large documents in one slot can need several times that in memory to reopen. Not bounded yet.
+- A crash after the chunks and before the slot leaves orphan chunk objects. They are never read, and nothing collects them yet.
+- Chunks go through the ordinary create path, not the multipart `LargeObjectWriter` seam (M03.14, still planned), so each chunk is bounded by the 16 MiB payload limit.
+- Measured only to 12 MiB. The 100 MiB end-to-end run and the 100 MiB memory curve are not done, so M21.09 stays open.

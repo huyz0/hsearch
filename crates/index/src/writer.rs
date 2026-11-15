@@ -17,12 +17,13 @@ use hsearch_engine::{
 use hsearch_object::{MetadataStore, Precondition, VersionToken};
 
 use crate::format::{
-    Field, MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_root, decode_slot, encode_root,
-    encode_slot, encoded_len,
+    BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, MAX_INDEXED_DOCUMENT_BYTES,
+    MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_root, decode_slot_with, encode_root,
+    encode_slot_with, encoded_len,
 };
 use crate::store::{
-    Written, block, context, key, mutation, read_all, read_version, root_key, segment_key,
-    slot_key, write,
+    Written, blob_key, block, context, key, mutation, read_all, read_version, root_key,
+    segment_key, slot_key, write,
 };
 use crate::{Error, Result};
 
@@ -441,10 +442,25 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
     }
 
     fn write_slot(&mut self, slot: &Slot) -> Result<()> {
+        let (store, name, epoch, seq) = (&*self.store, &self.name, self.epoch, slot.seq);
+        // Large strings go to their own objects first; the slot, written last,
+        // is what makes them reachable.
+        let encoded = encode_slot_with(slot, &mut |op, field, text| {
+            write_blob(store, name, epoch, BlobAt { seq, op, field }, text).map(Some)
+        });
+        let encoded = match encoded {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                if matches!(error, Error::Fenced | Error::Unknown) {
+                    self.poison();
+                }
+                return Err(error);
+            }
+        };
         let request = mutation(
             &format!("{}/slot/{}/{}", self.name, slot.seq, self.epoch),
             &slot_key(&self.name, slot.seq),
-            &encode_slot(slot),
+            &encoded,
             Precondition::Absent,
         )?;
         match write(&*self.store, &request, false) {
@@ -707,7 +723,9 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
         match block(core.store.head(&context(), &object)) {
             Ok(info) => {
                 let bytes = read_version(&*core.store, &object, &info.version, info.length)?;
-                let slot = decode_slot(&bytes)?;
+                let slot = decode_slot_with(&bytes, &mut |at, blob| {
+                    read_blob(&*core.store, &core.name, at, blob)
+                })?;
                 if slot.seq != core.seq {
                     return Err(Error::Corrupt);
                 }
@@ -734,6 +752,71 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
     core.swap_root(&bumped, &request)?;
     core.refresh()?;
     Ok(core)
+}
+
+/// Write `text` as chunk objects of at most [`BLOB_CHUNK_BYTES`], each create-only,
+/// slicing the string rather than copying it (the store copies one chunk).
+fn write_blob<S: MetadataStore>(
+    store: &S,
+    name: &str,
+    epoch: u64,
+    at: BlobAt,
+    text: &str,
+) -> Result<Blob> {
+    let bytes = text.as_bytes();
+    if bytes.len() > MAX_INDEXED_DOCUMENT_BYTES {
+        return Err(Error::Engine(hsearch_engine::Error::Limit));
+    }
+    static ATTEMPTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let attempt = ATTEMPTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let chunks =
+        u32::try_from(bytes.len().div_ceil(BLOB_CHUNK_BYTES)).map_err(|_| Error::Invalid)?;
+    for (n, chunk) in bytes.chunks(BLOB_CHUNK_BYTES).enumerate() {
+        let object = blob_key(name, epoch, attempt, at, n as u32);
+        let request = mutation(&object, &object, chunk, Precondition::Absent)?;
+        match write(store, &request, false) {
+            Written::Done(_) => {}
+            Written::Refused(error) => return Err(Error::Store(error)),
+            Written::Occupied => return Err(Error::Fenced),
+            Written::Unknown => return Err(Error::Unknown),
+        }
+    }
+    Ok(Blob {
+        epoch,
+        attempt,
+        chunks,
+        len: bytes.len() as u64,
+    })
+}
+
+/// Read a string back from its chunk objects, refusing a reference whose shape
+/// is impossible or whose bytes are not UTF-8.
+fn read_blob<S: MetadataStore>(store: &S, name: &str, at: BlobAt, blob: Blob) -> Result<String> {
+    let len = usize::try_from(blob.len).map_err(|_| Error::Corrupt)?;
+    if len <= INLINE_FIELD_MAX
+        || len > MAX_INDEXED_DOCUMENT_BYTES
+        || len.div_ceil(BLOB_CHUNK_BYTES) != blob.chunks as usize
+    {
+        return Err(Error::Corrupt);
+    }
+    let mut out = Vec::with_capacity(len);
+    for n in 0..blob.chunks {
+        let object = key(&blob_key(name, blob.epoch, blob.attempt, at, n))?;
+        // Bound each chunk before it is allocated.
+        let info = block(store.head(&context(), &object))?;
+        let expected = BLOB_CHUNK_BYTES.min(len - out.len()) as u64;
+        if info.length != expected {
+            return Err(Error::Corrupt);
+        }
+        out.extend_from_slice(&read_version(store, &object, &info.version, info.length)?);
+        if out.len() > len {
+            return Err(Error::Corrupt);
+        }
+    }
+    if out.len() != len {
+        return Err(Error::Corrupt);
+    }
+    String::from_utf8(out).map_err(|_| Error::Corrupt)
 }
 
 fn serve<S: MetadataStore + 'static>(core: &mut Core<'_, '_, S>, commands: &Receiver<Command>) {
@@ -778,5 +861,104 @@ fn serve<S: MetadataStore + 'static>(core: &mut Core<'_, '_, S>, commands: &Rece
                 core.handle_group(group);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod blob_tests {
+    use super::*;
+    use hsearch_object::memory::{MemoryLimits, MemoryStore};
+
+    fn store() -> MemoryStore {
+        MemoryStore::new(MemoryLimits {
+            objects: 64,
+            versions: 64,
+            version_bytes: 64 << 20,
+            identities: 64,
+            identity_bytes: 64 << 20,
+        })
+        .unwrap()
+    }
+
+    const AT: BlobAt = BlobAt {
+        seq: 3,
+        op: 0,
+        field: 1,
+    };
+
+    fn text(fill: char, len: usize) -> String {
+        std::iter::repeat_n(fill, len).collect()
+    }
+
+    #[test]
+    fn two_attempts_at_one_position_do_not_collide_and_each_reads_back() {
+        let store = store();
+        let (a, b) = (
+            text('a', INLINE_FIELD_MAX + 5),
+            text('b', INLINE_FIELD_MAX + 5),
+        );
+        let first = write_blob(&store, "ix", 1, AT, &a).unwrap();
+        let second = write_blob(&store, "ix", 1, AT, &b).unwrap();
+        assert_ne!(first.attempt, second.attempt);
+        assert_eq!(read_blob(&store, "ix", AT, first).unwrap(), a);
+        assert_eq!(read_blob(&store, "ix", AT, second).unwrap(), b);
+    }
+
+    #[test]
+    fn a_chunk_boundary_document_spans_exact_chunks() {
+        let store = store();
+        let exact = text('c', BLOB_CHUNK_BYTES * 2);
+        let blob = write_blob(&store, "ix", 1, AT, &exact).unwrap();
+        assert_eq!(blob.chunks, 2);
+        assert_eq!(
+            read_blob(&store, "ix", AT, blob).unwrap().len(),
+            exact.len()
+        );
+    }
+
+    #[test]
+    fn a_missing_chunk_a_wrong_shape_or_a_bad_length_is_corrupt_never_a_short_read() {
+        let store = store();
+        let t = text('d', INLINE_FIELD_MAX + 1);
+        let blob = write_blob(&store, "ix", 1, AT, &t).unwrap();
+        // Another position has no chunk object.
+        let elsewhere = BlobAt { seq: 4, ..AT };
+        assert!(read_blob(&store, "ix", elsewhere, blob).is_err());
+        // A reference claiming a different length than its chunk holds.
+        let longer = Blob {
+            len: blob.len + 1,
+            ..blob
+        };
+        assert_eq!(read_blob(&store, "ix", AT, longer), Err(Error::Corrupt));
+        // Wrong chunk count, inline-sized and over-ceiling references.
+        let two = Blob { chunks: 2, ..blob };
+        assert_eq!(read_blob(&store, "ix", AT, two), Err(Error::Corrupt));
+        let small = Blob {
+            len: INLINE_FIELD_MAX as u64,
+            ..blob
+        };
+        assert_eq!(read_blob(&store, "ix", AT, small), Err(Error::Corrupt));
+        let huge = Blob {
+            len: MAX_INDEXED_DOCUMENT_BYTES as u64 + 1,
+            chunks: (MAX_INDEXED_DOCUMENT_BYTES.div_ceil(BLOB_CHUNK_BYTES) + 1) as u32,
+            ..blob
+        };
+        assert_eq!(read_blob(&store, "ix", AT, huge), Err(Error::Corrupt));
+    }
+
+    #[test]
+    fn non_utf8_chunk_bytes_are_corrupt() {
+        let store = store();
+        let blob = Blob {
+            epoch: 1,
+            attempt: 77,
+            chunks: 1,
+            len: INLINE_FIELD_MAX as u64 + 1,
+        };
+        let object = blob_key("ix", 1, 77, AT, 0);
+        let bad = vec![0xff_u8; INLINE_FIELD_MAX + 1];
+        let request = mutation(&object, &object, &bad, Precondition::Absent).unwrap();
+        assert!(matches!(write(&store, &request, false), Written::Done(_)));
+        assert_eq!(read_blob(&store, "ix", AT, blob), Err(Error::Corrupt));
     }
 }

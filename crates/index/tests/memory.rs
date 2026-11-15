@@ -510,3 +510,86 @@ fn a_published_root_naming_too_many_files_is_refused_not_written() {
     // write one: exercised through the format bound the writer checks.
     assert_eq!(hsearch_index::format::MAX_FILES, 4096);
 }
+
+fn big_schema() -> hsearch_engine::Schema {
+    hsearch_engine::Schema::new(
+        1,
+        &[
+            ("tag", hsearch_engine::Kind::Keyword),
+            ("body", hsearch_engine::Kind::Text),
+        ],
+    )
+    .unwrap()
+    .with_limits(Limits::scale().with_document_bytes(32 << 20))
+    .unwrap()
+}
+
+fn big_put(id: &str, body: String) -> hsearch_index::Op {
+    hsearch_index::Op::Put {
+        id: id.to_string(),
+        fields: vec![
+            hsearch_index::Field::Str("t".into()),
+            hsearch_index::Field::Str(body),
+        ],
+    }
+}
+
+fn needles(index: &Index) -> u64 {
+    use hsearch_engine::{Query, Value};
+    index
+        .snapshot()
+        .unwrap()
+        .search(
+            &Query::Term {
+                field: "body",
+                value: Value::String("needle"),
+            },
+            &[],
+            0,
+            &[],
+        )
+        .unwrap()
+        .total
+}
+
+#[test]
+fn a_document_over_the_inline_limit_goes_to_chunk_objects_and_replays() {
+    let store = store();
+    let (one, two) = (Scratch::new("blob-a"), Scratch::new("blob-b"));
+    let index = Index::create(Arc::clone(&store), "docs", big_schema(), &one.0).unwrap();
+    // 12 MiB: two 8 MiB-bound chunks, far over the 1 MiB inline limit.
+    let body = format!("{}needle", "word ".repeat(12 * (1 << 20) / 5));
+    index
+        .bulk(vec![big_put("big", body)], Wait::Searchable)
+        .unwrap();
+    assert_eq!(needles(&index), 1);
+    // The slot holds a reference, not the text; replay below reads the chunks.
+    assert!(object_len(&store, "docs/log/00000000000000000000") < 1024);
+    index.close();
+    std::fs::remove_dir_all(&one.0).unwrap();
+    let again = Index::open(store, "docs", big_schema(), &two.0).unwrap();
+    assert_eq!(needles(&again), 1);
+}
+
+fn object_len(store: &MemoryStore, key: &str) -> u64 {
+    let key = hsearch_object::ObjectKey::new(key.as_bytes()).unwrap();
+    let ctx = hsearch_object::RequestContext::new(
+        std::time::Duration::from_secs(5),
+        hsearch_object::Cancellation::default(),
+        hsearch_object::Budget {
+            request_bytes: 1 << 20,
+            response_bytes: 1 << 20,
+            attempts: 4,
+        },
+    )
+    .unwrap();
+    let mut future = std::pin::pin!(hsearch_object::ObjectBackend::head(store, &ctx, &key));
+    let waker = std::task::Waker::noop();
+    match future
+        .as_mut()
+        .poll(&mut std::task::Context::from_waker(waker))
+    {
+        std::task::Poll::Ready(Ok(info)) => info.length,
+        other => panic!("head failed: {other:?}"),
+    }
+}
