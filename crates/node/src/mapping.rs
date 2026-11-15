@@ -191,8 +191,15 @@ impl Mapping {
         bytes.starts_with(INLINE_HEADER.as_bytes())
     }
 
-    /// The engine schema, under the scale profile.
+    /// The engine schema, under the scale profile admitting documents up to the
+    /// largest the index can hold.
     pub fn schema(&self) -> Result<Schema, ApiError> {
+        self.schema_for(hsearch_index::MAX_INDEXED_DOCUMENT_BYTES)
+    }
+
+    /// The engine schema, under the scale profile admitting documents of up to
+    /// `document_bytes`.
+    pub fn schema_for(&self, document_bytes: usize) -> Result<Schema, ApiError> {
         let fields: Vec<(&str, Kind)> = self.fields.iter().map(|(n, k)| (n.as_str(), *k)).collect();
         Schema::new(1, &fields)
             .map_err(|_| {
@@ -202,7 +209,7 @@ impl Mapping {
                     "field names must be 1-64 of [A-Za-z0-9_], not start with an underscore, and be unique; at most 14 fields",
                 )
             })?
-            .with_limits(Limits::scale())
+            .with_limits(Limits::scale().with_document_bytes(document_bytes))
             .map_err(ApiError::from)
     }
 

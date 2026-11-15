@@ -20,6 +20,14 @@ use crate::search::{self, Source};
 
 /// Operations per call to the write path, below its slot bound.
 const CHUNK: usize = 1000;
+/// A document of at least this many bytes is charged its indexing working set
+/// against the node's memory budget; smaller ones ride on the request's own
+/// reservation, as before.
+const LARGE_DOCUMENT_BYTES: usize = 64 * 1024;
+/// Bytes charged per byte of a large document while its batch is written. Measured
+/// (`large_field_profile`, in-memory store, so it includes the store's retained
+/// copies): peak RSS was 16x a 1 MiB document and 12.6x a 3.9 MiB one.
+const INDEX_COST_FACTOR: u64 = 16;
 
 struct Entry {
     index: Index,
@@ -365,11 +373,11 @@ impl<S: MetadataStore + 'static> Node<S> {
                 }
             }
             if batch.len() >= CHUNK || pending >= flush_bytes {
-                errors |= self.run_batch(&mut batch, wait, &mut responses);
+                errors |= self.charged_batch(&mut batch, wait, &mut responses);
                 pending = 0;
             }
         }
-        errors |= self.run_batch(&mut batch, wait, &mut responses);
+        errors |= self.charged_batch(&mut batch, wait, &mut responses);
         if responses.is_empty() {
             return Err(ApiError::bad("the bulk body has no actions"));
         }
@@ -381,6 +389,33 @@ impl<S: MetadataStore + 'static> Node<S> {
                 "items": responses,
             }),
         ))
+    }
+
+    /// [`Self::run_batch`] after reserving the indexing working set of the batch's
+    /// large documents. When the budget cannot cover it the whole batch is refused
+    /// item by item with 429 and nothing is written: visible backpressure, no queue.
+    fn charged_batch(&self, items: &mut Vec<Item>, wait: Wait, out: &mut Vec<Value>) -> bool {
+        let cost: u64 = items
+            .iter()
+            .filter(|item| item.bytes >= LARGE_DOCUMENT_BYTES)
+            .map(|item| INDEX_COST_FACTOR.saturating_mul(item.bytes as u64))
+            .sum();
+        let _held = if cost == 0 {
+            None
+        } else {
+            match self.gate.reserve(cost) {
+                Ok(permit) => Some(permit),
+                Err(error) => {
+                    out.extend(
+                        items
+                            .drain(..)
+                            .map(|item| item_error(&item.action, &item.index, &item.id, &error)),
+                    );
+                    return true;
+                }
+            }
+        };
+        self.run_batch(items, wait, out)
     }
 
     /// Write one batch, appending a response per item in order and emptying the

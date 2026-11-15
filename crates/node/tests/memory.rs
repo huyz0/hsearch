@@ -2,9 +2,9 @@
 //!
 //! Peak resident memory of the whole process, server workers and the test client
 //! alike (Linux: /proc, `clear_refs` resets the high-water mark). Nothing in
-//! these bodies is committed (the engine refuses fields over its 8 KiB cap, and
-//! the node refuses documents over the buffer), so the in-memory store does not
-//! grow and any growth is request memory. RSS is allocator-dependent, so bounds
+//! these bodies is committed (the node refuses documents over the buffer), so the
+//! in-memory store does not grow and any growth is request memory. Documents the
+//! node does admit are in `large_fields.rs` and the profile example. RSS is allocator-dependent, so bounds
 //! are generous multiples of the buffer, and the main claim is relative: ten
 //! times the body costs the same.
 mod support;
@@ -115,13 +115,13 @@ fn peak_memory_follows_the_buffer_not_the_body_or_the_document() {
     // Warm up so one-time allocations (threads, store tables) are not counted.
     assert_eq!(post_stream(addr, 4, 1000).0, 200);
 
-    // A bulk of many large documents, each under the buffer. The engine refuses
-    // each one (its field cap is 8 KiB), so nothing is retained.
-    let (small_body, (status, out)) = peak_over(|| post_stream(addr, 30, 700 * 1024));
+    // A bulk of many large documents, each over the buffer. The node refuses
+    // each one while streaming past it, so nothing is retained.
+    let (small_body, (status, out)) = peak_over(|| post_stream(addr, 14, 3 * BUFFER / 2));
     assert_eq!((status, &out["errors"]), (200, &json!(true)));
-    let (large_body, (status, out)) = peak_over(|| post_stream(addr, 300, 700 * 1024));
+    let (large_body, (status, out)) = peak_over(|| post_stream(addr, 140, 3 * BUFFER / 2));
     assert_eq!((status, &out["errors"]), (200, &json!(true)));
-    assert_eq!(out["items"].as_array().unwrap().len(), 300);
+    assert_eq!(out["items"].as_array().unwrap().len(), 140);
     println!("memory: 21 MiB body peak {small_body} B, 210 MiB body peak {large_body} B");
     assert!(
         large_body <= small_body + 6 * BUFFER,

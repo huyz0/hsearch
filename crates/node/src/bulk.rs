@@ -211,10 +211,18 @@ impl<R: Read> Stream<R> {
     /// document limit and the buffer.
     fn source(&mut self, bytes: &mut usize) -> Result<Result<Value, ApiError>, ApiError> {
         let configured = self.limits.max_document_bytes;
-        let cap = configured.min(self.limits.buffer_bytes as u64) as usize;
+        let indexable = INDEXABLE_SOURCE_BYTES as u64;
+        let cap = configured
+            .min(self.limits.buffer_bytes as u64)
+            .min(indexable) as usize;
         match self.read_line(cap)? {
             Line::End => Err(ApiError::parse("an action is missing its source line")),
-            Line::Oversized(n) => Ok(Err(too_large(n, configured, self.limits.buffer_bytes))),
+            Line::Oversized(n) => Ok(Err(too_large(
+                n,
+                configured,
+                self.limits.buffer_bytes,
+                indexable,
+            ))),
             Line::Text => {
                 *bytes = self.line.len();
                 let parsed = match shape(&self.line) {
@@ -229,6 +237,11 @@ impl<R: Read> Stream<R> {
         }
     }
 }
+
+/// Largest source line the write path can index: the index's document ceiling
+/// less the identity, which the engine charges to the document but the source
+/// line does not carry (at most 256 bytes).
+const INDEXABLE_SOURCE_BYTES: usize = hsearch_index::MAX_INDEXED_DOCUMENT_BYTES - 256;
 
 /// Most top-level members a source may carry: the mapping allows 14 fields, so a
 /// document with more than this can only be refused, and parsing it first would
@@ -274,13 +287,18 @@ fn shape(line: &[u8]) -> Option<&'static str> {
 }
 
 /// The structured refusal of a document over a limit, naming that limit.
-fn too_large(size: u64, configured: u64, buffer: usize) -> ApiError {
+fn too_large(size: u64, configured: u64, buffer: usize, indexable: u64) -> ApiError {
     let reason = if size > configured {
         format!("document of {size} bytes exceeds the document limit of {configured} bytes")
-    } else {
+    } else if size > buffer as u64 {
         format!(
             "document of {size} bytes exceeds the {buffer}-byte streaming buffer \
              (document limit {configured} bytes); the engine cannot hold a larger document"
+        )
+    } else {
+        format!(
+            "document of {size} bytes is within the document limit of {configured} bytes \
+             but this build can index documents of at most {indexable} bytes"
         )
     };
     ApiError::new(413, "document_too_large_exception", reason)

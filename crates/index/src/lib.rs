@@ -19,6 +19,6 @@ mod store;
 mod writer;
 
 pub use error::{Error, Result};
-pub use format::{Field, Op};
+pub use format::{Field, MAX_INDEXED_DOCUMENT_BYTES, Op};
 pub use index::{Index, get_mapping, get_shared, open_published, put_mapping, put_shared};
 pub use writer::{Hooks, ItemResult, NoHooks, Point, Published, Wait};

@@ -8,7 +8,13 @@ const ROOT_MAGIC: &[u8; 8] = b"HSROOT0\0";
 pub const MAX_SLOT_OPS: usize = 4096;
 /// Largest encoded slot, below the object contract's 16 MiB payload bound.
 pub const MAX_SLOT_BYTES: usize = 8 * 1024 * 1024;
-const MAX_FIELD_BYTES: usize = 8192;
+/// Largest document the writer accepts, in the engine's accounting (identity,
+/// names and values). A request must encode within half a slot, and the margin
+/// covers the slot header and per-field framing.
+pub const MAX_INDEXED_DOCUMENT_BYTES: usize = MAX_SLOT_BYTES / 2 - 4096;
+/// A field is bounded by its slot: decode checks lengths against the bytes that
+/// remain, so a larger bound here would only be a second constant to keep equal.
+const MAX_FIELD_BYTES: usize = MAX_SLOT_BYTES;
 const MAX_FIELDS: usize = 16;
 /// Most segment files a root may name.
 pub const MAX_FILES: usize = 4096;
@@ -175,6 +181,34 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// The length [`encode_slot`] gives a slot of `ops`, computed without encoding
+/// or cloning them: the size checks of a large document must not copy it.
+#[must_use]
+pub fn encoded_len(ops: &[Op]) -> usize {
+    // Magic, sequence, first version, operation count.
+    let header = SLOT_MAGIC.len() + 8 + 8 + 4;
+    ops.iter().fold(header, |total, op| {
+        total
+            + match op {
+                // Tag, identity (length + bytes), field count, then each field.
+                Op::Put { id, fields } => {
+                    1 + 4
+                        + id.len()
+                        + 1
+                        + fields
+                            .iter()
+                            .map(|field| match field {
+                                Field::Str(s) => 1 + 4 + s.len(),
+                                Field::Int(_) | Field::Date(_) => 1 + 8,
+                                Field::Bool(_) => 1 + 1,
+                            })
+                            .sum::<usize>()
+                }
+                Op::Delete { id } => 1 + 4 + id.len(),
+            }
+    })
+}
+
 /// Decode a slot, refusing anything that is not exactly a v0 slot.
 pub fn decode_slot(bytes: &[u8]) -> Result<Slot> {
     let mut r = Reader { bytes, at: 0 };
@@ -306,6 +340,38 @@ mod tests {
         let mut wrong = bytes;
         wrong[0] ^= 1;
         assert_eq!(decode_slot(&wrong), Err(Error::Corrupt));
+    }
+
+    #[test]
+    fn encoded_len_is_the_encoded_length_without_encoding() {
+        assert_eq!(encoded_len(&slot().ops), encode_slot(&slot()).len());
+        let big = vec![
+            Op::Put {
+                id: "a".repeat(256),
+                fields: vec![Field::Str("é".repeat(100_000)), Field::Str(String::new())],
+            },
+            Op::Delete { id: "gone".into() },
+        ];
+        let probe = Slot {
+            seq: 0,
+            first_version: 1,
+            ops: big,
+        };
+        assert_eq!(encoded_len(&probe.ops), encode_slot(&probe).len());
+    }
+
+    #[test]
+    fn a_field_far_over_the_old_8_kib_cap_round_trips() {
+        let text = "lorem ipsum ".repeat(300_000);
+        let slot = Slot {
+            seq: 1,
+            first_version: 1,
+            ops: vec![Op::Put {
+                id: "big".into(),
+                fields: vec![Field::Str(text)],
+            }],
+        };
+        assert_eq!(decode_slot(&encode_slot(&slot)).unwrap(), slot);
     }
 
     #[test]

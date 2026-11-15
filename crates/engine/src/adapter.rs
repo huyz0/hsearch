@@ -23,6 +23,18 @@ const VERSION: LuceneVersion = LuceneVersion {
 const MAX_BATCH: usize = 16;
 const MAX_BATCH_BYTES: usize = 65_536;
 
+/// Most bytes one prepared batch carries: the research profile's bound, plus
+/// whatever the schema's document limit allows beyond the research document, so
+/// one maximal document always fits a batch alone.
+fn batch_bytes(schema: &Schema) -> usize {
+    MAX_BATCH_BYTES.saturating_add(
+        schema
+            .limits
+            .document_bytes
+            .saturating_sub(MAX_DOCUMENT_BYTES),
+    )
+}
+
 /// Caller-resolved mutation. The adapter never generates IDs or versions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mutation<'a> {
@@ -157,12 +169,12 @@ impl Schema {
                             })
                         })
                         .ok_or(Error::Limit)?;
-                    if bytes > MAX_BATCH_BYTES {
+                    if bytes > batch_bytes(self) {
                         return Err(Error::Limit);
                     }
                 }
             }
-            if bytes > MAX_BATCH_BYTES {
+            if bytes > batch_bytes(self) {
                 return Err(Error::Limit);
             }
         }
@@ -353,7 +365,8 @@ impl<'d> Engine<'d> {
     ) -> Result<Self> {
         let buffered = schema.limits.buffered_documents;
         // Room for a full buffer of worst-case documents, never below 8 MiB.
-        let ram_mb = (buffered as f64 * MAX_DOCUMENT_BYTES as f64 / 1_048_576.0).clamp(8.0, 256.0);
+        let ram_mb =
+            (buffered as f64 * schema.limits.document_bytes as f64 / 1_048_576.0).clamp(8.0, 256.0);
         Self::open_configured(directory, schema, checkpoint, move |writer| {
             writer.set_analyzer(Some(Arc::new(analyzer())));
             writer

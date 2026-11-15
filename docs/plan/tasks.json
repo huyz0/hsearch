@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-11-13",
+  "updated": "2026-11-15",
   "timezone": "Australia/Sydney",
   "scope": "Scalability-first OpenSearch-inspired partial compatibility is the current direction. M00, M19 and M01.01/M01.02/M01.03/M01.04/M01.05/M01.06 are integrated. M01.09 is operationally closed through qualified M01.15; its historical cause remains unconfirmed and M01.08 remains separately unqualified. M02.01 selected fixture inventory is in progress. Runtime, provider, scale and release obligations remain explicit. On 13 November 2026 the delivery plan was reworked against the product requirements PR-01 to PR-54: M20 is the lean path to a first runnable slice, M21 to M24 add document and mapping semantics, index management and jobs, vector search and extension modules, and docs/plan/product-coverage.md maps every requirement to its tasks.",
   "completion_contract": "Product done requires task DoD, applicable coverage/security/conformance gates, independent review of the final tree, and immutable evidence referenced through a local evidence record. M00 research/planning tasks use their own source/model/ledger acceptance and author audit; their completion does not certify independent architecture review or runtime behavior. Existence of an evidence file is necessary, not sufficient proof.",
@@ -2856,6 +2856,61 @@
             "M04.01"
           ],
           "owner": "engine/search",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M21.08",
+          "title": "Index large text fields up to the index's document ceiling",
+          "goal": "Let a text field be as large as the write path can hold, with OpenSearch's keyword term limit and a named refusal above the ceiling (PR-40).",
+          "deliverables": [
+            "Per-document byte and term bounds are `Limits`, not constants; the research profile keeps its values",
+            "Term counting streams; a keyword over 32,766 bytes is refused whatever the document limit",
+            "Documents of 64 KiB or more are charged their indexing working set against the node memory budget; a spent budget refuses the batch per item with 429",
+            "A document over the ceiling is refused with 413 naming what the build can index"
+          ],
+          "validation": [
+            "A multi-megabyte text field is indexed, found by a term at its end and returned whole; one byte over the limit is refused; the research profile still refuses beyond 8 KiB",
+            "Peak memory against document size and small-document throughput measured before and after"
+          ],
+          "definition_of_done": [
+            "Existing tests pin the research profile unchanged; new tests cover the raised limit",
+            "Measured memory and throughput recorded with their downsides, independent review done, CI green"
+          ],
+          "depends_on": [
+            "M21.01"
+          ],
+          "owner": "engine/api",
+          "status": "review",
+          "evidence": [
+            {
+              "path": "evidence/m21-08-large-text-fields.md",
+              "result": "Text fields up to 4,190,208 bytes indexed, searched and returned whole; keyword term limit 32,766 bytes; streamed term count 4.0 MiB vs 53.9 MiB peak for a 4 MiB field; peak RSS 12.6-16x document size at 1-3.9 MiB, admission-charged at 16x; small-document throughput unchanged within noise. Provisional, 4-CPU container."
+            }
+          ]
+        },
+        {
+          "id": "M21.09",
+          "title": "Large-document lane up to the 200 MB ceiling",
+          "goal": "Index documents between the index's 4 MiB ceiling and the 100-200 MB product limit with memory bounded by admission (PR-40).",
+          "deliverables": [
+            "A document over the slot ceiling is written as its own create-only object through the large-object upload seam and referenced from the log, so a slot stays under the object payload bound",
+            "Replay and apply read it back without a second whole-document copy; retry detection by digest instead of an owned copy",
+            "The memory budget charge follows a measured factor for 4-100 MiB documents"
+          ],
+          "validation": [
+            "A 100 MiB text field is indexed, found by a term at its end and returned whole under a fixed memory cap; a document over the limit is refused and nothing of it is committed",
+            "Peak memory against document size from 4 MiB to 100 MiB, with the downside stated"
+          ],
+          "definition_of_done": [
+            "Peak memory is bounded by admission for every size and the charge is no lower than the measured factor",
+            "Any engine memory that grows with document size beyond that is an upstream lucene-rust issue (PR-53)"
+          ],
+          "depends_on": [
+            "M21.08",
+            "M03.14"
+          ],
+          "owner": "engine/api",
           "status": "planned",
           "evidence": []
         }
