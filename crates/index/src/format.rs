@@ -12,6 +12,21 @@ pub const MAX_SLOT_BYTES: usize = 8 * 1024 * 1024;
 /// names and values): the product's 200 MiB hard ceiling (PR-40). A string over
 /// [`INLINE_FIELD_MAX`] is stored as chunk objects, so the slot stays small.
 pub const MAX_INDEXED_DOCUMENT_BYTES: usize = 200 << 20;
+
+/// Most string text one slot may carry for a schema whose documents may be
+/// `document_bytes`: one document's ceiling, never less than the slot's own byte
+/// bound. Replay of a slot written under this rule holds at most this much text.
+/// Slots written before the rule existed are not re-checked on replay.
+#[must_use]
+pub fn slot_text_cap(document_bytes: usize) -> usize {
+    MAX_SLOT_BYTES.max(document_bytes)
+}
+
+/// Whether `add` more bytes of text fit under `cap` after `have`.
+#[must_use]
+pub fn text_fits(have: usize, add: usize, cap: usize) -> bool {
+    have.checked_add(add).is_some_and(|total| total <= cap)
+}
 /// A field is bounded by its slot: decode checks lengths against the bytes that
 /// remain, so a larger bound here would only be a second constant to keep equal.
 const MAX_FIELD_BYTES: usize = MAX_SLOT_BYTES;
@@ -251,6 +266,24 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// Total bytes of string text in `ops`, externalised or not. Replay holds all of
+/// a slot's text in memory at once, so this, not [`encoded_len`], bounds it.
+#[must_use]
+pub fn text_len(ops: &[Op]) -> usize {
+    ops.iter()
+        .map(|op| match op {
+            Op::Put { id, fields } => {
+                id.len()
+                    + fields
+                        .iter()
+                        .map(|f| if let Field::Str(s) = f { s.len() } else { 0 })
+                        .sum::<usize>()
+            }
+            Op::Delete { id } => id.len(),
+        })
+        .sum()
+}
+
 /// The length of a slot of `ops` with every string over [`INLINE_FIELD_MAX`]
 /// externalised, computed without encoding or cloning them: the size checks of a
 /// large document must not copy it.
@@ -477,6 +510,32 @@ mod tests {
             }],
         };
         assert_eq!(decode_slot(&encode_slot(&slot).unwrap()).unwrap(), slot);
+    }
+
+    #[test]
+    fn text_len_counts_externalised_strings_whole() {
+        let ops = vec![
+            Op::Put {
+                id: "ab".into(),
+                fields: vec![
+                    Field::Str("x".repeat(INLINE_FIELD_MAX + 7)),
+                    Field::Int(1),
+                    Field::Str("yy".into()),
+                ],
+            },
+            Op::Delete { id: "cde".into() },
+        ];
+        assert_eq!(text_len(&ops), 2 + INLINE_FIELD_MAX + 7 + 2 + 3);
+    }
+
+    #[test]
+    fn the_slot_text_cap_is_the_larger_of_the_slot_bound_and_a_document() {
+        assert_eq!(slot_text_cap(1000), MAX_SLOT_BYTES);
+        assert_eq!(slot_text_cap(MAX_SLOT_BYTES + 1), MAX_SLOT_BYTES + 1);
+        assert!(text_fits(5, 5, 10));
+        assert!(!text_fits(5, 6, 10));
+        assert!(!text_fits(usize::MAX, 1, usize::MAX));
+        assert!(text_fits(0, 0, 0));
     }
 
     #[test]
