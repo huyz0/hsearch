@@ -1,5 +1,5 @@
 //! Index one document with a text field of N MiB through `Node::bulk` on the
-//! in-memory store and report time and peak memory, so memory per document can
+//! in-memory store (a local double without its 64 MiB cap) and report time and peak memory, so memory per document can
 //! be read against document size. One process per size: the high-water mark is
 //! the process's. Provisional: one shared host.
 //!
@@ -9,7 +9,6 @@ use std::time::Instant;
 
 use hsearch_index::Wait;
 use hsearch_node::{Limits, Node};
-use hsearch_object::memory::{MemoryLimits, MemoryStore};
 use serde_json::json;
 
 fn status_kb(field: &str) -> usize {
@@ -23,28 +22,162 @@ fn status_kb(field: &str) -> usize {
         .unwrap_or(0)
 }
 
+/// A measurement double without the in-memory store's 64 MiB retention cap, so a
+/// document of up to 200 MiB can be held. Not a conformance-tested store.
+mod big {
+    use hsearch_object::{
+        ByteRange, Error, Metadata, MetadataStore, Mutation, ObjectBackend, ObjectKey, Payload,
+        RequestContext, RequestId, VersionToken,
+    };
+    use hsearch_object::{ObjectInfo, Operation, Precondition, WriteReceipt};
+    use std::collections::{BTreeMap, hash_map::DefaultHasher};
+    use std::hash::{Hash, Hasher};
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct State {
+        current: BTreeMap<ObjectKey, VersionToken>,
+        versions: BTreeMap<VersionToken, (ObjectKey, ObjectInfo, Vec<u8>)>,
+        accepted: BTreeMap<RequestId, (u64, WriteReceipt)>,
+        next: u64,
+    }
+
+    #[derive(Default)]
+    pub struct BigStore(Mutex<State>);
+
+    fn digest(request: &Mutation) -> u64 {
+        let mut h = DefaultHasher::new();
+        request.key.as_bytes().hash(&mut h);
+        request.payload.as_bytes().hash(&mut h);
+        request.metadata.as_bytes().hash(&mut h);
+        h.finish()
+    }
+
+    impl BigStore {
+        fn write(&self, ctx: &RequestContext, request: &Mutation) -> Result<WriteReceipt, Error> {
+            ctx.charge_request((request.payload.len() + request.key.len()) as u64)?;
+            let mut s = self.0.lock().map_err(|_| Error::Unavailable)?;
+            let d = digest(request);
+            if let Some((seen, receipt)) = s.accepted.get(&request.request_id) {
+                return if *seen == d {
+                    Ok(receipt.clone())
+                } else {
+                    Err(Error::IdentityConflict)
+                };
+            }
+            match (&request.precondition, s.current.get(&request.key)) {
+                (Precondition::Absent, None) => {}
+                (Precondition::Matches(a), Some(b)) if a == b => {}
+                _ => return Err(Error::Conflict),
+            }
+            s.next += 1;
+            let version = VersionToken::new(&s.next.to_be_bytes())?;
+            let info = ObjectInfo {
+                version: version.clone(),
+                length: request.payload.len() as u64,
+                metadata: request.metadata.clone(),
+            };
+            let receipt = WriteReceipt {
+                request_id: request.request_id.clone(),
+                object: info.clone(),
+            };
+            s.current.insert(request.key.clone(), version.clone());
+            s.versions.insert(
+                version,
+                (
+                    request.key.clone(),
+                    info,
+                    request.payload.as_bytes().to_vec(),
+                ),
+            );
+            s.accepted
+                .insert(request.request_id.clone(), (d, receipt.clone()));
+            Ok(receipt)
+        }
+    }
+
+    impl ObjectBackend for BigStore {
+        fn head<'a>(
+            &'a self,
+            ctx: &'a RequestContext,
+            key: &'a ObjectKey,
+        ) -> Operation<'a, ObjectInfo> {
+            Box::pin(async move {
+                ctx.check()?;
+                let s = self.0.lock().map_err(|_| Error::Unavailable)?;
+                let v = s.current.get(key).ok_or(Error::NotFound)?;
+                Ok(s.versions.get(v).ok_or(Error::Corrupt)?.1.clone())
+            })
+        }
+        fn create<'a>(
+            &'a self,
+            ctx: &'a RequestContext,
+            request: &'a Mutation,
+        ) -> Operation<'a, WriteReceipt> {
+            Box::pin(async move { self.write(ctx, request) })
+        }
+        fn read_range<'a>(
+            &'a self,
+            ctx: &'a RequestContext,
+            key: &'a ObjectKey,
+            version: &'a VersionToken,
+            range: ByteRange,
+        ) -> Operation<'a, Payload> {
+            Box::pin(async move {
+                ctx.check()?;
+                let s = self.0.lock().map_err(|_| Error::Unavailable)?;
+                let (k, info, bytes) = s.versions.get(version).ok_or(Error::NotFound)?;
+                if k != key {
+                    return Err(Error::NotFound);
+                }
+                range.validate(info.length)?;
+                let start = range.offset() as usize;
+                Payload::new(&bytes[start..start + range.length() as usize])
+            })
+        }
+    }
+
+    impl MetadataStore for BigStore {
+        fn compare_exchange<'a>(
+            &'a self,
+            ctx: &'a RequestContext,
+            request: &'a Mutation,
+        ) -> Operation<'a, WriteReceipt> {
+            Box::pin(async move { self.write(ctx, request) })
+        }
+        fn resolve<'a>(
+            &'a self,
+            _: &'a RequestContext,
+            request: &'a Mutation,
+        ) -> Operation<'a, WriteReceipt> {
+            Box::pin(async move {
+                let s = self.0.lock().map_err(|_| Error::Unavailable)?;
+                match s.accepted.get(&request.request_id) {
+                    Some((d, r)) if *d == digest(request) => Ok(r.clone()),
+                    Some(_) => Err(Error::IdentityConflict),
+                    None => Err(Error::ResolutionUnavailable),
+                }
+            })
+        }
+    }
+    #[allow(dead_code)]
+    fn _unused(_: Metadata) {}
+}
+use big::BigStore;
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let mib: f64 = args.next().and_then(|v| v.parse().ok()).unwrap_or(1.0);
     let docs: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(1);
     let bytes = (mib * 1_048_576.0) as usize;
     let dir = std::env::temp_dir().join(format!("hsearch-largefield-{}", std::process::id()));
-    let store = Arc::new(
-        MemoryStore::new(MemoryLimits {
-            objects: 4096,
-            versions: 16384,
-            version_bytes: 64 << 20,
-            identities: 16384,
-            identity_bytes: 64 << 20,
-        })
-        .unwrap(),
-    );
+    let store = Arc::new(BigStore::default());
     let limits = Limits {
-        max_document_bytes: 100 << 20,
-        max_bulk_bytes: 128 << 20,
+        max_document_bytes: 200 << 20,
+        max_bulk_bytes: 256 << 20,
         max_bulk_items: 100,
-        buffer_bytes: 16 << 20,
-        memory_budget_bytes: 2048 << 20,
+        buffer_bytes: 256 << 20,
+        memory_budget_bytes: 8192 << 20,
     };
     let node = Node::with_limits(store, dir.clone(), limits).expect("node");
     let mapping = json!({"mappings":{"properties":{"title":{"type":"text"},"tag":{"type":"keyword"},

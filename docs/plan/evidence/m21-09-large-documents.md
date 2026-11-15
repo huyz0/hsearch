@@ -46,4 +46,24 @@ About 10x the document, under the 32x admission charge, so the charge is unchang
 - Replay checks each chunk's length against the reference before allocating it. It still holds every string of one slot in memory, and a slot counts a reference as 29 bytes, so a log written with many large documents in one slot can need several times that in memory to reopen. Not bounded yet.
 - A crash after the chunks and before the slot leaves orphan chunk objects. They are never read, and nothing collects them yet.
 - Chunks go through the ordinary create path, not the multipart `LargeObjectWriter` seam (M03.14, still planned), so each chunk is bounded by the 16 MiB payload limit.
-- Measured only to 12 MiB. The 100 MiB end-to-end run and the 100 MiB memory curve are not done, so M21.09 stays open.
+
+# M21.09 evidence (increment 3): 100 MiB measured, replay bounded
+
+Provisional: same environment. The in-memory store is capped at 64 MiB by design, so `large_field_profile` now runs on a local double (`BigStore`, in the example only) that holds up to 200 MiB. It is not conformance-tested and not a real object store; the numbers measure the node, index and engine, with the store's own copy of the document included.
+
+| document | time | peak over baseline |
+|---|---|---|
+| 4 MiB | 0.14 s | 36.4 MiB (9.1x) |
+| 32 MiB | 1.25 s | 252.9 MiB (7.9x) |
+| 64 MiB | 2.38 s | 550.7 MiB (8.6x) |
+| 100 MiB | 3.40 s | 844.8 MiB (8.4x) |
+
+One run each, wait for searchable. Memory stays near 8-9x the document across the range, under the 32x admission charge (3.2 GiB for 100 MiB), so the charge is unchanged and conservative. Throughput is 25-29 MiB/s throughout. A 100 MiB document therefore needs about 850 MiB of working memory plus its share of the admission budget.
+
+## Replay bound
+
+A slot may now carry at most `MAX_SLOT_TEXT_BYTES` (200 MiB) of string text in total (`text_len`), however many large documents were grouped, so replay of one slot holds at most that plus the 8 MiB inline bound. Replay still materialises one slot's strings together rather than streaming them one operation at a time; the bound is the ceiling of one document, not a streaming buffer. A bulk that would push a group past the cap is refused `Capacity`, as for the existing byte bound. The cap is covered by a unit test of `text_len`; a 200 MiB group test was not written.
+
+## Orphan chunks: not done, and why
+
+Nothing in the object seam can delete an object (`ObjectBackend` has head, create, read_range, compare_exchange and resolve only), and the repo forbids LIST on write and startup paths, so a failed or crashed attempt's chunks can neither be deleted by the writer nor found by a sweep. Collecting them needs a decision first: either a delete (or lifecycle-expiry) capability on the seam with conformance tests, or a derivable record of attempts. That is a seam change across `hsearch-object`, the S3 store and the conformance suite, so it is left as its own task rather than forced into this change.

@@ -12,6 +12,11 @@ pub const MAX_SLOT_BYTES: usize = 8 * 1024 * 1024;
 /// names and values): the product's 200 MiB hard ceiling (PR-40). A string over
 /// [`INLINE_FIELD_MAX`] is stored as chunk objects, so the slot stays small.
 pub const MAX_INDEXED_DOCUMENT_BYTES: usize = 200 << 20;
+
+/// Most string text one slot may carry, so replaying a slot is bounded by one
+/// document's ceiling plus the inline slot bound, not by how many large documents
+/// were grouped.
+pub const MAX_SLOT_TEXT_BYTES: usize = MAX_INDEXED_DOCUMENT_BYTES;
 /// A field is bounded by its slot: decode checks lengths against the bytes that
 /// remain, so a larger bound here would only be a second constant to keep equal.
 const MAX_FIELD_BYTES: usize = MAX_SLOT_BYTES;
@@ -251,6 +256,24 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// Total bytes of string text in `ops`, externalised or not. Replay holds all of
+/// a slot's text in memory at once, so this, not [`encoded_len`], bounds it.
+#[must_use]
+pub fn text_len(ops: &[Op]) -> usize {
+    ops.iter()
+        .map(|op| match op {
+            Op::Put { id, fields } => {
+                id.len()
+                    + fields
+                        .iter()
+                        .map(|f| if let Field::Str(s) = f { s.len() } else { 0 })
+                        .sum::<usize>()
+            }
+            Op::Delete { id } => id.len(),
+        })
+        .sum()
+}
+
 /// The length of a slot of `ops` with every string over [`INLINE_FIELD_MAX`]
 /// externalised, computed without encoding or cloning them: the size checks of a
 /// large document must not copy it.
@@ -477,6 +500,23 @@ mod tests {
             }],
         };
         assert_eq!(decode_slot(&encode_slot(&slot).unwrap()).unwrap(), slot);
+    }
+
+    #[test]
+    fn text_len_counts_externalised_strings_whole() {
+        let ops = vec![
+            Op::Put {
+                id: "ab".into(),
+                fields: vec![
+                    Field::Str("x".repeat(INLINE_FIELD_MAX + 7)),
+                    Field::Int(1),
+                    Field::Str("yy".into()),
+                ],
+            },
+            Op::Delete { id: "cde".into() },
+        ];
+        assert_eq!(text_len(&ops), 2 + INLINE_FIELD_MAX + 7 + 2 + 3);
+        assert!(encoded_len(&ops) < 200, "the reference is small");
     }
 
     #[test]

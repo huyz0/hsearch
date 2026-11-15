@@ -20,7 +20,8 @@ mod writer;
 
 pub use error::{Error, Result};
 pub use format::{
-    BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, MAX_INDEXED_DOCUMENT_BYTES, Op,
+    BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, MAX_INDEXED_DOCUMENT_BYTES,
+    MAX_SLOT_TEXT_BYTES, Op,
 };
 pub use index::{Index, get_mapping, get_shared, open_published, put_mapping, put_shared};
 pub use writer::{Hooks, ItemResult, NoHooks, Point, Published, Wait};

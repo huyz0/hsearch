@@ -18,8 +18,8 @@ use hsearch_object::{MetadataStore, Precondition, VersionToken};
 
 use crate::format::{
     BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, MAX_INDEXED_DOCUMENT_BYTES,
-    MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_root, decode_slot_with, encode_root,
-    encode_slot_with, encoded_len,
+    MAX_SLOT_BYTES, MAX_SLOT_OPS, MAX_SLOT_TEXT_BYTES, Op, Root, Slot, decode_root,
+    decode_slot_with, encode_root, encode_slot_with, encoded_len, text_len,
 };
 use crate::store::{
     Written, blob_key, block, context, key, mutation, read_all, read_version, root_key,
@@ -338,6 +338,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         let mut accepted: Vec<(Bulk, usize)> = Vec::new();
         let mut ops: Vec<Op> = Vec::new();
         let mut bytes = 0usize;
+        let mut text = 0usize;
         let mut new_ids: HashSet<String> = HashSet::new();
         let mut puts = 0usize;
         let mut planned_ops = 0usize;
@@ -350,6 +351,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         for mut bulk in group {
             let verdict = self.validate(&bulk.ops).and_then(|()| {
                 let size = encoded_len(&bulk.ops);
+                let words = text_len(&bulk.ops);
                 let added: HashSet<&str> = bulk
                     .ops
                     .iter()
@@ -363,6 +365,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
                     .count();
                 if ops.len() + bulk.ops.len() > MAX_SLOT_OPS
                     || bytes + size > MAX_SLOT_BYTES
+                    || text + words > MAX_SLOT_TEXT_BYTES
                     || self.ids.len() + new_ids.len() + added.len() > limit
                     || self.live + puts + more_puts > limit
                     || self.operations + planned_ops + bulk.ops.len() > max_ops
@@ -373,6 +376,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
                     return Err(Error::Capacity);
                 }
                 bytes += size;
+                text += words;
                 puts += more_puts;
                 planned_ops += bulk.ops.len();
                 planned_history += cost(&self.schema, &bulk.ops);
