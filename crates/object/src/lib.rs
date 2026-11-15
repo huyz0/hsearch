@@ -151,7 +151,9 @@ pub trait MetadataStore: ObjectBackend {
     /// Permanently remove one immutable version, for garbage collection of an
     /// object no committed record refers to. Never used to change what a reader
     /// can observe of a committed object. Removing a version that is already gone
-    /// is [`Error::NotFound`]. The default is [`Error::Unsupported`], so a store
+    /// is [`Error::NotFound`] or, on a provider that answers success for a missing
+    /// version, `Ok`: callers treat both as removed. Request identities the store
+    /// retained for the object may outlive it. The default is [`Error::Unsupported`], so a store
     /// that cannot delete says so rather than pretending.
     fn remove_version<'a>(
         &'a self,

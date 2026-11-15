@@ -477,12 +477,19 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
                 return Err(error);
             }
         };
-        let request = mutation(
+        let request = match mutation(
             &format!("{}/slot/{}/{}", self.name, slot.seq, self.epoch),
             &slot_key(&self.name, slot.seq),
             &encoded,
             Precondition::Absent,
-        )?;
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                // No slot was attempted, so nothing names the chunks.
+                discard_chunks(store, &written);
+                return Err(error);
+            }
+        };
         match write(&*self.store, &request, false) {
             Written::Done(_) => Ok(()),
             Written::Refused(error) => {

@@ -633,6 +633,9 @@ struct Flaky {
     inner: MemoryStore,
     refuse: std::sync::Mutex<Option<&'static str>>,
     deleted: std::sync::atomic::AtomicUsize,
+    removed: std::sync::Mutex<Vec<(String, bool)>>,
+    commit_then_unknown: std::sync::Mutex<Option<&'static str>>,
+    resolve_blind: std::sync::atomic::AtomicBool,
     can_delete: bool,
 }
 
@@ -642,6 +645,9 @@ impl Flaky {
             inner: Arc::try_unwrap(store()).unwrap(),
             refuse: std::sync::Mutex::new(None),
             deleted: std::sync::atomic::AtomicUsize::new(0),
+            removed: std::sync::Mutex::new(Vec::new()),
+            commit_then_unknown: std::sync::Mutex::new(None),
+            resolve_blind: std::sync::atomic::AtomicBool::new(false),
             can_delete,
         }
     }
@@ -673,6 +679,24 @@ impl hsearch_object::ObjectBackend for Flaky {
         if hit {
             return Box::pin(async { Err(hsearch_object::Error::PermissionDenied) });
         }
+        let unknown = {
+            let mut mode = self.commit_then_unknown.lock().unwrap();
+            match *mode {
+                Some(part) if String::from_utf8_lossy(r.key.as_bytes()).contains(part) => {
+                    *mode = None;
+                    true
+                }
+                _ => false,
+            }
+        };
+        if unknown {
+            // Commit, then lose the answer and the ability to resolve it.
+            let inner = self.inner.create(c, r);
+            return Box::pin(async move {
+                inner.await?;
+                Err(hsearch_object::Error::UnknownOutcome)
+            });
+        }
         self.inner.create(c, r)
     }
     fn read_range<'a>(
@@ -699,6 +723,13 @@ impl hsearch_object::MetadataStore for Flaky {
         c: &'a hsearch_object::RequestContext,
         r: &'a hsearch_object::Mutation,
     ) -> hsearch_object::Operation<'a, hsearch_object::WriteReceipt> {
+        if self.commit_then_unknown.lock().unwrap().is_none()
+            && self
+                .resolve_blind
+                .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Box::pin(async { Err(hsearch_object::Error::ResolutionUnavailable) });
+        }
         self.inner.resolve(c, r)
     }
     fn remove_version<'a>(
@@ -712,7 +743,13 @@ impl hsearch_object::MetadataStore for Flaky {
         }
         self.deleted
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.inner.remove_version(c, k, v)
+        let name = String::from_utf8_lossy(k.as_bytes()).into_owned();
+        let removal = self.inner.remove_version(c, k, v);
+        Box::pin(async move {
+            let result = removal.await;
+            self.removed.lock().unwrap().push((name, result.is_ok()));
+            result
+        })
     }
 }
 
@@ -734,6 +771,14 @@ fn a_refused_slot_write_removes_the_chunks_it_wrote_and_the_retry_succeeds() {
         2,
         "both chunks were removed"
     );
+    let removed = store.removed.lock().unwrap().clone();
+    assert!(
+        removed
+            .iter()
+            .all(|(key, ok)| *ok && key.starts_with("docs/blob/")),
+        "{removed:?}"
+    );
+    assert_eq!(removed.len(), 2);
     // Nothing was poisoned, and the retry commits and finds the document.
     index
         .bulk(vec![big_put("a", big_body())], Wait::Searchable)
@@ -752,6 +797,11 @@ fn a_refused_second_chunk_removes_the_first() {
         Err(Error::Store(_))
     ));
     assert_eq!(store.deleted.load(std::sync::atomic::Ordering::Relaxed), 1);
+    let removed = store.removed.lock().unwrap().clone();
+    assert!(
+        removed.len() == 1 && removed[0].1 && removed[0].0.ends_with("/0.1/000000"),
+        "{removed:?}"
+    );
     assert!(index.bulk(vec![delete("zz")], Wait::Durable).is_ok());
 }
 
@@ -770,4 +820,30 @@ fn a_store_that_cannot_delete_leaves_the_orphans_and_stays_correct() {
         .bulk(vec![big_put("a", big_body())], Wait::Searchable)
         .unwrap();
     assert_eq!(needles(&index), 1);
+}
+
+#[test]
+fn an_unknown_slot_write_never_removes_the_chunks_it_may_name() {
+    let store = Arc::new(Flaky::new(true));
+    let (one, two) = (Scratch::new("unknown-a"), Scratch::new("unknown-b"));
+    let index = Index::create(Arc::clone(&store), "docs", big_schema(), &one.0).unwrap();
+    // The slot commits but its answer is lost and cannot be resolved.
+    *store.commit_then_unknown.lock().unwrap() = Some("/log/");
+    store
+        .resolve_blind
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let result = index.bulk(vec![big_put("a", big_body())], Wait::Durable);
+    assert_eq!(result.err(), Some(Error::Unknown));
+    assert_eq!(
+        store.deleted.load(std::sync::atomic::Ordering::Relaxed),
+        0,
+        "nothing may be removed when the slot might exist"
+    );
+    // The slot did commit: a new process replays the document from its chunks.
+    index.close();
+    store
+        .resolve_blind
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let again = Index::open(store, "docs", big_schema(), &two.0).unwrap();
+    assert_eq!(needles(&again), 1);
 }
