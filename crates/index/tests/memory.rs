@@ -563,7 +563,7 @@ fn a_document_over_the_inline_limit_goes_to_chunk_objects_and_replays() {
         .bulk(vec![big_put("big", body)], Wait::Searchable)
         .unwrap();
     assert_eq!(needles(&index), 1);
-    // The slot holds a reference, not the text: the store has chunk objects.
+    // The slot holds a reference, not the text; replay below reads the chunks.
     assert!(object_len(&store, "docs/log/00000000000000000000") < 1024);
     index.close();
     std::fs::remove_dir_all(&one.0).unwrap();

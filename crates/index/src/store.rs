@@ -71,12 +71,18 @@ pub(crate) fn slot_key(index: &str, seq: u64) -> String {
     format!("{index}/log/{seq:020}")
 }
 
-/// One chunk object of an externalised string, unique to the writer epoch that
-/// wrote it so an orphan from an earlier crashed attempt can never be mistaken
-/// for, or collide with, a later write at the same position.
-pub(crate) fn blob_key(index: &str, epoch: u64, at: crate::BlobAt, chunk: u32) -> String {
+/// One chunk object of an externalised string, unique to the writer epoch and
+/// to the write attempt, so an orphan from a crashed or failed attempt can never
+/// be mistaken for, or collide with, a later write at the same position.
+pub(crate) fn blob_key(
+    index: &str,
+    epoch: u64,
+    attempt: u64,
+    at: crate::BlobAt,
+    chunk: u32,
+) -> String {
     format!(
-        "{index}/blob/{epoch:020}/{:020}/{}.{}/{chunk:06}",
+        "{index}/blob/{epoch:020}/{attempt:020}/{:020}/{}.{}/{chunk:06}",
         at.seq, at.op, at.field
     )
 }

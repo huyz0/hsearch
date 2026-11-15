@@ -24,8 +24,8 @@ pub const INLINE_FIELD_MAX: usize = 1 << 20;
 /// document of any size is a run of ordinary create-only objects.
 pub const BLOB_CHUNK_BYTES: usize = 8 << 20;
 const BLOB_TAG: u8 = 5;
-/// Wire size of a reference: tag, epoch, chunk count, byte length.
-const BLOB_REF_BYTES: usize = 1 + 8 + 4 + 8;
+/// Wire size of a reference: tag, epoch, attempt, chunk count, byte length.
+const BLOB_REF_BYTES: usize = 1 + 8 + 8 + 4 + 8;
 
 /// Where an externalised string lives: the writer epoch that wrote it, how many
 /// chunk objects hold it and its total bytes.
@@ -33,6 +33,9 @@ const BLOB_REF_BYTES: usize = 1 + 8 + 4 + 8;
 pub struct Blob {
     /// Writer incarnation that created the chunks.
     pub epoch: u64,
+    /// Unique to the write attempt, so a retry after a failed attempt in the
+    /// same epoch never collides with that attempt's orphan chunks.
+    pub attempt: u64,
     /// Number of chunk objects, each at most [`BLOB_CHUNK_BYTES`].
     pub chunks: u32,
     /// Total bytes of the string.
@@ -120,11 +123,20 @@ fn put_str(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(bytes);
 }
 
-/// Encode a slot with every string inline. Strings over [`INLINE_FIELD_MAX`] are
-/// refused at write time by the writer, so this form is for small slots and tests.
-#[must_use]
-pub fn encode_slot(slot: &Slot) -> Vec<u8> {
-    encode_slot_with(slot, &mut |_, _, _| Ok(None)).unwrap_or_default()
+/// Encode a slot with every string inline, for small slots and tests. A string
+/// over [`INLINE_FIELD_MAX`] is refused (`Invalid`) rather than encoded to a size
+/// [`encoded_len`] does not count.
+pub fn encode_slot(slot: &Slot) -> Result<Vec<u8>> {
+    let large = slot.ops.iter().any(|op| match op {
+        Op::Put { fields, .. } => fields
+            .iter()
+            .any(|f| matches!(f, Field::Str(s) if s.len() > INLINE_FIELD_MAX)),
+        Op::Delete { .. } => false,
+    });
+    if large {
+        return Err(Error::Invalid);
+    }
+    encode_slot_with(slot, &mut |_, _, _| Ok(None))
 }
 
 /// Writes one large string (op index, field index, text) and returns its
@@ -161,6 +173,7 @@ pub fn encode_slot_with(slot: &Slot, externalise: &mut Externalise<'_>) -> Resul
                             if let Some(blob) = blob {
                                 out.push(BLOB_TAG);
                                 out.extend_from_slice(&blob.epoch.to_le_bytes());
+                                out.extend_from_slice(&blob.attempt.to_le_bytes());
                                 out.extend_from_slice(&blob.chunks.to_le_bytes());
                                 out.extend_from_slice(&blob.len.to_le_bytes());
                             } else {
@@ -309,6 +322,7 @@ pub fn decode_slot_with(
                         BLOB_TAG => {
                             let blob = Blob {
                                 epoch: r.u64()?,
+                                attempt: r.u64()?,
                                 chunks: r.u32()?,
                                 len: r.u64()?,
                             };
@@ -417,7 +431,7 @@ mod tests {
 
     #[test]
     fn slot_round_trips_and_every_truncation_is_refused() {
-        let bytes = encode_slot(&slot());
+        let bytes = encode_slot(&slot()).unwrap();
         assert_eq!(decode_slot(&bytes).unwrap(), slot());
         for n in 0..bytes.len() {
             assert_eq!(decode_slot(&bytes[..n]), Err(Error::Corrupt), "cut at {n}");
@@ -432,7 +446,10 @@ mod tests {
 
     #[test]
     fn encoded_len_is_the_encoded_length_without_encoding() {
-        assert_eq!(encoded_len(&slot().ops), encode_slot(&slot()).len());
+        assert_eq!(
+            encoded_len(&slot().ops),
+            encode_slot(&slot()).unwrap().len()
+        );
         let big = vec![
             Op::Put {
                 id: "a".repeat(256),
@@ -445,12 +462,12 @@ mod tests {
             first_version: 1,
             ops: big,
         };
-        assert_eq!(encoded_len(&probe.ops), encode_slot(&probe).len());
+        assert_eq!(encoded_len(&probe.ops), encode_slot(&probe).unwrap().len());
     }
 
     #[test]
     fn a_field_far_over_the_old_8_kib_cap_round_trips() {
-        let text = "lorem ipsum ".repeat(300_000);
+        let text = "lorem ipsum ".repeat(INLINE_FIELD_MAX / 12);
         let slot = Slot {
             seq: 1,
             first_version: 1,
@@ -459,7 +476,20 @@ mod tests {
                 fields: vec![Field::Str(text)],
             }],
         };
-        assert_eq!(decode_slot(&encode_slot(&slot)).unwrap(), slot);
+        assert_eq!(decode_slot(&encode_slot(&slot).unwrap()).unwrap(), slot);
+    }
+
+    #[test]
+    fn the_inline_encoder_refuses_a_string_it_would_size_differently() {
+        let slot = Slot {
+            seq: 1,
+            first_version: 1,
+            ops: vec![Op::Put {
+                id: "big".into(),
+                fields: vec![Field::Str("a".repeat(INLINE_FIELD_MAX + 1))],
+            }],
+        };
+        assert!(encode_slot(&slot).is_err());
     }
 
     #[test]
@@ -485,6 +515,7 @@ mod tests {
             stored.push((op, field, text.to_string()));
             Ok(Some(Blob {
                 epoch: 4,
+                attempt: 9,
                 chunks: 2,
                 len: text.len() as u64,
             }))
@@ -515,16 +546,16 @@ mod tests {
 
     #[test]
     fn slot_refuses_bad_tags_counts_and_versions() {
-        let mut bytes = encode_slot(&slot());
+        let mut bytes = encode_slot(&slot()).unwrap();
         bytes[8 + 8 + 8 + 4] = 9; // first op tag
         assert_eq!(decode_slot(&bytes), Err(Error::Corrupt));
-        let mut zero_version = encode_slot(&slot());
+        let mut zero_version = encode_slot(&slot()).unwrap();
         zero_version[16..24].copy_from_slice(&0i64.to_le_bytes());
         assert_eq!(decode_slot(&zero_version), Err(Error::Corrupt));
-        let mut huge = encode_slot(&slot());
+        let mut huge = encode_slot(&slot()).unwrap();
         huge[24..28].copy_from_slice(&u32::MAX.to_le_bytes());
         assert_eq!(decode_slot(&huge), Err(Error::Corrupt));
-        let mut empty = encode_slot(&slot());
+        let mut empty = encode_slot(&slot()).unwrap();
         empty[24..28].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(decode_slot(&empty), Err(Error::Corrupt));
     }
