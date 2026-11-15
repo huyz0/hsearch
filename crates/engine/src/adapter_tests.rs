@@ -369,3 +369,107 @@ fn live_identities_keep_a_digest_and_never_the_text() {
     engine.close().unwrap();
     assert!(Engine::open(&observed, schema, Some(checkpoint)).is_ok());
 }
+
+#[test]
+fn retry_history_holds_a_digest_and_still_tells_a_retry_from_a_conflict() {
+    use crate::{Kind, Limits};
+    let schema = Schema::new(1, &[("body", Kind::Text)])
+        .unwrap()
+        .with_limits(Limits::scale().with_document_bytes(1 << 20))
+        .unwrap();
+    let directory = FaultDirectory::new();
+    let observed = crate::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+    let put = |request: &str, text: &str| {
+        schema
+            .prepare(
+                request,
+                &[Mutation::Put {
+                    id: "doc",
+                    version: 1,
+                    fields: &[("body", Value::String(text))],
+                }],
+            )
+            .unwrap()
+    };
+    let text = "alpha ".repeat(100_000);
+    let receipts = engine.apply(put("r1", &text)).unwrap();
+    // The same request with the same bytes is a retry; the receipts are replayed.
+    assert_eq!(engine.apply(put("r1", &text)).unwrap(), receipts);
+    // One changed final byte under the same request id is a conflict.
+    let mut changed = text.clone();
+    changed.pop();
+    changed.push('b');
+    assert!(matches!(
+        engine.apply(put("r1", &changed)),
+        Err(Error::Conflict)
+    ));
+    let state = engine.state.lock().unwrap();
+    assert!(state.history[0].operations[0].digest.is_some());
+}
+
+#[test]
+fn a_retry_differing_in_kind_version_value_type_or_delete_is_a_conflict() {
+    use crate::Kind;
+    let schema = Schema::new(
+        1,
+        &[
+            ("body", Kind::Text),
+            ("n", Kind::Integer),
+            ("ok", Kind::Boolean),
+        ],
+    )
+    .unwrap();
+    let directory = FaultDirectory::new();
+    let observed = crate::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+    let batch = |m: Mutation<'_>| schema.prepare("r", &[m]).unwrap();
+    let fields = |n: i64, ok: bool| {
+        [
+            ("body", Value::String("x")),
+            ("n", Value::Integer(n)),
+            ("ok", Value::Boolean(ok)),
+        ]
+    };
+    let base = fields(1, true);
+    let put = Mutation::Put {
+        id: "d",
+        version: 1,
+        fields: &base,
+    };
+    let receipts = engine.apply(batch(put)).unwrap();
+    assert_eq!(engine.apply(batch(put)).unwrap(), receipts);
+    let other_int = fields(2, true);
+    let other_bool = fields(1, false);
+    for different in [
+        Mutation::Put {
+            id: "d",
+            version: 1,
+            fields: &other_int,
+        },
+        Mutation::Put {
+            id: "d",
+            version: 1,
+            fields: &other_bool,
+        },
+        Mutation::Put {
+            id: "d",
+            version: 2,
+            fields: &base,
+        },
+        Mutation::Create {
+            id: "d",
+            version: 1,
+            fields: &base,
+        },
+        Mutation::Delete {
+            id: "d",
+            version: 1,
+        },
+    ] {
+        assert!(
+            matches!(engine.apply(batch(different)), Err(Error::Conflict)),
+            "{different:?}"
+        );
+    }
+}

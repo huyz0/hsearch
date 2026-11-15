@@ -65,42 +65,55 @@ pub enum Mutation<'a> {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum OwnedValue {
-    String(String),
-    Integer(i64),
-    Boolean(bool),
-    Date(i64),
-}
-impl OwnedValue {
-    fn borrowed(&self) -> Value<'_> {
-        match self {
-            Self::String(s) => Value::String(s),
-            Self::Integer(n) => Value::Integer(*n),
-            Self::Boolean(b) => Value::Boolean(*b),
-            Self::Date(n) => Value::Date(*n),
-        }
-    }
-}
+/// One admitted mutation as the engine remembers it for retry recognition: the
+/// identity, version and kind, and a digest of the field values, never the
+/// values. An exact retry (same request, same bytes) has the same digest, so a
+/// large document is not held a second time.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Operation {
     id: String,
     create_only: bool,
     pub(crate) version: i64,
-    pub(crate) fields: Option<Vec<(String, OwnedValue)>>,
+    /// `None` for a delete.
+    pub(crate) digest: Option<u128>,
 }
+
 impl Operation {
-    fn document(&self, schema: &Schema) -> Result<Option<Document>> {
-        self.fields
-            .as_ref()
-            .map(|fields| {
-                let values: Vec<_> = fields
-                    .iter()
-                    .map(|(n, v)| (n.as_str(), v.borrowed()))
-                    .collect();
-                schema.document(&self.id, self.version, &values)
-            })
-            .transpose()
+    fn new(mutation: &Mutation<'_>) -> Self {
+        match mutation {
+            Mutation::Put {
+                id,
+                version,
+                fields,
+            }
+            | Mutation::Create {
+                id,
+                version,
+                fields,
+            } => Self {
+                id: id.to_string(),
+                create_only: matches!(mutation, Mutation::Create { .. }),
+                version: *version,
+                digest: Some(digest(fields.iter().map(|(_, v)| match v {
+                    Value::String(s) => Stored::Text(s),
+                    Value::Boolean(b) => Stored::Text(if *b { "true" } else { "false" }),
+                    Value::Integer(n) | Value::Date(n) => Stored::Long(*n),
+                }))),
+            },
+            Mutation::Delete { id, version } => Self {
+                id: id.to_string(),
+                create_only: false,
+                version: *version,
+                digest: None,
+            },
+        }
+    }
+
+    fn live(&self) -> Live {
+        Live {
+            version: self.version,
+            digest: self.digest,
+        }
     }
 }
 
@@ -178,7 +191,8 @@ impl Schema {
                 return Err(Error::Limit);
             }
         }
-        let operations: Vec<_> = mutations
+        let operations: Vec<_> = mutations.iter().map(Operation::new).collect();
+        let documents = mutations
             .iter()
             .map(|m| match m {
                 Mutation::Put {
@@ -190,38 +204,9 @@ impl Schema {
                     id,
                     version,
                     fields,
-                } => Operation {
-                    id: id.to_string(),
-                    create_only: matches!(m, Mutation::Create { .. }),
-                    version: *version,
-                    fields: Some(
-                        fields
-                            .iter()
-                            .map(|(n, v)| {
-                                (
-                                    n.to_string(),
-                                    match v {
-                                        Value::String(s) => OwnedValue::String(s.to_string()),
-                                        Value::Integer(n) => OwnedValue::Integer(*n),
-                                        Value::Boolean(b) => OwnedValue::Boolean(*b),
-                                        Value::Date(n) => OwnedValue::Date(*n),
-                                    },
-                                )
-                            })
-                            .collect(),
-                    ),
-                },
-                Mutation::Delete { id, version } => Operation {
-                    id: id.to_string(),
-                    create_only: false,
-                    version: *version,
-                    fields: None,
-                },
+                } => self.document(id, *version, fields).map(Some),
+                Mutation::Delete { .. } => Ok(None),
             })
-            .collect();
-        let documents = operations
-            .iter()
-            .map(|op| op.document(self))
             .collect::<Result<_>>()?;
         Ok(PreparedBatch {
             schema: self.clone(),
@@ -272,14 +257,17 @@ pub(crate) struct Live {
 
 /// Digest of typed field values in schema order, over their stored forms (a
 /// boolean is stored as its text, an integer or date as a long). Two SipHash-1-3
-/// passes with different prefixes: in-process integrity, not a security boundary.
+/// passes under two independent random keys drawn once per process, so nobody who
+/// can send a document can build a colliding one offline. A digest only has to
+/// agree with itself inside one process (a checkpoint is in-process, never
+/// persisted), so the keys need not survive a restart.
 pub(crate) fn digest<'a>(values: impl Iterator<Item = Stored<'a>>) -> u128 {
-    use std::hash::Hasher;
-    let (mut a, mut b) = (
-        std::collections::hash_map::DefaultHasher::new(),
-        std::collections::hash_map::DefaultHasher::new(),
-    );
-    b.write_u8(0x5a);
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    use std::sync::OnceLock;
+    static KEYS: OnceLock<(RandomState, RandomState)> = OnceLock::new();
+    let (first, second) = KEYS.get_or_init(|| (RandomState::new(), RandomState::new()));
+    let (mut a, mut b) = (first.build_hasher(), second.build_hasher());
     for value in values {
         match value {
             Stored::Text(s) => {
@@ -304,28 +292,6 @@ pub(crate) fn digest<'a>(values: impl Iterator<Item = Stored<'a>>) -> u128 {
 pub(crate) enum Stored<'a> {
     Text(&'a str),
     Long(i64),
-}
-
-impl Operation {
-    fn live(&self) -> Live {
-        Live {
-            version: self.version,
-            digest: self.fields.as_ref().map(|fields| {
-                let booleans: Vec<String> = fields
-                    .iter()
-                    .map(|(_, v)| match v {
-                        OwnedValue::Boolean(b) => b.to_string(),
-                        _ => String::new(),
-                    })
-                    .collect();
-                digest(fields.iter().zip(&booleans).map(|((_, v), text)| match v {
-                    OwnedValue::String(s) => Stored::Text(s),
-                    OwnedValue::Boolean(_) => Stored::Text(text),
-                    OwnedValue::Integer(n) | OwnedValue::Date(n) => Stored::Long(*n),
-                }))
-            }),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -588,7 +554,7 @@ impl<'d> Engine<'d> {
                 id: op.id.clone(),
                 version: op.version,
                 outcome: match (
-                    op.fields.is_some(),
+                    op.digest.is_some(),
                     state
                         .current
                         .get(&op.id)
@@ -599,7 +565,7 @@ impl<'d> Engine<'d> {
                     (false, true) => Outcome::Deleted,
                     (false, false) => Outcome::NotFound,
                 },
-                removed: op.fields.is_none()
+                removed: op.digest.is_none()
                     && state
                         .current
                         .get(&op.id)
