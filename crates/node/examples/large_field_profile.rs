@@ -26,7 +26,7 @@ fn status_kb(field: &str) -> usize {
 /// document of up to 200 MiB can be held. Not a conformance-tested store.
 mod big {
     use hsearch_object::{
-        ByteRange, Error, Metadata, MetadataStore, Mutation, ObjectBackend, ObjectKey, Payload,
+        ByteRange, Error, MetadataStore, Mutation, ObjectBackend, ObjectKey, Payload,
         RequestContext, RequestId, VersionToken,
     };
     use hsearch_object::{ObjectInfo, Operation, Precondition, WriteReceipt};
@@ -114,7 +114,12 @@ mod big {
             ctx: &'a RequestContext,
             request: &'a Mutation,
         ) -> Operation<'a, WriteReceipt> {
-            Box::pin(async move { self.write(ctx, request) })
+            Box::pin(async move {
+                if request.precondition != Precondition::Absent {
+                    return Err(Error::InvalidInput);
+                }
+                self.write(ctx, request)
+            })
         }
         fn read_range<'a>(
             &'a self,
@@ -160,8 +165,6 @@ mod big {
             })
         }
     }
-    #[allow(dead_code)]
-    fn _unused(_: Metadata) {}
 }
 use big::BigStore;
 

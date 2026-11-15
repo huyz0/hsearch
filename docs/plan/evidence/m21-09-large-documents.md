@@ -43,7 +43,7 @@ About 10x the document, under the 32x admission charge, so the charge is unchang
 
 - Chunks are written one after another, so a very large document costs one PUT per 8 MiB before the slot PUT.
 - The attempt number is unique per write attempt, so chunks left by a refused slot write never collide with the retry at the same position (found in review).
-- Replay checks each chunk's length against the reference before allocating it. It still holds every string of one slot in memory, and a slot counts a reference as 29 bytes, so a log written with many large documents in one slot can need several times that in memory to reopen. Not bounded yet.
+- Replay checks each chunk's length against the reference before allocating it. Increment 3 below bounds the text of one slot.
 - A crash after the chunks and before the slot leaves orphan chunk objects. They are never read, and nothing collects them yet.
 - Chunks go through the ordinary create path, not the multipart `LargeObjectWriter` seam (M03.14, still planned), so each chunk is bounded by the 16 MiB payload limit.
 
@@ -58,12 +58,16 @@ Provisional: same environment. The in-memory store is capped at 64 MiB by design
 | 64 MiB | 2.38 s | 550.7 MiB (8.6x) |
 | 100 MiB | 3.40 s | 844.8 MiB (8.4x) |
 
-One run each, wait for searchable. Memory stays near 8-9x the document across the range, under the 32x admission charge (3.2 GiB for 100 MiB), so the charge is unchanged and conservative. Throughput is 25-29 MiB/s throughout. A 100 MiB document therefore needs about 850 MiB of working memory plus its share of the admission budget.
+One run each, wait for searchable. Memory stays near 8-9x the document across the range, under the 32x admission charge (3.2 GiB for 100 MiB), so the charge is unchanged and conservative. Throughput is 25-29 MiB/s throughout. A 100 MiB document therefore needs about 850 MiB of working memory. The `BigStore` double keeps every version and a hash of every request, so the ratios are upper bounds for the node and index. The 200 MiB ceiling itself was not measured.
 
 ## Replay bound
 
-A slot may now carry at most `MAX_SLOT_TEXT_BYTES` (200 MiB) of string text in total (`text_len`), however many large documents were grouped, so replay of one slot holds at most that plus the 8 MiB inline bound. Replay still materialises one slot's strings together rather than streaming them one operation at a time; the bound is the ceiling of one document, not a streaming buffer. A bulk that would push a group past the cap is refused `Capacity`, as for the existing byte bound. The cap is covered by a unit test of `text_len`; a 200 MiB group test was not written.
+A slot may carry at most `slot_text_cap(document_bytes)` bytes of string text in total (`text_len`, externalised strings counted whole): the larger of the 8 MiB slot bound and the schema's document limit, so at most 200 MiB in the node. A bulk whose own text exceeds it is refused `Invalid` (400, permanent, checked alone); a bulk that only fails to fit beside others in the same group is refused `Capacity` (retryable), as for the existing byte bound. Tests: `a_bulk_whose_text_can_never_fit_one_slot_is_invalid_not_retryable`, and `slot_text_cap`/`text_fits` boundary assertions.
+
+What this does and does not bound: it bounds the string text one newly written slot makes replay hold, to one document's ceiling. Peak memory to replay a full slot is still about 8-9x its text (the ratio measured above, which includes indexing), so up to roughly 1.7 GiB for a 200 MiB slot, and replay has no admission charge like the write path's. Replay still materialises a slot's strings together instead of streaming them operation by operation. Slots written before this rule are not re-checked on replay.
 
 ## Orphan chunks: not done, and why
 
 Nothing in the object seam can delete an object (`ObjectBackend` has head, create, read_range, compare_exchange and resolve only), and the repo forbids LIST on write and startup paths, so a failed or crashed attempt's chunks can neither be deleted by the writer nor found by a sweep. Collecting them needs a decision first: either a delete (or lifecycle-expiry) capability on the seam with conformance tests, or a derivable record of attempts. That is a seam change across `hsearch-object`, the S3 store and the conformance suite, so it is left as its own task rather than forced into this change.
+
+M21.09 stays open: orphan collection and a measured 200 MiB run remain.

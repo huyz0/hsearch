@@ -593,3 +593,37 @@ fn object_len(store: &MemoryStore, key: &str) -> u64 {
         other => panic!("head failed: {other:?}"),
     }
 }
+
+#[test]
+fn a_bulk_whose_text_can_never_fit_one_slot_is_invalid_not_retryable() {
+    // Two 5 MiB documents in one bulk carry 10 MiB of text, over the 8 MiB slot
+    // text bound of a schema admitting 6 MiB documents: a permanent refusal.
+    let schema = hsearch_engine::Schema::new(
+        1,
+        &[
+            ("tag", hsearch_engine::Kind::Keyword),
+            ("body", hsearch_engine::Kind::Text),
+        ],
+    )
+    .unwrap()
+    .with_limits(Limits::scale().with_document_bytes(6 << 20))
+    .unwrap();
+    let (store, scratch) = (store(), Scratch::new("slot-text"));
+    let index = Index::create(store, "docs", schema, &scratch.0).unwrap();
+    let five = || "w ".repeat(5 << 19);
+    assert_eq!(
+        index
+            .bulk(
+                vec![big_put("a", five()), big_put("b", five())],
+                Wait::Durable
+            )
+            .err(),
+        Some(Error::Invalid)
+    );
+    // One document of the same size is fine, and the writer was not poisoned.
+    assert!(
+        index
+            .bulk(vec![big_put("a", five())], Wait::Searchable)
+            .is_ok()
+    );
+}

@@ -18,8 +18,8 @@ use hsearch_object::{MetadataStore, Precondition, VersionToken};
 
 use crate::format::{
     BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, MAX_INDEXED_DOCUMENT_BYTES,
-    MAX_SLOT_BYTES, MAX_SLOT_OPS, MAX_SLOT_TEXT_BYTES, Op, Root, Slot, decode_root,
-    decode_slot_with, encode_root, encode_slot_with, encoded_len, text_len,
+    MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_root, decode_slot_with, encode_root,
+    encode_slot_with, encoded_len, slot_text_cap, text_fits, text_len,
 };
 use crate::store::{
     Written, blob_key, block, context, key, mutation, read_all, read_version, root_key,
@@ -321,7 +321,9 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         {
             return Err(Error::Invalid);
         }
-        if encoded_len(ops) > MAX_SLOT_BYTES / 2 {
+        if encoded_len(ops) > MAX_SLOT_BYTES / 2
+            || text_len(ops) > slot_text_cap(self.schema.limits().document_bytes)
+        {
             return Err(Error::Invalid);
         }
         chunks(&self.schema, ops, 1).map(|_| ())
@@ -343,6 +345,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         let mut puts = 0usize;
         let mut planned_ops = 0usize;
         let mut planned_history = 0usize;
+        let text_cap = slot_text_cap(self.schema.limits().document_bytes);
         let window = self.schema.limits().window;
         let (max_ops, max_history) = (
             self.schema.limits().operations,
@@ -365,7 +368,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
                     .count();
                 if ops.len() + bulk.ops.len() > MAX_SLOT_OPS
                     || bytes + size > MAX_SLOT_BYTES
-                    || text + words > MAX_SLOT_TEXT_BYTES
+                    || !text_fits(text, words, text_cap)
                     || self.ids.len() + new_ids.len() + added.len() > limit
                     || self.live + puts + more_puts > limit
                     || self.operations + planned_ops + bulk.ops.len() > max_ops
