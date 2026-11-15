@@ -17,12 +17,13 @@ use hsearch_engine::{
 use hsearch_object::{MetadataStore, Precondition, VersionToken};
 
 use crate::format::{
-    Field, MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_root, decode_slot, encode_root,
-    encode_slot, encoded_len,
+    BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, MAX_INDEXED_DOCUMENT_BYTES,
+    MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_root, decode_slot_with, encode_root,
+    encode_slot_with, encoded_len,
 };
 use crate::store::{
-    Written, block, context, key, mutation, read_all, read_version, root_key, segment_key,
-    slot_key, write,
+    Written, blob_key, block, context, key, mutation, read_all, read_version, root_key,
+    segment_key, slot_key, write,
 };
 use crate::{Error, Result};
 
@@ -441,10 +442,25 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
     }
 
     fn write_slot(&mut self, slot: &Slot) -> Result<()> {
+        let (store, name, epoch, seq) = (&*self.store, &self.name, self.epoch, slot.seq);
+        // Large strings go to their own objects first; the slot, written last,
+        // is what makes them reachable.
+        let encoded = encode_slot_with(slot, &mut |op, field, text| {
+            write_blob(store, name, epoch, BlobAt { seq, op, field }, text).map(Some)
+        });
+        let encoded = match encoded {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                if matches!(error, Error::Fenced | Error::Unknown) {
+                    self.poison();
+                }
+                return Err(error);
+            }
+        };
         let request = mutation(
             &format!("{}/slot/{}/{}", self.name, slot.seq, self.epoch),
             &slot_key(&self.name, slot.seq),
-            &encode_slot(slot),
+            &encoded,
             Precondition::Absent,
         )?;
         match write(&*self.store, &request, false) {
@@ -707,7 +723,9 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
         match block(core.store.head(&context(), &object)) {
             Ok(info) => {
                 let bytes = read_version(&*core.store, &object, &info.version, info.length)?;
-                let slot = decode_slot(&bytes)?;
+                let slot = decode_slot_with(&bytes, &mut |at, blob| {
+                    read_blob(&*core.store, &core.name, at, blob)
+                })?;
                 if slot.seq != core.seq {
                     return Err(Error::Corrupt);
                 }
@@ -734,6 +752,59 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
     core.swap_root(&bumped, &request)?;
     core.refresh()?;
     Ok(core)
+}
+
+/// Write `text` as chunk objects of at most [`BLOB_CHUNK_BYTES`], each create-only,
+/// slicing the string rather than copying it (the store copies one chunk).
+fn write_blob<S: MetadataStore>(
+    store: &S,
+    name: &str,
+    epoch: u64,
+    at: BlobAt,
+    text: &str,
+) -> Result<Blob> {
+    let bytes = text.as_bytes();
+    let chunks =
+        u32::try_from(bytes.len().div_ceil(BLOB_CHUNK_BYTES)).map_err(|_| Error::Invalid)?;
+    for (n, chunk) in bytes.chunks(BLOB_CHUNK_BYTES).enumerate() {
+        let object = blob_key(name, epoch, at, n as u32);
+        let request = mutation(&object, &object, chunk, Precondition::Absent)?;
+        match write(store, &request, false) {
+            Written::Done(_) => {}
+            Written::Refused(error) => return Err(Error::Store(error)),
+            Written::Occupied => return Err(Error::Fenced),
+            Written::Unknown => return Err(Error::Unknown),
+        }
+    }
+    Ok(Blob {
+        epoch,
+        chunks,
+        len: bytes.len() as u64,
+    })
+}
+
+/// Read a string back from its chunk objects, refusing a reference whose shape
+/// is impossible or whose bytes are not UTF-8.
+fn read_blob<S: MetadataStore>(store: &S, name: &str, at: BlobAt, blob: Blob) -> Result<String> {
+    let len = usize::try_from(blob.len).map_err(|_| Error::Corrupt)?;
+    if len <= INLINE_FIELD_MAX
+        || len > MAX_INDEXED_DOCUMENT_BYTES
+        || len.div_ceil(BLOB_CHUNK_BYTES) != blob.chunks as usize
+    {
+        return Err(Error::Corrupt);
+    }
+    let mut out = Vec::with_capacity(len);
+    for n in 0..blob.chunks {
+        let object = key(&blob_key(name, blob.epoch, at, n))?;
+        out.extend_from_slice(&read_all(store, &object)?);
+        if out.len() > len {
+            return Err(Error::Corrupt);
+        }
+    }
+    if out.len() != len {
+        return Err(Error::Corrupt);
+    }
+    String::from_utf8(out).map_err(|_| Error::Corrupt)
 }
 
 fn serve<S: MetadataStore + 'static>(core: &mut Core<'_, '_, S>, commands: &Receiver<Command>) {

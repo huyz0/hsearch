@@ -44,7 +44,7 @@ fn main() {
         max_bulk_bytes: 128 << 20,
         max_bulk_items: 100,
         buffer_bytes: 16 << 20,
-        memory_budget_bytes: 256 << 20,
+        memory_budget_bytes: 2048 << 20,
     };
     let node = Node::with_limits(store, dir.clone(), limits).expect("node");
     let mapping = json!({"mappings":{"properties":{"title":{"type":"text"},"tag":{"type":"keyword"},
