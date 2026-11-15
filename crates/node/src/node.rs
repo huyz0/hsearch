@@ -20,6 +20,15 @@ use crate::search::{self, Source};
 
 /// Operations per call to the write path, below its slot bound.
 const CHUNK: usize = 1000;
+/// A document of at least this many bytes is charged its indexing working set
+/// against the node's memory budget; smaller ones ride on the request's own
+/// reservation, as before.
+const LARGE_DOCUMENT_BYTES: usize = 64 * 1024;
+/// Bytes charged per byte of a large document while its batch is written. Measured
+/// (`large_field_profile`, in-memory store, so it includes the store's retained
+/// copies): peak RSS was 29x a 0.25 MiB document, 16x a 1 MiB one and 12.6x a 3.9 MiB
+/// one, so 32 covers the whole range a charge applies to.
+const INDEX_COST_FACTOR: u64 = 32;
 
 struct Entry {
     index: Index,
@@ -289,19 +298,27 @@ impl<S: MetadataStore + 'static> Node<S> {
         Ok(json!({"acknowledged": true, "shards_acknowledged": true, "index": name}))
     }
 
-    /// One write, bisecting a refused chunk so a bad item fails alone.
+    /// One write, bisecting a refused chunk so a bad item fails alone. A single
+    /// operation cannot be bisected, so it is moved, not cloned: the common large
+    /// document is never copied here.
     fn write(
         &self,
         name: &str,
         entry: &Arc<Entry>,
-        ops: &[Op],
+        mut ops: Vec<Op>,
         wait: Wait,
     ) -> Vec<Result<hsearch_index::ItemResult, ApiError>> {
-        match entry.index.bulk(ops.to_vec(), wait) {
+        let n = ops.len();
+        let attempt = if n > 1 {
+            entry.index.bulk(ops.clone(), wait)
+        } else {
+            entry.index.bulk(std::mem::take(&mut ops), wait)
+        };
+        match attempt {
             Ok(results) => results.into_iter().map(Ok).collect(),
-            Err(hsearch_index::Error::Invalid) if ops.len() > 1 => {
-                let (left, right) = ops.split_at(ops.len() / 2);
-                let mut out = self.write(name, entry, left, wait);
+            Err(hsearch_index::Error::Invalid) if n > 1 => {
+                let right = ops.split_off(n / 2);
+                let mut out = self.write(name, entry, ops, wait);
                 out.extend(self.write(name, entry, right, wait));
                 out
             }
@@ -309,7 +326,7 @@ impl<S: MetadataStore + 'static> Node<S> {
                 if stopped(&error) {
                     self.evict(name, entry);
                 }
-                vec![Err(ApiError::from(error)); ops.len()]
+                vec![Err(ApiError::from(error)); n]
             }
         }
     }
@@ -365,11 +382,11 @@ impl<S: MetadataStore + 'static> Node<S> {
                 }
             }
             if batch.len() >= CHUNK || pending >= flush_bytes {
-                errors |= self.run_batch(&mut batch, wait, &mut responses);
+                errors |= self.charged_batch(&mut batch, wait, &mut responses);
                 pending = 0;
             }
         }
-        errors |= self.run_batch(&mut batch, wait, &mut responses);
+        errors |= self.charged_batch(&mut batch, wait, &mut responses);
         if responses.is_empty() {
             return Err(ApiError::bad("the bulk body has no actions"));
         }
@@ -381,6 +398,33 @@ impl<S: MetadataStore + 'static> Node<S> {
                 "items": responses,
             }),
         ))
+    }
+
+    /// [`Self::run_batch`] after reserving the indexing working set of the batch's
+    /// large documents. When the budget cannot cover it the whole batch is refused
+    /// item by item with 429 and nothing is written: visible backpressure, no queue.
+    fn charged_batch(&self, items: &mut Vec<Item>, wait: Wait, out: &mut Vec<Value>) -> bool {
+        let cost: u64 = items
+            .iter()
+            .filter(|item| item.bytes >= LARGE_DOCUMENT_BYTES)
+            .map(|item| INDEX_COST_FACTOR.saturating_mul(item.bytes as u64))
+            .sum();
+        let _held = if cost == 0 {
+            None
+        } else {
+            match self.gate.reserve(cost) {
+                Ok(permit) => Some(permit),
+                Err(error) => {
+                    out.extend(
+                        items
+                            .drain(..)
+                            .map(|item| item_error(&item.action, &item.index, &item.id, &error)),
+                    );
+                    return true;
+                }
+            }
+        };
+        self.run_batch(items, wait, out)
     }
 
     /// Write one batch, appending a response per item in order and emptying the
@@ -426,7 +470,7 @@ impl<S: MetadataStore + 'static> Node<S> {
                 j += 1;
             }
             if let (Ok(entry), false) = (&entry, ops.is_empty()) {
-                for (slot, result) in slots.iter().zip(self.write(&name, entry, &ops, wait)) {
+                for (slot, result) in slots.iter().zip(self.write(&name, entry, ops, wait)) {
                     errors |= result.is_err();
                     responses[*slot] = Some(match result {
                         Ok(result) => item_result(&items[*slot].action, &name, &result),

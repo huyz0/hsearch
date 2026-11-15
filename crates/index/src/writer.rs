@@ -18,7 +18,7 @@ use hsearch_object::{MetadataStore, Precondition, VersionToken};
 
 use crate::format::{
     Field, MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_root, decode_slot, encode_root,
-    encode_slot,
+    encode_slot, encoded_len,
 };
 use crate::store::{
     Written, block, context, key, mutation, read_all, read_version, root_key, segment_key,
@@ -320,12 +320,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         {
             return Err(Error::Invalid);
         }
-        let probe = Slot {
-            seq: 0,
-            first_version: 1,
-            ops: ops.to_vec(),
-        };
-        if encode_slot(&probe).len() > MAX_SLOT_BYTES / 2 {
+        if encoded_len(ops) > MAX_SLOT_BYTES / 2 {
             return Err(Error::Invalid);
         }
         chunks(&self.schema, ops, 1).map(|_| ())
@@ -339,7 +334,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             return;
         }
         let limit = self.schema.limits().documents;
-        let mut accepted: Vec<Bulk> = Vec::new();
+        let mut accepted: Vec<(Bulk, usize)> = Vec::new();
         let mut ops: Vec<Op> = Vec::new();
         let mut bytes = 0usize;
         let mut new_ids: HashSet<String> = HashSet::new();
@@ -351,14 +346,9 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             self.schema.limits().operations,
             self.schema.limits().history_bytes,
         );
-        for bulk in group {
+        for mut bulk in group {
             let verdict = self.validate(&bulk.ops).and_then(|()| {
-                let size = encode_slot(&Slot {
-                    seq: 0,
-                    first_version: 1,
-                    ops: bulk.ops.clone(),
-                })
-                .len();
+                let size = encoded_len(&bulk.ops);
                 let added: HashSet<&str> = bulk
                     .ops
                     .iter()
@@ -390,8 +380,11 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             });
             match verdict {
                 Ok(()) => {
-                    ops.extend(bulk.ops.iter().cloned());
-                    accepted.push(bulk);
+                    // Move the operations into the slot: a large document is
+                    // never cloned here. Only the count is kept for the reply.
+                    let n = bulk.ops.len();
+                    ops.append(&mut bulk.ops);
+                    accepted.push((bulk, n));
                 }
                 Err(error) => {
                     let _ = bulk.reply.send(Err(error));
@@ -410,7 +403,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         self.hooks.at(Point::BeforeSlot);
         let outcome = self.write_slot(&slot);
         if let Err(error) = outcome {
-            for bulk in accepted {
+            for (bulk, _) in accepted {
                 let _ = bulk.reply.send(Err(error));
             }
             return;
@@ -419,8 +412,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         // Durable. Acknowledge the ones that only wanted durability.
         let mut offset = 0;
         let mut searchable = Vec::new();
-        for bulk in accepted {
-            let n = bulk.ops.len();
+        for (bulk, n) in accepted {
             let mine = results[offset..offset + n].to_vec();
             offset += n;
             match bulk.wait {

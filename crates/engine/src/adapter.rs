@@ -23,6 +23,18 @@ const VERSION: LuceneVersion = LuceneVersion {
 const MAX_BATCH: usize = 16;
 const MAX_BATCH_BYTES: usize = 65_536;
 
+/// Most bytes one prepared batch carries: the research profile's bound, plus
+/// whatever the schema's document limit allows beyond the research document, so
+/// one maximal document always fits a batch alone.
+fn batch_bytes(schema: &Schema) -> usize {
+    MAX_BATCH_BYTES.saturating_add(
+        schema
+            .limits
+            .document_bytes
+            .saturating_sub(MAX_DOCUMENT_BYTES),
+    )
+}
+
 /// Caller-resolved mutation. The adapter never generates IDs or versions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mutation<'a> {
@@ -157,12 +169,12 @@ impl Schema {
                             })
                         })
                         .ok_or(Error::Limit)?;
-                    if bytes > MAX_BATCH_BYTES {
+                    if bytes > batch_bytes(self) {
                         return Err(Error::Limit);
                     }
                 }
             }
-            if bytes > MAX_BATCH_BYTES {
+            if bytes > batch_bytes(self) {
                 return Err(Error::Limit);
             }
         }
@@ -247,6 +259,75 @@ pub struct Receipt {
     pub outcome: Outcome,
 }
 
+/// What the engine keeps of each live identity: its version and a digest of its
+/// field values, never the values. Checkpoint verification compares a reopened
+/// index against the digest; holding the text would pin every document ever
+/// indexed in memory, which a large-document limit makes untenable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Live {
+    pub(crate) version: i64,
+    /// `None` for a tombstone.
+    pub(crate) digest: Option<u128>,
+}
+
+/// Digest of typed field values in schema order, over their stored forms (a
+/// boolean is stored as its text, an integer or date as a long). Two SipHash-1-3
+/// passes with different prefixes: in-process integrity, not a security boundary.
+pub(crate) fn digest<'a>(values: impl Iterator<Item = Stored<'a>>) -> u128 {
+    use std::hash::Hasher;
+    let (mut a, mut b) = (
+        std::collections::hash_map::DefaultHasher::new(),
+        std::collections::hash_map::DefaultHasher::new(),
+    );
+    b.write_u8(0x5a);
+    for value in values {
+        match value {
+            Stored::Text(s) => {
+                for h in [&mut a, &mut b] {
+                    h.write_u8(1);
+                    h.write_u64(s.len() as u64);
+                    h.write(s.as_bytes());
+                }
+            }
+            Stored::Long(n) => {
+                for h in [&mut a, &mut b] {
+                    h.write_u8(2);
+                    h.write_i64(n);
+                }
+            }
+        }
+    }
+    (u128::from(a.finish()) << 64) | u128::from(b.finish())
+}
+
+/// A field value in the form the index stores it.
+pub(crate) enum Stored<'a> {
+    Text(&'a str),
+    Long(i64),
+}
+
+impl Operation {
+    fn live(&self) -> Live {
+        Live {
+            version: self.version,
+            digest: self.fields.as_ref().map(|fields| {
+                let booleans: Vec<String> = fields
+                    .iter()
+                    .map(|(_, v)| match v {
+                        OwnedValue::Boolean(b) => b.to_string(),
+                        _ => String::new(),
+                    })
+                    .collect();
+                digest(fields.iter().zip(&booleans).map(|((_, v), text)| match v {
+                    OwnedValue::String(s) => Stored::Text(s),
+                    OwnedValue::Boolean(_) => Stored::Text(text),
+                    OwnedValue::Integer(n) | OwnedValue::Date(n) => Stored::Long(*n),
+                }))
+            }),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct History {
     bytes: usize,
@@ -256,7 +337,7 @@ struct History {
 }
 #[derive(Clone, Default)]
 struct State {
-    current: BTreeMap<String, Operation>,
+    current: BTreeMap<String, Live>,
     history: VecDeque<History>,
     operations: usize,
     history_bytes: usize,
@@ -488,7 +569,7 @@ impl<'d> Engine<'d> {
                 && state
                     .current
                     .get(&op.id)
-                    .is_some_and(|old| old.fields.is_some())
+                    .is_some_and(|old| old.digest.is_some())
             {
                 return Err(Error::Conflict);
             }
@@ -511,7 +592,7 @@ impl<'d> Engine<'d> {
                     state
                         .current
                         .get(&op.id)
-                        .is_some_and(|old| old.fields.is_some()),
+                        .is_some_and(|old| old.digest.is_some()),
                 ) {
                     (true, false) => Outcome::Created,
                     (true, true) => Outcome::Updated,
@@ -522,7 +603,7 @@ impl<'d> Engine<'d> {
                     && state
                         .current
                         .get(&op.id)
-                        .is_some_and(|old| old.fields.is_some()),
+                        .is_some_and(|old| old.digest.is_some()),
             })
             .collect();
         let mut writer = gate(&self.writer)?;
@@ -549,7 +630,7 @@ impl<'d> Engine<'d> {
         state.operations += batch.operations.len();
         state.history_bytes += batch.bytes;
         for op in &batch.operations {
-            state.current.insert(op.id.clone(), op.clone());
+            state.current.insert(op.id.clone(), op.live());
         }
         if limits.window {
             // Retry identity beyond the window belongs to the caller's log.
@@ -644,7 +725,7 @@ impl<'d> Engine<'d> {
         state.physical_documents = state
             .current
             .values()
-            .filter(|op| op.fields.is_some())
+            .filter(|live| live.digest.is_some())
             .count();
         Ok(())
     }

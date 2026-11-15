@@ -8,6 +8,9 @@ use crate::{Error, Result};
 pub const MAX_FIELDS: usize = 16;
 /// Maximum total UTF-8 bytes in one document, including names and identity.
 pub const MAX_DOCUMENT_BYTES: usize = 8192;
+/// Longest keyword term in bytes: Lucene's `IndexWriter.MAX_TERM_LENGTH`, which no
+/// document limit raises.
+pub const MAX_KEYWORD_BYTES: usize = 32_766;
 /// Maximum analyzer tokens per document or query.
 pub const MAX_TERMS: usize = 128;
 /// Maximum retained logical identities, including deleted identities.
@@ -34,6 +37,13 @@ pub struct Limits {
     /// retry older than the window is no longer recognised here: the caller's
     /// log owns request identity. When false the adapter refuses instead.
     pub window: bool,
+    /// Largest document, in bytes of identity, field names and values. A
+    /// document over it is refused with [`Error::Limit`] before any analysis.
+    pub document_bytes: usize,
+    /// Most analyzed tokens in one document across its text fields. At or above
+    /// `document_bytes` it cannot bind (a token is at least one byte) and no
+    /// analysis pass is spent counting.
+    pub terms: usize,
 }
 
 impl Limits {
@@ -45,6 +55,8 @@ impl Limits {
         segments: 32,
         buffered_documents: 8,
         window: false,
+        document_bytes: MAX_DOCUMENT_BYTES,
+        terms: MAX_TERMS,
     };
 
     /// The first-slice scale profile: a million identities, a bounded retry
@@ -57,7 +69,19 @@ impl Limits {
             segments: 256,
             buffered_documents: 10_000,
             window: true,
+            document_bytes: MAX_DOCUMENT_BYTES,
+            terms: MAX_TERMS,
         }
+    }
+
+    /// This profile admitting documents of up to `bytes`, with no separate term
+    /// bound: a token is at least one byte, so `bytes` of text cannot exceed it.
+    /// Set `terms` afterwards to bound tokens below the byte limit.
+    #[must_use]
+    pub const fn with_document_bytes(mut self, bytes: usize) -> Self {
+        self.document_bytes = bytes;
+        self.terms = bytes;
+        self
     }
 
     fn valid(&self) -> bool {
@@ -68,6 +92,9 @@ impl Limits {
             && self.segments > 0
             && self.buffered_documents > 0
             && self.buffered_documents <= i32::MAX as usize
+            && self.document_bytes > 0
+            && self.document_bytes <= i32::MAX as usize
+            && self.terms > 0
     }
 }
 
@@ -183,14 +210,20 @@ impl Schema {
                     })
                 })
                 .ok_or(Error::Limit)?;
-            if bytes > MAX_DOCUMENT_BYTES {
+            if bytes > self.limits.document_bytes {
                 return Err(Error::Limit);
             }
-            validate(self.kind(name)?, *value)?;
+            let kind = self.kind(name)?;
+            validate(kind, *value)?;
+            if let (Kind::Keyword, Value::String(s)) = (kind, value)
+                && s.len() > MAX_KEYWORD_BYTES
+            {
+                return Err(Error::Limit);
+            }
         }
-        // A token is at least one byte, so text of at most MAX_TERMS bytes cannot
+        // A token is at least one byte, so text of at most `terms` bytes cannot
         // exceed the term bound and needs no analysis pass. Only longer text pays for
-        // the exact count (an analysis whose tokens are then discarded).
+        // the exact count, which streams: no token is retained.
         let text_bytes: usize = fields
             .iter()
             .filter_map(|(name, value)| match (self.kind(name), value) {
@@ -198,7 +231,7 @@ impl Schema {
                 _ => None,
             })
             .sum();
-        let count_terms = text_bytes > MAX_TERMS;
+        let count_terms = text_bytes > self.limits.terms;
         let mut document = Document::new();
         document.add(KeywordField::new("_hs_id", id, Store::Yes));
         document.add(LongField::new("_hs_version", version, Store::Yes));
@@ -210,8 +243,8 @@ impl Schema {
                 }
                 (Kind::Text, Value::String(s)) => {
                     if count_terms {
-                        analyzed_terms += analyze_text(s)?.len();
-                        if analyzed_terms > MAX_TERMS {
+                        analyzed_terms += count_tokens(s)?;
+                        if analyzed_terms > self.limits.terms {
                             return Err(Error::Limit);
                         }
                     }
@@ -228,6 +261,16 @@ impl Schema {
         }
         Ok(document)
     }
+}
+
+/// Analyzed token count of `text`, streamed: the analyzer hands each token to a
+/// counter, so memory does not grow with the text.
+fn count_tokens(text: &str) -> Result<usize> {
+    let mut count = 0usize;
+    analyzer()
+        .try_for_each_token(text, |_, _, _, _| count += 1)
+        .map_err(|_| Error::Native)?;
+    Ok(count)
 }
 
 pub(crate) fn validate(kind: Kind, value: Value<'_>) -> Result<()> {
