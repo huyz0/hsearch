@@ -239,9 +239,10 @@ impl<R: Read> Stream<R> {
 }
 
 /// Largest source line the write path can index: the index's document ceiling
-/// less the identity, which the engine charges to the document but the source
-/// line does not carry (at most 256 bytes).
-const INDEXABLE_SOURCE_BYTES: usize = hsearch_index::MAX_INDEXED_DOCUMENT_BYTES - 256;
+/// less what the engine charges to a document but the source line does not carry:
+/// the identity (at most 256 bytes) and 8 bytes for each non-string value where
+/// the JSON may spend one (at most 7 more for each of 14 fields).
+const INDEXABLE_SOURCE_BYTES: usize = hsearch_index::MAX_INDEXED_DOCUMENT_BYTES - 512;
 
 /// Most top-level members a source may carry: the mapping allows 14 fields, so a
 /// document with more than this can only be refused, and parsing it first would

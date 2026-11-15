@@ -113,7 +113,12 @@ impl MemoryGate {
             return Err(ApiError::new(
                 429,
                 "es_rejected_execution_exception",
-                "the node's bulk memory budget is in use; retry after other bulk requests finish",
+                format!(
+                    "the node's bulk memory budget has {} bytes free and this needs {bytes}; \
+                     retry after other bulk requests finish, or raise the budget if a single \
+                     request can never fit",
+                    *free
+                ),
             ));
         }
         *free -= bytes;

@@ -334,3 +334,38 @@ fn the_term_bound_counts_analyzed_tokens_not_bytes_across_all_text_fields() {
         Err(Error::Limit)
     ));
 }
+
+#[test]
+fn live_identities_keep_a_digest_and_never_the_text() {
+    use crate::{Kind, Limits};
+    let schema = Schema::new(1, &[("body", Kind::Text)])
+        .unwrap()
+        .with_limits(Limits::scale().with_document_bytes(1 << 20))
+        .unwrap();
+    let directory = FaultDirectory::new();
+    let observed = crate::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+    let apply = |version: i64, text: &str| {
+        let batch = schema
+            .prepare(
+                &format!("r{version}"),
+                &[Mutation::Put {
+                    id: "doc",
+                    version,
+                    fields: &[("body", Value::String(text))],
+                }],
+            )
+            .unwrap();
+        engine.apply(batch).unwrap();
+    };
+    apply(1, &"alpha ".repeat(100_000));
+    let first = engine.state.lock().unwrap().current["doc"];
+    apply(2, &"beta ".repeat(100_000));
+    let second = engine.state.lock().unwrap().current["doc"];
+    assert!(first.digest.is_some() && first.digest != second.digest);
+    assert_eq!((first.version, second.version), (1, 2));
+    // A checkpoint taken now reopens: the digest equals the stored values'.
+    let checkpoint = engine.commit().unwrap();
+    engine.close().unwrap();
+    assert!(Engine::open(&observed, schema, Some(checkpoint)).is_ok());
+}

@@ -26,8 +26,9 @@ const CHUNK: usize = 1000;
 const LARGE_DOCUMENT_BYTES: usize = 64 * 1024;
 /// Bytes charged per byte of a large document while its batch is written. Measured
 /// (`large_field_profile`, in-memory store, so it includes the store's retained
-/// copies): peak RSS was 16x a 1 MiB document and 12.6x a 3.9 MiB one.
-const INDEX_COST_FACTOR: u64 = 16;
+/// copies): peak RSS was 29x a 0.25 MiB document, 16x a 1 MiB one and 12.6x a 3.9 MiB
+/// one, so 32 covers the whole range a charge applies to.
+const INDEX_COST_FACTOR: u64 = 32;
 
 struct Entry {
     index: Index,
@@ -297,19 +298,27 @@ impl<S: MetadataStore + 'static> Node<S> {
         Ok(json!({"acknowledged": true, "shards_acknowledged": true, "index": name}))
     }
 
-    /// One write, bisecting a refused chunk so a bad item fails alone.
+    /// One write, bisecting a refused chunk so a bad item fails alone. A single
+    /// operation cannot be bisected, so it is moved, not cloned: the common large
+    /// document is never copied here.
     fn write(
         &self,
         name: &str,
         entry: &Arc<Entry>,
-        ops: &[Op],
+        mut ops: Vec<Op>,
         wait: Wait,
     ) -> Vec<Result<hsearch_index::ItemResult, ApiError>> {
-        match entry.index.bulk(ops.to_vec(), wait) {
+        let n = ops.len();
+        let attempt = if n > 1 {
+            entry.index.bulk(ops.clone(), wait)
+        } else {
+            entry.index.bulk(std::mem::take(&mut ops), wait)
+        };
+        match attempt {
             Ok(results) => results.into_iter().map(Ok).collect(),
-            Err(hsearch_index::Error::Invalid) if ops.len() > 1 => {
-                let (left, right) = ops.split_at(ops.len() / 2);
-                let mut out = self.write(name, entry, left, wait);
+            Err(hsearch_index::Error::Invalid) if n > 1 => {
+                let right = ops.split_off(n / 2);
+                let mut out = self.write(name, entry, ops, wait);
                 out.extend(self.write(name, entry, right, wait));
                 out
             }
@@ -317,7 +326,7 @@ impl<S: MetadataStore + 'static> Node<S> {
                 if stopped(&error) {
                     self.evict(name, entry);
                 }
-                vec![Err(ApiError::from(error)); ops.len()]
+                vec![Err(ApiError::from(error)); n]
             }
         }
     }
@@ -461,7 +470,7 @@ impl<S: MetadataStore + 'static> Node<S> {
                 j += 1;
             }
             if let (Ok(entry), false) = (&entry, ops.is_empty()) {
-                for (slot, result) in slots.iter().zip(self.write(&name, entry, &ops, wait)) {
+                for (slot, result) in slots.iter().zip(self.write(&name, entry, ops, wait)) {
                     errors |= result.is_err();
                     responses[*slot] = Some(match result {
                         Ok(result) => item_result(&items[*slot].action, &name, &result),

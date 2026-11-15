@@ -280,7 +280,7 @@ fn stored(reader: &DirectoryReader, mut doc: i32, name: &str) -> Result<FieldVal
 pub(crate) fn verify(
     reader: &DirectoryReader,
     schema: &Schema,
-    expected: &BTreeMap<String, crate::adapter::Operation>,
+    expected: &BTreeMap<String, crate::adapter::Live>,
 ) -> Result<()> {
     // Use the same bounded production reader and preserve duplicate detection.
     if reader.max_doc() > schema.limits.documents as i32
@@ -301,7 +301,12 @@ pub(crate) fn verify(
         .search(&query, schema.limits.documents)
         .map_err(|_| Error::Native)?;
     let mut seen = std::collections::BTreeSet::new();
-    if result.score_docs.len() != expected.values().filter(|op| op.fields.is_some()).count() {
+    if result.score_docs.len()
+        != expected
+            .values()
+            .filter(|live| live.digest.is_some())
+            .count()
+    {
         return Err(Error::Checkpoint);
     }
     for hit in result.score_docs {
@@ -316,23 +321,21 @@ pub(crate) fn verify(
         if !matches!(stored(reader,hit.doc,"_hs_version")?,FieldValue::Long(n) if n==op.version) {
             return Err(Error::Checkpoint);
         }
-        let original = op.fields.as_ref().ok_or(Error::Checkpoint)?;
-        for (name, (_, value)) in fields.iter().zip(original) {
-            let stored = stored(reader, hit.doc, name)?;
-            let same = match (value, stored) {
-                (crate::adapter::OwnedValue::String(a), FieldValue::String(b)) => *a == b,
-                (crate::adapter::OwnedValue::Boolean(a), FieldValue::String(b)) => {
-                    a.to_string() == b
-                }
-                (
-                    crate::adapter::OwnedValue::Integer(a) | crate::adapter::OwnedValue::Date(a),
-                    FieldValue::Long(b),
-                ) => *a == b,
-                _ => false,
-            };
-            if !same {
-                return Err(Error::Checkpoint);
-            }
+        let wanted = op.digest.ok_or(Error::Checkpoint)?;
+        let mut texts = Vec::with_capacity(fields.len());
+        for (name, kind) in schema.fields.iter().map(|(n, k)| (n.as_str(), *k)) {
+            texts.push(match (kind, stored(reader, hit.doc, name)?) {
+                (Kind::Keyword | Kind::Text | Kind::Boolean, FieldValue::String(s)) => Err(s),
+                (Kind::Integer | Kind::Date, FieldValue::Long(n)) => Ok(n),
+                _ => return Err(Error::Checkpoint),
+            });
+        }
+        let got = crate::adapter::digest(texts.iter().map(|v| match v {
+            Err(s) => crate::adapter::Stored::Text(s),
+            Ok(n) => crate::adapter::Stored::Long(*n),
+        }));
+        if got != wanted {
+            return Err(Error::Checkpoint);
         }
     }
     Ok(())

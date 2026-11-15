@@ -13,7 +13,7 @@ OpenSearch puts no size limit on a `text` field. The practical cap is the reques
 - The prepared-batch byte bound and the writer's RAM buffer follow `document_bytes`; the research profile's values are unchanged.
 - The index log slot refuses a request over half a slot (4 MiB) as before; the 8 KiB field cap in the slot decoder is now the slot size. Size checks use `encoded_len` and the operations are moved, not cloned, into the slot: two clones of a large document per request are gone.
 - The node's engine schema uses the ceiling; the node's own `--max-document-bytes` still applies to the source line. A source line over the ceiling is refused with 413 `document_too_large_exception` and the message "this build can index documents of at most N bytes".
-- The node charges the indexing working set of each document of 64 KiB or more (16 x its size) against the node's memory budget for the batch. When the budget cannot cover it, the batch's items are refused with 429 `es_rejected_execution_exception` and nothing is written. Smaller documents are charged nothing extra, so existing behaviour is unchanged for them.
+- The node charges the indexing working set of each document of 64 KiB or more (32 x its size, above the 29x measured at 0.25 MiB) against the node's memory budget for the batch. When the budget cannot cover it, the batch's items are refused with 429 `es_rejected_execution_exception` and nothing is written. Smaller documents are charged nothing extra, so existing behaviour is unchanged for them.
 
 ## Numbers
 
@@ -33,7 +33,8 @@ Small documents, no regression (`bulk_profile`, 100,000 documents, batch 5,000, 
 ## What this does not do
 
 - Documents between 4 MiB and 100-200 MiB are refused by name. A lane that stores a large document in its own object and streams it is M21.09.
-- The engine keeps an owned copy of each document for exact-retry detection, bounded by the history window; recognising a retry by digest would drop it. Recorded in M21.09.
+- The engine keeps an owned copy of each recent document for exact-retry detection, bounded by the history window (4 MiB in the scale profile, so at most about one maximal document). Recognising a retry by digest would drop it. Recorded in M21.09. What it keeps for every live identity is a version and a 128-bit digest of the values (checkpoint verification compares the digest), not the text.
+- The writer's RAM buffer is still sized from the research profile's document bound, so small-document indexes do not hold more RAM than before.
 - Highlighting is not implemented in hsearch, so OpenSearch's `index.highlight.max_analyzed_offset` has no counterpart here.
 
 ## Review
