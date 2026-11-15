@@ -257,14 +257,17 @@ pub(crate) struct Live {
 
 /// Digest of typed field values in schema order, over their stored forms (a
 /// boolean is stored as its text, an integer or date as a long). Two SipHash-1-3
-/// passes with different prefixes: in-process integrity, not a security boundary.
+/// passes under two independent random keys drawn once per process, so nobody who
+/// can send a document can build a colliding one offline. A digest only has to
+/// agree with itself inside one process (a checkpoint is in-process, never
+/// persisted), so the keys need not survive a restart.
 pub(crate) fn digest<'a>(values: impl Iterator<Item = Stored<'a>>) -> u128 {
-    use std::hash::Hasher;
-    let (mut a, mut b) = (
-        std::collections::hash_map::DefaultHasher::new(),
-        std::collections::hash_map::DefaultHasher::new(),
-    );
-    b.write_u8(0x5a);
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    use std::sync::OnceLock;
+    static KEYS: OnceLock<(RandomState, RandomState)> = OnceLock::new();
+    let (first, second) = KEYS.get_or_init(|| (RandomState::new(), RandomState::new()));
+    let (mut a, mut b) = (first.build_hasher(), second.build_hasher());
     for value in values {
         match value {
             Stored::Text(s) => {

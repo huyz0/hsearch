@@ -33,7 +33,7 @@ Small documents, no regression (`bulk_profile`, 100,000 documents, batch 5,000, 
 ## What this does not do
 
 - Documents between 4 MiB and 100-200 MiB are refused by name. A lane that stores a large document in its own object and streams it is M21.09.
-- The engine keeps an owned copy of each recent document for exact-retry detection, bounded by the history window (4 MiB in the scale profile, so at most about one maximal document). Recognising a retry by digest would drop it. Recorded in M21.09. What it keeps for every live identity is a version and a 128-bit digest of the values (checkpoint verification compares the digest), not the text.
+- (Superseded by M21.09 increment 1: the retry history now keeps a digest.) The engine kept an owned copy of each recent document for exact-retry detection, bounded by the history window (4 MiB in the scale profile, so at most about one maximal document). Recognising a retry by digest would drop it. Recorded in M21.09. What it keeps for every live identity is a version and a 128-bit digest of the values (checkpoint verification compares the digest), not the text.
 - The writer's RAM buffer is still sized from the research profile's document bound, so small-document indexes do not hold more RAM than before.
 - Highlighting is not implemented in hsearch, so OpenSearch's `index.highlight.max_analyzed_offset` has no counterpart here.
 

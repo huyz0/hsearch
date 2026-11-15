@@ -407,3 +407,69 @@ fn retry_history_holds_a_digest_and_still_tells_a_retry_from_a_conflict() {
     let state = engine.state.lock().unwrap();
     assert!(state.history[0].operations[0].digest.is_some());
 }
+
+#[test]
+fn a_retry_differing_in_kind_version_value_type_or_delete_is_a_conflict() {
+    use crate::Kind;
+    let schema = Schema::new(
+        1,
+        &[
+            ("body", Kind::Text),
+            ("n", Kind::Integer),
+            ("ok", Kind::Boolean),
+        ],
+    )
+    .unwrap();
+    let directory = FaultDirectory::new();
+    let observed = crate::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+    let batch = |m: Mutation<'_>| schema.prepare("r", &[m]).unwrap();
+    let fields = |n: i64, ok: bool| {
+        [
+            ("body", Value::String("x")),
+            ("n", Value::Integer(n)),
+            ("ok", Value::Boolean(ok)),
+        ]
+    };
+    let base = fields(1, true);
+    let put = Mutation::Put {
+        id: "d",
+        version: 1,
+        fields: &base,
+    };
+    let receipts = engine.apply(batch(put)).unwrap();
+    assert_eq!(engine.apply(batch(put)).unwrap(), receipts);
+    let other_int = fields(2, true);
+    let other_bool = fields(1, false);
+    for different in [
+        Mutation::Put {
+            id: "d",
+            version: 1,
+            fields: &other_int,
+        },
+        Mutation::Put {
+            id: "d",
+            version: 1,
+            fields: &other_bool,
+        },
+        Mutation::Put {
+            id: "d",
+            version: 2,
+            fields: &base,
+        },
+        Mutation::Create {
+            id: "d",
+            version: 1,
+            fields: &base,
+        },
+        Mutation::Delete {
+            id: "d",
+            version: 1,
+        },
+    ] {
+        assert!(
+            matches!(engine.apply(batch(different)), Err(Error::Conflict)),
+            "{different:?}"
+        );
+    }
+}

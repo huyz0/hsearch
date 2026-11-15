@@ -6,7 +6,7 @@ Provisional: 4-CPU cloud container, in-memory object store, one node, Linux, rel
 
 The engine kept an owned copy of every admitted document's field values in its retry history, only to recognise an exact retry (same request id, same bytes) by structural equality. `Operation` now holds the identity, version, kind and a 128-bit digest of the values. An exact retry has the same digest and replays its receipts; one changed byte under the same request id is a conflict (`retry_history_holds_a_digest_and_still_tells_a_retry_from_a_conflict`). The prepared batch also builds each `Document` straight from the borrowed mutation, so the owned copy is not made at all.
 
-Downside: equality is now by a 128-bit non-cryptographic digest (two SipHash-1-3 passes), not by content. A different payload under the same request id would be taken for a retry only on a digest collision, which cannot happen by accident and which someone able to write to the index could in theory engineer. The document is still stored and indexed as sent; only the retry recognition is affected.
+Downside: equality is now by a 128-bit non-cryptographic digest, not by content: two SipHash-1-3 passes under two independent random keys drawn once per process. The keys are unknown to anyone who can send a document, so a colliding payload cannot be built offline, and an accidental collision is a 2^-128 event; but it is not a proof of equality, and a collision under a reused request id would replay the earlier receipts instead of reporting a conflict. The keys do not survive a restart, which is fine because the history and checkpoints are in-process only. The document is still stored and indexed exactly as sent.
 
 ## Numbers
 
