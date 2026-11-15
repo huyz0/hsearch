@@ -39,4 +39,4 @@ Small documents, no regression (`bulk_profile`, 100,000 documents, batch 5,000, 
 
 ## Review
 
-Independent review and CI: see the pull request.
+Independent review found that live identities kept every document's text (now a version and a 128-bit digest), that the writer RAM buffer grew with the document limit (now unchanged), that the admission charge sat below the measured 29x at 0.25 MiB (now 32x), that a single-document write was cloned (now moved), and that the id margin ignored numeric fields (now 512 bytes). All fixed in the PR; CI green.
