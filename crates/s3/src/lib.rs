@@ -1089,6 +1089,15 @@ impl MetadataStore for S3Store {
             Ok(receipt)
         })
     }
+
+    fn remove_version<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        key: &'a ObjectKey,
+        version: &'a VersionToken,
+    ) -> Operation<'a, ()> {
+        Box::pin(async move { S3Store::delete_version(self, context, key, version) })
+    }
 }
 
 #[cfg(test)]

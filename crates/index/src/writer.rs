@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use hsearch_engine::{
     Engine, LocalFiles, Mutation as EngineMutation, Outcome, Schema, Snapshot, Value,
 };
-use hsearch_object::{MetadataStore, Precondition, VersionToken};
+use hsearch_object::{MetadataStore, ObjectKey, Precondition, VersionToken};
 
 use crate::format::{
     BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, MAX_INDEXED_DOCUMENT_BYTES,
@@ -452,27 +452,51 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         let (store, name, epoch, seq) = (&*self.store, &self.name, self.epoch, slot.seq);
         // Large strings go to their own objects first; the slot, written last,
         // is what makes them reachable.
+        let mut written: Vec<(ObjectKey, VersionToken)> = Vec::new();
         let encoded = encode_slot_with(slot, &mut |op, field, text| {
-            write_blob(store, name, epoch, BlobAt { seq, op, field }, text).map(Some)
+            write_blob(
+                store,
+                name,
+                epoch,
+                BlobAt { seq, op, field },
+                text,
+                &mut written,
+            )
+            .map(Some)
         });
         let encoded = match encoded {
             Ok(bytes) => bytes,
             Err(error) => {
                 if matches!(error, Error::Fenced | Error::Unknown) {
+                    // An unknown outcome may have committed a slot that names
+                    // these chunks: never delete on it.
                     self.poison();
+                } else {
+                    discard_chunks(store, &written);
                 }
                 return Err(error);
             }
         };
-        let request = mutation(
+        let request = match mutation(
             &format!("{}/slot/{}/{}", self.name, slot.seq, self.epoch),
             &slot_key(&self.name, slot.seq),
             &encoded,
             Precondition::Absent,
-        )?;
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                // No slot was attempted, so nothing names the chunks.
+                discard_chunks(store, &written);
+                return Err(error);
+            }
+        };
         match write(&*self.store, &request, false) {
             Written::Done(_) => Ok(()),
-            Written::Refused(error) => Err(Error::Store(error)),
+            Written::Refused(error) => {
+                // The slot certainly does not exist, so nothing names the chunks.
+                discard_chunks(store, &written);
+                Err(Error::Store(error))
+            }
             Written::Occupied => {
                 self.poison();
                 Err(Error::Fenced)
@@ -769,6 +793,7 @@ fn write_blob<S: MetadataStore>(
     epoch: u64,
     at: BlobAt,
     text: &str,
+    written: &mut Vec<(ObjectKey, VersionToken)>,
 ) -> Result<Blob> {
     let bytes = text.as_bytes();
     if bytes.len() > MAX_INDEXED_DOCUMENT_BYTES {
@@ -782,7 +807,7 @@ fn write_blob<S: MetadataStore>(
         let object = blob_key(name, epoch, attempt, at, n as u32);
         let request = mutation(&object, &object, chunk, Precondition::Absent)?;
         match write(store, &request, false) {
-            Written::Done(_) => {}
+            Written::Done(receipt) => written.push((request.key.clone(), receipt.object.version)),
             Written::Refused(error) => return Err(Error::Store(error)),
             Written::Occupied => return Err(Error::Fenced),
             Written::Unknown => return Err(Error::Unknown),
@@ -794,6 +819,15 @@ fn write_blob<S: MetadataStore>(
         chunks,
         len: bytes.len() as u64,
     })
+}
+
+/// Best-effort removal of chunks no slot names, after a definite failure. A store
+/// that cannot delete, or a failed delete, leaves an orphan and nothing else: no
+/// reader ever looks at a chunk without a slot that names it.
+fn discard_chunks<S: MetadataStore>(store: &S, written: &[(ObjectKey, VersionToken)]) {
+    for (object, version) in written {
+        let _ = block(store.remove_version(&context(), object, version));
+    }
 }
 
 /// Read a string back from its chunk objects, refusing a reference whose shape
@@ -904,8 +938,8 @@ mod blob_tests {
             text('a', INLINE_FIELD_MAX + 5),
             text('b', INLINE_FIELD_MAX + 5),
         );
-        let first = write_blob(&store, "ix", 1, AT, &a).unwrap();
-        let second = write_blob(&store, "ix", 1, AT, &b).unwrap();
+        let first = write_blob(&store, "ix", 1, AT, &a, &mut Vec::new()).unwrap();
+        let second = write_blob(&store, "ix", 1, AT, &b, &mut Vec::new()).unwrap();
         assert_ne!(first.attempt, second.attempt);
         assert_eq!(read_blob(&store, "ix", AT, first).unwrap(), a);
         assert_eq!(read_blob(&store, "ix", AT, second).unwrap(), b);
@@ -915,7 +949,7 @@ mod blob_tests {
     fn a_chunk_boundary_document_spans_exact_chunks() {
         let store = store();
         let exact = text('c', BLOB_CHUNK_BYTES * 2);
-        let blob = write_blob(&store, "ix", 1, AT, &exact).unwrap();
+        let blob = write_blob(&store, "ix", 1, AT, &exact, &mut Vec::new()).unwrap();
         assert_eq!(blob.chunks, 2);
         assert_eq!(
             read_blob(&store, "ix", AT, blob).unwrap().len(),
@@ -927,7 +961,7 @@ mod blob_tests {
     fn a_missing_chunk_a_wrong_shape_or_a_bad_length_is_corrupt_never_a_short_read() {
         let store = store();
         let t = text('d', INLINE_FIELD_MAX + 1);
-        let blob = write_blob(&store, "ix", 1, AT, &t).unwrap();
+        let blob = write_blob(&store, "ix", 1, AT, &t, &mut Vec::new()).unwrap();
         // Another position has no chunk object.
         let elsewhere = BlobAt { seq: 4, ..AT };
         assert!(read_blob(&store, "ix", elsewhere, blob).is_err());

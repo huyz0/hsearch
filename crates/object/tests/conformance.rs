@@ -528,3 +528,112 @@ fn a_memory_upload_is_bounded_and_closed_after_abort() {
         Err(Error::NotFound)
     );
 }
+
+#[test]
+fn removing_a_version_frees_its_bytes_and_leaves_other_objects_alone() {
+    let store = backend();
+    let keep = mutation(b"keep", b"keep", b"kept bytes", Precondition::Absent);
+    let drop = mutation(b"drop", b"drop", b"dropped bytes", Precondition::Absent);
+    let kept = run(store.create(&context(), &keep)).unwrap().object;
+    let dropped = run(store.create(&context(), &drop)).unwrap().object;
+
+    // The wrong key never removes another key's version.
+    assert_eq!(
+        run(store.remove_version(&context(), &keep.key, &dropped.version)),
+        Err(Error::NotFound)
+    );
+    assert_eq!(
+        run(store.remove_version(&context(), &drop.key, &dropped.version)),
+        Ok(())
+    );
+    assert_eq!(run(store.head(&context(), &drop.key)), Err(Error::NotFound));
+    assert_eq!(
+        run(store.read_range(
+            &context(),
+            &drop.key,
+            &dropped.version,
+            ByteRange::new(0, 1).unwrap()
+        )),
+        Err(Error::NotFound)
+    );
+    // Already gone is NotFound, never silent success.
+    assert_eq!(
+        run(store.remove_version(&context(), &drop.key, &dropped.version)),
+        Err(Error::NotFound)
+    );
+    assert_eq!(run(store.head(&context(), &keep.key)).unwrap(), kept);
+}
+
+#[test]
+fn a_removed_object_frees_room_in_a_full_store() {
+    let store = MemoryStore::new(MemoryLimits {
+        version_bytes: 64,
+        ..limits()
+    })
+    .unwrap();
+    let big = mutation(b"a", b"k1", &[7; 40], Precondition::Absent);
+    let version = run(store.create(&context(), &big)).unwrap().object.version;
+    let more = mutation(b"b", b"k2", &[7; 40], Precondition::Absent);
+    assert_eq!(
+        run(store.create(&context(), &more)),
+        Err(Error::BudgetExceeded)
+    );
+    run(store.remove_version(&context(), &big.key, &version)).unwrap();
+    assert!(run(store.create(&context(), &more)).is_ok());
+}
+
+#[test]
+fn a_store_without_delete_says_unsupported() {
+    struct NoDelete(MemoryStore);
+    impl ObjectBackend for NoDelete {
+        fn head<'a>(
+            &'a self,
+            c: &'a RequestContext,
+            k: &'a ObjectKey,
+        ) -> Operation<'a, ObjectInfo> {
+            self.0.head(c, k)
+        }
+        fn create<'a>(
+            &'a self,
+            c: &'a RequestContext,
+            r: &'a Mutation,
+        ) -> Operation<'a, WriteReceipt> {
+            self.0.create(c, r)
+        }
+        fn read_range<'a>(
+            &'a self,
+            c: &'a RequestContext,
+            k: &'a ObjectKey,
+            v: &'a VersionToken,
+            r: ByteRange,
+        ) -> Operation<'a, Payload> {
+            self.0.read_range(c, k, v, r)
+        }
+    }
+    impl MetadataStore for NoDelete {
+        fn compare_exchange<'a>(
+            &'a self,
+            c: &'a RequestContext,
+            r: &'a Mutation,
+        ) -> Operation<'a, WriteReceipt> {
+            self.0.compare_exchange(c, r)
+        }
+        fn resolve<'a>(
+            &'a self,
+            c: &'a RequestContext,
+            r: &'a Mutation,
+        ) -> Operation<'a, WriteReceipt> {
+            self.0.resolve(c, r)
+        }
+    }
+    let store = NoDelete(backend());
+    let request = mutation(b"id", b"k", b"v", Precondition::Absent);
+    let version = run(store.create(&context(), &request))
+        .unwrap()
+        .object
+        .version;
+    assert_eq!(
+        run(store.remove_version(&context(), &request.key, &version)),
+        Err(Error::Unsupported)
+    );
+}

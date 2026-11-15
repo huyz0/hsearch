@@ -66,8 +66,19 @@ A slot may carry at most `slot_text_cap(document_bytes)` bytes of string text in
 
 What this does and does not bound: it bounds the string text one newly written slot makes replay hold, to one document's ceiling. Peak memory to replay a full slot is still about 8-9x its text (the ratio measured above, which includes indexing), so up to roughly 1.7 GiB for a 200 MiB slot, and replay has no admission charge like the write path's. Replay still materialises a slot's strings together instead of streaming them operation by operation. Slots written before this rule are not re-checked on replay.
 
-## Orphan chunks: not done, and why
+# M21.09 evidence (increment 4): orphan chunks after a failed write
 
-Nothing in the object seam can delete an object (`ObjectBackend` has head, create, read_range, compare_exchange and resolve only), and the repo forbids LIST on write and startup paths, so a failed or crashed attempt's chunks can neither be deleted by the writer nor found by a sweep. Collecting them needs a decision first: either a delete (or lifecycle-expiry) capability on the seam with conformance tests, or a derivable record of attempts. That is a seam change across `hsearch-object`, the S3 store and the conformance suite, so it is left as its own task rather than forced into this change.
+## What changed
 
-M21.09 stays open: orphan collection and a measured 200 MiB run remain.
+`MetadataStore` gains `remove_version(key, version)`: permanently remove one immutable version, `NotFound` if already gone on `MemoryStore` (S3 answers success for a missing version, so callers treat both as removed), default `Unsupported` so existing stores and doubles are unchanged. `MemoryStore` implements it (frees the version's bytes and the current pointer, keeps the accepted-request record, so a long-lived double still counts the identity against its limits and replaying the original request would report an object that is gone), and `S3Store` delegates to its existing `delete_version`. The writer records each chunk's version as it creates it, and removes them best-effort when the slot that would name them certainly does not exist: a refused chunk (the earlier ones go), a refused slot write, an encode failure, or a slot payload that cannot be built. It never removes on `Fenced` or `Unknown`, because an unknown slot write may have committed a slot that names them. A delete that fails or is unsupported leaves an orphan and nothing else, since no reader looks at a chunk without a slot.
+
+Tests: `removing_a_version_frees_its_bytes_and_leaves_other_objects_alone`, `a_removed_object_frees_room_in_a_full_store`, `a_store_without_delete_says_unsupported` (object conformance); `a_refused_slot_write_removes_the_chunks_it_wrote_and_the_retry_succeeds` (12 MiB, 2 chunks removed, retry commits), `a_refused_second_chunk_removes_the_first`, `a_store_that_cannot_delete_leaves_the_orphans_and_stays_correct`, and `an_unknown_slot_write_never_removes_the_chunks_it_may_name` (slot committed, answer lost and unresolvable: zero removals, and a new process replays the document) (index). The removal tests also check that each removal succeeded on a `blob/` key, not only that one was attempted. The first draft of the mid-chunk test matched the wrong key and was observed failing before the key was corrected.
+
+## Not done
+
+- Orphans from a crash between the chunk writes and the slot write are still never collected: the writer is gone and nothing records the attempt, and LIST is forbidden here. They are bounded by the writes in flight at crash time. Collecting them needs a recorded attempt or a lifecycle rule on the bucket's `blob/` prefix; neither is built.
+- `S3Store::remove_version` is the existing delete, not newly exercised against RustFS here (no endpoint in this environment); the S3 integration tests skip without one.
+- A bucket lifecycle expiry for `<index>/blob/` is not configured or documented anywhere yet.
+- Removal runs one delete at a time on the writer thread after a definite failure, so a throttled store makes that bulk's refusal slower.
+
+M21.09 stays open: crash orphans and a measured 200 MiB run remain.
