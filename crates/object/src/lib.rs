@@ -147,6 +147,21 @@ pub trait MetadataStore: ObjectBackend {
         context: &'a RequestContext,
         request: &'a Mutation,
     ) -> Operation<'a, WriteReceipt>;
+
+    /// Permanently remove one immutable version, for garbage collection of an
+    /// object no committed record refers to. Never used to change what a reader
+    /// can observe of a committed object. Removing a version that is already gone
+    /// is [`Error::NotFound`]. The default is [`Error::Unsupported`], so a store
+    /// that cannot delete says so rather than pretending.
+    fn remove_version<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        key: &'a ObjectKey,
+        version: &'a VersionToken,
+    ) -> Operation<'a, ()> {
+        let _ = (context, key, version);
+        Box::pin(async { Err(Error::Unsupported) })
+    }
 }
 
 /// A retry decision borrows the entire original envelope without changing it.

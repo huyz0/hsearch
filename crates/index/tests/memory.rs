@@ -627,3 +627,147 @@ fn a_bulk_whose_text_can_never_fit_one_slot_is_invalid_not_retryable() {
             .is_ok()
     );
 }
+
+/// A store that refuses the next create under a key part, and counts deletes.
+struct Flaky {
+    inner: MemoryStore,
+    refuse: std::sync::Mutex<Option<&'static str>>,
+    deleted: std::sync::atomic::AtomicUsize,
+    can_delete: bool,
+}
+
+impl Flaky {
+    fn new(can_delete: bool) -> Self {
+        Self {
+            inner: Arc::try_unwrap(store()).unwrap(),
+            refuse: std::sync::Mutex::new(None),
+            deleted: std::sync::atomic::AtomicUsize::new(0),
+            can_delete,
+        }
+    }
+}
+
+impl hsearch_object::ObjectBackend for Flaky {
+    fn head<'a>(
+        &'a self,
+        c: &'a hsearch_object::RequestContext,
+        k: &'a hsearch_object::ObjectKey,
+    ) -> hsearch_object::Operation<'a, hsearch_object::ObjectInfo> {
+        self.inner.head(c, k)
+    }
+    fn create<'a>(
+        &'a self,
+        c: &'a hsearch_object::RequestContext,
+        r: &'a hsearch_object::Mutation,
+    ) -> hsearch_object::Operation<'a, hsearch_object::WriteReceipt> {
+        let hit = {
+            let mut refuse = self.refuse.lock().unwrap();
+            match *refuse {
+                Some(part) if String::from_utf8_lossy(r.key.as_bytes()).contains(part) => {
+                    *refuse = None;
+                    true
+                }
+                _ => false,
+            }
+        };
+        if hit {
+            return Box::pin(async { Err(hsearch_object::Error::PermissionDenied) });
+        }
+        self.inner.create(c, r)
+    }
+    fn read_range<'a>(
+        &'a self,
+        c: &'a hsearch_object::RequestContext,
+        k: &'a hsearch_object::ObjectKey,
+        v: &'a hsearch_object::VersionToken,
+        r: hsearch_object::ByteRange,
+    ) -> hsearch_object::Operation<'a, hsearch_object::Payload> {
+        self.inner.read_range(c, k, v, r)
+    }
+}
+
+impl hsearch_object::MetadataStore for Flaky {
+    fn compare_exchange<'a>(
+        &'a self,
+        c: &'a hsearch_object::RequestContext,
+        r: &'a hsearch_object::Mutation,
+    ) -> hsearch_object::Operation<'a, hsearch_object::WriteReceipt> {
+        self.inner.compare_exchange(c, r)
+    }
+    fn resolve<'a>(
+        &'a self,
+        c: &'a hsearch_object::RequestContext,
+        r: &'a hsearch_object::Mutation,
+    ) -> hsearch_object::Operation<'a, hsearch_object::WriteReceipt> {
+        self.inner.resolve(c, r)
+    }
+    fn remove_version<'a>(
+        &'a self,
+        c: &'a hsearch_object::RequestContext,
+        k: &'a hsearch_object::ObjectKey,
+        v: &'a hsearch_object::VersionToken,
+    ) -> hsearch_object::Operation<'a, ()> {
+        if !self.can_delete {
+            return Box::pin(async { Err(hsearch_object::Error::Unsupported) });
+        }
+        self.deleted
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.inner.remove_version(c, k, v)
+    }
+}
+
+fn big_body() -> String {
+    // 12 MiB: two chunks.
+    format!("{}needle", "word ".repeat(12 * (1 << 20) / 5))
+}
+
+#[test]
+fn a_refused_slot_write_removes_the_chunks_it_wrote_and_the_retry_succeeds() {
+    let store = Arc::new(Flaky::new(true));
+    let scratch = Scratch::new("discard");
+    let index = Index::create(Arc::clone(&store), "docs", big_schema(), &scratch.0).unwrap();
+    *store.refuse.lock().unwrap() = Some("/log/");
+    let refused = index.bulk(vec![big_put("a", big_body())], Wait::Searchable);
+    assert!(matches!(refused, Err(Error::Store(_))), "{refused:?}");
+    assert_eq!(
+        store.deleted.load(std::sync::atomic::Ordering::Relaxed),
+        2,
+        "both chunks were removed"
+    );
+    // Nothing was poisoned, and the retry commits and finds the document.
+    index
+        .bulk(vec![big_put("a", big_body())], Wait::Searchable)
+        .unwrap();
+    assert_eq!(needles(&index), 1);
+}
+
+#[test]
+fn a_refused_second_chunk_removes_the_first() {
+    let store = Arc::new(Flaky::new(true));
+    let scratch = Scratch::new("discard-mid");
+    let index = Index::create(Arc::clone(&store), "docs", big_schema(), &scratch.0).unwrap();
+    *store.refuse.lock().unwrap() = Some("0.1/000001");
+    assert!(matches!(
+        index.bulk(vec![big_put("a", big_body())], Wait::Durable),
+        Err(Error::Store(_))
+    ));
+    assert_eq!(store.deleted.load(std::sync::atomic::Ordering::Relaxed), 1);
+    assert!(index.bulk(vec![delete("zz")], Wait::Durable).is_ok());
+}
+
+#[test]
+fn a_store_that_cannot_delete_leaves_the_orphans_and_stays_correct() {
+    let store = Arc::new(Flaky::new(false));
+    let scratch = Scratch::new("no-delete");
+    let index = Index::create(Arc::clone(&store), "docs", big_schema(), &scratch.0).unwrap();
+    *store.refuse.lock().unwrap() = Some("/log/");
+    assert!(
+        index
+            .bulk(vec![big_put("a", big_body())], Wait::Durable)
+            .is_err()
+    );
+    index
+        .bulk(vec![big_put("a", big_body())], Wait::Searchable)
+        .unwrap();
+    assert_eq!(needles(&index), 1);
+}

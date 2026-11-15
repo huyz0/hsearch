@@ -357,6 +357,32 @@ impl MetadataStore for MemoryStore {
             Ok(receipt.clone())
         })
     }
+
+    fn remove_version<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        key: &'a ObjectKey,
+        version: &'a VersionToken,
+    ) -> Operation<'a, ()> {
+        Box::pin(async move {
+            context.charge_request(key.len() as u64 + version.len() as u64)?;
+            let mut state = self.state.lock().map_err(|_| Error::Unavailable)?;
+            context.check()?;
+            match state.versions.get(version) {
+                Some(stored) if stored.key == *key => {}
+                _ => return Err(Error::NotFound),
+            }
+            if let Some(stored) = state.versions.remove(version) {
+                state.version_bytes -= stored.key.len() as u64
+                    + stored.payload.len() as u64
+                    + stored.info.metadata.len() as u64;
+            }
+            if state.current.get(key) == Some(version) {
+                state.current.remove(key);
+            }
+            Ok(())
+        })
+    }
 }
 
 /// An open upload against a [`MemoryStore`]. The parts are held here, bounded by the
