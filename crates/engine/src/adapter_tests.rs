@@ -369,3 +369,41 @@ fn live_identities_keep_a_digest_and_never_the_text() {
     engine.close().unwrap();
     assert!(Engine::open(&observed, schema, Some(checkpoint)).is_ok());
 }
+
+#[test]
+fn retry_history_holds_a_digest_and_still_tells_a_retry_from_a_conflict() {
+    use crate::{Kind, Limits};
+    let schema = Schema::new(1, &[("body", Kind::Text)])
+        .unwrap()
+        .with_limits(Limits::scale().with_document_bytes(1 << 20))
+        .unwrap();
+    let directory = FaultDirectory::new();
+    let observed = crate::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+    let put = |request: &str, text: &str| {
+        schema
+            .prepare(
+                request,
+                &[Mutation::Put {
+                    id: "doc",
+                    version: 1,
+                    fields: &[("body", Value::String(text))],
+                }],
+            )
+            .unwrap()
+    };
+    let text = "alpha ".repeat(100_000);
+    let receipts = engine.apply(put("r1", &text)).unwrap();
+    // The same request with the same bytes is a retry; the receipts are replayed.
+    assert_eq!(engine.apply(put("r1", &text)).unwrap(), receipts);
+    // One changed final byte under the same request id is a conflict.
+    let mut changed = text.clone();
+    changed.pop();
+    changed.push('b');
+    assert!(matches!(
+        engine.apply(put("r1", &changed)),
+        Err(Error::Conflict)
+    ));
+    let state = engine.state.lock().unwrap();
+    assert!(state.history[0].operations[0].digest.is_some());
+}
