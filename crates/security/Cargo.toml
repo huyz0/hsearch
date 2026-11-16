@@ -29,7 +29,15 @@ name = "identity"
 required-features = ["dev-ca"]
 
 [[test]]
+name = "block"
+required-features = ["test-kms"]
+
+[[test]]
 name = "keys"
+required-features = ["test-kms"]
+
+[[example]]
+name = "block_bench"
 required-features = ["test-kms"]
 
 [[example]]

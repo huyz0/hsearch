@@ -10,6 +10,7 @@
 //! (M05.03) and rotation state machines (M05.05) build on it.
 
 pub mod audit;
+pub mod block;
 pub mod clock;
 #[cfg(feature = "dev-ca")]
 pub mod dev_ca;
