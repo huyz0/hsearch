@@ -214,6 +214,8 @@ pub struct LaneWriter<S> {
     layout: Layout,
     id: LaneId,
     next: u64,
+    /// Which record this writer's cover lives in; the other reclaim entry point is refused.
+    source: CoverSource,
     descriptor: LaneDescriptor,
     version: hsearch_object::VersionToken,
     sealed: BTreeMap<Id, u64>,
@@ -251,8 +253,10 @@ impl<S: MetadataStore> LaneWriter<S> {
     /// written, so a lane is driven by the head **or** by the marker, never both.
     ///
     /// Cost over `open` with no marker: 2 requests to read the head, 2 to re-read it after the
-    /// replay (the cover must not have moved above the end that was found), 1 PUT for the
-    /// transition, and no marker read; the marker's HEAD is replaced by the head read.
+    /// replay (the cover must not have moved above the end that was found), 2 more to read it
+    /// inside the establish, 1 PUT for the transition, and no marker read. A seal race adds the
+    /// replayed slot's 2 requests and another head re-read. The mode is kept on the writer:
+    /// the reclaim entry point of the other mode is refused with [`Error::Invalid`].
     ///
     /// Errors: [`Error::NoHead`] with no head; [`Error::BadCover`] when a checkpoint moved the cover
     /// above the end the replay found (reopen: the caller's `visit` has already seen slots now
@@ -356,6 +360,7 @@ impl<S: MetadataStore> LaneWriter<S> {
             layout,
             id,
             next: at + 1,
+            source,
             descriptor,
             version,
             sealed,
@@ -574,6 +579,11 @@ impl<S: MetadataStore> LaneWriter<S> {
         if self.poisoned {
             return Err(Error::Poisoned);
         }
+        if self.source == CoverSource::Head {
+            return Err(Error::Invalid(
+                "a head-driven lane reclaims to its checkpoint",
+            ));
+        }
         if cover > self.next {
             return Err(Error::Invalid("cover beyond the log"));
         }
@@ -599,6 +609,11 @@ impl<S: MetadataStore> LaneWriter<S> {
     pub async fn reclaim_to_checkpoint(&mut self) -> Result<Reclaimed> {
         if self.poisoned {
             return Err(Error::Poisoned);
+        }
+        if self.source == CoverSource::Marker {
+            return Err(Error::Invalid(
+                "a marker-driven lane reclaims below a marker",
+            ));
         }
         let (head, _) = read_head(&*self.store, &self.layout, &self.id).await?;
         let cover = head.cover.min(self.next);

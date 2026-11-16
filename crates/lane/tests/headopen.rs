@@ -337,3 +337,13 @@ fn a_lane_id_older_than_the_heads_activation_has_no_authority() {
     .unwrap();
     assert_eq!(open(&store, lane).err(), Some(Error::Fenced));
 }
+
+#[test]
+fn a_head_driven_writer_refuses_the_marker_reclaim() {
+    let (store, lane) = world();
+    let (mut writer, _) = open(&store, lane).unwrap();
+    block_on(writer.append(&[put(id(1), 1, b"x")])).unwrap();
+    let refused = block_on(writer.reclaim_below(1));
+    assert!(matches!(refused, Err(Error::Invalid(_))), "{refused:?}");
+    assert!(!store.touched("COVER"), "the marker was not written");
+}

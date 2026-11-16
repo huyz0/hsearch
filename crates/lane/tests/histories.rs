@@ -15,7 +15,8 @@
 //! 6. a writer's consecutive acknowledgements are consecutive ordinals;
 //! 7. a recovery open from the cover replays exactly the slots from the cover to the end, seals
 //!    the first absent position, and an open below a cover that removed data is refused;
-//! 8. a fence is never removed by a reclaim.
+//! 8. a fence is never removed by a reclaim (checked indirectly: a stale append landing in a
+//!    removed fence slot would break invariant 3 or 4; `read_log` cannot see below the cover).
 //!
 //! This is an enumeration over a bounded world, not a proof for unbounded histories; the bounds
 //! are printed by the test and recorded in the evidence file.
