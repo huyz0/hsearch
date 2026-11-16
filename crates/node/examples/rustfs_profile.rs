@@ -165,6 +165,7 @@ fn visibility(trials: usize) {
     for batch in [1usize, 100] {
         let (mut ack, mut vis, mut searchable) = (vec![], vec![], vec![]);
         let mut puts = (0u64, 0u64);
+        let mut others = (0u64, 0u64, 0u64);
         for _ in 0..trials {
             let body: String = (next..next + batch).map(doc_line).collect();
             next += batch;
@@ -174,16 +175,17 @@ fn visibility(trials: usize) {
             let t_ack = t0.elapsed();
             let c1 = store.counts();
             // A durable write is not searchable until a refresh (M06.07 adds timed modes).
-            let before = total(&node);
-            assert!(before < expected, "visible without a refresh");
+            let t_r = Instant::now();
             node.refresh("orders").expect("refresh");
-            assert_eq!(total(&node), expected);
-            let t_vis = t0.elapsed();
+            let t_vis = t_ack + t_r.elapsed();
             let c2 = store.counts();
+            assert_eq!(total(&node), expected, "not searchable after refresh");
             ack.push(t_ack.as_secs_f64() * 1e3);
             vis.push(t_vis.as_secs_f64() * 1e3);
             puts.0 += c1.put - c0.put;
-            let _ = c2;
+            others.0 += (c1.get - c0.get) + (c1.head - c0.head) + (c1.list - c0.list);
+            others.1 +=
+                (c2.get - c1.get) + (c2.head - c1.head) + (c2.list - c1.list) + (c2.put - c1.put);
             // Searchable wait, a fresh batch.
             let body: String = (next..next + batch).map(doc_line).collect();
             next += batch;
@@ -197,6 +199,7 @@ fn visibility(trials: usize) {
                 "Wait::Searchable returned before visible"
             );
             puts.1 += c4.put - c3.put;
+            others.2 += (c4.get - c3.get) + (c4.head - c3.head) + (c4.list - c3.list);
         }
         println!("-- batch of {batch} document(s), {trials} trials each");
         summary("durable ack", ack);
@@ -205,6 +208,10 @@ fn visibility(trials: usize) {
             vis,
         );
         summary("Wait::Searchable call", searchable);
+        println!(
+            "GET+HEAD+LIST over all trials: durable bulk {}, refresh (GET+HEAD+LIST+PUT) {}, Wait::Searchable bulk {}",
+            others.0, others.1, others.2
+        );
         println!(
             "PUTs per bulk: durable {:.2}, searchable {:.2}",
             puts.0 as f64 / trials as f64,
@@ -332,6 +339,10 @@ fn delete() {
 /// store, then a new node on an empty directory replays it from the store.
 fn large(mib: f64) {
     // The 200 MiB ceiling counts the whole JSON document, so leave room for its keys.
+    assert!(
+        (1.0..=200.0).contains(&mib),
+        "size must be 1 to 200 MiB: the run holds the input, a copy and the node's working set (about 8x) at once"
+    );
     let bytes = (mib * 1_048_576.0) as usize - 1024;
     let store = store();
     let dir = scratch("large-a");
@@ -354,6 +365,9 @@ fn large(mib: f64) {
     let body = format!(
         "{{\"index\":{{\"_id\":\"big\"}}}}\n{{\"title\":\"{title}\",\"tag\":\"a\",\"n\":1,\"ok\":true,\"at\":1}}\n"
     );
+    // Reset the process high-water mark now that the input exists, so the peak
+    // below is the node's own footprint over input-resident memory.
+    let _ = std::fs::write("/proc/self/clear_refs", "5");
     let baseline = status_kb("VmRSS:");
     let c0 = store.counts();
     let t = Instant::now();

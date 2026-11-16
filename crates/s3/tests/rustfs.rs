@@ -634,4 +634,36 @@ fn removing_a_version_deletes_only_it_and_is_repeatable() {
         Precondition::Absent,
     );
     run(store.create(&ctx, &again)).unwrap();
+    // Removing one version of a key leaves its other version alone.
+    let v1 = mutation(b"v1", b"i/blob/2/k", b"one", Precondition::Absent);
+    let first = run(store.create(&ctx, &v1)).unwrap();
+    let v2 = mutation(
+        b"v2",
+        b"i/blob/2/k",
+        b"two",
+        Precondition::Matches(first.object.version.clone()),
+    );
+    let second = run(store.compare_exchange(&ctx, &v2)).unwrap();
+    run(store.remove_version(&ctx, &v1.key, &first.object.version)).unwrap();
+    assert_eq!(
+        run(store.read_range(
+            &ctx,
+            &v2.key,
+            &second.object.version,
+            ByteRange::new(0, 3).unwrap()
+        ))
+        .unwrap()
+        .as_bytes(),
+        b"two"
+    );
+    assert_eq!(
+        run(store.read_range(
+            &ctx,
+            &v1.key,
+            &first.object.version,
+            ByteRange::new(0, 3).unwrap()
+        ))
+        .map(|_| ()),
+        Err(Error::NotFound)
+    );
 }
