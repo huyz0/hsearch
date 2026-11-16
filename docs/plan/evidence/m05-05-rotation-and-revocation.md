@@ -10,7 +10,7 @@ The first 14 rotation tests were run against a stub inventory and gate that acce
 
 `every_history_of_five_steps_...` enumerates **every** sequence of five steps over eleven moves (stage, verify and publish for each of two objects, pin a reader, release it, retire the old key version, collect an object, restart): 161,051 histories, each run against a separate model written from the rules alone. After every step it checks that each object's selection matches the model, that no selection and no live reader holds a retired version, that retiring succeeds exactly when the model says nothing depends on the version, that publishing needs a verified overlay, that collection is refused exactly while a reader pins the object, and that a restart leaves published overlays and retirements and nothing else. This is an enumeration of a bounded world, not a proof for longer histories or more objects.
 
-## Revocation envelope (measured on the gate, provisional because it is a model of the channel)
+## Revocation envelope (derived from a simulated clock and channel, not measured on a real one; provisional)
 
 Revocation at t = 100 s, deliveries every 5 s until the node is cut off at every second p in 0..=100, `max_age` 30 s: in all 101 cases the node stopped serving exactly 30 s after its last delivery; the worst exposure after the revocation was 30 s (cut at t = 100). A node that receives the revocation refuses at once. The data-key cache lifetime default of 300 s is outside the plan's 60 s target for any reader that does not consult the gate; the sealed backend does, on every head and read. Provider propagation delay and real channel latency are not measured here (M15).
 
@@ -32,3 +32,9 @@ Inventory and gate, 15 mutants: all killed after one added test (publishing an o
 - DEK and cipher rotation (migration through compaction) is M08's.
 - `destroy_key` is implemented only by the test provider; real providers (scheduled deletion, grace periods) are M15's, and a provider that only schedules deletion must not report success until the key is unusable.
 - x86_64 only; no ARM run.
+
+## Scope notes
+
+- A crash keeps the pinned roots: they are durable records. The precondition is that every retained root is pinned by a live reader or snapshot, otherwise a version can never retire. The history enumeration (11 steps, every sequence of five) models this.
+- `PolicyGate` trusts the freshness source that feeds it. It fails closed when stale, and refuses a generation that goes backwards.
+- `shred_key` refuses the default key and any key off the allowlist before the provider is called, and audits a `requested` destroy record before the call and `ok` or the error code after it.

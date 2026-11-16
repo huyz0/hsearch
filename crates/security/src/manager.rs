@@ -47,6 +47,9 @@ pub enum KeyError {
     WrongProvider,
     /// The cache policy is unusable (no entries, no lifetime, or more shards than entries).
     BadCachePolicy,
+    /// The deployment default key serves every index that names none; destroying it is not one index's
+    /// crypto-shredding and is refused here.
+    DefaultKeyProtected,
 }
 
 impl fmt::Display for KeyError {
@@ -59,6 +62,9 @@ impl fmt::Display for KeyError {
                 f.write_str("a test key provider is refused in the production profile")
             }
             KeyError::WrongProvider => f.write_str("key belongs to another provider"),
+            KeyError::DefaultKeyProtected => {
+                f.write_str("the deployment default key cannot be shredded for one index")
+            }
             KeyError::BadCachePolicy => f.write_str(
                 "cache policy needs entries, a non-zero lifetime and 1..=max_entries shards",
             ),
@@ -614,7 +620,8 @@ impl KeyManager {
     }
 
     /// Crypto-shredding: destroys the customer key at the provider, then drops every cached data key it
-    /// wrapped, so no node keeps reading with a copy it already held. Returns how many cached keys were
+    /// wrapped. Other nodes' copies live until their cache lifetime or an applied revocation; the provider
+    /// refuses every re-fetch. Returns how many cached keys were dropped here.
     /// dropped. If the provider cannot destroy the key, nothing is dropped and the refusal is audited, so a
     /// failed shred is visible and the keys keep working only as long as they would have anyway.
     pub fn shred_key(
@@ -624,6 +631,37 @@ impl KeyManager {
         generation: u64,
         opts: &CallOptions,
     ) -> Result<usize, KeyError> {
+        // Irreversible, so every refusal comes before the provider is touched, and an intent is audited
+        // first: a crash between the provider call and the final record still leaves a trace.
+        if key == &self.default_key {
+            self.record(
+                AuditOp::Refused,
+                index,
+                Some(key),
+                None,
+                generation,
+                "default_key",
+            );
+            return Err(KeyError::DefaultKeyProtected);
+        }
+        self.admit(key).inspect_err(|_| {
+            self.record(
+                AuditOp::Refused,
+                index,
+                Some(key),
+                None,
+                generation,
+                "not_allowed",
+            )
+        })?;
+        self.record(
+            AuditOp::Destroy,
+            index,
+            Some(key),
+            None,
+            generation,
+            "requested",
+        );
         match self.provider.destroy_key(key, opts) {
             Ok(()) => {
                 let dropped = self.drop_where(|s| &s.key == key);

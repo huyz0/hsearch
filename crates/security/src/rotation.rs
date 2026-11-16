@@ -7,6 +7,11 @@
 //! * [`PolicyGate`] is policy freshness for one index: a policy older than its allowed age, or one that is a
 //!   revocation, refuses every operation. It never extends freshness from a late clock or a lost message.
 //!
+//! **Retained roots must be pinned.** A point-in-time read, a snapshot or a manifest inside its retention
+//! window needs the envelopes it was written with; the inventory only knows about roots that were pinned, so
+//! retention is expressed as holding a pin until the retention ends. A historical root nobody pinned is
+//! invisible here, and retiring a version it needs breaks it.
+//!
 //! The caller owns the I/O: writing the overlay object, proving it unwraps and opens the header, and the
 //! atomic publication of the selection. This module only says which step may follow which.
 
@@ -46,6 +51,8 @@ pub enum RotationError {
     Retired,
     /// A reader pins the object.
     Pinned,
+    /// The object already exists.
+    Exists,
 }
 
 struct ObjectState {
@@ -77,8 +84,15 @@ impl Inventory {
         Self::default()
     }
 
-    /// Adds an object with the inline envelope it was written with.
-    pub fn add_object(&mut self, object: Object, inline: Envelope) {
+    /// Adds an object with the inline envelope it was written with. Refuses an object that exists (which
+    /// would drop its published overlay) and an envelope whose version was retired.
+    pub fn add_object(&mut self, object: Object, inline: Envelope) -> Result<(), RotationError> {
+        if self.objects.contains_key(&object) {
+            return Err(RotationError::Exists);
+        }
+        if self.is_retired_envelope(&inline) {
+            return Err(RotationError::Retired);
+        }
         self.objects.insert(
             object,
             ObjectState {
@@ -87,6 +101,7 @@ impl Inventory {
                 published: None,
             },
         );
+        Ok(())
     }
 
     /// Removes an object (garbage collection). Refused while any reader pins it.
@@ -149,6 +164,8 @@ impl Inventory {
             }
             Some((overlay, true)) => {
                 if retired.contains(&(overlay.key.clone(), overlay.version.clone())) {
+                    // Still staged: the owner can stage another version over it.
+                    state.staged = Some((overlay, true));
                     return Err(RotationError::Retired);
                 }
                 state.published = Some(overlay);
@@ -217,6 +234,9 @@ impl Inventory {
     /// Retires a key version, so no overlay may be staged under it and the provider may disable it. Refused
     /// while anything selects it or any live reader holds it.
     pub fn retire(&mut self, key: &KeyRef, version: &KeyVersion) -> Result<(), RotationError> {
+        if self.is_retired(key, version) {
+            return Ok(());
+        }
         let busy = self.users_of(|e| &e.key == key && &e.version == version);
         if busy > 0 {
             return Err(RotationError::InUse(busy));
@@ -230,13 +250,13 @@ impl Inventory {
         self.retired.contains(&(key.clone(), version.clone()))
     }
 
-    /// A restart: staged and verified overlays are lost, readers die, and what was published and retired
-    /// persists.
+    /// A restart: staged and verified overlays are lost; what was published and retired persists, and so do
+    /// pinned roots. A root is a durable record (the pin kind in `formats.md`), not a process: readers on
+    /// other nodes survive this node's restart, so a restart must never make a version look unused.
     pub fn crash(&mut self) {
         for state in self.objects.values_mut() {
             state.staged = None;
         }
-        self.roots.clear();
     }
 }
 
@@ -249,7 +269,8 @@ pub enum GateError {
     Stale,
     /// The accepted policy is a revocation.
     Revoked,
-    /// A lower generation than the one held, or a changed meaning for the same generation.
+    /// A lower generation than the one held, a changed meaning for the same generation, or a clock that
+    /// moved backwards.
     Regressed,
 }
 
@@ -290,7 +311,10 @@ impl PolicyGate {
                 if revoked != held.revoked {
                     return Err(GateError::Regressed);
                 }
-                held.refreshed_at = held.refreshed_at.max(now);
+                if now < held.refreshed_at {
+                    return Err(GateError::Regressed);
+                }
+                held.refreshed_at = now;
                 return Ok(());
             }
         }
@@ -302,16 +326,31 @@ impl PolicyGate {
         Ok(())
     }
 
-    /// The generation operations may run under at `now`, or why none may. A clock that went backwards never
-    /// extends freshness beyond `max_age` from the last delivery as the caller saw it.
+    /// The generation operations may run under at `now`, or why none may. A clock earlier than the last
+    /// delivery is not trusted: it is `Stale`, never fresh, so a backwards step cannot extend freshness.
+    /// `now` must come from the node's own monotonic clock, never from a message: the gate trusts its caller
+    /// for the time and for the authenticity of the channel a policy arrived on (M05.01's job).
     pub fn check(&self, now: Duration) -> Result<u64, GateError> {
         let held = self.held.as_ref().ok_or(GateError::NeverAccepted)?;
         if held.revoked {
             return Err(GateError::Revoked);
         }
-        if now.saturating_sub(held.refreshed_at) > self.max_age {
-            return Err(GateError::Stale);
+        match now.checked_sub(held.refreshed_at) {
+            Some(age) if age <= self.max_age => {}
+            _ => return Err(GateError::Stale),
         }
         Ok(held.generation)
     }
+}
+
+/// The longest a revoked index can keep being served by a node that never received the revocation:
+/// `max_age` when every operation consults the [`PolicyGate`], otherwise the data-key cache lifetime. This
+/// is a bound derived from those two settings, not a measurement of a channel.
+pub fn revocation_bound(max_age: Duration, cache_ttl: Duration, consults_gate: bool) -> Duration {
+    if consults_gate { max_age } else { cache_ttl }
+}
+
+/// Whether the bound meets a revocation target such as the plan's 60 seconds.
+pub fn meets_target(bound: Duration, target: Duration) -> bool {
+    bound <= target
 }

@@ -53,8 +53,9 @@ fn a_policy_is_fresh_for_exactly_its_allowed_age_and_then_fails_closed() {
         gate.check(secs(130) + Duration::from_nanos(1)),
         Err(GateError::Stale)
     );
-    // Time moving backwards (a clock the caller got wrong) never extends freshness.
-    assert_eq!(gate.check(secs(50)), Ok(7));
+    // Time moving backwards (a clock the caller got wrong) is not trusted: it never extends freshness.
+    assert_eq!(gate.check(secs(50)), Err(GateError::Stale));
+    assert_eq!(gate.accept(7, false, secs(50)), Err(GateError::Regressed));
 }
 
 #[test]
@@ -108,8 +109,8 @@ fn a_node_cut_off_from_policy_serves_a_revoked_index_for_at_most_the_allowed_age
 
 fn world() -> Inventory {
     let mut inv = Inventory::new();
-    inv.add_object(O1, env("a", "v1"));
-    inv.add_object(O2, env("a", "v1"));
+    inv.add_object(O1, env("a", "v1")).unwrap();
+    inv.add_object(O2, env("a", "v1")).unwrap();
     inv
 }
 
@@ -145,7 +146,7 @@ fn an_overlay_is_staged_then_verified_then_published_and_only_then_selected() {
 fn a_key_version_is_not_retired_because_new_writes_use_another() {
     let mut inv = world();
     // New objects use v2; the old ones still depend on v1.
-    inv.add_object([3; 16], env("a", "v2"));
+    inv.add_object([3; 16], env("a", "v2")).unwrap();
     assert_eq!(
         inv.retire(&key("a"), &KeyVersion::new("v1").unwrap()),
         Err(RotationError::InUse(2))
@@ -206,7 +207,7 @@ fn a_pinned_object_cannot_be_collected_and_a_retired_version_cannot_be_staged() 
 }
 
 #[test]
-fn a_restart_loses_unpublished_overlays_and_readers_but_keeps_what_was_published() {
+fn a_restart_loses_unpublished_overlays_but_keeps_published_ones_retirements_and_pinned_roots() {
     let mut inv = world();
     inv.stage(O1, env("a", "v2")).unwrap();
     inv.verified(O1).unwrap();
@@ -221,7 +222,9 @@ fn a_restart_loses_unpublished_overlays_and_readers_but_keeps_what_was_published
         &env("a", "v1"),
         "crash before publication: the inline wrapper reads"
     );
-    assert_eq!(inv.root_envelope(root, O1), Err(RotationError::UnknownRoot));
+    // Pinned roots are durable records: they survive, and keep their envelopes.
+    assert_eq!(inv.root_envelope(root, O1).unwrap(), &env("a", "v2"));
+    assert_eq!(inv.root_envelope(root, O2).unwrap(), &env("a", "v1"));
     // Publishing after a restart needs the overlay staged and verified again.
     assert_eq!(inv.publish(O2), Err(RotationError::NotStaged));
 }
@@ -229,7 +232,7 @@ fn a_restart_loses_unpublished_overlays_and_readers_but_keeps_what_was_published
 #[test]
 fn retirements_survive_a_restart() {
     let mut inv = Inventory::new();
-    inv.add_object(O1, env("a", "v1"));
+    inv.add_object(O1, env("a", "v1")).unwrap();
     inv.stage(O1, env("a", "v2")).unwrap();
     inv.verified(O1).unwrap();
     inv.publish(O1).unwrap();
@@ -302,8 +305,8 @@ impl Model {
 
 fn run(history: &[Step]) {
     let mut inv = Inventory::new();
-    inv.add_object(O1, env("a", "v1"));
-    inv.add_object(O2, env("a", "v1"));
+    inv.add_object(O1, env("a", "v1")).unwrap();
+    inv.add_object(O2, env("a", "v1")).unwrap();
     let mut m = Model::new();
     let objects = [O1, O2];
     let mut roots: Vec<u64> = Vec::new();
@@ -386,8 +389,6 @@ fn run(history: &[Step]) {
             }
             Step::Crash => {
                 inv.crash();
-                roots.clear();
-                m.roots.clear();
                 m.staged = [0; 2];
             }
         }
@@ -443,7 +444,6 @@ fn every_history_of_five_steps_keeps_every_live_reader_on_a_version_that_can_sti
 
 struct Rig {
     kms: Arc<TestKms>,
-    clock: Arc<ManualClock>,
     audit: Arc<MemoryAuditSink>,
     keys: KeyManager,
 }
@@ -465,12 +465,7 @@ fn rig() -> Rig {
         clock.clone(),
     )
     .unwrap();
-    Rig {
-        kms,
-        clock,
-        audit,
-        keys,
-    }
+    Rig { kms, audit, keys }
 }
 
 fn ctx(index: &str, object: u8) -> KeyContext {
@@ -489,8 +484,7 @@ fn opts() -> CallOptions {
 fn destroying_an_index_key_makes_its_objects_unreadable_everywhere_and_for_good() {
     let r = rig();
     let a = IndexId::new("alpha").unwrap();
-    let b = IndexId::new("beta").unwrap();
-    let (dek_a, wrapped_a) = r
+    let (_dek_a, wrapped_a) = r
         .keys
         .create_object_key(Some(&key("a")), &ctx("alpha", 1), 1, &opts())
         .unwrap();
@@ -537,26 +531,26 @@ fn destroying_an_index_key_makes_its_objects_unreadable_everywhere_and_for_good(
             .unwrap_err(),
         ProviderError::Destroyed
     );
-    let _ = dek_a;
     // Another index is untouched.
     assert!(
         r.keys
             .open_object_key(&wrapped_b, &ctx("beta", 2), 1, &opts())
             .is_ok()
     );
-    let _ = b;
-    // The destruction is in the audit log, once, with the key and the generation.
+    // The destruction is in the audit log: requested, then ok, with the key and generation.
     let destroys: Vec<_> = r
         .audit
         .events()
         .into_iter()
         .filter(|e| e.op == AuditOp::Destroy)
         .collect();
-    assert_eq!(destroys.len(), 1);
-    assert_eq!(destroys[0].outcome, "ok");
-    assert_eq!(destroys[0].key.as_ref(), Some(&key("a")));
-    assert_eq!(destroys[0].generation, 2);
-    assert!(destroys[0].to_json().contains("\"op\":\"destroy\""));
+    assert_eq!(destroys.len(), 2);
+    assert_eq!(destroys[0].outcome, "requested");
+    let last = destroys.last().unwrap();
+    assert_eq!(last.outcome, "ok");
+    assert_eq!(last.key.as_ref(), Some(&key("a")));
+    assert_eq!(last.generation, 2);
+    assert!(last.to_json().contains("\"op\":\"destroy\""));
 }
 
 #[test]
@@ -671,7 +665,6 @@ fn rotation_and_revocation_are_audited_and_a_revocation_drops_that_index_only() 
             (AuditOp::Revoke, None, 3)
         ]
     );
-    let _ = r.clock;
 }
 
 #[test]
@@ -684,4 +677,80 @@ fn an_overlay_whose_version_was_retired_after_staging_is_not_published() {
         .unwrap();
     assert_eq!(inv.publish(O1), Err(RotationError::Retired));
     assert_eq!(inv.selected(O1).unwrap(), &env("a", "v1"));
+}
+
+#[test]
+fn an_object_cannot_be_added_under_a_retired_version_or_replace_an_existing_one() {
+    let mut inv = world();
+    inv.stage(O1, env("a", "v2")).unwrap();
+    inv.verified(O1).unwrap();
+    inv.publish(O1).unwrap();
+    // Re-adding an existing object would drop its published overlay.
+    assert_eq!(
+        inv.add_object(O1, env("a", "v1")),
+        Err(RotationError::Exists)
+    );
+    assert_eq!(inv.selected(O1).unwrap(), &env("a", "v2"));
+    inv.stage(O2, env("a", "v2")).unwrap();
+    inv.verified(O2).unwrap();
+    inv.publish(O2).unwrap();
+    inv.retire(&key("a"), &KeyVersion::new("v1").unwrap())
+        .unwrap();
+    assert_eq!(
+        inv.add_object([3; 16], env("a", "v1")),
+        Err(RotationError::Retired)
+    );
+    // Retiring again is the same fact.
+    inv.retire(&key("a"), &KeyVersion::new("v1").unwrap())
+        .unwrap();
+}
+
+#[test]
+fn a_publication_refused_because_the_version_was_retired_leaves_the_overlay_staged() {
+    let mut inv = world();
+    inv.stage(O1, env("a", "v2")).unwrap();
+    inv.verified(O1).unwrap();
+    inv.retire(&key("a"), &KeyVersion::new("v2").unwrap())
+        .unwrap();
+    assert_eq!(inv.publish(O1), Err(RotationError::Retired));
+    // Still staged and verified: publishing again is refused the same way, not as "nothing staged".
+    assert_eq!(inv.publish(O1), Err(RotationError::Retired));
+}
+
+#[test]
+fn the_revocation_bound_is_the_gate_age_when_readers_consult_it_and_the_cache_lifetime_when_not() {
+    use hsearch_security::rotation::{meets_target, revocation_bound};
+    let (age, ttl, target) = (secs(30), secs(300), secs(60));
+    assert_eq!(revocation_bound(age, ttl, true), age);
+    assert_eq!(revocation_bound(age, ttl, false), ttl);
+    assert!(meets_target(revocation_bound(age, ttl, true), target));
+    assert!(!meets_target(revocation_bound(age, ttl, false), target));
+    assert!(meets_target(target, target));
+    assert!(!meets_target(target + Duration::from_nanos(1), target));
+}
+
+#[test]
+fn shredding_the_default_key_or_an_unlisted_key_is_refused_before_the_provider_is_touched() {
+    let r = rig();
+    let a = IndexId::new("alpha").unwrap();
+    r.kms.create_key(&KeyRef::new("test/other/k").unwrap()).ok();
+    let err = r
+        .keys
+        .shred_key(&key("default"), &a, 1, &opts())
+        .unwrap_err();
+    assert_eq!(err, KeyError::DefaultKeyProtected);
+    let off = KeyRef::new("test/other/k").unwrap();
+    let err = r.keys.shred_key(&off, &a, 1, &opts()).unwrap_err();
+    assert_eq!(err, KeyError::NotAllowed);
+    // Neither key was destroyed, and no destroy was even requested.
+    assert!(r.kms.key_info(&key("default"), &opts()).is_ok());
+    assert!(r.audit.events().iter().all(|e| e.op != AuditOp::Destroy));
+    assert_eq!(
+        r.audit
+            .events()
+            .iter()
+            .filter(|e| e.op == AuditOp::Refused)
+            .count(),
+        2
+    );
 }
