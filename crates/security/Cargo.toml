@@ -33,6 +33,10 @@ name = "block"
 required-features = ["test-kms"]
 
 [[test]]
+name = "rotation"
+required-features = ["test-kms"]
+
+[[test]]
 name = "keys"
 required-features = ["test-kms"]
 

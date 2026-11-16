@@ -613,6 +613,64 @@ impl KeyManager {
         n
     }
 
+    /// Crypto-shredding: destroys the customer key at the provider, then drops every cached data key it
+    /// wrapped, so no node keeps reading with a copy it already held. Returns how many cached keys were
+    /// dropped. If the provider cannot destroy the key, nothing is dropped and the refusal is audited, so a
+    /// failed shred is visible and the keys keep working only as long as they would have anyway.
+    pub fn shred_key(
+        &self,
+        key: &KeyRef,
+        index: &IndexId,
+        generation: u64,
+        opts: &CallOptions,
+    ) -> Result<usize, KeyError> {
+        match self.provider.destroy_key(key, opts) {
+            Ok(()) => {
+                let dropped = self.drop_where(|s| &s.key == key);
+                self.record(AuditOp::Destroy, index, Some(key), None, generation, "ok");
+                Ok(dropped)
+            }
+            Err(e) => {
+                self.record(
+                    AuditOp::Destroy,
+                    index,
+                    Some(key),
+                    None,
+                    generation,
+                    e.code(),
+                );
+                Err(e.into())
+            }
+        }
+    }
+
+    /// Applies a revocation this node accepted: drops the index's cached data keys, so the next use asks
+    /// the provider, and audits it. Returns how many were dropped.
+    pub fn apply_revocation(&self, index: &IndexId, key: &KeyRef, generation: u64) -> usize {
+        let dropped = self.drop_where(|s| &s.index == index);
+        self.record(AuditOp::Revoke, index, Some(key), None, generation, "ok");
+        dropped
+    }
+
+    /// Audits that `key` gained `version` at the provider. Rotation does not touch cached keys: wraps made
+    /// under older versions keep unwrapping until their version is retired.
+    pub fn note_rotation(
+        &self,
+        index: &IndexId,
+        key: &KeyRef,
+        version: &KeyVersion,
+        generation: u64,
+    ) {
+        self.record(
+            AuditOp::Rotate,
+            index,
+            Some(key),
+            Some(version),
+            generation,
+            "ok",
+        );
+    }
+
     fn shard(&self, key: &CacheKey) -> &Shard {
         // The digest is SHA-256, so any eight bytes of it are uniform.
         let n = u64::from_le_bytes([

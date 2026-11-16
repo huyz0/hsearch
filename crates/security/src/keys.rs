@@ -309,6 +309,8 @@ pub enum ProviderError {
     Denied,
     /// The key was revoked, disabled or scheduled for deletion by its owner.
     Revoked,
+    /// The key was destroyed (crypto-shredding): its material is gone and nothing can restore it.
+    Destroyed,
     /// No such key or version.
     NotFound,
     /// The wrapped key names a version the provider does not hold or no longer permits.
@@ -334,6 +336,7 @@ impl ProviderError {
             ProviderError::Throttled { .. } => "throttled",
             ProviderError::Denied => "denied",
             ProviderError::Revoked => "revoked",
+            ProviderError::Destroyed => "destroyed",
             ProviderError::NotFound => "not_found",
             ProviderError::VersionMismatch => "version_mismatch",
             ProviderError::ContextMismatch => "context_mismatch",
@@ -389,6 +392,15 @@ pub trait KeyProvider: Send + Sync {
         ctx: &KeyContext,
         opts: &CallOptions,
     ) -> Result<SecretKey, ProviderError>;
+
+    /// Destroys the customer key for good (crypto-shredding): every later wrap and unwrap fails with
+    /// [`ProviderError::Destroyed`] and nothing restores it. A provider that cannot destroy a key says
+    /// [`ProviderError::Unsupported`]; a provider that only schedules deletion must not report success
+    /// until the key is unusable.
+    fn destroy_key(&self, key: &KeyRef, opts: &CallOptions) -> Result<(), ProviderError> {
+        let _ = (key, opts);
+        Err(ProviderError::Unsupported)
+    }
 }
 
 /// Whether the node runs for real tenants.
