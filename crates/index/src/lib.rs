@@ -6,8 +6,20 @@
 //! the engine's segments and a root by conditional update, and rebuilds itself
 //! from the store alone by replaying the log, with no LIST on any path.
 //!
-//! The v0 formats are disposable. Out of scope, by design: fencing across
-//! concurrent owners beyond refusing a stale root, multi-node routing,
+//! Opening seals the log: the successor creates a fence at the first absent
+//! slot, so a suspended predecessor's late PUT is refused rather than
+//! acknowledged behind the successor's view (the M03.04 recovery rule). Fences
+//! are kept and replayed as one consumed position each. Cost: one PUT per open,
+//! and one HEAD and GET per retained fence on every later open until
+//! checkpointed recovery lets them be skipped. Two openers racing both seal;
+//! the root CAS picks one and the other is fenced on its first write (safe,
+//! not live under a storm of openers).
+//!
+//! The v0 formats are disposable. Out of scope, by design: reclaiming slots
+//! below a published cover (the seal then starts at the first absent slot at or
+//! above the cover, never from slot 0; not exercisable until segment-based
+//! writer recovery exists), fencing across
+//! concurrent owners beyond the seal and refusing a stale root, multi-node routing,
 //! authority barriers, the coalesced refresh and visibility target (M06.07),
 //! segment-based writer recovery (the engine reopens only from an in-process
 //! checkpoint today, so a restarted writer replays the whole log) and sharing a

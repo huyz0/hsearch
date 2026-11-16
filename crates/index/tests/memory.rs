@@ -144,7 +144,8 @@ fn publish_makes_segments_a_search_only_reader_can_open() {
         )
         .unwrap();
     let published = index.publish().unwrap();
-    assert_eq!(published.covered, 1);
+    // Position 0 is the fence the open sealed with; the bulk is position 1.
+    assert_eq!(published.covered, 2);
     assert!(published.files > 0);
     // Publishing again with nothing new is a no-op that keeps the same answer.
     assert_eq!(index.publish().unwrap(), published);
@@ -249,8 +250,8 @@ fn a_corrupt_or_missing_slot_is_never_read_as_the_end() {
         Some(Error::Exists)
     );
     index.close();
-    // Plant garbage in slot 0 and reopen.
-    let key = hsearch_object::ObjectKey::new(b"orders/log/00000000000000000000").unwrap();
+    // Plant garbage in the first slot after create's fence and reopen.
+    let key = hsearch_object::ObjectKey::new(b"orders/log/00000000000000000001").unwrap();
     let request = hsearch_object::Mutation {
         request_id: hsearch_object::RequestId::new(b"plant").unwrap(),
         key,
@@ -636,6 +637,8 @@ struct Flaky {
     removed: std::sync::Mutex<Vec<(String, bool)>>,
     commit_then_unknown: std::sync::Mutex<Option<&'static str>>,
     resolve_blind: std::sync::atomic::AtomicBool,
+    /// A predecessor's slot that lands just before the next create under `/log/`.
+    race: std::sync::Mutex<Option<hsearch_object::Mutation>>,
     can_delete: bool,
     created: std::sync::Mutex<Vec<String>>,
 }
@@ -649,6 +652,7 @@ impl Flaky {
             removed: std::sync::Mutex::new(Vec::new()),
             commit_then_unknown: std::sync::Mutex::new(None),
             resolve_blind: std::sync::atomic::AtomicBool::new(false),
+            race: std::sync::Mutex::new(None),
             can_delete,
             created: std::sync::Mutex::new(Vec::new()),
         }
@@ -672,6 +676,14 @@ impl hsearch_object::ObjectBackend for Flaky {
             .lock()
             .unwrap()
             .push(String::from_utf8_lossy(r.key.as_bytes()).into_owned());
+        if String::from_utf8_lossy(r.key.as_bytes()).contains("/log/")
+            && let Some(planted) = self.race.lock().unwrap().take()
+        {
+            return Box::pin(async move {
+                self.inner.create(c, &planted).await?;
+                self.inner.create(c, r).await
+            });
+        }
         let hit = {
             let mut refuse = self.refuse.lock().unwrap();
             match *refuse {
@@ -917,7 +929,7 @@ fn intent(store: &Flaky) -> Vec<hsearch_index::format::IntentEntry> {
 }
 
 #[test]
-fn a_crash_between_the_chunks_and_the_slot_is_cleaned_up_once_the_log_passes_it() {
+fn a_crash_between_the_chunks_and_the_slot_is_cleaned_up_when_the_next_writer_opens() {
     let store = Arc::new(Flaky::new(true));
     let (one, two, three) = (
         Scratch::new("crash-a"),
@@ -947,20 +959,11 @@ fn a_crash_between_the_chunks_and_the_slot_is_cleaned_up_once_the_log_passes_it(
     let orphans = chunk_keys(&recorded[0]);
     assert_eq!(orphans.len(), 2);
     assert!(orphans.iter().all(|k| read_object(&store, k).is_some()));
-    assert!(read_object(&store, "docs/log/00000000000000000000").is_none());
+    assert!(read_object(&store, &format!("docs/log/{:020}", recorded[0].seq)).is_none());
 
-    // The next writer finds the log has not reached that position: the slot
-    // may still land, so nothing is removed.
+    // Opening seals that position with a fence, so the crashed writer's slot can
+    // never land there: its chunks are certain orphans and go at once.
     let index = Index::open(Arc::clone(&store), "docs", big_schema(), &two.0).unwrap();
-    assert_eq!(store.deleted.load(std::sync::atomic::Ordering::Relaxed), 0);
-    assert!(orphans.iter().all(|k| read_object(&store, k).is_some()));
-
-    // It writes that position itself, which makes the orphan certain.
-    index
-        .bulk(vec![big_put("b", big_body())], Wait::Searchable)
-        .unwrap();
-    // The reclaim runs after the reply; a refresh is queued behind it.
-    index.refresh().unwrap();
     assert!(orphans.iter().all(|k| read_object(&store, k).is_none()));
     let removed = store.removed.lock().unwrap().clone();
     assert_eq!(
@@ -971,6 +974,9 @@ fn a_crash_between_the_chunks_and_the_slot_is_cleaned_up_once_the_log_passes_it(
         2,
         "{removed:?}"
     );
+    index
+        .bulk(vec![big_put("b", big_body())], Wait::Searchable)
+        .unwrap();
     // Its own chunks are untouched: a fresh process replays the document.
     assert_eq!(needles(&index), 1);
     index.close();
@@ -1021,6 +1027,49 @@ fn a_slot_of_small_fields_writes_no_intent() {
     assert!(
         created.iter().all(|k| !k.contains("/intent")),
         "{created:?}"
+    );
+}
+
+fn planted_slot(index: &str, seq: u64, id: &str, n: i64) -> hsearch_object::Mutation {
+    let bytes = hsearch_index::format::encode_slot(&hsearch_index::format::Slot {
+        seq,
+        first_version: 1,
+        ops: vec![put(id, "x", n)],
+    })
+    .unwrap();
+    hsearch_object::Mutation {
+        request_id: hsearch_object::RequestId::new(b"predecessor-late-put").unwrap(),
+        key: hsearch_object::ObjectKey::new(format!("{index}/log/{seq:020}").as_bytes()).unwrap(),
+        payload: hsearch_object::Payload::new(&bytes).unwrap(),
+        metadata: hsearch_object::Metadata::new(b"").unwrap(),
+        precondition: hsearch_object::Precondition::Absent,
+    }
+}
+
+#[test]
+fn a_predecessor_write_that_beats_the_seal_is_replayed_and_the_seal_moves_on() {
+    let store = Arc::new(Flaky::new(true));
+    let (one, two, three) = (
+        Scratch::new("race-a"),
+        Scratch::new("race-b"),
+        Scratch::new("race-c"),
+    );
+    Index::create(Arc::clone(&store), "orders", schema(), &one.0)
+        .unwrap()
+        .close();
+    // The predecessor's PUT lands at position 1 after the successor saw it absent
+    // and before its fence: acknowledged, so it must be in the successor's state.
+    *store.race.lock().unwrap() = Some(planted_slot("orders", 1, "late", 7));
+    let index = Index::open(Arc::clone(&store), "orders", schema(), &two.0).unwrap();
+    assert_eq!(all(&index.snapshot().unwrap()), (1, vec!["late".into()]));
+    index
+        .bulk(vec![put("n", "x", 8)], Wait::Searchable)
+        .unwrap();
+    index.close();
+    let again = Index::open(store, "orders", schema(), &three.0).unwrap();
+    assert_eq!(
+        all(&again.snapshot().unwrap()),
+        (2, vec!["late".into(), "n".into()])
     );
 }
 
@@ -1079,5 +1128,89 @@ fn a_stale_writer_is_fenced_by_the_intent_before_it_writes_a_chunk() {
     assert!(
         created.iter().all(|k| !k.contains("/blob/")),
         "a fenced writer wrote chunks: {created:?}"
+    );
+}
+
+#[test]
+fn a_refused_fence_fails_the_open_and_changes_nothing() {
+    let store = Arc::new(Flaky::new(true));
+    let (one, two, three) = (
+        Scratch::new("refuse-a"),
+        Scratch::new("refuse-b"),
+        Scratch::new("refuse-c"),
+    );
+    Index::create(Arc::clone(&store), "orders", schema(), &one.0)
+        .unwrap()
+        .close();
+    *store.refuse.lock().unwrap() = Some("/log/");
+    let refused = Index::open(Arc::clone(&store), "orders", schema(), &two.0);
+    assert!(matches!(refused.err(), Some(Error::Store(_))));
+    // Nothing was written, so the next open seals and serves normally.
+    let index = Index::open(store, "orders", schema(), &three.0).unwrap();
+    index
+        .bulk(vec![put("a", "x", 1)], Wait::Searchable)
+        .unwrap();
+}
+
+#[test]
+fn a_fence_with_an_unresolvable_outcome_fails_the_open_and_the_next_one_reads_it() {
+    let store = Arc::new(Flaky::new(true));
+    let (one, two, three) = (
+        Scratch::new("unk-a"),
+        Scratch::new("unk-b"),
+        Scratch::new("unk-c"),
+    );
+    Index::create(Arc::clone(&store), "orders", schema(), &one.0)
+        .unwrap()
+        .close();
+    *store.commit_then_unknown.lock().unwrap() = Some("/log/");
+    store
+        .resolve_blind
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let unknown = Index::open(Arc::clone(&store), "orders", schema(), &two.0);
+    assert_eq!(unknown.err(), Some(Error::Unknown));
+    // The fence may exist: the next open replays it or seals past it.
+    store
+        .resolve_blind
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let index = Index::open(store, "orders", schema(), &three.0).unwrap();
+    index
+        .bulk(vec![put("a", "x", 1)], Wait::Searchable)
+        .unwrap();
+}
+
+#[test]
+fn a_fence_claiming_another_position_is_corrupt_not_skipped() {
+    let store = store();
+    let (one, two) = (Scratch::new("badfence-a"), Scratch::new("badfence-b"));
+    Index::create(Arc::clone(&store), "orders", schema(), &one.0)
+        .unwrap()
+        .close();
+    let mut planted = planted_slot("orders", 1, "x", 1);
+    planted.payload =
+        hsearch_object::Payload::new(&hsearch_index::format::encode_fence(5)).unwrap();
+    let ctx = hsearch_object::RequestContext::new(
+        std::time::Duration::from_secs(5),
+        hsearch_object::Cancellation::default(),
+        hsearch_object::Budget {
+            request_bytes: 1 << 20,
+            response_bytes: 1 << 20,
+            attempts: 4,
+        },
+    )
+    .unwrap();
+    let mut future = std::pin::pin!(hsearch_object::ObjectBackend::create(
+        &*store, &ctx, &planted
+    ));
+    let waker = std::task::Waker::noop();
+    assert!(matches!(
+        future
+            .as_mut()
+            .poll(&mut std::task::Context::from_waker(waker)),
+        std::task::Poll::Ready(Ok(_))
+    ));
+    assert_eq!(
+        Index::open(Arc::clone(&store), "orders", schema(), &two.0).err(),
+        Some(Error::Corrupt)
     );
 }

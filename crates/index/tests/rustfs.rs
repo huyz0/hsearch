@@ -80,8 +80,13 @@ fn requests_per_bulk_refresh_publish_and_open_never_list() {
     let before = store.counts();
     let index = Index::create(Arc::clone(&store), "orders", schema(), &one.0).unwrap();
     let created = store.counts();
-    // create: root PUT, then open reads the root and probes slot 0, and bumps the root.
-    assert_eq!(created.put - before.put, 2, "root create + root bump");
+    // create: root PUT, then open reads the root, probes slot 0, seals it with a
+    // fence and bumps the root.
+    assert_eq!(
+        created.put - before.put,
+        3,
+        "root create + fence + root bump"
+    );
     assert_eq!(created.list, 0);
 
     let ops: Vec<_> = (0..100).map(|i| put(&format!("d{i}"), "x", i)).collect();
@@ -106,15 +111,21 @@ fn requests_per_bulk_refresh_publish_and_open_never_list() {
     let live = all(&index.snapshot().unwrap());
     index.close();
 
-    // Restart: the root, one head and one read per slot, one head past the end.
+    // Restart: the root, one head and one read per position (the fence and the
+    // slot), one head past the end, then one fence PUT and the root bump.
     let reopened = Index::open(Arc::clone(&store), "orders", schema(), &two.0).unwrap();
     let opened = store.counts();
     assert_eq!(opened.list, 0, "no LIST on the startup path");
-    assert_eq!(opened.get - after_publish.get, 1 + 1, "root + the one slot");
+    assert_eq!(opened.get - after_publish.get, 1 + 2, "root + fence + slot");
     assert_eq!(
         opened.head - after_publish.head,
-        1 + 1 + 1 + 1,
-        "root + intent (absent: no large string was ever written) + slot + end of log"
+        1 + 1 + 2 + 1,
+        "root + intent (absent: no large string was ever written) + fence + slot + end of log"
+    );
+    assert_eq!(
+        opened.put - after_publish.put,
+        2,
+        "one fence PUT per open, plus the root bump"
     );
     assert_eq!(all(&reopened.snapshot().unwrap()), live);
 
@@ -456,25 +467,79 @@ fn a_crash_after_the_chunks_is_recorded_and_the_next_writer_removes_them() {
         .collect();
     assert_eq!(chunks.len(), 2);
     assert!(chunks.iter().all(|k| read_object(&store, k).is_some()));
-    assert!(read_object(&store, "big/log/00000000000000000000").is_none());
+    assert!(read_object(&store, &format!("big/log/{:020}", recorded[0].seq)).is_none());
 
-    // The next writer must not remove them yet: the slot may still land.
+    // Opening seals the position, so nothing can land there: the chunks go at once.
     let index = Index::open(Arc::clone(&store), "big", big_schema(), &next.0).unwrap();
-    assert!(chunks.iter().all(|k| read_object(&store, k).is_some()));
+    assert!(chunks.iter().all(|k| read_object(&store, k).is_none()));
 
-    // Writing that position makes them certain orphans. Four PUTs: two chunks,
-    // the intent, the slot, and no LIST.
+    // A new large write costs four PUTs: two chunks, the intent, the slot; no LIST.
     let before = store.counts();
     index.bulk(vec![big_put("kept")], Wait::Searchable).unwrap();
-    index.refresh().unwrap();
     let after = store.counts();
     assert_eq!(after.put - before.put, 4, "chunks + intent + slot");
     assert_eq!(after.list, 0);
-    assert!(chunks.iter().all(|k| read_object(&store, k).is_none()));
     assert_eq!(needles(&index), 1);
 
     // A fresh process replays the committed document.
     index.close();
     let again = Index::open(Arc::clone(&store), "big", big_schema(), &child.0).unwrap();
     assert_eq!(needles(&again), 1);
+}
+
+/// Blocks the writer thread at `BeforeSlot` once armed, until released.
+struct Hold {
+    armed: std::sync::atomic::AtomicBool,
+    reached: std::sync::mpsc::Sender<()>,
+    release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+}
+impl Hooks for Hold {
+    fn at(&self, point: Point) {
+        if point == Point::BeforeSlot && self.armed.swap(false, Ordering::SeqCst) {
+            self.reached.send(()).unwrap();
+            let _ = self.release.lock().unwrap().recv();
+        }
+    }
+}
+
+#[test]
+fn a_suspended_predecessors_late_put_is_refused_by_the_successors_fence() {
+    let Some(config) = config(fresh_bucket()) else {
+        return;
+    };
+    let store = store_for(config, true);
+    let (one, two, three) = (
+        Scratch::new("seal-a"),
+        Scratch::new("seal-b"),
+        Scratch::new("seal-c"),
+    );
+    Index::create(Arc::clone(&store), "seal", schema(), &one.0)
+        .unwrap()
+        .close();
+    let (reached, wait) = std::sync::mpsc::channel();
+    let (release, gate) = std::sync::mpsc::channel();
+    let hold = Arc::new(Hold {
+        armed: std::sync::atomic::AtomicBool::new(false),
+        reached,
+        release: std::sync::Mutex::new(gate),
+    });
+    let old = Arc::new(
+        Index::open_with(Arc::clone(&store), "seal", schema(), &one.0, hold.clone()).unwrap(),
+    );
+    hold.armed.store(true, Ordering::SeqCst);
+    let suspended = {
+        let old = Arc::clone(&old);
+        std::thread::spawn(move || old.bulk(vec![put("late", "x", 1)], Wait::Durable))
+    };
+    wait.recv().unwrap();
+    let new = Index::open(Arc::clone(&store), "seal", schema(), &two.0).unwrap();
+    release.send(()).unwrap();
+    assert_eq!(
+        suspended.join().unwrap().err(),
+        Some(hsearch_index::Error::Fenced)
+    );
+    new.bulk(vec![put("n", "x", 2)], Wait::Searchable).unwrap();
+    new.close();
+    let again = Index::open(store, "seal", schema(), &three.0).unwrap();
+    assert_eq!(all(&again.snapshot().unwrap()), (1, vec!["n".to_string()]));
 }
