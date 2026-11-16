@@ -209,3 +209,108 @@ fn requests_per_http_call_by_type_never_list() {
     assert_eq!(store.counts().list, 0);
     running.shutdown();
 }
+
+fn status_kb(field: &str) -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with(field))
+                .and_then(|l| l.split_whitespace().nth(1).and_then(|v| v.parse().ok()))
+        })
+        .unwrap_or(0)
+}
+
+/// M21.09 / PR-40: a 100 MiB text field is indexed, found by a term at its end,
+/// returned whole, inside the node's admission budget; one byte over the
+/// document limit is refused and nothing of it is committed.
+#[test]
+fn a_hundred_mib_text_field_is_found_by_its_last_term_returned_whole_and_bounded() {
+    use hsearch_node::Limits;
+    let Some(store) = store() else {
+        return;
+    };
+    const LIMIT: usize = 100 << 20;
+    const FACTOR: u64 = 32; // the node's admission charge per document byte
+    let charge = FACTOR * LIMIT as u64;
+    let budget = charge + (512 << 20);
+    let limits = Limits {
+        max_document_bytes: LIMIT as u64,
+        max_bulk_bytes: 128 << 20,
+        max_bulk_items: 100,
+        buffer_bytes: 128 << 20,
+        memory_budget_bytes: budget,
+        auto_merge_mb: 0,
+    };
+    let dir = Scratch::new("hundred-mib");
+    let node = Arc::new(Node::with_limits(Arc::clone(&store), dir.0.clone(), limits).unwrap());
+    let running = serve(node, "127.0.0.1:0", 2, false).unwrap();
+    let addr = running.addr;
+    assert_eq!(call(addr, "PUT", "/orders", MAPPING).0, 200);
+
+    // A document of exactly LIMIT bytes: the text fills what the JSON keys leave.
+    let wrap = |title: &str| {
+        format!(
+            "{{\"index\":{{\"_id\":\"big\"}}}}\n{{\"title\":\"{title}\",\"tag\":\"a\",\"n\":1,\"ok\":true,\"at\":1}}\n"
+        )
+    };
+    let overhead = wrap("").len() - "{\"index\":{\"_id\":\"big\"}}\n".len() - 1;
+    let fill = |bytes: usize| {
+        let mut t = String::with_capacity(bytes);
+        let mut i = 0u64;
+        while t.len() < bytes {
+            t.push_str(&format!("w{} ", i % 5000));
+            i += 1;
+        }
+        t.truncate(bytes - " zebra".len());
+        t.push_str(" zebra");
+        t
+    };
+    let title = fill(LIMIT - overhead);
+    assert_eq!(title.len() + overhead, LIMIT);
+    let body = wrap(&title);
+
+    let _ = std::fs::write("/proc/self/clear_refs", "5");
+    let baseline = status_kb("VmRSS:");
+    let (status, out) = call(addr, "POST", "/orders/_bulk?refresh=true", &body);
+    assert_eq!(
+        (status, out["items"][0]["index"]["status"].as_u64()),
+        (200, Some(201)),
+        "{out}"
+    );
+    let peak = status_kb("VmHWM:").saturating_sub(baseline) * 1024;
+    eprintln!(
+        "100 MiB document: peak over baseline {:.1} MiB ({:.1}x) against a {:.0} MiB admission charge (provisional)",
+        peak as f64 / 1_048_576.0,
+        peak as f64 / LIMIT as f64,
+        charge as f64 / 1_048_576.0
+    );
+    assert!(
+        peak < charge,
+        "peak {peak} exceeds the admission charge {charge}"
+    );
+    drop(body);
+
+    let (_, found) = call(
+        addr,
+        "POST",
+        "/orders/_search",
+        &json!({"query": {"match": {"title": "zebra"}}, "_source": ["n"]}).to_string(),
+    );
+    assert_eq!(found["hits"]["total"]["value"], json!(1), "{found}");
+    let (_, got) = call(addr, "GET", "/orders/_doc/big", "");
+    let back = got["_source"]["title"].as_str().expect("source");
+    assert_eq!(back.len(), title.len());
+    assert!(back == title, "the text came back changed");
+    drop(got);
+
+    // One byte over the limit: refused by name, nothing committed.
+    let over = wrap(&format!("{title}x").replace("\"big\"", "\"over\""));
+    let (status, out) = call(addr, "POST", "/orders/_bulk?refresh=true", &over);
+    assert_eq!(status, 200, "{out}");
+    assert_eq!(out["items"][0]["index"]["status"], json!(413), "{out}");
+    assert_eq!(call(addr, "GET", "/orders/_doc/over", "").0, 404);
+    let (_, all) = call(addr, "POST", "/orders/_search", r#"{"size":0}"#);
+    assert_eq!(all["hits"]["total"]["value"], json!(1), "{all}");
+    running.shutdown();
+}
