@@ -40,6 +40,7 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, Str
             "--memory-budget-bytes" => {
                 options.limits.memory_budget_bytes = number(&mut args, &arg)?;
             }
+            "--auto-merge-mb" => options.limits.auto_merge_mb = number(&mut args, &arg)?,
             "--max-fields" => options.mapping_limits.max_fields = number(&mut args, &arg)?,
             "--max-field-depth" => options.mapping_limits.max_depth = number(&mut args, &arg)?,
             "--max-nested-objects" => {
@@ -150,5 +151,26 @@ mod tests {
         assert!(parse(&["--max-field-depth", "0"]).is_err());
         assert!(parse(&["--max-nested-objects", "0"]).is_err());
         assert!(parse(&["--max-fields"]).is_err());
+    }
+
+    #[test]
+    fn auto_merge_is_on_by_default_and_a_flag_sets_or_disables_it() {
+        assert_eq!(parse(&[]).unwrap().limits.auto_merge_mb, 16);
+        assert_eq!(
+            parse(&["--auto-merge-mb", "64"])
+                .unwrap()
+                .limits
+                .auto_merge_mb,
+            64
+        );
+        assert_eq!(
+            parse(&["--auto-merge-mb", "0"])
+                .unwrap()
+                .limits
+                .auto_merge_mb,
+            0
+        );
+        assert!(parse(&["--auto-merge-mb", "1025"]).is_err());
+        assert!(parse(&["--auto-merge-mb"]).is_err());
     }
 }

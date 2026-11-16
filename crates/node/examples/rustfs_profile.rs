@@ -352,6 +352,7 @@ fn large(mib: f64) {
         max_bulk_items: 100,
         buffer_bytes: 256 << 20,
         memory_budget_bytes: 8192 << 20,
+        auto_merge_mb: 0,
     };
     let node = Node::with_limits(Arc::clone(&store), dir.clone(), limits).expect("node");
     node.create("orders", &serde_json::from_str::<Value>(MAPPING).unwrap())

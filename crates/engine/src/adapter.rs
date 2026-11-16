@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, TryLockError, atomic::AtomicUsize};
 use lucene_index::buffered_updates::Term;
 use lucene_index::document::Document;
 use lucene_index::index_writer::IndexWriter;
+use lucene_index::merge_policy::MergePolicyConfig;
 use lucene_index::segment_info::LuceneVersion;
 use lucene_search::directory_reader::DirectoryReader;
 
@@ -399,6 +400,7 @@ impl<'d> Engine<'d> {
         checkpoint: Option<Checkpoint>,
     ) -> Result<Self> {
         let buffered = schema.limits.buffered_documents;
+        let auto_merge_mb = schema.limits.auto_merge_mb;
         // Room for a full buffer of worst-case documents, never below 8 MiB.
         let ram_mb = (buffered as f64 * MAX_DOCUMENT_BYTES as f64 / 1_048_576.0).clamp(8.0, 256.0);
         Self::open_configured(directory, schema, checkpoint, move |writer| {
@@ -406,6 +408,12 @@ impl<'d> Engine<'d> {
             writer
                 .set_ram_buffer_size_mb(ram_mb)
                 .map_err(|_| Error::Native)?;
+            if auto_merge_mb > 0 {
+                writer.set_merge_policy(Some(MergePolicyConfig {
+                    max_merged_segment_size: (auto_merge_mb as u64) << 20,
+                    ..MergePolicyConfig::default()
+                }));
+            }
             writer
                 .set_max_buffered_docs(buffered as i32)
                 .map_err(|_| Error::Native)

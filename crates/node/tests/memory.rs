@@ -35,6 +35,7 @@ fn limits() -> Limits {
         max_bulk_items: 5000,
         buffer_bytes: BUFFER,
         memory_budget_bytes: 64 << 20,
+        auto_merge_mb: 0,
     }
 }
 

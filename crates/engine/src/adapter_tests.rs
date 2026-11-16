@@ -473,3 +473,63 @@ fn a_retry_differing_in_kind_version_value_type_or_delete_is_a_conflict() {
         );
     }
 }
+
+/// One document per refresh, `cycles` times; the segment count of the last snapshot,
+/// the first snapshot kept open throughout, and the document count of the last.
+fn refresh_cycles(auto_merge_mb: usize, cycles: usize) -> (usize, crate::reader::Snapshot, u64) {
+    use crate::{Kind, Limits, Query};
+    let schema = Schema::new(1, &[("body", Kind::Text)])
+        .unwrap()
+        .with_limits(Limits::scale().with_document_bytes(1 << 20))
+        .unwrap()
+        .with_auto_merge_mb(auto_merge_mb);
+    let directory = FaultDirectory::new();
+    let observed = crate::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+    let mut first = None;
+    let mut last = None;
+    for i in 0..cycles {
+        let id = format!("d{i}");
+        let batch = schema
+            .prepare(
+                &format!("r{i}"),
+                &[Mutation::Put {
+                    id: &id,
+                    version: 1,
+                    fields: &[("body", Value::String("quick fox"))],
+                }],
+            )
+            .unwrap();
+        engine.apply(batch).unwrap();
+        let snapshot = engine.refresh().unwrap();
+        if i == 0 {
+            first = Some(snapshot);
+        } else {
+            last = Some(snapshot);
+        }
+    }
+    let last = last.unwrap();
+    let segments = last.reader.segment_readers().len();
+    let total = last.search(&Query::All, &[], 0, &[]).unwrap().total;
+    drop(engine);
+    (segments, first.unwrap(), total)
+}
+
+#[test]
+fn without_auto_merge_every_refresh_adds_a_segment() {
+    let (segments, _, total) = refresh_cycles(0, 40);
+    assert_eq!((segments, total), (40, 40));
+}
+
+#[test]
+fn auto_merge_keeps_segments_few_and_an_open_snapshot_readable() {
+    let (segments, first, total) = refresh_cycles(16, 40);
+    assert_eq!(total, 40);
+    assert!(segments <= 20, "{segments} segments after 40 refreshes");
+    // A snapshot taken before the merges still answers from its own segments.
+    assert_eq!(
+        first.search(&crate::Query::All, &[], 0, &[]).unwrap().total,
+        1
+    );
+    assert!(first.get("d0", &["body"]).unwrap().is_some());
+}

@@ -266,7 +266,9 @@ impl<S: MetadataStore + 'static> Node<S> {
         let index = Index::open(
             Arc::clone(&self.store),
             name,
-            mapping.schema()?,
+            mapping
+                .schema()?
+                .with_auto_merge_mb(self.limits.auto_merge_mb),
             &self.scratch(name),
         )?;
         Ok(Arc::new(Entry { index, mapping }))
@@ -277,7 +279,9 @@ impl<S: MetadataStore + 'static> Node<S> {
     pub fn create(&self, name: &str, body: &Value) -> Result<Value, ApiError> {
         valid_index(name)?;
         let mapping = Mapping::parse_with(body, &self.mapping_limits)?;
-        let schema = mapping.schema()?;
+        let schema = mapping
+            .schema()?
+            .with_auto_merge_mb(self.limits.auto_merge_mb);
         let slot = self.slot(name)?;
         let created = {
             let mut guard = slot.lock().map_err(|_| poisoned())?;
