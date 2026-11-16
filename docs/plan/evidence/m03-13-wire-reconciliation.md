@@ -49,5 +49,5 @@ An independent review found: the outcome table in the proxy mirrors the adapter'
 
 - The SDK is not wired as the production client. The adapter keeps its own retry policy (reads only; a write only when nothing was sent), which the SDK test shows is the safer rule for conditional writes: the SDK's default retries a lost conditional PUT into a conflict.
 - Backoff is the adapter's linear pause capped at the remaining deadline, without jitter.
-- MinIO was not run (no pinned image is available); the proxy tests need only an S3 endpoint.
+- The MinIO and real S3 legs of the deliverable move to M15.01 (no MinIO image or S3 bucket is available); the proxy tests need only an S3 endpoint, so they can be pointed at either there. Only RustFS 1.0.4 was run.
 - Tenant feed and telemetry stay with M08.02.
