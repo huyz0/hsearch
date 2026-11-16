@@ -1198,6 +1198,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hsearch-example-provider"
+version = "0.1.0"
+dependencies = [
+ "hsearch-object",
+ "hsearch-testkit",
+]
+
+[[package]]
 name = "hsearch-format"
 version = "0.1.0"
 dependencies = [
@@ -1285,6 +1293,7 @@ dependencies = [
  "aws-smithy-runtime-api",
  "hmac",
  "hsearch-object",
+ "hsearch-testkit",
  "md-5",
  "sha2 0.11.1",
  "tokio",
@@ -1309,6 +1318,9 @@ dependencies = [
 [[package]]
 name = "hsearch-testkit"
 version = "0.1.0"
+dependencies = [
+ "hsearch-object",
+]
 
 [[package]]
 name = "hsearch-types"

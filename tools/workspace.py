@@ -34,7 +34,9 @@ LAYERS = {
     "hsearch-module-abi": set(),
     "hsearch-module-native": {"hsearch-module-abi"},
     "hsearch-module-wasm": {"hsearch-module-abi"},
-    "hsearch-testkit": set(),
+    "hsearch-testkit": {"hsearch-object"},
+    # M03.06: an external-provider example written against hsearch-object only; not a production crate.
+    "hsearch-example-provider": {"hsearch-object"},
     "xtask": set(),
 }
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-lane", "hsearch-node",

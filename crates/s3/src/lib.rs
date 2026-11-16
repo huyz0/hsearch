@@ -1076,6 +1076,12 @@ impl ObjectBackend for S3Store {
             if range.length() > 16 * 1024 * 1024 {
                 return Err(Error::BudgetExceeded);
             }
+            // No S3 object reaches 2^62 bytes (the limit is 5 TiB), so such an offset is past the
+            // end of whatever exists. The store would answer 400 for an offset it cannot parse,
+            // which this adapter reads as a missing version; answer the range error directly.
+            if range.offset() >= 1 << 62 {
+                return Err(Error::InvalidRange);
+            }
             context.charge_response(range.length())?;
             let query = format!("versionId={}", encode(version_id.as_bytes(), false));
             let end = range.offset() + range.length() - 1;
