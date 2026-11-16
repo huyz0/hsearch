@@ -339,9 +339,15 @@ def links() -> int:
 
 def selftest(data: dict) -> int:
     cases = []
-    def case(name, expected, mutate):
+    def case(name, expected, mutate, raw=False):
         candidate = copy.deepcopy(data)
         mutate(candidate)
+        if not raw:
+            # A control that unsettles a task of a finished milestone must not trip the completion
+            # rule first; keep milestone status consistent with its tasks unless that is the control.
+            for m in candidate["milestones"]:
+                if m["status"] == "done" and not all(t["status"] in SETTLED for t in m["tasks"]):
+                    m["status"] = "planned"
         try:
             validate(candidate, files=False)
         except InvalidPlan as error:
@@ -360,7 +366,7 @@ def selftest(data: dict) -> int:
     case("self cycle", "Dependency cycle", lambda d: task(d, "M00.01")["depends_on"].append("M00.01"))
     case("duplicate task", "Duplicate task", lambda d: milestone(d, "M00")["tasks"].append(copy.deepcopy(task(d, "M00.01"))))
     case("missing done evidence", "Done task lacks evidence", lambda d: task(d, "M00.01").update(status="done", evidence=[]))
-    case("false milestone completion", "Milestone/task completion mismatch", lambda d: milestone(d, "M03").update(status="done"))
+    case("false milestone completion", "Milestone/task completion mismatch", lambda d: milestone(d, "M03").update(status="done"), raw=True)
     case("cancelled without reason", "Cancelled task needs a reason", lambda d: task(d, "M01.08").update(status="cancelled", cancelled_reason=""))
     case("invalid status", "Invalid task status", lambda d: task(d, "M02.01").update(status="passed"))
     case("missing task acceptance", "Missing task definition_of_done", lambda d: task(d, "M00.01").update(definition_of_done=[]))
@@ -374,7 +380,7 @@ def selftest(data: dict) -> int:
         task(d, "M02.01").update(depends_on=[], status="planned")
         task(d, "M00.01")["depends_on"].append("M02.01")
     case("unfinished dependency", "Active/done task has unfinished dependency", unfinished)
-    case("milestone completion cycle", "Milestone prerequisite cycle", lambda d: milestone(d, "M02").update(depends_on=["M03"]) or milestone(d, "M03").update(depends_on=["M02"]))
+    case("milestone completion cycle", "Milestone prerequisite cycle", lambda d: milestone(d, "M03").update(depends_on=["M04"]) or milestone(d, "M04").update(depends_on=["M03"]))
     case("evidence traversal", "Path escapes", lambda d: task(d, "M00.01")["evidence"][0].update(path="../outside.txt"))
     candidate = copy.deepcopy(data)
     milestone(candidate, "M00")["title"] += " stale control"
