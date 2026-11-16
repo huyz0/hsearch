@@ -6,7 +6,7 @@ use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use hsearch_security::block::{
     BlockError, HEAD_LEN, Header, MAX_BLOCK_SIZE, MAX_BLOCKS, PREFIX_LEN, TAG_LEN, nonce,
-    seal_object,
+    object_id, seal_object,
 };
 use hsearch_security::ids::IndexId;
 use hsearch_security::keys::{
@@ -555,4 +555,16 @@ fn a_header_must_be_exactly_the_verified_one_and_lengths_are_exact_bounds() {
             max + 1
         );
     }
+}
+
+#[test]
+fn the_object_id_is_derived_from_the_key_and_matches_an_independent_hash() {
+    // hashlib.sha256(b"hs-object-id\0\x01" + b"v1/d/obj/42").digest()[:16]
+    let hex: String = object_id(b"v1/d/obj/42")
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    assert_eq!(hex, "08a119c6dc74393bace399ea99ed3b0d");
+    assert_ne!(object_id(b"v1/d/obj/42"), object_id(b"v1/d/obj/43"));
+    assert_ne!(object_id(b""), object_id(b"\0"));
 }

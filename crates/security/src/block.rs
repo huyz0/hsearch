@@ -84,6 +84,20 @@ const MAGIC: [u8; 4] = *b"HSEB";
 const HEADER_AAD: &[u8] = b"hs-block-header\0\x01";
 const BLOCK_AAD: &[u8] = b"hs-block\0\x01";
 
+/// The immutable object id for an object-store key: the first 16 bytes of
+/// `SHA-256("hs-object-id\0\x01" | key)`. Deriving it from the key makes an object copied to any other
+/// key fail to open, and gives sealing a stable id without a coordinator.
+pub fn object_id(key: &[u8]) -> [u8; 16] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"hs-object-id\0\x01");
+    h.update(key);
+    let digest = h.finalize();
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&digest[..16]);
+    out
+}
+
 /// The 96-bit nonce for an invocation counter: zeros, then the counter big endian. Counter 0 is the
 /// header's; block `i` uses `i + 1`.
 pub fn nonce(counter: u64) -> [u8; 12] {

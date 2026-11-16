@@ -2419,8 +2419,13 @@
             "M05.03"
           ],
           "owner": "security/crypto",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m05-04-persistent-path-encryption.md",
+              "result": "readiness policy (six persistent paths, production refuses unprotected or unverified volumes, claim capped at objects-only while scratch is plaintext) and the hsearch-seal SealedBackend over the M05.03 format: stored bytes inspected, every damaged byte refused, copied objects refused, retries resend identical bytes, one provider wrap per object, revocation per index; all tests seen red first, readiness 12 and sealed 25 mutants killed apart from two stated equivalents; cost provisional (4-vCPU VM, CPU only). Not wired into the node write path or startup; no real volume probe (M15); MetadataStore mutations, journal, cache and spool not covered."
+            }
+          ]
         },
         {
           "id": "M05.05",
