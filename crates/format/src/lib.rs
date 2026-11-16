@@ -17,6 +17,7 @@
     allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)
 )]
 
+mod authority;
 mod codec;
 mod crc;
 mod envelope;
@@ -29,6 +30,10 @@ mod manifest;
 mod mapping;
 mod pin;
 
+pub use authority::{
+    CatalogEntry, CatalogPage, CatalogRoot, EpochEntry, IdentityBinding, NameState, StructuralHead,
+    TailLocator, bucket_of,
+};
 pub use crc::{crc32c, crc32c_bytewise};
 pub use envelope::{Header, Kind, SUPPORTED_MANDATORY_CAPS, open, seal};
 pub use error::{FormatError, Result};

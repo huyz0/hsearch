@@ -31,6 +31,14 @@ pub enum Kind {
     Pin = 7,
     /// Bounded cursor token.
     Cursor = 8,
+    /// A commit domain's structural head (authority, epochs, locators).
+    StructuralHead = 9,
+    /// The immutable root of a tenant catalog.
+    CatalogRoot = 10,
+    /// One bounded page of a tenant catalog.
+    CatalogPage = 11,
+    /// The one-time binding of an identity to a catalog name.
+    IdentityBinding = 12,
 }
 
 impl Kind {
@@ -48,6 +56,10 @@ impl Kind {
             6 => Self::Mapping,
             7 => Self::Pin,
             8 => Self::Cursor,
+            9 => Self::StructuralHead,
+            10 => Self::CatalogRoot,
+            11 => Self::CatalogPage,
+            12 => Self::IdentityBinding,
             _ => return Err(FormatError::UnknownKind(code)),
         })
     }
@@ -64,6 +76,10 @@ impl Kind {
             Self::Mapping => MAX_MAPPING_BODY,
             Self::Pin => MAX_PIN_BODY,
             Self::Cursor => MAX_CURSOR_BODY,
+            Self::StructuralHead => MAX_HEAD_BODY,
+            Self::CatalogRoot => MAX_CATALOG_ROOT_BODY,
+            Self::CatalogPage => MAX_CATALOG_PAGE_BODY,
+            Self::IdentityBinding => MAX_IDENTITY_BINDING_BODY,
         }
     }
 

@@ -234,3 +234,79 @@ fn reclaim_keeps_fences_and_refuses_an_open_below_the_cover_on_a_real_store() {
     let (_w, report) = open(&store, lane, 5);
     assert_eq!(report.slots_replayed, 1);
 }
+
+// ---- M03.05: structural head and catalog on a real store -------------------------------------
+
+#[test]
+fn the_head_cas_is_one_put_and_a_stale_writer_loses_on_the_wire() {
+    use hsearch_format::Durability;
+    use hsearch_lane::{Advance, Change, advance_head, create_head, read_head};
+    let Some(store) = store() else { return };
+    let lane = LaneId::new([7; 16]);
+    let (h, v) = block_on(create_head(&*store, &layout(), &lane, Durability::Object)).unwrap();
+    let before = store.counts();
+    let change = |fence| Change::Establish {
+        activation: 1,
+        lane: 0,
+        fence,
+    };
+    let Advance::Done(first, _) =
+        block_on(advance_head(&*store, &layout(), &lane, &h, &v, change(1))).unwrap()
+    else {
+        panic!("the first transition wins");
+    };
+    let used = store.counts();
+    assert_eq!(used.put - before.put, 1);
+    assert_eq!(
+        (
+            used.get - before.get,
+            used.head - before.head,
+            used.list - before.list
+        ),
+        (0, 0, 0)
+    );
+    let stale = block_on(advance_head(&*store, &layout(), &lane, &h, &v, change(2))).unwrap();
+    assert!(matches!(stale, Advance::Lost), "a stale version loses");
+    let (now, _) = block_on(read_head(&*store, &layout(), &lane)).unwrap();
+    assert_eq!(now, first);
+}
+
+#[test]
+fn catalog_names_resolve_race_and_never_resurrect_on_a_real_store() {
+    use hsearch_lane::{Resolution, create_catalog, open_catalog};
+    let Some(store) = store() else { return };
+    let catalog = Arc::new(block_on(create_catalog(&*store, &layout(), [3; 16], 3)).unwrap());
+    let mut joins = Vec::new();
+    for t in 1..=4u32 {
+        let (store, catalog) = (Arc::clone(&store), Arc::clone(&catalog));
+        joins.push(std::thread::spawn(move || {
+            block_on(catalog.create(&*store, &layout(), "same", id(t)))
+        }));
+    }
+    let results: Vec<_> = joins.into_iter().map(|j| j.join().unwrap()).collect();
+    assert_eq!(
+        results.iter().filter(|r| r.is_ok()).count(),
+        1,
+        "{results:?}"
+    );
+    // The adapter resolves a lost race by listing versions, so only the uncontended steps below
+    // are held to zero LIST; the race's own LIST cost is recorded in the evidence.
+    let before = store.counts();
+    let Resolution::Live { index, .. } =
+        block_on(catalog.resolve(&*store, &layout(), "same")).unwrap()
+    else {
+        panic!("the name is live");
+    };
+    block_on(catalog.delete(&*store, &layout(), "same", &index)).unwrap();
+    assert!(block_on(catalog.create(&*store, &layout(), "same", index)).is_err());
+    block_on(catalog.create(&*store, &layout(), "same", id(99))).unwrap();
+    let reopened = block_on(open_catalog(&*store, &layout(), [3; 16])).unwrap();
+    assert_eq!(
+        block_on(reopened.resolve(&*store, &layout(), "same")).unwrap(),
+        Resolution::Live {
+            index: id(99),
+            name_generation: 3
+        }
+    );
+    assert_eq!(store.counts().list - before.list, 0, "nothing listed");
+}
