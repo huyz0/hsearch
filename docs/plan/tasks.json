@@ -2252,8 +2252,13 @@
             "M04.03"
           ],
           "owner": "engine",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m04-04-barriers.md",
+              "result": "Replay (ordered exactly-once apply, duplicate/gap/poison), Readers (committed watermark, publish refused beyond the commit or behind the published prefix, pinned generations bounded, query and fetch share a pin) and Waiters; 13 tests with five mutations seen red, clippy clean; pin 18 ns single-thread and about 230 ns contended, publish 79 ns (provisional, release, shared host). Not wired into the writer (M04.05, M06.07); pin takes a mutex."
+            }
+          ]
         },
         {
           "id": "M04.05",
