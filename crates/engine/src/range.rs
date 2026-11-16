@@ -102,6 +102,12 @@ const MAX_REQUEST: u64 = 16 * 1024 * 1024;
 /// disk. Provisional default; size it to the cache's disk tier.
 pub const DEFAULT_SPILL_BUDGET: u64 = 8 << 30;
 
+/// The most bytes of files held whole on the heap at once (pinned files, one-page
+/// files and, without demand paging, files below the spill threshold): a file past
+/// it fails to open. This is what bounds heap residency when `userfaultfd` is
+/// unavailable, whatever the number of open readers. Provisional default.
+pub const DEFAULT_HEAP_BUDGET: u64 = 1 << 30;
+
 /// The default byte budget of the disk tier. Provisional; size it to the volume.
 pub const DEFAULT_DISK_BUDGET: u64 = 16 << 30;
 
@@ -128,6 +134,9 @@ pub struct RangeCacheSettings {
     pub spill_min_bytes: Option<u64>,
     /// The most bytes of such mapped files open at once; one past it fails to open.
     pub spill_budget: u64,
+    /// The most bytes of files held whole on the heap at once; one past it fails
+    /// to open. Must be nonzero and finite.
+    pub heap_budget: u64,
     /// Measured cost of the store, fixing the read-ahead window so it does not
     /// vary run to run. `None` keeps the live tuner, whose window followed request
     /// timings and varied 6-36 MiB per open under jittery latency.
@@ -150,6 +159,7 @@ impl Default for RangeCacheSettings {
             demand_paging: true,
             spill_min_bytes: lucene.spill_min_bytes,
             spill_budget: DEFAULT_SPILL_BUDGET,
+            heap_budget: DEFAULT_HEAP_BUDGET,
             store_profile: None,
             download_window: None,
             max_request: lucene.max_request,
@@ -167,6 +177,8 @@ impl RangeCacheSettings {
             || self.page_size as u64 > MAX_REQUEST
             || self.download_window.is_some_and(|w| w as u64 > MAX_REQUEST)
             || (self.spill_min_bytes.is_some() && self.spill_budget == 0)
+            || self.heap_budget == 0
+            || self.heap_budget == u64::MAX
             || (self.disk_dir.is_some() && self.disk_budget == u64::MAX)
         {
             return Err(Error::Limit);
@@ -182,8 +194,38 @@ impl RangeCacheSettings {
             demand_paging: self.demand_paging,
             spill_min_bytes: self.spill_min_bytes,
             spill_budget: self.spill_budget,
+            heap_budget: self.heap_budget,
             ..PageCacheConfig::default()
         })
+    }
+}
+
+/// What a node exports about its remote-read path: which path runs, and what the
+/// cache holds and has requested. A plain value to be turned into instruments.
+#[derive(Clone, Copy, Debug)]
+pub struct RangeCacheMetrics {
+    /// Whether this process can demand-fill through `userfaultfd` (probed at the
+    /// first call; recent kernels commonly refuse it to unprivileged containers).
+    pub demand_paging_available: bool,
+    /// Whether the cache is configured to use it where available.
+    pub demand_paging_configured: bool,
+    /// The cache's counters: requests, bytes, heap and spill residency.
+    pub stats: lucene_store::PageCacheStats,
+}
+
+impl RangeCacheMetrics {
+    /// Read the metrics of `cache` now.
+    pub fn of(cache: &PageCache) -> Self {
+        Self {
+            demand_paging_available: lucene_store::demand_paging_available(),
+            demand_paging_configured: cache.config().demand_paging,
+            stats: cache.stats(),
+        }
+    }
+
+    /// Whether files are demand-filled on this node: available and configured.
+    pub fn demand_paging_active(&self) -> bool {
+        self.demand_paging_available && self.demand_paging_configured
     }
 }
 

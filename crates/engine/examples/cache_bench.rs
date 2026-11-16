@@ -50,6 +50,11 @@ struct Counting<B> {
     gets: Arc<AtomicU64>,
     bytes: Arc<AtomicU64>,
     latency: Duration,
+    /// Requests in flight now, and how many times one started with none in
+    /// flight: the sequential round trips (a lower bound where requests of one
+    /// wave are staggered but overlap).
+    inflight: Arc<AtomicU64>,
+    waves: Arc<AtomicU64>,
 }
 impl<B: ObjectBackend> ObjectBackend for Counting<B> {
     fn head<'a>(&'a self, c: &'a RequestContext, k: &'a ObjectKey) -> Operation<'a, ObjectInfo> {
@@ -72,12 +77,17 @@ impl<B: ObjectBackend> ObjectBackend for Counting<B> {
         self.gets.fetch_add(1, Ordering::Relaxed);
         self.bytes.fetch_add(r.length(), Ordering::Relaxed);
         let latency = self.latency;
+        if self.inflight.fetch_add(1, Ordering::AcqRel) == 0 {
+            self.waves.fetch_add(1, Ordering::Relaxed);
+        }
         Box::pin(async move {
             if !latency.is_zero() {
                 // The caller blocks on this thread; sleeping here is the wait.
                 std::thread::sleep(latency);
             }
-            self.inner.read_range(c, k, v, r).await
+            let out = self.inner.read_range(c, k, v, r).await;
+            self.inflight.fetch_sub(1, Ordering::AcqRel);
+            out
         })
     }
 }
@@ -183,6 +193,7 @@ fn main() {
     )
     .unwrap();
     let (gets, bytes) = (Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0)));
+    let waves = Arc::new(AtomicU64::new(0));
     let endpoint = std::env::var("HSEARCH_S3_ENDPOINT").ok();
     let latency_ms: u64 = std::env::var("HSEARCH_BENCH_LATENCY_MS")
         .ok()
@@ -227,6 +238,8 @@ fn main() {
         gets: gets.clone(),
         bytes: bytes.clone(),
         latency,
+        inflight: Arc::default(),
+        waves: waves.clone(),
     };
     let store = ObjectBlobStore::new(counted, manifest, Duration::from_secs(60)).unwrap();
 
@@ -266,9 +279,35 @@ fn main() {
     };
     let rss0 = rss_kib("VmRSS:");
     let t = Instant::now();
-    let snapshot = Snapshot::open_blob_with(store, config, schema()).unwrap();
+    let cache = Arc::new(lucene_store::PageCache::new(config).unwrap());
+    let snapshot = Snapshot::open_blob(store, Arc::clone(&cache), "bench", schema()).unwrap();
     let open = t.elapsed();
     let (open_gets, open_bytes) = (gets.load(Ordering::Relaxed), bytes.load(Ordering::Relaxed));
+    let open_waves = waves.load(Ordering::Relaxed);
+    let first = {
+        let q0 = Instant::now();
+        let r = snapshot
+            .search(
+                &Query::Range {
+                    field: "n",
+                    lower: Value::Integer(1000),
+                    upper: Value::Integer(1500),
+                },
+                &[Sort::Field {
+                    name: "n",
+                    descending: false,
+                }],
+                10,
+                &["n"],
+            )
+            .unwrap();
+        let _ = r;
+        (
+            q0.elapsed(),
+            gets.load(Ordering::Relaxed) - open_gets,
+            waves.load(Ordering::Relaxed) - open_waves,
+        )
+    };
 
     let mut total_hits = 0u64;
     let mut worst = Duration::ZERO;
@@ -324,6 +363,21 @@ fn main() {
         rss0 as f64 / 1024.0,
         rss_kib("VmRSS:") as f64 / 1024.0,
         rss_kib("VmHWM:") as f64 / 1024.0,
+    );
+    let m = hsearch_engine::RangeCacheMetrics::of(&cache);
+    println!(
+        "  cold depth: open {} sequential round trips ({} GET); first query {} round trips ({} GET, {:?}) | demand_paging available={} configured={} | heap held {} B in {} whole opens, {} demand-paged opens, {} spill opens",
+        open_waves,
+        open_gets,
+        first.2,
+        first.1,
+        first.0,
+        m.demand_paging_available,
+        m.demand_paging_configured,
+        m.stats.heap_open_bytes,
+        m.stats.heap_opens,
+        m.stats.demand_paged_opens,
+        m.stats.spill_opens,
     );
     drop(snapshot);
     let _ = std::fs::remove_dir_all(&work);

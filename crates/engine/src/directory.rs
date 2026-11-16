@@ -233,6 +233,31 @@ impl<D: Directory> Directory for ObservedDirectory<D> {
     fn open(&self, name: &str) -> lucene_store::Result<Input> {
         self.inner.open(name)
     }
+    fn open_aligned(&self, name: &str, alignment: usize) -> lucene_store::Result<Input> {
+        self.inner.open_aligned(name, alignment)
+    }
+    fn read_at(&self, name: &str, offset: u64, len: usize) -> lucene_store::Result<Vec<u8>> {
+        self.inner.read_at(name, offset, len)
+    }
+    // The remote-read hints and decoded opens: a wrapper that dropped them left
+    // a range-reading backend to fetch one file per round trip.
+    fn open_decoded(
+        &self,
+        name: &str,
+        decoder: &dyn lucene_store::PageDecoder,
+    ) -> Option<lucene_store::Result<Input>> {
+        self.inner.open_decoded(name, decoder)
+    }
+    fn prefetch_files(&self, names: &[String]) -> lucene_store::Result<()> {
+        self.inner.prefetch_files(names)
+    }
+    fn prefetch_files_decoded(
+        &self,
+        names: &[String],
+        decoder: &dyn lucene_store::PageDecoder,
+    ) -> lucene_store::Result<()> {
+        self.inner.prefetch_files_decoded(names, decoder)
+    }
     fn file_length(&self, name: &str) -> lucene_store::Result<u64> {
         self.inner.file_length(name)
     }

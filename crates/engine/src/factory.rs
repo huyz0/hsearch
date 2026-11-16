@@ -147,10 +147,7 @@ static INVENTORY: &[Feature] = &[
     yes(Capability::ResolvedMutations),
     yes(Capability::NativeCommit),
     yes(Capability::MaterializedInput),
-    no(
-        Capability::RemoteRangeInput,
-        "M04.02 delivers range-native input in lucene-rust",
-    ),
+    yes(Capability::RemoteRangeInput),
     no(
         Capability::ScriptedUpdate,
         "scripts stay out of the engine (A11); updates are resolved before the engine",
@@ -166,7 +163,9 @@ static INVENTORY: &[Feature] = &[
 pub enum WriterMode {
     /// Materialized local directory.
     Materialized,
-    /// Range-native remote input (not yet offered).
+    /// Range-native remote input: segments read by range through the page
+    /// cache. The engine opens the same way; the range path is
+    /// `Snapshot::open_blob*`.
     RemoteRange,
 }
 
@@ -182,6 +181,14 @@ pub fn capability_of_query(query: &Query<'_>) -> Capability {
         Query::Match { .. } => Capability::QueryMatch,
         Query::Bool { .. } => Capability::QueryBool,
         Query::Unsupported => Capability::UnsupportedQuery,
+    }
+}
+
+/// The capability a writer mode needs. Exhaustive like [`capability_of_query`].
+pub fn capability_of_mode(mode: WriterMode) -> Capability {
+    match mode {
+        WriterMode::Materialized => Capability::MaterializedInput,
+        WriterMode::RemoteRange => Capability::RemoteRangeInput,
     }
 }
 
@@ -238,10 +245,7 @@ impl EngineFactory {
         checkpoint: Option<Checkpoint>,
         mode: WriterMode,
     ) -> Result<Engine<'d>> {
-        self.require(match mode {
-            WriterMode::Materialized => Capability::MaterializedInput,
-            WriterMode::RemoteRange => Capability::RemoteRangeInput,
-        })?;
+        self.require(capability_of_mode(mode))?;
         Engine::open(directory, schema, checkpoint)
     }
 }
