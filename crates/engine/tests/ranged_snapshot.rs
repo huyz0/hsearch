@@ -594,3 +594,27 @@ fn the_read_through_fallback_answers_like_local_and_requests_each_byte_once() {
         );
     }
 }
+
+#[test]
+fn a_file_past_the_spill_budget_fails_to_open_and_an_unbounded_disk_tier_is_refused() {
+    let f = fixture(1000);
+    let dir = Scratch::new("ranged-spill-budget");
+    let settings = RangeCacheSettings {
+        page_size: PAGE,
+        disk_dir: Some(dir.0.clone()),
+        demand_paging: false,
+        spill_min_bytes: Some(PAGE as u64),
+        spill_budget: 1,
+        ..RangeCacheSettings::default()
+    };
+    assert!(Snapshot::open_blob_settings(f.store(), &settings, schema()).is_err());
+    let unbounded = RangeCacheSettings {
+        disk_dir: Some(dir.0.clone()),
+        disk_budget: u64::MAX,
+        ..RangeCacheSettings::default()
+    };
+    assert!(matches!(
+        unbounded.config(),
+        Err(hsearch_engine::Error::Limit)
+    ));
+}

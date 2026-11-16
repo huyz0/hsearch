@@ -102,8 +102,12 @@ const MAX_REQUEST: u64 = 16 * 1024 * 1024;
 /// disk. Provisional default; size it to the cache's disk tier.
 pub const DEFAULT_SPILL_BUDGET: u64 = 8 << 30;
 
+/// The default byte budget of the disk tier. Provisional; size it to the volume.
+pub const DEFAULT_DISK_BUDGET: u64 = 16 << 30;
+
 /// How hsearch reads a remote index through lucene-rust's page cache. Every field
-/// has a default that keeps memory bounded; [`RangeCacheSettings::config`] turns it
+/// has a bounded default (a disk tier and a spill each have a finite budget, and
+/// spilling happens only once `disk_dir` is set); [`RangeCacheSettings::config`] turns it
 /// into the cache's own configuration after checking what the store allows.
 #[derive(Clone, Debug)]
 pub struct RangeCacheSettings {
@@ -142,7 +146,7 @@ impl Default for RangeCacheSettings {
         Self {
             page_size: lucene.page_size,
             disk_dir: None,
-            disk_budget: lucene.disk_budget,
+            disk_budget: DEFAULT_DISK_BUDGET,
             demand_paging: true,
             spill_min_bytes: lucene.spill_min_bytes,
             spill_budget: DEFAULT_SPILL_BUDGET,
@@ -163,6 +167,7 @@ impl RangeCacheSettings {
             || self.page_size as u64 > MAX_REQUEST
             || self.download_window.is_some_and(|w| w as u64 > MAX_REQUEST)
             || (self.spill_min_bytes.is_some() && self.spill_budget == 0)
+            || (self.disk_dir.is_some() && self.disk_budget == u64::MAX)
         {
             return Err(Error::Limit);
         }
@@ -307,10 +312,11 @@ impl Snapshot {
     /// Opening costs whatever `store.list_with_sizes` costs, and nothing else if
     /// it answers from a manifest, as [`ObjectBlobStore`] does.
     ///
-    /// The cache keys a page by namespace, file name and length, not by version, and
-    /// a disk tier can outlive a snapshot: derive `namespace` from the manifest
-    /// (its root version), or two manifests that share a name and length would share
-    /// pages. A cache whose requests could exceed the store's 16 MiB cap is refused.
+    /// The cache keys a page by namespace, file name, length and the store's
+    /// [`BlobStore::version`]; [`ObjectBlobStore`] reports the manifest's, so two
+    /// manifests never share pages. A store without `version` is keyed by name and
+    /// length alone, and a disk tier can outlive a snapshot: derive `namespace` from
+    /// the manifest (its root version) for such a store. A cache whose requests could exceed the store's 16 MiB cap is refused.
     pub fn open_blob<S: BlobStore + 'static>(
         store: S,
         cache: Arc<PageCache>,
