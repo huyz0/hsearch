@@ -261,12 +261,19 @@ impl<S: MetadataStore + 'static> Node<S> {
         Ok(mapping)
     }
 
+    /// The engine schema for `mapping` under this node's settings.
+    fn schema_of(&self, mapping: &Mapping) -> Result<hsearch_engine::Schema, ApiError> {
+        Ok(mapping
+            .schema()?
+            .with_auto_merge_mb(self.limits.auto_merge_mb))
+    }
+
     fn open(&self, name: &str) -> Result<Arc<Entry>, ApiError> {
         let mapping = self.load_mapping(name)?;
         let index = Index::open(
             Arc::clone(&self.store),
             name,
-            mapping.schema()?,
+            self.schema_of(&mapping)?,
             &self.scratch(name),
         )?;
         Ok(Arc::new(Entry { index, mapping }))
@@ -277,7 +284,7 @@ impl<S: MetadataStore + 'static> Node<S> {
     pub fn create(&self, name: &str, body: &Value) -> Result<Value, ApiError> {
         valid_index(name)?;
         let mapping = Mapping::parse_with(body, &self.mapping_limits)?;
-        let schema = mapping.schema()?;
+        let schema = self.schema_of(&mapping)?;
         let slot = self.slot(name)?;
         let created = {
             let mut guard = slot.lock().map_err(|_| poisoned())?;
@@ -680,6 +687,31 @@ mod tests {
 
     fn dir(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!("hsearch-node-unit-{label}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn the_node_hands_its_auto_merge_setting_to_every_index_schema() {
+        let body = json!({"mappings": {"properties": {"a": {"type": "keyword"}}}});
+        let mapping = Mapping::parse_with(&body, &MappingLimits::default()).unwrap();
+        let schema = |mb: usize| {
+            let limits = Limits {
+                auto_merge_mb: mb,
+                ..Limits::default()
+            };
+            let node = Node::with_limits(store(), dir("merge"), limits).unwrap();
+            node.schema_of(&mapping).unwrap().limits().auto_merge_mb
+        };
+        assert_eq!(Node::new(store(), dir("merge")).limits().auto_merge_mb, 16);
+        assert_eq!((schema(0), schema(64), schema(16)), (0, 64, 16));
+        // The engine clamps what the node would never send.
+        assert_eq!(
+            hsearch_engine::Schema::new(1, &[("a", hsearch_engine::Kind::Keyword)])
+                .unwrap()
+                .with_auto_merge_mb(usize::MAX)
+                .limits()
+                .auto_merge_mb,
+            hsearch_engine::MAX_AUTO_MERGE_MB
+        );
     }
 
     #[test]
