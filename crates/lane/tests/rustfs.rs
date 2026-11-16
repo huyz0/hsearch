@@ -397,3 +397,113 @@ fn a_head_driven_open_costs_one_more_put_than_a_marker_open_and_reclaims_to_the_
         "replay starts at the checkpoint cover, not at 0"
     );
 }
+
+#[test]
+fn a_promotion_publishes_its_route_and_a_corrupt_page_is_repaired_on_a_real_store() {
+    use hsearch_lane::{RepairClaim, Resolution, Route, create_catalog, route};
+    use hsearch_object::{Metadata, MetadataStore, Mutation, Payload, Precondition, RequestId};
+    let Some(store) = store() else { return };
+    let lane = fresh_lane(&store, &[1, 2]);
+    let (mut writer, _) = open(&store, lane, 0);
+    block_on(writer.append(&[put(id(1), 1, b"a"), put(id(2), 1, b"b")])).unwrap();
+    let before = store.counts();
+    let done = block_on(writer.promote(id(1), 1)).unwrap();
+    let used = store.counts();
+    eprintln!(
+        "MEASURE promotion: put {} get {} head {} list {}",
+        used.put - before.put,
+        used.get - before.get,
+        used.head - before.head,
+        used.list - before.list
+    );
+    let before = store.counts();
+    let started = std::time::Instant::now();
+    let routed = block_on(route(&*store, &layout(), &lane, &id(1))).unwrap();
+    let elapsed = started.elapsed();
+    let used = store.counts();
+    eprintln!(
+        "MEASURE route (promoted): put {} get {} head {} list {} in {elapsed:?}",
+        used.put - before.put,
+        used.get - before.get,
+        used.head - before.head,
+        used.list - before.list
+    );
+    assert!(matches!(routed, Route::Promoted { lane: l, .. } if l.domain == done.target.domain));
+    assert_eq!(used.list - before.list, 0);
+    assert_eq!(used.put - before.put, 0);
+
+    // A catalog page corrupted in place is rebuilt from claims on the same store.
+    let catalog = block_on(create_catalog(&*store, &layout(), [4; 16], 1)).unwrap();
+    let name = "orders";
+    block_on(catalog.create(&*store, &layout(), name, id(40))).unwrap();
+    block_on(catalog.create(&*store, &layout(), "gone", id(41))).unwrap();
+    block_on(catalog.delete(&*store, &layout(), "gone", &id(41))).unwrap();
+    for bucket in 0..2u32 {
+        let k = hsearch_object::ObjectKey::new(layout().catalog_page(&[4; 16], bucket).as_bytes())
+            .unwrap();
+        let ctx = hsearch_object::RequestContext::new(
+            Duration::from_secs(30),
+            hsearch_object::Cancellation::default(),
+            hsearch_object::Budget {
+                request_bytes: 1 << 20,
+                response_bytes: 1 << 20,
+                attempts: 64,
+            },
+        )
+        .unwrap();
+        let Ok(info) = block_on(hsearch_object::ObjectBackend::head(&*store, &ctx, &k)) else {
+            continue;
+        };
+        let m = Mutation {
+            request_id: RequestId::new(format!("rot-{bucket}").as_bytes()).unwrap(),
+            key: k,
+            payload: Payload::new(b"rot").unwrap(),
+            metadata: Metadata::new(b"").unwrap(),
+            precondition: Precondition::Matches(info.version),
+        };
+        block_on(store.compare_exchange(&ctx, &m)).unwrap();
+    }
+    assert!(
+        block_on(catalog.verify(&*store, &layout()))
+            .unwrap()
+            .pages_bad
+            >= 1
+    );
+    let before = store.counts();
+    for bucket in 0..2u32 {
+        let claims: Vec<RepairClaim> = [(name, 40, true), ("gone", 41, false)]
+            .iter()
+            .filter(|(n, ..)| hsearch_format::bucket_of(&[4; 16], 1, n) == bucket)
+            .map(|(n, i, live)| RepairClaim {
+                name: (*n).to_owned(),
+                index: id(*i),
+                live: *live,
+            })
+            .collect();
+        if !claims.is_empty() {
+            block_on(catalog.repair_page(&*store, &layout(), bucket, &claims)).unwrap();
+        }
+    }
+    let used = store.counts();
+    eprintln!(
+        "MEASURE repair (2 claims, 2 pages): put {} get {} head {} list {}",
+        used.put - before.put,
+        used.get - before.get,
+        used.head - before.head,
+        used.list - before.list
+    );
+    assert_eq!(
+        block_on(catalog.verify(&*store, &layout()))
+            .unwrap()
+            .pages_bad,
+        0
+    );
+    assert!(matches!(
+        block_on(catalog.resolve(&*store, &layout(), name)).unwrap(),
+        Resolution::Live { index, .. } if index == id(40)
+    ));
+    assert!(matches!(
+        block_on(catalog.create(&*store, &layout(), "gone", id(41))),
+        Err(Error::Invalid(_))
+    ));
+}
