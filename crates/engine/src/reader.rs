@@ -149,6 +149,11 @@ impl Snapshot {
         if size > self.schema.limits.documents || sort.len() > 4 || projection.len() > MAX_FIELDS {
             return Err(Error::Limit);
         }
+        let factory = crate::EngineFactory::new();
+        factory.require(crate::capability_of_query(query))?;
+        for s in sort {
+            factory.require(crate::capability_of_sort(s))?;
+        }
         let query = crate::query::lower(&self.schema, query)?;
         for (i, name) in projection.iter().enumerate() {
             self.schema.kind(name)?;
