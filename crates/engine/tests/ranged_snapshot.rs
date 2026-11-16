@@ -6,7 +6,10 @@
 mod fixture;
 
 use fixture::{Scratch, answers, write_documents_in};
-use hsearch_engine::{EngineDirectory, Limits, ManifestEntry, ObjectBlobStore, Schema, Snapshot};
+use hsearch_engine::{
+    DEFAULT_SPILL_BUDGET, EngineDirectory, Limits, ManifestEntry, ObjectBlobStore,
+    RangeCacheSettings, Schema, Snapshot,
+};
 use hsearch_object::memory::{MemoryLimits, MemoryStore};
 use hsearch_object::{
     Budget, ByteRange, Cancellation, Error as ObjectError, Metadata, Mutation, ObjectBackend,
@@ -425,4 +428,169 @@ fn per_query_file_access_trace_is_consistent_and_fetches_no_page_twice() {
         "the cache's counter agrees with the trace"
     );
     assert_eq!(*f.calls.heads.lock().unwrap(), 0);
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[test]
+fn the_store_names_each_files_manifest_version_without_a_request() {
+    use lucene_store::BlobStore;
+    let f = fixture(10);
+    let store = f.store();
+    for (name, entry) in &f.manifest {
+        assert_eq!(
+            store.version(name).unwrap(),
+            Some(hex(entry.version.as_bytes())),
+            "{name}"
+        );
+    }
+    assert!(store.version("no-such-file").is_err());
+    assert_eq!(requests(&f), (0, 0));
+    assert_eq!(*f.calls.heads.lock().unwrap(), 0);
+}
+
+/// Two published objects with one name and one length but different versions and
+/// bytes: a page cached for the first must not answer for the second.
+#[test]
+fn a_page_cached_under_one_version_is_never_served_for_another() {
+    use lucene_store::Directory;
+    let publish = |fill: u8, id: &str| {
+        let inner = Arc::new(
+            MemoryStore::new(MemoryLimits {
+                objects: 4,
+                versions: 4,
+                version_bytes: 1 << 20,
+                identities: 4,
+                identity_bytes: 1 << 20,
+            })
+            .unwrap(),
+        );
+        let context = RequestContext::new(
+            Duration::from_secs(60),
+            Cancellation::default(),
+            Budget {
+                request_bytes: u64::MAX / 4,
+                response_bytes: u64::MAX / 4,
+                attempts: u32::MAX,
+            },
+        )
+        .unwrap();
+        let bytes = vec![fill; 3 * PAGE];
+        let key = ObjectKey::new(b"seg").unwrap();
+        let receipt = block_on(inner.create(
+            &context,
+            &Mutation {
+                request_id: RequestId::new(id.as_bytes()).unwrap(),
+                key: key.clone(),
+                payload: Payload::new(&bytes).unwrap(),
+                metadata: Metadata::new(&[]).unwrap(),
+                precondition: Precondition::Absent,
+            },
+        ))
+        .unwrap();
+        let entry = ManifestEntry {
+            key,
+            version: receipt.object.version,
+            length: bytes.len() as u64,
+        };
+        let backend = Backend {
+            inner,
+            calls: Arc::default(),
+        };
+        ObjectBlobStore::new(
+            backend,
+            [("seg".to_owned(), entry)],
+            Duration::from_secs(30),
+        )
+        .unwrap()
+    };
+    let dir = Scratch::new("ranged-version");
+    let cache = Arc::new(lucene_store::PageCache::new(config(PAGE, u64::MAX, &dir)).unwrap());
+    let read = |store| {
+        let directory = lucene_store::CachedBlobDirectory::new(store, Arc::clone(&cache), "ns");
+        let input = directory.open("seg").unwrap();
+        let bytes: &[u8] = &input;
+        bytes.to_vec()
+    };
+    let first = read(publish(0xAA, "a"));
+    assert!(first.iter().all(|b| *b == 0xAA));
+    let second = read(publish(0xBB, "b"));
+    assert!(
+        second.iter().all(|b| *b == 0xBB),
+        "served the first version's pages"
+    );
+}
+
+#[test]
+fn settings_default_keeps_the_tuner_and_bounds_what_the_fallback_may_spill() {
+    let s = RangeCacheSettings::default();
+    let c = s.config().unwrap();
+    assert!(c.demand_paging);
+    assert!(c.store_profile.is_none(), "live tuner stays the default");
+    assert_eq!(
+        c.spill_min_bytes,
+        PageCacheConfig::default().spill_min_bytes
+    );
+    assert_eq!(c.spill_budget, DEFAULT_SPILL_BUDGET);
+    assert!(c.spill_budget < u64::MAX, "spilling must be bounded");
+}
+
+#[test]
+fn settings_past_the_stores_request_cap_or_with_an_empty_spill_budget_are_refused() {
+    let big = RangeCacheSettings {
+        max_request: 32 << 20,
+        ..RangeCacheSettings::default()
+    };
+    assert!(matches!(big.config(), Err(hsearch_engine::Error::Limit)));
+    let window = RangeCacheSettings {
+        download_window: Some(32 << 20),
+        ..RangeCacheSettings::default()
+    };
+    assert!(matches!(window.config(), Err(hsearch_engine::Error::Limit)));
+    let none = RangeCacheSettings {
+        spill_budget: 0,
+        ..RangeCacheSettings::default()
+    };
+    assert!(matches!(none.config(), Err(hsearch_engine::Error::Limit)));
+    let off = RangeCacheSettings {
+        spill_min_bytes: None,
+        spill_budget: 0,
+        ..RangeCacheSettings::default()
+    };
+    assert!(off.config().is_ok(), "no spilling, no budget needed");
+}
+
+/// Both modes, one answer: with demand paging off and spilling on, a snapshot
+/// answers like the local one and every byte is still requested at most once.
+#[test]
+fn the_read_through_fallback_answers_like_local_and_requests_each_byte_once() {
+    let f = fixture(1000);
+    for demand_paging in [true, false] {
+        let dir = Scratch::new("ranged-fallback");
+        let calls_before = requests(&f);
+        let settings = RangeCacheSettings {
+            page_size: PAGE,
+            disk_dir: Some(dir.0.clone()),
+            demand_paging,
+            spill_min_bytes: Some(PAGE as u64),
+            spill_budget: f.total * 2,
+            download_window: Some(PAGE),
+            ..RangeCacheSettings::default()
+        };
+        let snapshot = Snapshot::open_blob_settings(f.store(), &settings, schema()).unwrap();
+        assert_eq!(
+            answers(&snapshot),
+            f.expected,
+            "demand_paging={demand_paging}"
+        );
+        let (n, bytes) = requests(&f);
+        assert!(bytes - calls_before.1 <= f.total, "a byte fetched twice");
+        eprintln!(
+            "TRACE demand_paging={demand_paging}: {} requests, {} B",
+            n - calls_before.0,
+            bytes - calls_before.1
+        );
+    }
 }

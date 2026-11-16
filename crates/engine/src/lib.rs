@@ -9,7 +9,7 @@ mod remote;
 pub use local::{LocalFiles, with_local_engine};
 pub use remote::{CachedDirectory, RemoteError, RemoteFiles};
 mod range;
-pub use range::{ManifestEntry, ObjectBlobStore};
+pub use range::{DEFAULT_SPILL_BUDGET, ManifestEntry, ObjectBlobStore, RangeCacheSettings};
 mod upload;
 pub use upload::ObjectUploadSink;
 mod schema;

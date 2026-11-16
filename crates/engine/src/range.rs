@@ -24,7 +24,8 @@ use hsearch_object::{
     Budget, ByteRange, Cancellation, ObjectBackend, ObjectKey, RequestContext, VersionToken,
 };
 use lucene_store::{
-    BlobStore, CachedBlobDirectory, Input, PageCache, PageCacheConfig, blob_directory::not_found,
+    BlobStore, CachedBlobDirectory, Input, PageCache, PageCacheConfig, StoreProfile,
+    blob_directory::not_found,
 };
 
 use crate::{EngineDirectory, Error, Result, Schema, Snapshot};
@@ -96,6 +97,91 @@ fn read_only() -> lucene_store::Error {
 /// than allocated.
 const MAX_REQUEST: u64 = 16 * 1024 * 1024;
 
+/// The most bytes of read-through mapped files one cache holds open without a
+/// demand-paging kernel facility: files past it fail to open instead of filling the
+/// disk. Provisional default; size it to the cache's disk tier.
+pub const DEFAULT_SPILL_BUDGET: u64 = 8 << 30;
+
+/// How hsearch reads a remote index through lucene-rust's page cache. Every field
+/// has a default that keeps memory bounded; [`RangeCacheSettings::config`] turns it
+/// into the cache's own configuration after checking what the store allows.
+#[derive(Clone, Debug)]
+pub struct RangeCacheSettings {
+    /// Bytes per cached page (a multiple of 4 KiB to be demand-paged).
+    pub page_size: usize,
+    /// The local disk tier, or `None` to keep fetched pages in memory only. Without
+    /// it nothing is spilled: files that cannot be demand-paged are read whole.
+    pub disk_dir: Option<std::path::PathBuf>,
+    /// The disk tier's byte budget.
+    pub disk_budget: u64,
+    /// Fetch pages on first touch through `userfaultfd` where the kernel has it.
+    /// `false` forces the bounded read-through fallback (for hosts where the
+    /// faulting mapping is unwanted, and for testing that path anywhere).
+    pub demand_paging: bool,
+    /// Without demand paging, a file at least this long is streamed to an unlinked
+    /// file in `disk_dir` and mapped, so the heap holds one chunk rather than the
+    /// whole file. `None` reads every such file into the heap.
+    pub spill_min_bytes: Option<u64>,
+    /// The most bytes of such mapped files open at once; one past it fails to open.
+    pub spill_budget: u64,
+    /// Measured cost of the store, fixing the read-ahead window so it does not
+    /// vary run to run. `None` keeps the live tuner, whose window followed request
+    /// timings and varied 6-36 MiB per open under jittery latency.
+    pub store_profile: Option<StoreProfile>,
+    /// A fixed read-ahead window in bytes, overriding the profile and the tuner.
+    pub download_window: Option<usize>,
+    /// The largest ranged request in bytes (at most 16 MiB).
+    pub max_request: usize,
+    /// Requests in flight for one read.
+    pub concurrency: usize,
+}
+
+impl Default for RangeCacheSettings {
+    fn default() -> Self {
+        let lucene = PageCacheConfig::default();
+        Self {
+            page_size: lucene.page_size,
+            disk_dir: None,
+            disk_budget: lucene.disk_budget,
+            demand_paging: true,
+            spill_min_bytes: lucene.spill_min_bytes,
+            spill_budget: DEFAULT_SPILL_BUDGET,
+            store_profile: None,
+            download_window: None,
+            max_request: lucene.max_request,
+            concurrency: lucene.concurrency,
+        }
+    }
+}
+
+impl RangeCacheSettings {
+    /// The page cache's configuration, refused (`Error::Limit`) if a request or page
+    /// could exceed the store's 16 MiB cap, or the spill budget is zero while
+    /// spilling is on.
+    pub fn config(&self) -> Result<PageCacheConfig> {
+        if self.max_request as u64 > MAX_REQUEST
+            || self.page_size as u64 > MAX_REQUEST
+            || self.download_window.is_some_and(|w| w as u64 > MAX_REQUEST)
+            || (self.spill_min_bytes.is_some() && self.spill_budget == 0)
+        {
+            return Err(Error::Limit);
+        }
+        Ok(PageCacheConfig {
+            page_size: self.page_size,
+            disk_dir: self.disk_dir.clone(),
+            disk_budget: self.disk_budget,
+            download_window: self.download_window,
+            max_request: self.max_request,
+            concurrency: self.concurrency,
+            store_profile: self.store_profile,
+            demand_paging: self.demand_paging,
+            spill_min_bytes: self.spill_min_bytes,
+            spill_budget: self.spill_budget,
+            ..PageCacheConfig::default()
+        })
+    }
+}
+
 impl<B: ObjectBackend> ObjectBlobStore<B> {
     /// `files` maps each Lucene file name to its published object. `deadline`
     /// bounds every single read (at most five minutes).
@@ -146,6 +232,19 @@ impl<B: ObjectBackend> BlobStore for ObjectBlobStore<B> {
 
     fn size(&self, name: &str) -> lucene_store::Result<u64> {
         Ok(self.entry(name)?.length)
+    }
+
+    /// The manifest's immutable version, in the cache key of every page: a page
+    /// cached under one version is never served for another, even when a rewritten
+    /// object keeps its name and length. Answered from the manifest, no request.
+    fn version(&self, name: &str) -> lucene_store::Result<Option<String>> {
+        let bytes = self.entry(name)?.version.as_bytes();
+        let mut hex = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            hex.push(char::from(b"0123456789abcdef"[usize::from(byte >> 4)]));
+            hex.push(char::from(b"0123456789abcdef"[usize::from(byte & 15)]));
+        }
+        Ok(Some(hex))
     }
 
     fn get(&self, name: &str) -> lucene_store::Result<Input> {
@@ -224,6 +323,15 @@ impl Snapshot {
         }
         let directory = EngineDirectory::new(CachedBlobDirectory::new(store, cache, namespace));
         Snapshot::open_committed(&directory, schema)
+    }
+
+    /// [`Snapshot::open_blob_with`] from hsearch's own [`RangeCacheSettings`].
+    pub fn open_blob_settings<S: BlobStore + 'static>(
+        store: S,
+        settings: &RangeCacheSettings,
+        schema: Schema,
+    ) -> Result<Self> {
+        Self::open_blob_with(store, settings.config()?, schema)
     }
 
     /// [`Snapshot::open_blob`] with a private cache built from `config`.
