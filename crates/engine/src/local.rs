@@ -47,7 +47,12 @@ pub fn with_local_engine<R>(
     }
     std::fs::create_dir_all(root).map_err(|_| Error::Native)?;
     let directory = EngineDirectory::new(FsDirectory::open(root));
-    let engine = Engine::open(&directory, schema, None)?;
+    let engine = crate::EngineFactory::new().open(
+        &directory,
+        schema,
+        None,
+        crate::WriterMode::Materialized,
+    )?;
     let files = LocalFiles {
         root: root.to_path_buf(),
     };

@@ -8,6 +8,7 @@ cargo test --workspace                 # just the Rust tests
 scripts/coverage.sh [90]               # per-crate line floor via cargo-llvm-cov (cargo install cargo-llvm-cov --locked)
 python3 docs/plan/tools/plan.py next   # what to work on (product tasks first)
 python3 docs/plan/tools/plan.py check  # ledger, links, generated pages (render with `plan.py render`)
+cargo test -p hsearch-engine           # after any lucene-rust pin bump (M04.01); `--test bridge_contract` for the bridge checks alone
 python3 tools/api_contract.py check    # API contract matrix (`render` regenerates it)
 ```
 
