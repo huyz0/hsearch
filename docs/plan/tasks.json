@@ -1637,7 +1637,7 @@
           "evidence": [
             {
               "path": "decisions/M02.06-feasibility-review.md",
-              "result": "Review of the engine-input, authority, metadata, journal-candidate, cost and API-scope ADRs against requirements and the engineering standard. Reran on RustFS 1.0.4 (no AWS): hsearch-s3 contract suite 16 passed, authority model selftest PASS, lane and cost model tests 21 OK, bench cells within M02.05's spread (hot-key cells not reproduced). Verdict accepted with conditions C1 to C10, each assigned to a task. Corrects M02.12: the pin already has IVF, disk HNSW, BBQ/OSQ and the CPU-floor check, so M23.02 and M23.03 need no bump for IVF. Selects fenced append lanes over head CAS for the write path. Leaves open the quorum library choice (assigned to M09.01) and one question for Huy (does PR-08 bind object-economy). Provisional: one 4-vCPU sandbox, RustFS only, no ARM, no real provider."
+              "result": "Review of the engine-input, authority, metadata, journal-candidate, cost and API-scope ADRs against requirements and the engineering standard. Reran on RustFS 1.0.4 (no AWS): hsearch-s3 contract suite 16 passed, authority model selftest PASS, lane and cost model tests 21 OK, bench 1 KiB and 16 KiB cells within about 18% of M02.05's runs but 64 KiB 1-writer up to 50% higher (unstable by M02.05's rule), hot-key cells not reproduced. Verdict accepted with conditions C1 to C10, each assigned to a task. Corrects M02.12: the pin already has IVF, disk HNSW, BBQ/OSQ and the CPU-floor check, so M23.02 and M23.03 need no bump for IVF. Selects fenced append lanes over head CAS for the write path. Leaves open the quorum library choice (assigned to M09.01) and one question for Huy (does PR-08 bind object-economy). Provisional: one 4-vCPU sandbox, RustFS only, no ARM, no real provider."
             }
           ]
         },
@@ -1695,7 +1695,7 @@
           "evidence": [
             {
               "path": "evidence/m02-12-lucene-rust-vector-audit.md",
-              "result": "Pinned rev 46e280bc has HNSW and Lucene scalar quantization only; IVF, disk HNSW and BBQ/OSQ exist on main 918cee02 (204 commits later), so M23.02 and M23.03 need a pin bump. IVF range reads confirmed (the 'not confirmed' cell refuted). Pin and main vector tests pass; one CPU-floor gap found and closed upstream in lucene-rust#307 (merged). Provisional, one shared x86 VM, ARM and SVE unrun."
+              "result": "Pinned rev 46e280bc has HNSW and Lucene scalar quantization only; IVF, disk HNSW and BBQ/OSQ exist on main 918cee02 (204 commits later), (stale as of 16 Nov: the pin hsearch now builds, 17a6254c, already has them; see M02.06). IVF range reads confirmed (the 'not confirmed' cell refuted). Pin and main vector tests pass; one CPU-floor gap found and closed upstream in lucene-rust#307 (merged). Provisional, one shared x86 VM, ARM and SVE unrun."
             }
           ]
         }
@@ -1813,7 +1813,8 @@
           "deliverables": [
             "A commit rule and adapter support so every conditional write that must fence carries a unique per-commit token (a sequence number or nonce inside the body, or a per-commit key), never relying on ETag equality of unchanged content",
             "A conformance probe, in the shared contract suite, that updates from the same stale version twice with identical bytes and with distinct bytes, and records which stores fence which case",
-            "The probe run against the pinned RustFS, the pinned MinIO image from M03.10 and a real S3 bucket, with the observed outcome recorded beside the M02.10 evidence"
+            "The probe run against the pinned RustFS, the pinned MinIO image from M03.10 and a real S3 bucket, with the observed outcome recorded beside the M02.10 evidence",
+            "Per-provider conditional-write probe results are the support gate for each provider: RustFS passing is not evidence for S3, GCS or Azure (M02.06 C5)"
           ],
           "validation": [
             "The stale-identical-bytes case is a named test that fails (red) against a deliberately unfenced adapter path before the rule exists, then passes with the token rule.",
@@ -4513,7 +4514,8 @@
           "title": "Implement paged catalog and cold activation budgets",
           "goal": "Make idle tenancy cheap and activation bounded.",
           "deliverables": [
-            "Catalog partition strategy, lazy engine lifecycle, active caps and footprint simulator"
+            "Catalog partition strategy, lazy engine lifecycle, active caps and footprint simulator",
+            "Re-key the catalog model on the index (tenant = index) and rerun its fixed-work gate at 100x the current idle count before any figure is quoted at PR-01 scale (M02.06 C8)"
           ],
           "validation": [
             "1M tenants/50M-index model with >=99% idle, burst activation and catalog repair.",
