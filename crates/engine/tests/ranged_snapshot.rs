@@ -16,7 +16,7 @@ use hsearch_object::{
     ObjectInfo, ObjectKey, Operation, Payload, Precondition, RequestContext, RequestId,
     VersionToken, WriteReceipt,
 };
-use lucene_store::{FsDirectory, PageCacheConfig};
+use lucene_store::{FsDirectory, PageCache, PageCacheConfig};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -27,6 +27,13 @@ struct Calls {
     /// (key, offset, length), in request order.
     ranges: Mutex<Vec<(String, u64, u64)>>,
     fail: Mutex<Option<usize>>,
+    /// Which error an injected fault is: 0 unavailable, 1 deadline, 2 throttled.
+    fail_kind: Mutex<u8>,
+    /// Added to every range read, so concurrent reads overlap in time.
+    delay: Mutex<Duration>,
+    inflight: std::sync::atomic::AtomicU64,
+    /// Requests that started with none in flight: sequential round trips.
+    waves: std::sync::atomic::AtomicU64,
 }
 
 struct Backend {
@@ -59,9 +66,35 @@ impl ObjectBackend for Backend {
             ranges.len() - 1
         };
         if *self.calls.fail.lock().unwrap() == Some(index) {
-            return Box::pin(async { Err(ObjectError::Unavailable) });
+            let error = match *self.calls.fail_kind.lock().unwrap() {
+                1 => ObjectError::DeadlineExceeded,
+                2 => ObjectError::Throttled,
+                _ => ObjectError::Unavailable,
+            };
+            return Box::pin(async move { Err(error) });
         }
-        self.inner.read_range(c, k, v, r)
+        let calls = Arc::clone(&self.calls);
+        let delay = *calls.delay.lock().unwrap();
+        if calls
+            .inflight
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+            == 0
+        {
+            calls
+                .waves
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        let read = self.inner.read_range(c, k, v, r);
+        Box::pin(async move {
+            if !delay.is_zero() {
+                std::thread::sleep(delay);
+            }
+            let out = read.await;
+            calls
+                .inflight
+                .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            out
+        })
     }
 }
 
@@ -617,4 +650,153 @@ fn a_file_past_the_spill_budget_fails_to_open_and_an_unbounded_disk_tier_is_refu
         unbounded.config(),
         Err(hsearch_engine::Error::Limit)
     ));
+}
+
+#[test]
+fn settings_bound_the_heap_and_refuse_an_empty_or_unbounded_budget() {
+    let c = RangeCacheSettings::default().config().unwrap();
+    assert_eq!(c.heap_budget, hsearch_engine::DEFAULT_HEAP_BUDGET);
+    for heap_budget in [0, u64::MAX] {
+        let s = RangeCacheSettings {
+            heap_budget,
+            ..RangeCacheSettings::default()
+        };
+        assert!(matches!(s.config(), Err(hsearch_engine::Error::Limit)));
+    }
+}
+
+/// The likely production case (no `userfaultfd`): with demand paging off, the heap
+/// held by whole files stays within `heap_budget`, a budget below what a snapshot
+/// must hold whole fails the open rather than growing the heap, and the metrics say
+/// which path runs.
+#[test]
+fn without_demand_paging_heap_residency_stays_within_its_budget() {
+    let f = fixture(1000);
+    let dir = Scratch::new("ranged-heap-budget");
+    let settings = RangeCacheSettings {
+        page_size: PAGE,
+        disk_dir: Some(dir.0.clone()),
+        demand_paging: false,
+        spill_min_bytes: Some(PAGE as u64),
+        spill_budget: f.total * 2,
+        heap_budget: f.total,
+        download_window: Some(PAGE),
+        ..RangeCacheSettings::default()
+    };
+    let cache = Arc::new(PageCache::new(settings.config().unwrap()).unwrap());
+    let snapshot =
+        Snapshot::open_blob(f.store(), Arc::clone(&cache), "heap-budget", schema()).unwrap();
+    assert_eq!(answers(&snapshot), f.expected);
+    let m = hsearch_engine::RangeCacheMetrics::of(&cache);
+    assert!(
+        !m.demand_paging_active(),
+        "demand paging was configured off"
+    );
+    assert!(m.stats.heap_open_bytes <= settings.heap_budget);
+    assert!(
+        m.stats.heap_opens > 0,
+        "pinned and small files are held whole"
+    );
+    assert_eq!(m.stats.demand_paged_opens, 0);
+    eprintln!(
+        "TRACE heap: {} B of {} B corpus held, {} whole opens, {} spills",
+        m.stats.heap_open_bytes, f.total, m.stats.heap_opens, m.stats.spill_opens
+    );
+    drop(snapshot);
+
+    let tight = RangeCacheSettings {
+        heap_budget: 1,
+        ..settings
+    };
+    let dir = Scratch::new("ranged-heap-tight");
+    let tight = RangeCacheSettings {
+        disk_dir: Some(dir.0.clone()),
+        ..tight
+    };
+    assert!(
+        Snapshot::open_blob_settings(f.store(), &tight, schema()).is_err(),
+        "a budget below the whole-file set refuses the open"
+    );
+}
+
+#[test]
+fn metrics_report_demand_paging_as_available_only_where_the_pager_runs() {
+    let cache = PageCache::new(RangeCacheSettings::default().config().unwrap()).unwrap();
+    let m = hsearch_engine::RangeCacheMetrics::of(&cache);
+    assert_eq!(
+        m.demand_paging_available,
+        lucene_store::paged_input::Pager::global().is_some()
+    );
+    assert!(m.demand_paging_configured);
+}
+
+/// Faults of every kind a remote read can see (unavailable, deadline, throttled),
+/// injected at each request while the disk tier is a quarter of the corpus: the
+/// outcome is an error or the exact answer, never a wrong one, and a fresh open
+/// after the fault recovers.
+#[test]
+fn timeouts_and_throttling_under_a_cache_smaller_than_the_corpus_never_give_a_wrong_answer() {
+    let f = fixture(1000);
+    let budget = f.total / 4;
+    let total = {
+        let dir = Scratch::new("ranged-small-count");
+        let s = Snapshot::open_blob_with(f.store(), config(PAGE, budget, &dir), schema()).unwrap();
+        assert_eq!(answers(&s), f.expected);
+        requests(&f).0
+    };
+    for kind in [1u8, 2] {
+        *f.calls.fail_kind.lock().unwrap() = kind;
+        for fail in 0..total {
+            f.calls.ranges.lock().unwrap().clear();
+            *f.calls.fail.lock().unwrap() = Some(fail);
+            let dir = Scratch::new("ranged-small-fail");
+            let outcome = Snapshot::open_blob_with(f.store(), config(PAGE, budget, &dir), schema())
+                .map(|s| answers(&s));
+            if let Ok(got) = outcome {
+                assert_eq!(got, f.expected, "kind {kind} fail at {fail}: wrong answer");
+            }
+            *f.calls.fail.lock().unwrap() = None;
+            let dir = Scratch::new("ranged-small-retry");
+            let s =
+                Snapshot::open_blob_with(f.store(), config(PAGE, budget, &dir), schema()).unwrap();
+            assert_eq!(answers(&s), f.expected, "retry after kind {kind} at {fail}");
+        }
+    }
+}
+
+/// The cold path in sequential round trips, which PR-04 and PR-31 depend on
+/// (count alone hides depth): with each read taking time, opening a snapshot of
+/// 33 files and running its first query overlap their reads into few waves.
+/// Provisional bounds from in-memory runs; the RustFS numbers are in the M04.02
+/// evidence.
+#[test]
+fn a_cold_open_and_first_query_take_few_sequential_round_trips() {
+    use std::sync::atomic::Ordering;
+    let f = fixture(1000);
+    *f.calls.delay.lock().unwrap() = Duration::from_millis(3);
+    let dir = Scratch::new("ranged-depth");
+    let settings = RangeCacheSettings {
+        disk_dir: Some(dir.0.clone()),
+        store_profile: Some(lucene_store::StoreProfile {
+            latency: Duration::from_millis(20),
+            bytes_per_sec: 100e6,
+        }),
+        ..RangeCacheSettings::default()
+    };
+    let snapshot = Snapshot::open_blob_settings(f.store(), &settings, schema()).unwrap();
+    let open = f.calls.waves.load(Ordering::Relaxed);
+    let first = answers(&snapshot);
+    let total = f.calls.waves.load(Ordering::Relaxed);
+    eprintln!(
+        "TRACE depth: open {open} round trips, answers {} more, {} requests",
+        total - open,
+        requests(&f).0
+    );
+    assert_eq!(first, f.expected);
+    assert!(open <= 4, "open took {open} sequential round trips");
+    assert!(
+        total - open <= 3,
+        "the all-query set took {} more",
+        total - open
+    );
 }

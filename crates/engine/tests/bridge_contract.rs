@@ -96,10 +96,10 @@ fn inventory_is_explicit_and_every_capability_has_exactly_one_entry() {
         factory.support(Capability::MaterializedInput),
         Support::Supported
     );
-    assert!(matches!(
+    assert_eq!(
         factory.support(Capability::RemoteRangeInput),
-        Support::Unsupported { .. }
-    ));
+        Support::Supported
+    );
     assert!(matches!(
         factory.support(Capability::ScriptedUpdate),
         Support::Unsupported { .. }
@@ -116,9 +116,14 @@ fn an_unsupported_capability_is_refused_never_ignored() {
     assert_eq!(factory.require(Capability::QueryTerm), Ok(()));
     let directory = ByteBuffersDirectory::new();
     let observed = EngineDirectory::new(&directory);
-    let refused = factory.open(&observed, schema(), None, WriterMode::RemoteRange);
-    assert!(matches!(refused, Err(Error::Unsupported)));
-    // A refused open leaves the directory untouched and openable.
+    // Both input modes are offered since M04.02; a refusal is still checked
+    // above for a capability that is not.
+    assert!(
+        factory
+            .open(&observed, schema(), None, WriterMode::RemoteRange)
+            .is_ok()
+    );
+    // The directory stays openable.
     assert!(
         factory
             .open(&observed, schema(), None, WriterMode::Materialized)

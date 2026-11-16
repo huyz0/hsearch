@@ -10,7 +10,8 @@ pub use local::{LocalFiles, with_local_engine};
 pub use remote::{CachedDirectory, RemoteError, RemoteFiles};
 mod range;
 pub use range::{
-    DEFAULT_DISK_BUDGET, DEFAULT_SPILL_BUDGET, ManifestEntry, ObjectBlobStore, RangeCacheSettings,
+    DEFAULT_DISK_BUDGET, DEFAULT_HEAP_BUDGET, DEFAULT_SPILL_BUDGET, ManifestEntry, ObjectBlobStore,
+    RangeCacheMetrics, RangeCacheSettings,
 };
 mod upload;
 pub use upload::ObjectUploadSink;
@@ -33,7 +34,7 @@ pub use schema::{
 };
 
 /// Exact upstream engine revision.
-pub const ENGINE_REVISION: &str = "17a6254ca28f959f97f41368dafb3f83ade351bf";
+pub const ENGINE_REVISION: &str = "2ec6edc8aa46833956f7241285030a200ab97573";
 pub use lucene_store::{Directory, Input};
 
 /// Native consuming cleanup outcome, without backend error text.

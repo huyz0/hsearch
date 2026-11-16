@@ -147,10 +147,7 @@ static INVENTORY: &[Feature] = &[
     yes(Capability::ResolvedMutations),
     yes(Capability::NativeCommit),
     yes(Capability::MaterializedInput),
-    no(
-        Capability::RemoteRangeInput,
-        "M04.02 delivers range-native input in lucene-rust",
-    ),
+    yes(Capability::RemoteRangeInput),
     no(
         Capability::ScriptedUpdate,
         "scripts stay out of the engine (A11); updates are resolved before the engine",
