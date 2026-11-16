@@ -2945,6 +2945,35 @@
               "result": "Increment 1: retry history keeps a 128-bit digest instead of an owned copy of each document; peak RSS 16x to 12.7x at 1 MiB and 12.6x to 9.8x at 3.9 MiB, throughput unchanged. Provisional, 4-CPU container. The object lane and the 4-100 MiB admission factor are still open."
             }
           ]
+        },
+        {
+          "id": "M21.10",
+          "title": "Run segment merges off the engine's write lock",
+          "goal": "Remove the remaining refresh stall: a refresh must not wait for a merge, so the visibility p99 holds at larger merge tiers (PR-08).",
+          "deliverables": [
+            "Upstream in lucene-rust, as its own pull request: `ConcurrentIndexWriter` accepts hsearch's rich documents, preferably by flushing the inner writer's pending documents under the control lock so `with_writer(update_fields_documents)` is visible to its flush, NRT snapshot and commit; Java-compatible and covered by its differential tests",
+            "The engine adapter writes through `ConcurrentIndexWriter` and runs one bounded merge thread per index inside the index writer thread, with a cap on concurrent merges and their I/O; a panic in native code still poisons the engine and its close, as the poisoned lock did",
+            "The setting is a cluster default overridable per index, and the inline merge stays selectable (`--auto-merge-mb`, the engine default of 0 and every existing test unchanged)"
+          ],
+          "validation": [
+            "p99 visibility and bytes written measured on RustFS for background merging against the 4 MiB inline merge cap (evidence/m21-11-refresh-merge-tail.md), at 100, 1,000 and 4,000 documents per refresh, three runs each",
+            "A refresh during a running merge returns without waiting for it; segments stay few; a snapshot opened before a merge still answers; close waits for or stops the merge thread"
+          ],
+          "definition_of_done": [
+            "Measured p99 and bytes written with their downsides (extra thread and CPU, orphan segments from merges before publish) recorded, independent review done, CI green",
+            "Existing tests pin the inline behaviour unchanged; new tests cover the background mode and run in CI"
+          ],
+          "depends_on": [
+            "M21.01"
+          ],
+          "owner": "engine",
+          "status": "planned",
+          "evidence": [
+            {
+              "path": "evidence/m21-11-refresh-merge-tail.md",
+              "result": "Cause and the inline fix: with no merge policy a refresh added a segment until the 256-segment cap forced a whole-index merge (1.4 s at 25,000 documents, 3.2 s at 509,000); a tiered merge on refresh at 4 MiB cut the worst call about 2 to 3x at 100 and 1,000 documents per refresh, with 15 to 28% fewer bytes against 16 MiB (not measured against merging off). Still inline under the engine lock. Finding for this task (recorded in that file): lucene-rust's concurrent writer merges refresh-flushed segments and takes a borrowed directory, but has no path for rich documents, and a first swap of the adapter found 0 documents after refresh (4 engine tests failed). Provisional, in-memory store, 4-CPU container."
+            }
+          ]
         }
       ]
     },
