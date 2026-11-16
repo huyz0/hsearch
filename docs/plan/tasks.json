@@ -2084,7 +2084,12 @@
           ],
           "owner": "cost/architecture/operations",
           "status": "planned",
-          "evidence": []
+          "evidence": [
+            {
+              "path": "evidence/m03-08-lanes.md",
+              "result": "Increment 1, provisional (RustFS 1.0.4, one host): hsearch-lane crate with the fenced ordered-slot log (one create per batch, retained fences, poison, hole guard, reclaim keeping fences), shared lanes with join/leave and placement, batcher, hot rule, promotion and a payload+head-CAS comparison. Fenced slot is 1 PUT/ack at 5.9 ms p50 against 2 PUT/ack at 13.2 ms for head CAS; default-key shared lanes measured 0.199 PUT per write (blended with BYOK 0.238) against the modelled 0.247, one lane per index 0.968; promotion 3 PUT, 18.6 ms; re-establish about 2 ms per slot above the cover. Not done: structural head/activation (M03.05), checkpoints (M06), wrapped-key format (M05), exhaustive histories."
+            }
+          ]
         },
         {
           "id": "M03.05",

@@ -25,6 +25,8 @@ LAYERS = {
     "hsearch-s3": {"hsearch-object"},
     "hsearch-index": {"hsearch-object", "hsearch-engine"},
     "hsearch-format": set(),
+    # M03.08: fenced commit lanes sit on the object contracts and the byte formats only; they never see the engine.
+    "hsearch-lane": {"hsearch-object", "hsearch-format"},
     "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3", "hsearch-format"},
     "hsearch-module-abi": set(),
     "hsearch-module-native": {"hsearch-module-abi"},
@@ -32,7 +34,7 @@ LAYERS = {
     "hsearch-testkit": set(),
     "xtask": set(),
 }
-PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-node",
+PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-lane", "hsearch-node",
               "hsearch-module-abi", "hsearch-module-native", "hsearch-module-wasm"}
 # D18: the one crate whose manifest may relax the workspace `unsafe_code = "forbid"`. Inside it the
 # `unsafe_code = "deny"` lint leaves exactly one `#[allow]`, on `mod sys` (the compiler enforces that).
@@ -43,6 +45,8 @@ EXTERNAL["hsearch-engine"] = {"lucene-aggs", "lucene-analysis", "lucene-codecs",
 EXTERNAL["hsearch-s3"] = {"hmac", "md-5", "sha2", "ureq"}
 # Content hashes of mapping objects and manifest page digests (SHA-256), exact-pinned in crates/format/Cargo.toml.
 EXTERNAL["hsearch-format"] = {"sha2"}
+# Stable lane-domain derivation (SHA-256), exact-pinned in crates/lane/Cargo.toml.
+EXTERNAL["hsearch-lane"] = {"sha2"}
 # JSON bodies, a blocking HTTP/1.1 server (plain HTTP, no TLS) and a safe arena for query lowering, exact-pinned in crates/node/Cargo.toml.
 EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 # Extension module contract (JSON descriptor) and the native loader: dynamic library open, SHA-256 pin and a sealed memfd copy.
