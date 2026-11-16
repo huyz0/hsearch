@@ -2334,11 +2334,17 @@
             "Principal, policy, quota and key scope are the index (tenant = index); no policy object spans several indexes"
           ],
           "depends_on": [
-            "M03"
+            "M03.01",
+            "M03.09"
           ],
           "owner": "security/crypto",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m05-01-02-identity-and-key-provider.md",
+              "result": "Identity, role authorization and key-provider contract in crates/security (PR 90): 66 tests, 96.2% line coverage; wrong CA/trust domain/cluster/role, expired certificates, public token on every peer RPC, tenant spoof, wrap context mismatch, test provider under production profile and every-byte key damage all refused; key-cache call budget asserted; hot-path numbers provisional (4-vCPU VM). Residual: Profile is a constructor argument, not yet read from deployment config. Not covered: TLS listener, policy delivery (M05.05), real KMS (M15), ARM."
+            }
+          ]
         },
         {
           "id": "M05.02",
@@ -2356,11 +2362,17 @@
             "Plaintext keys never enter logs/evidence; test provider is refused in production profile."
           ],
           "depends_on": [
-            "M03"
+            "M03.01",
+            "M03.09"
           ],
           "owner": "security/crypto",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m05-01-02-identity-and-key-provider.md",
+              "result": "Identity, role authorization and key-provider contract in crates/security (PR 90): 66 tests, 96.2% line coverage; wrong CA/trust domain/cluster/role, expired certificates, public token on every peer RPC, tenant spoof, wrap context mismatch, test provider under production profile and every-byte key damage all refused; key-cache call budget asserted; hot-path numbers provisional (4-vCPU VM). Residual: Profile is a constructor argument, not yet read from deployment config. Not covered: TLS listener, policy delivery (M05.05), real KMS (M15), ARM."
+            }
+          ]
         },
         {
           "id": "M05.03",
