@@ -1,0 +1,19 @@
+[package]
+name = "hsearch-lane"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Fenced commit lanes (M03.08): ordered conditional-create slot log, shared lane membership, batching, hot-index promotion and the payload-plus-head-CAS baseline"
+
+[dependencies]
+hsearch-object = { path = "../object" }
+hsearch-format = { path = "../format" }
+sha2 = "=0.11.1"
+
+[dev-dependencies]
+hsearch-s3 = { path = "../s3" }
+
+[lints]
+workspace = true

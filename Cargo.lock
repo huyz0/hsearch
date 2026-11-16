@@ -622,6 +622,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hsearch-lane"
+version = "0.1.0"
+dependencies = [
+ "hsearch-format",
+ "hsearch-object",
+ "hsearch-s3",
+ "sha2 0.11.1",
+]
+
+[[package]]
 name = "hsearch-module-abi"
 version = "0.1.0"
 dependencies = [
