@@ -55,6 +55,27 @@ impl Layout {
         self.key(format_args!("lanes/{}/{incarnation:020}/HEAD", hex(domain)))
     }
 
+    /// A commit domain's structural head.
+    #[must_use]
+    pub fn structural_head(&self, domain: &Id, incarnation: u64) -> String {
+        self.key(format_args!(
+            "lanes/{}/{incarnation:020}/AUTHORITY",
+            hex(domain)
+        ))
+    }
+
+    /// A tenant catalog's immutable root.
+    #[must_use]
+    pub fn catalog_root(&self, catalog: &Id) -> String {
+        self.key(format_args!("catalog/{}/ROOT", hex(catalog)))
+    }
+
+    /// One bucket page of a tenant catalog.
+    #[must_use]
+    pub fn catalog_page(&self, catalog: &Id, bucket: u32) -> String {
+        self.key(format_args!("catalog/{}/pages/{bucket:010}", hex(catalog)))
+    }
+
     /// One ordered slot of a lane.
     #[must_use]
     pub fn lane_slot(

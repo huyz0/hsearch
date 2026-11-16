@@ -32,6 +32,18 @@ pub const MAX_KEY_BYTES: usize = 1024;
 /// Longest deployment name in a key.
 pub const MAX_DEPLOYMENT_BYTES: usize = 63;
 
+/// Most epochs a structural head's inventory lists.
+pub const MAX_EPOCH_INVENTORY: usize = 1024;
+/// Most entries (live names and tombstones) in one catalog page.
+pub const MAX_CATALOG_PAGE_ENTRIES: usize = 2048;
+/// Longest index name.
+pub const MAX_INDEX_NAME_BYTES: usize = 255;
+/// Most bucket bits a catalog may fan out over (65,536 pages).
+pub const MAX_CATALOG_BUCKET_BITS: u8 = 16;
+
+pub(crate) const MAX_HEAD_BODY: usize = 64 * 1024;
+pub(crate) const MAX_CATALOG_ROOT_BODY: usize = 256;
+pub(crate) const MAX_CATALOG_PAGE_BODY: usize = 2048 * (1 + 255 + 1 + 16 + 8) + 1024;
 pub(crate) const MAX_FLEET_BODY: usize = 4 * 1024;
 pub(crate) const MAX_LANE_DESCRIPTOR_BODY: usize = 128 * 1024;
 pub(crate) const MAX_ROOT_BODY: usize = 512 * 1024;
