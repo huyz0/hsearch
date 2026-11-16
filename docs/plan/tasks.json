@@ -2178,7 +2178,7 @@
           "goal": "Make lazy object reads real through all affected readers.",
           "deliverables": [
             "Additive lucene-rust PR series (range-native input behind a new abstraction; nothing that changes what an existing OpenSearch deployment reads, writes or calls), then an exact pin bump in hsearch (PR-53), read-at input implementation, bounded I/O/cache bridge",
-            "Cold-open and first-query sequential round-trip depth and request count at gate scale; `userfaultfd` detection exported as a metric, a bound on small-file heap residency and a memory test with `userfaultfd` off; copy and blocking cost of `ObjectBlobStore::get_range` measured on RustFS, `BlobStore::version` reported and `store_profile` set (M02.06 C1 to C4)"
+            "Cold-open and first-query sequential round-trip depth and request count at gate scale; `userfaultfd` detection exported as a metric, a bound on small-file heap residency and a memory test with `userfaultfd` off; copy and blocking cost of `ObjectBlobStore::get_range` measured on RustFS, (`BlobStore::version` and `store_profile` already adopted in #87) (M02.06 C1 to C4)"
           ],
           "validation": [
             "Remote/cold corpus across affected codecs with cache smaller than corpus and injected errors/timeouts."
