@@ -116,8 +116,17 @@ fn an_unsupported_capability_is_refused_never_ignored() {
     assert_eq!(factory.require(Capability::QueryTerm), Ok(()));
     let directory = ByteBuffersDirectory::new();
     let observed = EngineDirectory::new(&directory);
-    // Both input modes are offered since M04.02; a refusal is still checked
-    // above for a capability that is not.
+    // Both input modes are offered since M04.02. `open` refuses through
+    // `require(capability_of_mode(mode))`, so the mapping is pinned here and
+    // the refusal itself by `require` above.
+    assert_eq!(
+        hsearch_engine::capability_of_mode(WriterMode::Materialized),
+        Capability::MaterializedInput
+    );
+    assert_eq!(
+        hsearch_engine::capability_of_mode(WriterMode::RemoteRange),
+        Capability::RemoteRangeInput
+    );
     assert!(
         factory
             .open(&observed, schema(), None, WriterMode::RemoteRange)

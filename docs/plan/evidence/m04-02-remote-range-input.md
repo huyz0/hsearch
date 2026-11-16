@@ -25,6 +25,7 @@
 ## Limits
 
 - Wave counting is a lower bound; the in-memory depth test sleeps 3 ms per read, it does not model a real network.
+- **Default change:** upstream's `heap_budget` is unbounded; hsearch defaults to 1 GiB, so a snapshot whose whole-held files exceed it now fails with `Error::Limit` where it used to open. It is a per-cache setting (raise it per index); not measured against production sizes. `RangeCacheMetrics` is a plain value, not yet wired into `hsearch-observe`; the per-reader heap bound is not shown, only the cache-wide one. The RustFS numbers come from `cache_bench`/`s3_range_bench` runs, not from tests.
 - `heap_budget` default and its refusal of a pinned file past it are provisional; no production sizing exists.
 - A bounded budget's indirect call per access is not benchmarked; the default is unchanged.
 - The M02.06 gate scale of 1M documents was not run; 200k documents (333 MiB) was the largest.

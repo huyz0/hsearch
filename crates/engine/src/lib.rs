@@ -20,8 +20,8 @@ pub use aggregations::{Bucket, Metrics};
 mod adapter;
 mod factory;
 pub use factory::{
-    Capability, EngineFactory, Feature, ShardEngine, Support, WriterMode, capability_of_query,
-    capability_of_sort,
+    Capability, EngineFactory, Feature, ShardEngine, Support, WriterMode, capability_of_mode,
+    capability_of_query, capability_of_sort,
 };
 mod query;
 mod reader;

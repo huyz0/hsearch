@@ -766,7 +766,7 @@ fn timeouts_and_throttling_under_a_cache_smaller_than_the_corpus_never_give_a_wr
 
 /// The cold path in sequential round trips, which PR-04 and PR-31 depend on
 /// (count alone hides depth): with each read taking time, opening a snapshot of
-/// 33 files and running its first query overlap their reads into few waves.
+/// 17 files and running its first query overlap their reads into few waves.
 /// Provisional bounds from in-memory runs; the RustFS numbers are in the M04.02
 /// evidence.
 #[test]
