@@ -42,11 +42,10 @@ fn run() -> Result<(), String> {
     store
         .prepare_bucket(&context)
         .map_err(|e| format!("preparing the bucket: {e}"))?;
-    let node = Arc::new(Node::with_limits(
-        Arc::new(store),
-        options.data_dir,
-        options.limits,
-    )?);
+    let node = Arc::new(
+        Node::with_limits(Arc::new(store), options.data_dir, options.limits)?
+            .with_mapping_limits(options.mapping_limits)?,
+    );
     let running = serve(node, &options.listen, 8, options.insecure)?;
     println!("listening on http://{}", running.addr);
     // Serve until the process is stopped.
