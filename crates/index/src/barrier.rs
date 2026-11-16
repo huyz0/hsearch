@@ -104,9 +104,37 @@ impl Replay {
         self.applied += 1;
         Ok(())
     }
+    /// The applied prefix as a proof for [`Readers::publish`]. Take it in the
+    /// same step that opens the reader, with no apply in between.
+    ///
+    /// # Errors
+    /// [`ReplayError::Poisoned`] after a failure, or while a slot is being
+    /// applied (the engine is between prefixes).
+    pub fn cut(&self) -> Result<Cut, ReplayError> {
+        if self.poisoned {
+            return Err(ReplayError::Poisoned);
+        }
+        if self.inflight {
+            return Err(ReplayError::Order);
+        }
+        Ok(Cut(self.applied))
+    }
     /// The apply failed and may have partly changed the engine.
     pub fn fail(&mut self) {
         self.poisoned = true;
+    }
+}
+
+/// The applied prefix of a [`Replay`] at one moment: the proof a reader opened
+/// on that engine covers exactly those slots. Only [`Replay::cut`] makes one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cut(u64);
+
+impl Cut {
+    /// Slots `0..covers` are applied.
+    #[must_use]
+    pub fn covers(self) -> u64 {
+        self.0
     }
 }
 
@@ -130,6 +158,15 @@ pub enum Refuse {
     Regress,
     /// Too many older generations are still pinned.
     Pinned,
+}
+
+/// A refused publish, returning the reader so the caller can retry with it.
+#[derive(Debug)]
+pub struct Refused<R> {
+    /// Why.
+    pub reason: Refuse,
+    /// The reader that was offered.
+    pub reader: R,
 }
 
 struct Inner<R> {
@@ -177,45 +214,58 @@ impl<R> Readers<R> {
         Ok(())
     }
 
-    /// Publish `reader` as covering slots `0..covers`.
+    /// Publish `reader`, opened on an engine whose applied prefix is `cut`.
+    ///
+    /// The previous generation is dropped after the lock is released, so a slow
+    /// `R::drop` never blocks a pin. A generation a caller never drops counts
+    /// against `max_pinned` forever: once the bound is reached every publish is
+    /// refused with [`Refuse::Pinned`] until a pin is released, so holders must
+    /// be bounded in time by the caller (a fetch deadline).
     ///
     /// # Errors
-    /// [`Refuse::Uncommitted`], [`Refuse::Regress`] or [`Refuse::Pinned`].
-    pub fn publish(&self, reader: R, covers: u64) -> Result<Arc<Gen<R>>, Refuse> {
-        let mut g = lock(&self.inner);
-        if covers > g.committed {
-            return Err(Refuse::Uncommitted);
-        }
-        if g.published.as_ref().is_some_and(|p| covers < p.covers) {
-            return Err(Refuse::Regress);
-        }
-        g.live.retain(|w| w.strong_count() > 0);
-        // Generations a caller holds, not counting the one about to be replaced
-        // when only the manager holds it.
-        let published = g.published.clone();
-        let held = g
-            .live
-            .iter()
-            .filter_map(Weak::upgrade)
-            .filter(|a| {
-                let manager = published.as_ref().is_some_and(|p| Arc::ptr_eq(a, p));
-                // `upgrade` and `published` each add one.
-                Arc::strong_count(a) > 1 + usize::from(manager) + usize::from(manager)
-            })
-            .count();
-        drop(published);
-        if held + 1 > g.max_pinned {
-            return Err(Refuse::Pinned);
-        }
-        let generation = g.next;
-        g.next += 1;
-        let new = Arc::new(Gen {
-            reader,
-            covers,
-            generation,
-        });
-        g.live.push(Arc::downgrade(&new));
-        g.published = Some(Arc::clone(&new));
+    /// [`Refuse::Uncommitted`], [`Refuse::Regress`] or [`Refuse::Pinned`], with
+    /// the reader returned.
+    pub fn publish(&self, reader: R, cut: Cut) -> Result<Arc<Gen<R>>, Refused<R>> {
+        let covers = cut.0;
+        let (new, old) = {
+            let mut g = lock(&self.inner);
+            let refuse = |reason, reader| Err(Refused { reason, reader });
+            if covers > g.committed {
+                return refuse(Refuse::Uncommitted, reader);
+            }
+            if g.published.as_ref().is_some_and(|p| covers < p.covers) {
+                return refuse(Refuse::Regress, reader);
+            }
+            g.live.retain(|w| w.strong_count() > 0);
+            // Generations a caller holds. The manager's own references (the
+            // field, and for the published one the clone below) and the
+            // `upgrade` temporary are not holders.
+            let published = g.published.clone();
+            let held = g
+                .live
+                .iter()
+                .filter_map(Weak::upgrade)
+                .filter(|a| {
+                    let manager = published.as_ref().is_some_and(|p| Arc::ptr_eq(a, p));
+                    Arc::strong_count(a) > 1 + 2 * usize::from(manager)
+                })
+                .count();
+            drop(published);
+            if held + 1 > g.max_pinned {
+                return refuse(Refuse::Pinned, reader);
+            }
+            let generation = g.next;
+            g.next += 1;
+            let new = Arc::new(Gen {
+                reader,
+                covers,
+                generation,
+            });
+            g.live.push(Arc::downgrade(&new));
+            let old = g.published.replace(Arc::clone(&new));
+            (new, old)
+        };
+        drop(old);
         Ok(new)
     }
 

@@ -1,6 +1,6 @@
 //! Not a gate: prints the cost of pinning a reader and of publishing one. Run with
 //! `cargo test --release -p hsearch-index --test barrier_bench -- --ignored --nocapture`.
-use hsearch_index::barrier::Readers;
+use hsearch_index::barrier::{Readers, Replay};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -9,7 +9,7 @@ use std::time::Instant;
 fn pin_and_publish_cost() {
     let readers = Arc::new(Readers::<u64>::new(64));
     readers.commit(u64::MAX / 2).unwrap();
-    readers.publish(0, 1).unwrap();
+    readers.publish(0, Replay::new(1).cut().unwrap()).unwrap();
     let n = 2_000_000u32;
     let t = Instant::now();
     for _ in 0..n {
@@ -31,12 +31,17 @@ fn pin_and_publish_cost() {
         for h in hs {
             h.join().unwrap();
         }
-        println!("pin, {threads} threads: {:?} per call (wall / total calls)", t.elapsed() / (500_000 * threads as u32));
+        println!(
+            "pin, {threads} threads: {:?} per call (wall / total calls)",
+            t.elapsed() / (500_000 * threads as u32)
+        );
     }
     let m = 200_000u64;
     let t = Instant::now();
     for i in 0..m {
-        readers.publish(i, 2 + i).unwrap();
+        readers
+            .publish(i, Replay::new(2 + i).cut().unwrap())
+            .unwrap();
     }
     println!("publish: {:?} per call", t.elapsed() / m as u32);
 }
