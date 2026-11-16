@@ -1264,7 +1264,7 @@
       "title": "API-scoped engine, catalog and cost feasibility",
       "goal": "Prove the selected core API and scalable catalog/resource model before format and runtime freeze, with matched cost/failure envelopes.",
       "owner": "engine/architecture",
-      "status": "planned",
+      "status": "done",
       "depends_on": [
         "M01"
       ],
@@ -1633,8 +1633,13 @@
             "M02.12"
           ],
           "owner": "engine/architecture",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "decisions/M02.06-feasibility-review.md",
+              "result": "Review of the engine-input, authority, metadata, journal-candidate, cost and API-scope ADRs against requirements and the engineering standard. Reran on RustFS 1.0.4 (no AWS): hsearch-s3 contract suite 16 passed, authority model selftest PASS, lane and cost model tests 21 OK, bench 1 KiB and 16 KiB cells within about 18% of M02.05's runs but 64 KiB 1-writer up to 50% higher (unstable by M02.05's rule), hot-key cells not reproduced. Verdict accepted with conditions C1 to C10, each assigned to a task. Corrects M02.12: the pin already has IVF, disk HNSW, BBQ/OSQ and the CPU-floor check, so M23.02 and M23.03 need no bump for IVF. Selects fenced append lanes over head CAS for the write path. Leaves open the quorum library choice (assigned to M09.01) and one question for Huy (does PR-08 bind object-economy). Provisional: one 4-vCPU sandbox, RustFS only, no ARM, no real provider."
+            }
+          ]
         },
         {
           "id": "M02.11",
@@ -1690,7 +1695,7 @@
           "evidence": [
             {
               "path": "evidence/m02-12-lucene-rust-vector-audit.md",
-              "result": "Pinned rev 46e280bc has HNSW and Lucene scalar quantization only; IVF, disk HNSW and BBQ/OSQ exist on main 918cee02 (204 commits later), so M23.02 and M23.03 need a pin bump. IVF range reads confirmed (the 'not confirmed' cell refuted). Pin and main vector tests pass; one CPU-floor gap found and closed upstream in lucene-rust#307 (merged). Provisional, one shared x86 VM, ARM and SVE unrun."
+              "result": "Pinned rev 46e280bc has HNSW and Lucene scalar quantization only; IVF, disk HNSW and BBQ/OSQ exist on main 918cee02 (204 commits later), (stale as of 16 Nov: the pin hsearch now builds, 17a6254c, already has them; see M02.06). IVF range reads confirmed (the 'not confirmed' cell refuted). Pin and main vector tests pass; one CPU-floor gap found and closed upstream in lucene-rust#307 (merged). Provisional, one shared x86 VM, ARM and SVE unrun."
             }
           ]
         }
@@ -1808,7 +1813,8 @@
           "deliverables": [
             "A commit rule and adapter support so every conditional write that must fence carries a unique per-commit token (a sequence number or nonce inside the body, or a per-commit key), never relying on ETag equality of unchanged content",
             "A conformance probe, in the shared contract suite, that updates from the same stale version twice with identical bytes and with distinct bytes, and records which stores fence which case",
-            "The probe run against the pinned RustFS, the pinned MinIO image from M03.10 and a real S3 bucket, with the observed outcome recorded beside the M02.10 evidence"
+            "The probe run against the pinned RustFS, the pinned MinIO image from M03.10 and a real S3 bucket, with the observed outcome recorded beside the M02.10 evidence",
+            "Per-provider conditional-write probe results are the support gate for each provider: RustFS passing is not evidence for S3, GCS or Azure (M02.06 C5)"
           ],
           "validation": [
             "The stale-identical-bytes case is a named test that fails (red) against a deliberately unfenced adapter path before the rule exists, then passes with the token rule.",
@@ -2066,7 +2072,8 @@
           "definition_of_done": [
             "Selected fenced protocol preserves unique authority, ordered committed identities and bounded replay/discovery across full fault histories; the small planning model is not its runtime proof",
             "No obligatory per-batch head CAS/key-sidecar PUT, idle polling or cross-tenant shared keys; extra checkpoint/rewrap/activation/retry requests are explicitly counted",
-            "Failure of provider conditional-write or modeled authority/security conformance requires a recorded design revision, not an unreported fallback; production engine/crypto integration is qualified in M04/M05/M06"
+            "Failure of provider conditional-write or modeled authority/security conformance requires a recorded design revision, not an unreported fallback; production engine/crypto integration is qualified in M04/M05/M06",
+            "Named tests that fail without the cover rule (a successor seals at the first absent slot at or above the checkpoint cover) and without retained fences; requests per write per group, hottest-index share and lane re-establish time are measured and reported (M02.06 C6, C7)"
           ],
           "depends_on": [
             "M02.07",
@@ -2077,7 +2084,12 @@
           ],
           "owner": "cost/architecture/operations",
           "status": "planned",
-          "evidence": []
+          "evidence": [
+            {
+              "path": "evidence/m03-08-lanes.md",
+              "result": "Increment 1, provisional (RustFS 1.0.4, one host): hsearch-lane crate with the fenced ordered-slot log (one create per batch, retained fences, poison, hole guard, reclaim keeping fences), shared lanes with join/leave and placement, batcher, hot rule, promotion and a payload+head-CAS comparison. Fenced slot is 1 PUT/ack at 5.9 ms p50 against 2 PUT/ack at 13.2 ms for head CAS; default-key shared lanes measured 0.199 PUT per write (blended with BYOK 0.238) against the modelled 0.247, one lane per index 0.968; promotion 3 PUT, 18.6 ms; re-establish about 2 ms per slot above the cover. Not done: structural head/activation (M03.05), checkpoints (M06), wrapped-key format (M05), exhaustive histories."
+            }
+          ]
         },
         {
           "id": "M03.05",
@@ -2170,7 +2182,8 @@
           "title": "Deliver remote-input engine changes",
           "goal": "Make lazy object reads real through all affected readers.",
           "deliverables": [
-            "Additive lucene-rust PR series (range-native input behind a new abstraction; nothing that changes what an existing OpenSearch deployment reads, writes or calls), then an exact pin bump in hsearch (PR-53), read-at input implementation, bounded I/O/cache bridge"
+            "Additive lucene-rust PR series (range-native input behind a new abstraction; nothing that changes what an existing OpenSearch deployment reads, writes or calls), then an exact pin bump in hsearch (PR-53), read-at input implementation, bounded I/O/cache bridge",
+            "Cold-open and first-query sequential round-trip depth and request count at gate scale; `userfaultfd` detection exported as a metric, a bound on small-file heap residency and a memory test with `userfaultfd` off; copy and blocking cost of `ObjectBlobStore::get_range` measured on RustFS, (`BlobStore::version` and `store_profile` already adopted in #87) (M02.06 C1 to C4)"
           ],
           "validation": [
             "Remote/cold corpus across affected codecs with cache smaller than corpus and injected errors/timeouts."
@@ -2626,7 +2639,8 @@
           "deliverables": [
             "`refresh=false` (ack when durable), `wait_for` (ack when searchable) and `true` (ack once a reader covering the write is published, forcing a publication if none is due) on bulk, index, update and delete",
             "Forced publication coalesced across concurrent requests inside one batching window bounded by the profile, never one segment or object per write, and metered per index",
-            "Durable receipts name the committed write even when a visibility wait times out; the batching window is chosen against both the object-durable ack target and PR-08 (conflict 5)"
+            "Durable receipts name the committed write even when a visibility wait times out; the batching window is chosen against both the object-durable ack target and PR-08 (conflict 5)",
+            "Requests per acknowledged write and visibility latency for `wait_for` and `true` on both `object-economy` and `object-resilient`, so PR-08's scope per profile is decided on numbers (M02.06 C10)"
           ],
           "validation": [
             "Each mode tested for ack semantics, timeout and lost replies; 1,000 concurrent refresh=true writes cost a number of publications set by the window, not by the writes",
@@ -2764,8 +2778,13 @@
             "M21.02"
           ],
           "owner": "engine/api",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m21-03-field-limits-dynamic.md",
+              "result": "Field limits and per-index dynamic policy: a create body over the field limit (default 1,000, configurable to 10,000) is refused whole; strict rejects and false drops an unknown field per bulk item with the mapping never changed (verified across a restart); dynamic is in the canonical mapping and strict stays unwritten so existing hashes hold; depth (20) and nested-object (10,000) checks cost 33 ns of a 383 ns document build and are unit-tested but unreachable over HTTP because bulk refuses all nesting. dynamic true is limit-checked but cannot add fields until M21.04; the engine's 14-field cap sits under the 1,000 default. Provisional, 4-CPU container. Independent review done, findings fixed, CI green."
+            }
+          ]
         },
         {
           "id": "M21.04",
@@ -3075,7 +3094,8 @@
           "goal": "First vector variant through the adapter (PR-22).",
           "deliverables": [
             "`knn_vector` mapping for HNSW, a kNN query usable inside bool with a filter, quantizer settings chosen in M02.12",
-            "Recall@10 floor and latency for plain and quantized variants on a stated corpus"
+            "Recall@10 floor and latency for plain and quantized variants on a stated corpus",
+            "Rerun the M02.12 vector tests and recall checks at the pinned rev (17a6254c or later), not at 46e280bc or 918cee02 (M02.06 finding 1)"
           ],
           "validation": [
             "Recall and latency run on the stated corpus and hardware; results reported as provisional off real instances; vectors in a restored or recovered index return the same top-k"
@@ -3122,7 +3142,7 @@
           "title": "Serve disk-based HNSW and IVF from the object store",
           "goal": "Read vector data by range from the object store instead of loading it (PR-22, PR-53).",
           "deliverables": [
-            "Disk-based HNSW (`lucene-disk-hnsw`) and a disk-oriented IVF layout reading by range through the M04.02 input; where M02.12 confirmed the IVF layout is missing, an additive lucene-rust PR and a pin bump",
+            "Disk-based HNSW (`lucene-disk-hnsw`) and a disk-oriented IVF layout reading by range through the M04.02 input; M02.12 refuted the missing-IVF-layout cell and the pin already has `lucene-ivf` and `lucene-disk-hnsw`, so no bump is needed for them (M02.06 finding 1)",
             "Cold and warm query reports with range counts per query"
           ],
           "validation": [
@@ -3362,7 +3382,8 @@
           "goal": "Make `index`, `search` and `coordinator` explicit and independently scalable (PR-18).",
           "deliverables": [
             "Node configuration of roles in any combination (all three for development), roles and zone reported in status, structured refusal of work outside the declared roles",
-            "The zone comes from the node tag; the engine never calls a cloud API for it; the journal role stays an optional fourth for quorum mode"
+            "The zone comes from the node tag; the engine never calls a cloud API for it; the journal role stays an optional fourth for quorum mode",
+            "Startup refuses to serve with a named reason when `lucene_util::cpu::check_baseline()` reports missing CPU features, and reports the SIMD level in status (PR-30; M02.06 finding 2)"
           ],
           "validation": [
             "Each role alone, each pair and all three; a search-only node never accepts a write; a coordinator-only node owns no shard"
@@ -3876,6 +3897,7 @@
           "title": "Implement durable consensus adapter",
           "goal": "Meet the selected Rust library's exact storage/network contract.",
           "deliverables": [
+            "A recorded library decision (openraft or raft-rs) with a pinned-rev comparison and the storage/network contract it implies, before any adapter code (M02.06 C9; M02.04 selected neither)",
             "CommitLog provider, vote/log persistence, checksummed frames, volume identity and mTLS roles"
           ],
           "validation": [
@@ -4502,7 +4524,8 @@
           "title": "Implement paged catalog and cold activation budgets",
           "goal": "Make idle tenancy cheap and activation bounded.",
           "deliverables": [
-            "Catalog partition strategy, lazy engine lifecycle, active caps and footprint simulator"
+            "Catalog partition strategy, lazy engine lifecycle, active caps and footprint simulator",
+            "Re-key the catalog model on the index (tenant = index) and rerun its fixed-work gate at 100x the current idle count before any figure is quoted at PR-01 scale (M02.06 C8)"
           ],
           "validation": [
             "1M tenants/50M-index model with >=99% idle, burst activation and catalog repair.",

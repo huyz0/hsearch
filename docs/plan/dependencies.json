@@ -613,6 +613,13 @@
       "checksum": null
     },
     {
+      "name": "hsearch-lane",
+      "version": "0.1.0",
+      "source": "workspace",
+      "license": "not selected",
+      "checksum": null
+    },
+    {
       "name": "hsearch-module-abi",
       "version": "0.1.0",
       "source": "workspace",

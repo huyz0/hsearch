@@ -210,6 +210,10 @@ pub enum RecordOp {
     Put = 1,
     /// Remove; carries none.
     Delete = 2,
+    /// The lane writer will accept no later record for this index: the index moves to another
+    /// lane (hot-index promotion, M03.08) or leaves. Carries no payload; `seq` is the index's last
+    /// sequence in this lane.
+    Seal = 3,
 }
 
 /// Where a record's document bytes are.
@@ -305,7 +309,7 @@ fn put_record(w: &mut Writer<'_>, r: &RecordSpec<'_>) -> Result<()> {
     w.u64(r.seq);
     w.u8(r.op as u8);
     match (r.op, r.payload) {
-        (RecordOp::Delete, PayloadRef::None) => w.u8(0),
+        (RecordOp::Delete | RecordOp::Seal, PayloadRef::None) => w.u8(0),
         (RecordOp::Put, PayloadRef::Inline(b))
             if !b.is_empty() && b.len() <= MAX_INLINE_RECORD_BYTES =>
         {
@@ -343,10 +347,11 @@ fn get_record<'a>(r: &mut Reader<'a>) -> Result<RecordSpec<'a>> {
     let op = match r.u8()? {
         1 => RecordOp::Put,
         2 => RecordOp::Delete,
+        3 => RecordOp::Seal,
         _ => return Err(FormatError::Malformed("record op")),
     };
     let payload = match (op, r.u8()?) {
-        (RecordOp::Delete, 0) => PayloadRef::None,
+        (RecordOp::Delete | RecordOp::Seal, 0) => PayloadRef::None,
         (RecordOp::Put, 1) => {
             let n =
                 usize::try_from(r.u32()?).map_err(|_| FormatError::TooLarge("inline record"))?;

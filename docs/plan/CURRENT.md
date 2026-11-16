@@ -6,7 +6,7 @@ One page. Live task status is generated from `tasks.json` (`python3 docs/plan/to
 [product-requirements.md](product-requirements.md) is the authoritative product requirement list (confirmed 13 Nov 2026). It wins over older plan text where they conflict.
 
 ## What exists
-- Workspace crates: `hsearch-types`, `hsearch-observe`, `hsearch-engine` (bounded Lucene adapter over `lucene-rust`), `hsearch-object` (provider-neutral object/CAS traits plus in-memory fault double), `hsearch-s3` (S3-compatible adapter, proven against pinned RustFS by `probe` and the contract suite; evidence in `evidence/m03-02-rustfs-probe.md`), `hsearch-testkit`.
+- Workspace crates: `hsearch-types`, `hsearch-observe`, `hsearch-engine` (bounded Lucene adapter over `lucene-rust`), `hsearch-object` (provider-neutral object/CAS traits plus in-memory fault double), `hsearch-format` (versioned byte formats), `hsearch-lane` (M03.08: fenced commit lanes, the ordered conditional-create slot log with shared lanes, batching, hot-index promotion and the payload-plus-head-CAS comparison; evidence in `evidence/m03-08-lanes.md`), `hsearch-s3` (S3-compatible adapter, proven against pinned RustFS by `probe` and the contract suite; evidence in `evidence/m03-02-rustfs-probe.md`), `hsearch-testkit`.
 - `scripts/rustfs.sh up|restart|down` starts the digest-pinned RustFS for local runs and CI; the `hsearch-s3` tests need it (set `HSEARCH_S3_REQUIRED=1` so a missing store fails instead of skipping).
 - Differential tests against Java Lucene fixtures under `fixtures/`, rendered by `crates/engine/tests/render_adapter_fixtures.py`.
 - API contract: `docs/plan/api-compatibility.md`, `api-profile.json`, `python3 tools/api_contract.py check`.

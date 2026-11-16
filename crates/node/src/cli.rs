@@ -1,7 +1,7 @@
 //! Command-line options of the `hsearch-node` binary.
 use std::path::PathBuf;
 
-use crate::Limits;
+use crate::{Limits, MappingLimits};
 
 /// Parsed flags.
 #[derive(Debug, Eq, PartialEq)]
@@ -14,6 +14,8 @@ pub struct Options {
     pub insecure: bool,
     /// Request limits; every default is the M02.05 value.
     pub limits: Limits,
+    /// Field, depth and nested-object limits (PR-42).
+    pub mapping_limits: MappingLimits,
 }
 
 /// Parse the arguments after the program name.
@@ -23,6 +25,7 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, Str
         data_dir: PathBuf::from("hsearch-data"),
         insecure: false,
         limits: Limits::default(),
+        mapping_limits: MappingLimits::default(),
     };
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -37,10 +40,16 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, Str
             "--memory-budget-bytes" => {
                 options.limits.memory_budget_bytes = number(&mut args, &arg)?;
             }
+            "--max-fields" => options.mapping_limits.max_fields = number(&mut args, &arg)?,
+            "--max-field-depth" => options.mapping_limits.max_depth = number(&mut args, &arg)?,
+            "--max-nested-objects" => {
+                options.mapping_limits.max_nested_objects = number(&mut args, &arg)?;
+            }
             other => return Err(format!("unknown argument {other}")),
         }
     }
     options.limits.validate()?;
+    options.mapping_limits.validate()?;
     Ok(options)
 }
 
@@ -119,5 +128,27 @@ mod tests {
             .is_err()
         );
         assert!(parse(&["--max-document-bytes", "100", "--max-bulk-bytes", "99"]).is_err());
+    }
+
+    #[test]
+    fn mapping_limits_are_set_by_flag_and_unworkable_ones_are_refused() {
+        assert_eq!(parse(&[]).unwrap().mapping_limits, MappingLimits::default());
+        let options = parse(&[
+            "--max-fields",
+            "50",
+            "--max-field-depth",
+            "5",
+            "--max-nested-objects",
+            "7",
+        ])
+        .unwrap();
+        assert_eq!(options.mapping_limits.max_fields, 50);
+        assert_eq!(options.mapping_limits.max_depth, 5);
+        assert_eq!(options.mapping_limits.max_nested_objects, 7);
+        assert!(parse(&["--max-fields", "0"]).is_err());
+        assert!(parse(&["--max-fields", "10001"]).is_err());
+        assert!(parse(&["--max-field-depth", "0"]).is_err());
+        assert!(parse(&["--max-nested-objects", "0"]).is_err());
+        assert!(parse(&["--max-fields"]).is_err());
     }
 }
