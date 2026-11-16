@@ -28,7 +28,7 @@ fn main() {
     let batches: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(400);
     let batch: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(100);
     let slow: f64 = args.next().and_then(|v| v.parse().ok()).unwrap_or(100.0);
-    let auto_merge: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(16);
+    let auto_merge: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(4);
     let dir = std::env::temp_dir().join(format!("hsearch-tail-{}", std::process::id()));
     let store = Arc::new(
         MemoryStore::new(MemoryLimits {

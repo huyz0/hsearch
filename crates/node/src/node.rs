@@ -701,7 +701,7 @@ mod tests {
             let node = Node::with_limits(store(), dir("merge"), limits).unwrap();
             node.schema_of(&mapping).unwrap().limits().auto_merge_mb
         };
-        assert_eq!(Node::new(store(), dir("merge")).limits().auto_merge_mb, 16);
+        assert_eq!(Node::new(store(), dir("merge")).limits().auto_merge_mb, 4);
         assert_eq!((schema(0), schema(64), schema(16)), (0, 64, 16));
         // The engine clamps what the node would never send.
         assert_eq!(
