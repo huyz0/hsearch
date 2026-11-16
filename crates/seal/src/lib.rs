@@ -151,7 +151,9 @@ fn key_error(e: KeyError) -> Error {
     match e {
         KeyError::NotAllowed | KeyError::KeyUnusable => Error::PermissionDenied,
         KeyError::Provider(p) => match p {
-            ProviderError::Denied | ProviderError::Revoked => Error::PermissionDenied,
+            ProviderError::Denied | ProviderError::Revoked | ProviderError::Destroyed => {
+                Error::PermissionDenied
+            }
             ProviderError::Throttled { .. } => Error::Throttled,
             ProviderError::Timeout | ProviderError::Unavailable => Error::Unavailable,
             ProviderError::Cancelled => Error::Cancelled,

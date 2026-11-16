@@ -16,10 +16,11 @@ use hsearch_object::{
 };
 use hsearch_seal::{Scope, ScopeResolver, SealConfig, SealedBackend};
 use hsearch_security::audit::MemoryAuditSink;
-use hsearch_security::clock::ManualClock;
+use hsearch_security::clock::{Clock, ManualClock};
 use hsearch_security::ids::IndexId;
 use hsearch_security::keys::{KeyRef, Profile};
 use hsearch_security::manager::{CachePolicy, KeyAllowlist, KeyManager};
+use hsearch_security::rotation::PolicyGate;
 use hsearch_security::test_kms::TestKms;
 
 struct Notify(std::thread::Thread);
@@ -150,6 +151,7 @@ impl ScopeResolver for Switch {
 }
 
 struct Rig {
+    clock: Arc<ManualClock>,
     kms: Arc<TestKms>,
     keys: Arc<KeyManager>,
     tap: Arc<Tap>,
@@ -179,6 +181,7 @@ impl ObjectBackend for Shared {
 
 fn rig_with(config: SealConfig) -> Rig {
     let kms = Arc::new(TestKms::new());
+    let clock = Arc::new(ManualClock::new());
     kms.create_key(&kref("default")).unwrap();
     kms.create_key(&kref("invoices")).unwrap();
     let keys = Arc::new(
@@ -189,7 +192,7 @@ fn rig_with(config: SealConfig) -> Rig {
             kref("default"),
             CachePolicy::default(),
             Arc::new(MemoryAuditSink::new(10_000)),
-            Arc::new(ManualClock::new()),
+            clock.clone(),
         )
         .unwrap(),
     );
@@ -202,6 +205,7 @@ fn rig_with(config: SealConfig) -> Rig {
     let sealed =
         SealedBackend::new(Shared(tap.clone()), keys.clone(), Arc::new(Scopes), config).unwrap();
     Rig {
+        clock,
         kms,
         keys,
         tap,
@@ -736,4 +740,214 @@ fn a_payload_that_cannot_fit_once_sealed_is_refused_before_any_key_is_made() {
     .unwrap_err();
     assert_eq!(err, Error::InvalidInput);
     assert_eq!(r.kms.total_calls(), 0);
+}
+
+#[test]
+fn after_a_key_is_destroyed_its_objects_cannot_be_read_warm_cold_or_after_a_restart() {
+    let r = rig();
+    put(&r, "r1", "invoices/a", &plain(300));
+    put(&r, "r2", "orders/a", &plain(300));
+    let v = block_on(r.sealed.head(&ctx(), &key("invoices/a")))
+        .unwrap()
+        .version;
+    let vo = block_on(r.sealed.head(&ctx(), &key("orders/a")))
+        .unwrap()
+        .version;
+    assert!(read(&r, "invoices/a", &v, 0, 10).is_ok());
+    let dropped = r
+        .keys
+        .shred_key(
+            &kref("invoices"),
+            &IndexId::new("invoices").unwrap(),
+            2,
+            &Default::default(),
+        )
+        .unwrap();
+    assert!(dropped >= 1);
+    // Warm decorator, cold decorator over the same manager, and a restarted node with a new manager and a
+    // cold cache: the data key cannot be recovered by any of them.
+    assert_eq!(
+        read(&r, "invoices/a", &v, 0, 10),
+        Err(Error::PermissionDenied)
+    );
+    let cold = SealedBackend::new(
+        Shared(r.tap.clone()),
+        r.keys.clone(),
+        Arc::new(Scopes),
+        config(),
+    )
+    .unwrap();
+    assert_eq!(
+        block_on(cold.head(&ctx(), &key("invoices/a"))).unwrap_err(),
+        Error::PermissionDenied
+    );
+    let restarted = KeyManager::new(
+        Profile::Development,
+        r.kms.clone(),
+        KeyAllowlist::new(vec![("test".into(), "acct".into())]),
+        kref("default"),
+        CachePolicy::default(),
+        Arc::new(MemoryAuditSink::new(100)),
+        Arc::new(ManualClock::new()),
+    )
+    .unwrap();
+    let after = SealedBackend::new(
+        Shared(r.tap.clone()),
+        Arc::new(restarted),
+        Arc::new(Scopes),
+        config(),
+    )
+    .unwrap();
+    assert_eq!(
+        block_on(after.head(&ctx(), &key("invoices/a"))).unwrap_err(),
+        Error::PermissionDenied
+    );
+    // A restored key stays destroyed, and a write to that index now fails too.
+    r.kms.restore(&kref("invoices"));
+    assert_eq!(
+        read(&r, "invoices/a", &v, 0, 10),
+        Err(Error::PermissionDenied)
+    );
+    let err = block_on(
+        r.sealed
+            .create(&ctx(), &mutation("w", "invoices/b", &plain(10))),
+    )
+    .unwrap_err();
+    assert_eq!(err, Error::PermissionDenied);
+    // Another index is untouched.
+    assert!(read(&r, "orders/a", &vo, 0, 10).is_ok());
+}
+
+#[test]
+fn a_kms_outage_serves_cached_keys_only_until_their_lifetime_and_never_falls_back_to_stale() {
+    let r = rig();
+    put(&r, "r1", "invoices/a", &plain(300));
+    let v = block_on(r.sealed.head(&ctx(), &key("invoices/a")))
+        .unwrap()
+        .version;
+    // A node with a cold cache that has not seen the object: its first open must reach the provider.
+    let node = SealedBackend::new(
+        Shared(r.tap.clone()),
+        r.keys.clone(),
+        Arc::new(Scopes),
+        config(),
+    )
+    .unwrap();
+    r.keys
+        .invalidate_index(&IndexId::new("invoices").unwrap(), 1);
+    r.kms
+        .inject(hsearch_security::test_kms::Fault::Unavailable, 1);
+    // Cold open during the outage fails; it does not invent a key.
+    assert_eq!(
+        block_on(node.read_range(
+            &ctx(),
+            &key("invoices/a"),
+            &v,
+            ByteRange::new(0, 10).unwrap()
+        )),
+        Err(Error::Unavailable)
+    );
+    // The outage ends: the key is fetched once and cached for its lifetime.
+    let again = block_on(node.read_range(
+        &ctx(),
+        &key("invoices/a"),
+        &v,
+        ByteRange::new(0, 10).unwrap(),
+    ));
+    assert!(again.is_ok(), "{again:?}");
+    let calls = r.kms.total_calls();
+    // Outage again: reads inside the lifetime still work from the cache and call nothing.
+    r.kms
+        .inject(hsearch_security::test_kms::Fault::Unavailable, 1000);
+    r.clock.advance(Duration::from_secs(299));
+    assert!(
+        block_on(node.read_range(
+            &ctx(),
+            &key("invoices/a"),
+            &v,
+            ByteRange::new(0, 10).unwrap()
+        ))
+        .is_ok()
+    );
+    assert_eq!(r.kms.total_calls(), calls);
+    // Past the lifetime the cached key is gone and the outage refuses the read: no stale fallback.
+    r.clock.advance(Duration::from_secs(2));
+    assert_eq!(
+        block_on(node.read_range(
+            &ctx(),
+            &key("invoices/a"),
+            &v,
+            ByteRange::new(0, 10).unwrap()
+        )),
+        Err(Error::Unavailable)
+    );
+}
+
+/// A resolver gated by policy freshness, as a node would wire it.
+struct Gated {
+    gate: Mutex<PolicyGate>,
+    clock: Arc<ManualClock>,
+}
+impl ScopeResolver for Gated {
+    fn scope(&self, key: &ObjectKey) -> Result<Scope, Error> {
+        let generation = self
+            .gate
+            .lock()
+            .unwrap()
+            .check(self.clock.monotonic())
+            .map_err(|_| Error::PermissionDenied)?;
+        Ok(Scope {
+            generation,
+            ..Scopes.scope(key)?
+        })
+    }
+}
+
+#[test]
+fn a_node_that_loses_the_policy_channel_stops_serving_when_freshness_expires() {
+    let r = rig();
+    put(&r, "r1", "orders/a", &plain(300));
+    let v = block_on(r.sealed.head(&ctx(), &key("orders/a")))
+        .unwrap()
+        .version;
+    let mut gate = PolicyGate::new(Duration::from_secs(30));
+    gate.accept(1, false, r.clock.monotonic()).unwrap();
+    let gated = Arc::new(Gated {
+        gate: Mutex::new(gate),
+        clock: r.clock.clone(),
+    });
+    let node = SealedBackend::new(
+        Shared(r.tap.clone()),
+        r.keys.clone(),
+        gated.clone(),
+        config(),
+    )
+    .unwrap();
+    let range = || ByteRange::new(0, 10).unwrap();
+    assert!(block_on(node.read_range(&ctx(), &key("orders/a"), &v, range())).is_ok());
+    r.clock.advance(Duration::from_secs(30));
+    assert!(block_on(node.read_range(&ctx(), &key("orders/a"), &v, range())).is_ok());
+    r.clock.advance(Duration::from_secs(1));
+    assert_eq!(
+        block_on(node.read_range(&ctx(), &key("orders/a"), &v, range())),
+        Err(Error::PermissionDenied)
+    );
+    // A delivered policy restores service; a delivered revocation ends it at once.
+    gated
+        .gate
+        .lock()
+        .unwrap()
+        .accept(2, false, r.clock.monotonic())
+        .unwrap();
+    assert!(block_on(node.read_range(&ctx(), &key("orders/a"), &v, range())).is_ok());
+    gated
+        .gate
+        .lock()
+        .unwrap()
+        .accept(3, true, r.clock.monotonic())
+        .unwrap();
+    assert_eq!(
+        block_on(node.read_range(&ctx(), &key("orders/a"), &v, range())),
+        Err(Error::PermissionDenied)
+    );
 }

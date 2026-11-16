@@ -41,6 +41,7 @@ struct Kek {
     versions: Vec<[u8; 32]>,
     disabled: BTreeSet<usize>,
     revoked: bool,
+    destroyed: bool,
 }
 
 impl Drop for Kek {
@@ -90,6 +91,7 @@ impl TestKms {
                 versions: vec![kek],
                 disabled: BTreeSet::new(),
                 revoked: false,
+                destroyed: false,
             },
         );
         Ok(())
@@ -115,7 +117,10 @@ impl TestKms {
     /// The owner re-enables a revoked key.
     pub fn restore(&self, key: &KeyRef) {
         if let Some(entry) = self.lock().keys.get_mut(key) {
-            entry.revoked = false;
+            // A destroyed key is gone; restoring it is a no-op.
+            if !entry.destroyed {
+                entry.revoked = false;
+            }
         }
     }
 
@@ -226,6 +231,17 @@ impl KeyProvider for TestKms {
         true
     }
 
+    fn destroy_key(&self, key: &KeyRef, opts: &CallOptions) -> Result<(), ProviderError> {
+        self.enter(opts)?;
+        let mut state = self.lock();
+        let entry = state.keys.get_mut(key).ok_or(ProviderError::NotFound)?;
+        entry.destroyed = true;
+        for version in &mut entry.versions {
+            version.zeroize();
+        }
+        Ok(())
+    }
+
     fn key_info(&self, key: &KeyRef, opts: &CallOptions) -> Result<KeyInfo, ProviderError> {
         self.infos.fetch_add(1, Ordering::Relaxed);
         self.enter(opts)?;
@@ -234,7 +250,7 @@ impl KeyProvider for TestKms {
         let latest = entry.versions.len() - 1;
         Ok(KeyInfo {
             current: version_name(latest),
-            usable: !entry.revoked && !entry.disabled.contains(&latest),
+            usable: !entry.destroyed && !entry.revoked && !entry.disabled.contains(&latest),
             account: key.account().to_string(),
         })
     }
@@ -251,6 +267,9 @@ impl KeyProvider for TestKms {
         let (version, mut kek) = {
             let state = self.lock();
             let entry = state.keys.get(key).ok_or(ProviderError::NotFound)?;
+            if entry.destroyed {
+                return Err(ProviderError::Destroyed);
+            }
             if entry.revoked {
                 return Err(ProviderError::Revoked);
             }
@@ -297,6 +316,9 @@ impl KeyProvider for TestKms {
                 .keys
                 .get(wrapped.key())
                 .ok_or(ProviderError::NotFound)?;
+            if entry.destroyed {
+                return Err(ProviderError::Destroyed);
+            }
             if entry.revoked {
                 return Err(ProviderError::Revoked);
             }

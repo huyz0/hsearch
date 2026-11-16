@@ -2447,8 +2447,13 @@
             "M05.04"
           ],
           "owner": "security/crypto",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m05-05-rotation-and-revocation.md",
+              "result": "Sans-I/O rewrap/retirement inventory (stage, verify, publish; a version retires only when no selection or live reader depends on it; restart keeps published overlays) enumerated over all 161,051 five-step histories against an independent model; PolicyGate fails closed on stale, revoked and regressed policy with the revocation envelope measured at max_age; crypto-shredding (destroy_key, shred_key) makes an index unreadable warm, cold and after restart while others read, audited with rotate/revoke/destroy; KMS outage never falls back to stale keys. 15 + 3 new tests, red first on stubs, mutation round with one stated equivalent. Not done: policy delivery channel, persisted inventory and atomic overlay publication, DEK/cipher rotation, real providers, ARM."
+            }
+          ]
         },
         {
           "id": "M05.06",

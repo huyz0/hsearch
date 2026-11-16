@@ -25,6 +25,12 @@ pub enum AuditOp {
     Invalidate,
     /// A request was refused before reaching the provider.
     Refused,
+    /// A customer key gained a version.
+    Rotate,
+    /// A revocation was applied: the index's cached keys were dropped.
+    Revoke,
+    /// A customer key was destroyed (crypto-shredding).
+    Destroy,
 }
 
 impl AuditOp {
@@ -35,6 +41,9 @@ impl AuditOp {
             AuditOp::Activate => "activate",
             AuditOp::Invalidate => "invalidate",
             AuditOp::Refused => "refused",
+            AuditOp::Rotate => "rotate",
+            AuditOp::Revoke => "revoke",
+            AuditOp::Destroy => "destroy",
         }
     }
 }
