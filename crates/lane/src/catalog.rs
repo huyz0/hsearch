@@ -13,7 +13,7 @@ use hsearch_format::{
 };
 use hsearch_object::{MetadataStore, Precondition, VersionToken};
 
-use crate::io::{Written, fresh_token, key, mutation, read_object, request_id, write};
+use crate::io::{Written, context, fresh_token, key, mutation, read_object, request_id, write};
 use crate::{Error, Result};
 
 /// A bucket page is at most this long on the wire (the format's body bound plus the envelope).
@@ -61,6 +61,30 @@ pub struct VerifyReport {
     pub live: u64,
     /// Tombstones.
     pub deleted: u64,
+}
+
+/// What a caller who can see the index's own descriptor asserts about one name when a bucket page
+/// has to be rebuilt. The catalog cannot decide liveness itself: only the identity's binding
+/// (which name and generation it was bound at) is durable here.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RepairClaim {
+    /// The name.
+    pub name: String,
+    /// The identity the name was last bound to.
+    pub index: Id,
+    /// Whether the identity still exists (the name is live) or was deleted (a tombstone).
+    pub live: bool,
+}
+
+/// What [`Catalog::repair_page`] wrote.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Repaired {
+    /// The bucket.
+    pub bucket: u32,
+    /// Names in the new page.
+    pub names: usize,
+    /// Whether an unreadable page was replaced (true) or an absent one created (false).
+    pub replaced: bool,
 }
 
 /// An open catalog: its identity and fan-out. Cheap to clone, holds no store.
@@ -420,6 +444,133 @@ impl Catalog {
             after = None;
         }
         Ok((out, None))
+    }
+
+    /// Rebuild one bucket page that is missing or does not decode, from the caller's `claims`.
+    ///
+    /// Every claim is checked against the durable identity binding: the identity must have been
+    /// bound, to this name, and the name must belong to this bucket, so an invented or
+    /// misplaced claim is refused. A name's entry takes the binding's generation (plus one for a
+    /// tombstone), and when several claims name one name the highest generation wins. The new
+    /// page restarts the page's commit counter at 1 and replaces the unreadable object by
+    /// compare-and-swap on its version (create-only when it was absent), so a concurrent edit or
+    /// a second repairer loses with [`Error::Contended`] and nothing is overwritten. A page that
+    /// decodes is refused ([`Error::Invalid`]): repair never rewrites healthy data.
+    ///
+    /// **What it cannot check:** that `claims` is complete (a name left out is forgotten, and a
+    /// forgotten tombstone lets its identity be bound again under the same generation) or that a
+    /// claim's `live` flag is true. Both are the caller's, taken from the index descriptors
+    /// (M05/M06). Cost: 1 HEAD and 1 GET for the page, 1 HEAD and 1 GET per claim, 1 PUT. Not a
+    /// hot path; no LIST.
+    pub async fn repair_page<S: MetadataStore>(
+        &self,
+        store: &S,
+        layout: &Layout,
+        bucket: u32,
+        claims: &[RepairClaim],
+    ) -> Result<Repaired> {
+        if u64::from(bucket) >= 1u64 << self.bits {
+            return Err(Error::Invalid("repair bucket"));
+        }
+        if claims.is_empty() || claims.len() > hsearch_format::MAX_CATALOG_PAGE_ENTRIES {
+            return Err(Error::Invalid("repair claims"));
+        }
+        let k = layout.catalog_page(&self.id, bucket);
+        let object = key(&k)?;
+        // Decide what is there before reading a single binding.
+        let version = match read_object(store, &object, PAGE_READ_BOUND).await {
+            Ok(None) => None,
+            Ok(Some((bytes, version))) => {
+                if CatalogPage::decode_at(bytes.as_bytes(), self.bits, &self.id, bucket).is_ok() {
+                    return Err(Error::Invalid("the page is healthy"));
+                }
+                Some(version)
+            }
+            // Empty or oversized: still an object to replace, at its current version.
+            Err(Error::Format(_)) => Some(store.head(&context(), &object).await?.version),
+            Err(error) => return Err(error),
+        };
+        let mut chosen: std::collections::BTreeMap<String, CatalogEntry> =
+            std::collections::BTreeMap::new();
+        for claim in claims {
+            if bucket_of(&self.id, self.bits, &claim.name) != bucket {
+                return Err(Error::Invalid("a claimed name is not in this bucket"));
+            }
+            if claim.index == [0; 16] {
+                return Err(Error::Invalid("the zero id is not an index identity"));
+            }
+            let binding = self.read_binding(store, layout, &claim.index).await?;
+            if binding.name != claim.name {
+                return Err(Error::Invalid("the identity was bound to another name"));
+            }
+            let entry = CatalogEntry {
+                name: claim.name.clone(),
+                state: if claim.live {
+                    NameState::Live
+                } else {
+                    NameState::Deleted
+                },
+                index: claim.index,
+                name_generation: if claim.live {
+                    binding.name_generation
+                } else {
+                    binding.name_generation.saturating_add(1)
+                },
+            };
+            match chosen.get(&claim.name) {
+                Some(have) if have.name_generation > entry.name_generation => {}
+                Some(have) if have.name_generation == entry.name_generation && *have != entry => {
+                    return Err(Error::Invalid("claims for one name conflict"));
+                }
+                _ => {
+                    chosen.insert(claim.name.clone(), entry);
+                }
+            }
+        }
+        let page = CatalogPage {
+            catalog: self.id,
+            bucket,
+            generation: 1,
+            entries: chosen.into_values().collect(),
+            token: fresh_token(),
+        };
+        let mut bytes = Vec::new();
+        page.encode(&mut bytes, self.bits)?;
+        let precondition = version
+            .clone()
+            .map_or(Precondition::Absent, Precondition::Matches);
+        let request = mutation(
+            &request_id("cx", &self.id, u64::from(bucket) << 32 | 1, &page.token),
+            &k,
+            &bytes,
+            precondition,
+        )?;
+        match write(store, &request, version.is_some()).await {
+            Written::Done(_) => Ok(Repaired {
+                bucket,
+                names: page.entries.len(),
+                replaced: version.is_some(),
+            }),
+            Written::Refused(error) => Err(error.into()),
+            Written::Occupied | Written::Unknown => Err(Error::Contended),
+        }
+    }
+
+    async fn read_binding<S: MetadataStore>(
+        &self,
+        store: &S,
+        layout: &Layout,
+        index: &Id,
+    ) -> Result<IdentityBinding> {
+        let k = key(&layout.catalog_identity(&self.id, index))?;
+        let Some((bytes, _)) = read_object(store, &k, 1024).await? else {
+            return Err(Error::Invalid("the identity was never bound"));
+        };
+        Ok(IdentityBinding::decode_at(
+            bytes.as_bytes(),
+            &self.id,
+            index,
+        )?)
     }
 
     /// Read every bucket and check that each page decodes as the page its key named, with every

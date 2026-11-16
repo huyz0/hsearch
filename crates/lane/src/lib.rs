@@ -28,7 +28,10 @@ pub mod members;
 pub mod place;
 pub mod promote;
 
-pub use catalog::{Catalog, CatalogCursor, Resolution, VerifyReport, create_catalog, open_catalog};
+pub use catalog::{
+    Catalog, CatalogCursor, RepairClaim, Repaired, Resolution, VerifyReport, create_catalog,
+    open_catalog,
+};
 pub use error::{Error, Result};
 pub use head::{Advance, Change, advance_head, create_head, read_head};
 pub use io::block_on;
