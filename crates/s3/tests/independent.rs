@@ -1,7 +1,8 @@
 //! M03.13: the adapter's attribution and an SDK's hidden retries, checked against an independent
 //! record of the wire. Needs RustFS like `rustfs.rs` (`HSEARCH_S3_ENDPOINT`, or SKIPPED).
 //!
-//! Two clients run through a recording proxy that classifies requests by its own rules
+//! Two clients run through a recording proxy that classifies requests by its own rules (the verb from the wire's method, path,
+//! query and headers; the outcome from a status table written separately in `wire/mod.rs`)
 //! (`wire/mod.rs`): the adapter's own client (`S3Store`, ureq underneath) and a real SDK
 //! (`aws-sdk-s3`, whose retry loop the adapter does not control), the SDK's every attempt reported
 //! through `S3Store::record_attempt` by an interceptor. Counts must agree with the wire exactly;
@@ -163,7 +164,7 @@ fn reason(status: u16) -> u64 {
         412 => "Precondition Failed",
         500 => "Internal Server Error",
         503 => "Service Unavailable",
-        other => panic!("no reason phrase for {other}"),
+        _ => "",
     }
     .len() as u64
 }
@@ -564,7 +565,7 @@ fn adapter_lost_race_and_its_resolution_reads_are_attributed_under_retry() {
     assert!(kinds.contains(&Kind::List));
     let l = store.ledger();
     assert_eq!(l.attempts_with(Outcome::Conflict), 1);
-    assert!(l.retries() >= 1, "the throttled LIST was repeated");
+    assert_eq!(l.retries(), 1, "exactly the throttled LIST was repeated");
     assert_agree(&store, &rig.wire);
 }
 
@@ -614,8 +615,47 @@ fn a_misclassifying_attribution_path_fails_the_reconciliation() {
     // An attempt the ledger lost entirely is also caught.
     let silent = rig.adapter(1);
     assert!(!wire::attempt_mismatches(&silent.ledger(), &rig.wire.seen()).is_empty());
-    // And a retry that is not flagged is not an attempt the wire disagrees with, so it is the
-    // flag, not the count, that the interceptor tests above pin: 2 retries in the first test.
+    // An outcome misclassified: the wire gave a 200, the path recorded a 412.
+    let outcome = rig.adapter(1);
+    outcome.record_attempt(Role::Payload, Verb::Get, Some(412), 752, 584, false);
+    let mismatch = wire::attempt_mismatches(&outcome.ledger(), &rig.wire.seen());
+    assert_eq!(mismatch.len(), 2, "{mismatch:?}");
+    // The retry flag is not on the wire: the tests above pin it with exact equalities.
+}
+
+#[test]
+fn adapter_backoff_pauses_grow_and_a_refused_connection_sends_nothing() {
+    let Some(rig) = rig() else { return };
+    // Nothing listens on this port: every connect is refused, so nothing is ever sent, which is
+    // the one case a write may be repeated.
+    let closed = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().to_string()
+    };
+    let store = store_at(&closed, &rig.bucket, &rig.access, &rig.secret).with_retry(
+        hsearch_s3::RetryPolicy {
+            max_attempts: 3,
+            backoff: Duration::from_millis(40),
+        },
+    );
+    let first = mutation(b"w9", b"k", b"v1", Precondition::Absent);
+    let started = std::time::Instant::now();
+    assert_eq!(run(store.create(&ctx(), &first)), Err(Error::Unavailable));
+    // Pauses of 40 ms then 80 ms between three attempts.
+    assert!(
+        started.elapsed() >= Duration::from_millis(120),
+        "{:?}",
+        started.elapsed()
+    );
+    let l = store.ledger();
+    assert_eq!(l.attempts_with(Outcome::Transport), 3);
+    assert_eq!(l.retries(), 2);
+    let cell = wire::ledger_cell(&l, Verb::Put, Outcome::Transport);
+    assert_eq!(
+        (cell.attempts, cell.request_bytes),
+        (3, 0),
+        "nothing was sent"
+    );
 }
 
 #[test]

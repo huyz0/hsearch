@@ -23,7 +23,7 @@
 | Adapter multipart, part throttled, abort | POST, PUT 503, PUT, PUT, POST / POST, PUT, DELETE | agrees |
 | Adapter, 5 throttles armed, policy 3 | 3 HEADs, 2 faults never reached | last real failure `Throttled`; the context's attempt budget (2) wins over the policy |
 
-Attempt counts and **bytes agree exactly** in every row, request and response.
+Attempt counts and **bytes agree exactly** in every row, request and response. Exactness holds for RustFS over loopback HTTP/1.1 only: the response size uses the canonical reason phrase (AWS S3 sends `Slow Down` for 503, HTTP/2 has none), and the proxy's injected answers use the canonical text, so those rows do not test it. The wire bytes are what the proxy wrote, including its `Connection: close`.
 
 ## Residuals found and fixed, not rounded away
 
@@ -37,9 +37,13 @@ Each mutation of `crates/s3/src/lib.rs` made tests fail: `record_attempt` droppi
 
 ## Benchmark and trade-offs
 
-`cargo run --release -p hsearch-s3 --example bench`, 2 s per cell, before and after, same container: 1 KiB PUT 173 then 183 per s, 16 MiB PUT 107.4 then 104.8 MiB/s, 16-writer 64 KiB PUT 649 then 751 per s, sparse CAS commit p50 9.8 then 11.5 ms. Everything is inside run-to-run noise: the change adds two constant header strings and one integer-to-string per body request, and no allocation per request beyond that. Per commit: 1.00 PUT and no other request, unchanged.
+`cargo run --release -p hsearch-s3 --example bench`, 2 s per cell, before and after, same container: 1 KiB PUT 173 then 183 per s, 16 MiB PUT 107.4 then 104.8 MiB/s, 16-writer 64 KiB PUT 649 then 751 per s, sparse CAS commit p50 9.8 then 11.5 ms. Everything is inside run-to-run noise: the change adds a few small per-request strings (the two header names and values and a content-length string, under ten bytes each); a single run per cell, no variance measured, so a 16% swing in either direction is not distinguishable from noise here. Per commit: 1.00 PUT and no other request, unchanged.
 
 Downsides: a heavier dev dependency tree (about 190 crates, tests only; `docs/plan/dependencies.json` records it, no new C dependency); the SDK is a check, not the production client; `record_attempt` is a public API that trusts its caller's status and sizes.
+
+## Review follow-ups
+
+An independent review found: the outcome table in the proxy mirrors the adapter's (only verbs are independent), so a misclassified outcome is now also tested by hand (a 412 recorded for a 200); the retry flag cannot be reconciled with the wire and is pinned by exact equalities (the lost-race test now asserts exactly one retry); backoff is now tested (two growing pauses, at least 120 ms for 40 ms steps); the pre-send path is tested with a refused connection (3 attempts, 2 retries, 0 request bytes). `record_attempt` trusts its caller, and the test interceptor keeps one attempt counter per client, so SDK calls on one client must be sequential.
 
 ## Not done
 
