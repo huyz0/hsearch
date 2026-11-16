@@ -1,6 +1,7 @@
 //! v0 log-slot and root encodings. Disposable: replaced by the M03.03 formats.
 //! Every decode is bounds-checked and refuses rather than guesses.
 use crate::{Error, Result};
+use std::sync::Arc;
 
 const SLOT_MAGIC: &[u8; 8] = b"HSLOG0\0\0";
 const FENCE_MAGIC: &[u8; 8] = b"HSFENC0\0";
@@ -80,8 +81,9 @@ pub const MAX_FILES: usize = 4096;
 /// One typed field value, in the schema's canonical order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Field {
-    /// Keyword or text.
-    Str(String),
+    /// Keyword or text. Shared: an op's text is held once, by the op, the engine's document
+    /// and its stored value, which matters for a very large text field.
+    Str(Arc<str>),
     /// 32-bit integer value.
     Int(i64),
     /// Boolean.
@@ -418,7 +420,7 @@ pub fn decode_slot_with(
                 let mut fields = Vec::with_capacity(n);
                 for field_at in 0..n {
                     fields.push(match r.u8()? {
-                        1 => Field::Str(r.string(MAX_FIELD_BYTES)?),
+                        1 => Field::Str(Arc::from(r.string(MAX_FIELD_BYTES)?)),
                         BLOB_TAG => {
                             let blob = Blob {
                                 epoch: r.u64()?,
@@ -437,7 +439,7 @@ pub fn decode_slot_with(
                             if text.len() as u64 != blob.len {
                                 return Err(Error::Corrupt);
                             }
-                            Field::Str(text)
+                            Field::Str(Arc::from(text))
                         }
                         2 => Field::Int(r.i64()?),
                         3 => match r.u8()? {
@@ -667,7 +669,10 @@ mod tests {
         let big = vec![
             Op::Put {
                 id: "a".repeat(256),
-                fields: vec![Field::Str("é".repeat(100_000)), Field::Str(String::new())],
+                fields: vec![
+                    Field::Str("é".repeat(100_000).into()),
+                    Field::Str("".into()),
+                ],
             },
             Op::Delete { id: "gone".into() },
         ];
@@ -687,7 +692,7 @@ mod tests {
             first_version: 1,
             ops: vec![Op::Put {
                 id: "big".into(),
-                fields: vec![Field::Str(text)],
+                fields: vec![Field::Str(text.into())],
             }],
         };
         assert_eq!(decode_slot(&encode_slot(&slot).unwrap()).unwrap(), slot);
@@ -699,7 +704,7 @@ mod tests {
             Op::Put {
                 id: "ab".into(),
                 fields: vec![
-                    Field::Str("x".repeat(INLINE_FIELD_MAX + 7)),
+                    Field::Str("x".repeat(INLINE_FIELD_MAX + 7).into()),
                     Field::Int(1),
                     Field::Str("yy".into()),
                 ],
@@ -726,7 +731,7 @@ mod tests {
             first_version: 1,
             ops: vec![Op::Put {
                 id: "big".into(),
-                fields: vec![Field::Str("a".repeat(INLINE_FIELD_MAX + 1))],
+                fields: vec![Field::Str("a".repeat(INLINE_FIELD_MAX + 1).into())],
             }],
         };
         assert!(encode_slot(&slot).is_err());
@@ -746,7 +751,7 @@ mod tests {
                 },
                 Op::Put {
                     id: "big".into(),
-                    fields: vec![Field::Int(1), Field::Str(big.clone())],
+                    fields: vec![Field::Int(1), Field::Str(big.as_str().into())],
                 },
             ],
         };

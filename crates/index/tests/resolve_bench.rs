@@ -24,7 +24,7 @@ fn prepare_a_full_batch_of_partial_updates() {
                     seq_no: 1,
                     primary_term: 1,
                     fields: vec![
-                        Field::Str("x".repeat(200)),
+                        Field::Str("x".repeat(200).into()),
                         Field::Int(i),
                         Field::Bool(true),
                     ],

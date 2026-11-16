@@ -101,12 +101,14 @@ fn exact(schema: &Schema, field: &str, value: Value<'_>, budget: &mut Budget) ->
         field.len()
             + match value {
                 Value::String(s) => s.len(),
+                Value::Shared(s) => s.len(),
                 _ => 8,
             },
         1,
     )?;
     match value {
         Value::String(s) => Ok(Clause::Term(TermQuery::new(field, s.as_bytes()))),
+        Value::Shared(s) => Ok(Clause::Term(TermQuery::new(field, s.as_bytes()))),
         Value::Boolean(b) => Ok(Clause::Term(TermQuery::new(
             field,
             if b {

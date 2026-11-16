@@ -388,7 +388,7 @@ fn a_merged_document_over_the_byte_bound_is_a_limit_refusal() {
         .prepare(
             &s,
             2,
-            &[update("a", &[("title", Field::Str("x".repeat(64)))])],
+            &[update("a", &[("title", Field::Str("x".repeat(64).into()))])],
         )
         .unwrap();
     assert_eq!(outcomes(p.items()), [Outcome::Rejected(Reject::Limit)]);

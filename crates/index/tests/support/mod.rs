@@ -30,7 +30,7 @@ pub fn schema() -> Schema {
 pub fn put(id: &str, tag: &str, n: i64) -> Op {
     Op::Put {
         id: id.to_string(),
-        fields: vec![Field::Str(tag.to_string()), Field::Int(n)],
+        fields: vec![Field::Str(tag.into()), Field::Int(n)],
     }
 }
 

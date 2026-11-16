@@ -97,6 +97,7 @@ impl Operation {
                 version: *version,
                 digest: Some(digest(fields.iter().map(|(_, v)| match v {
                     Value::String(s) => Stored::Text(s),
+                    Value::Shared(s) => Stored::Text(s),
                     Value::Boolean(b) => Stored::Text(if *b { "true" } else { "false" }),
                     Value::Integer(n) | Value::Date(n) => Stored::Long(*n),
                 }))),
@@ -179,6 +180,7 @@ impl Schema {
                         .and_then(|n| {
                             n.checked_add(match value {
                                 Value::String(s) => s.len(),
+                                Value::Shared(s) => s.len(),
                                 _ => 8,
                             })
                         })
