@@ -1889,8 +1889,13 @@
             "M03.10"
           ],
           "owner": "cost/architecture/operations",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-13-wire-reconciliation.md",
+              "result": "Real aws-sdk-s3 retry loop and the adapter's multipart path reconciled against an independent TCP-proxy wire record: attempts per (verb, outcome) and request/response bytes agree exactly on RustFS 1.0.4 over loopback (12 tests, stable over 6 runs); a misclassifying attribution path and five source mutations seen red; residual byte gaps found and fixed. Provisional: RustFS only, canonical reason phrase assumed; the MinIO and real S3 legs are M15.01's."
+            }
+          ]
         },
         {
           "id": "M03.14",
