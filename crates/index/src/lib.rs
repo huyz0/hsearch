@@ -24,6 +24,7 @@
 //! segment-based writer recovery (the engine reopens only from an in-process
 //! checkpoint today, so a restarted writer replays the whole log) and sharing a
 //! log between indexes (M03.09).
+pub mod barrier;
 mod error;
 pub mod format;
 mod index;
