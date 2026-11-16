@@ -4815,11 +4815,11 @@
           "goal": "Qualify exact AWS object/identity/key semantics.",
           "deliverables": [
             "Production S3/KMS providers, least-privilege policy and endpoint/version handling",
-            "Run the M03.01 contract suite, the M03.10 response-loss and multipart probes and the M03.11 stale-identical-bytes fencing probe against a pinned MinIO image and a real S3 bucket, with the real-S3 run's frozen request and spend envelope recorded beside the raw output; a store that does not fence distinct-body stale updates blocks M06's commit protocol"
+            "Run the M03.01 contract suite, the M03.10 response-loss and multipart probes the M03.11 stale-identical-bytes fencing probe and the M03.13 real-SDK and multipart attribution reconciliation against the independent wire record against a pinned MinIO image and a real S3 bucket, with the real-S3 run's frozen request and spend envelope recorded beside the raw output; a store that does not fence distinct-body stale updates blocks M06's commit protocol"
           ],
           "validation": [
             "Actual conditional-write/unknown-response/multipart/range histories; KMS grant/version/revoke/rotate tests.",
-            "The M03.10/M03.11 probes run on the pinned MinIO image and on a real S3 bucket, with the real-S3 envelope (requests, spend) frozen beside the raw output and the result labelled provisional if the account or region is not production."
+            "The M03.10, M03.11 and M03.13 probes run on the pinned MinIO image and on a real S3 bucket, with the real-S3 envelope (requests, spend) frozen beside the raw output and the result labelled provisional if the account or region is not production."
           ],
           "definition_of_done": [
             "Real account/region artifacts pass; unsupported capability blocks readiness and missing credentials report NOT-RUN."
