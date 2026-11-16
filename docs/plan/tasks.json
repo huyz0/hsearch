@@ -2985,11 +2985,15 @@
             "M03.14"
           ],
           "owner": "engine/api",
-          "status": "planned",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m21-09-large-documents.md",
-              "result": "Increment 1: retry history keeps a 128-bit digest instead of an owned copy of each document; peak RSS 16x to 12.7x at 1 MiB and 12.6x to 9.8x at 3.9 MiB, throughput unchanged. Provisional, 4-CPU container. The object lane and the 4-100 MiB admission factor are still open."
+              "result": "Increment 1: retry history keeps a 128-bit digest instead of an owned copy of each document; peak RSS 16x to 12.7x at 1 MiB and 12.6x to 9.8x at 3.9 MiB, throughput unchanged. Provisional, 4-CPU container. (Superseded: the object lane and the factor were finished in later increments.)"
+            },
+            {
+              "path": "evidence/m21-09-large-documents.md",
+              "result": "Increment 7: 100 MiB document on RustFS indexed, found by its last term, returned byte-equal, peak 567 MiB (5.7x) under the 32x admission charge; one byte over refused 413 with nothing committed; 4-100 MiB sweep 3.7x-5.7x. Engine growth filed as huyz0/lucene-rust#447. Provisional."
             }
           ]
         },

@@ -135,6 +135,31 @@ The engine alone (a 200 MiB text through `Schema::prepare`, `apply`, `commit`, `
 
 The node frees a source line's buffer as soon as it is parsed when it is larger than 1 MiB. The old code held the buffer from the parse until the bulk returned, so the saving is during the chunk writes only: resident memory there went from 825 MiB to 625 MiB, one run each (the 100 ms samples of that window agree to within 15 MiB; no variance across runs was taken) (`a_large_lines_buffer_is_released_once_it_is_parsed_and_a_small_ones_is_kept`, seen failing without the change). The peak is unchanged (1,084 MiB over baseline before, 1,092 after, same harness; noise), because the peak is at flush.
 
-## Not done: the peak
+## Not done: the peak (superseded by increment 7: bounded by admission, upstream issue filed)
 
 Bounding the peak needs lucene-rust to stop holding 12 bytes per token. The direction, not yet measured: delta-encoded positions with offsets kept only when the field indexes them, as Java's `TermsHash` byte pools do, or flushing a partial segment's postings while a single document is still being inverted. Either changes `PostingEntry` and its consumers in the codecs and must stay drop-in compatible with Java Lucene's segments (the on-disk format is unaffected; the in-memory type is not). That is upstream work in `huyz0/lucene-rust`, not a change to the writer here; until it lands the node's 32x admission charge (6.25 GiB for 200 MiB) is the bound, measured peak 5.4x.
+
+# M21.09 (increment 7): the 100 MiB validation, end to end on RustFS
+
+Provisional: RustFS 1.0.4 (pinned image), shared 4-CPU cloud container, release build for the numbers (the test also runs in a debug build, 47 s). Not real S3.
+
+## The validation test
+
+`a_hundred_mib_text_field_is_found_by_its_last_term_returned_whole_and_bounded` (`crates/node/tests/rustfs.rs`), over HTTP: one document of exactly 100 MiB (`max_document_bytes`) whose last word is `zebra`. It is indexed, found by `match title:zebra`, and `GET _doc` returns the 104,857,600-byte text whole and byte-equal. Peak resident memory over baseline (high-water mark reset after the input exists) must stay under the node's admission charge for that document, 32 x 100 MiB. A document one byte over the limit is refused 413 and `GET` gives 404 with the index still holding one document. Three release runs: 566.7-566.9 MiB (5.7x) after the write, and the peak is read again after the search and the whole-document GET, so the read path is inside the bound (the figure printed by `--nocapture`). The bound is the node's 32x charge copied into the test as a constant, with about 5.6x slack, so it catches a gross regression and not a small one; the sweep rows are single runs from the profile binary, which no gate runs, and the factor is not monotonic (3.7x to 5.7x). No cgroup cap is enforced: the memory is the in-process high-water mark, which includes the test client's buffers. Seen failing first: with the charge set to 4x the node refused the document with 429 naming the bytes free and needed (so memory is bounded by refusal, not growth); a first draft that put `zebra` against a partial word found 0 hits, which showed the test really searches the last term. Skips without an endpoint unless `HSEARCH_S3_REQUIRED=1`.
+
+## Peak memory against size (`rustfs_profile large <MiB>`, one run each)
+
+| document | durable ack | PUTs | peak over baseline | replay on an empty directory |
+|---|---|---|---|---|
+| 4 MiB | 0.09 s | 3 | 22.9 MiB (5.7x) | 0.17 s |
+| 16 MiB | 0.29 s | 4 | 66.9 MiB (4.2x) | 0.56 s |
+| 50 MiB | 0.82 s | 9 | 183.7 MiB (3.7x) | 2.68 s |
+| 100 MiB | 1.60 s | 15 | 566.5 MiB (5.7x) | 3.93 s |
+
+No LIST anywhere. The factor stays between 3.7x and 5.7x (5.4x at 200 MiB, increment 6), so the 32x charge is never below the measured factor and is not changed.
+
+## Downside and what stays open
+
+- The 32x charge is about 5.6x the measured peak: admission refuses documents that would fit. A 100 MiB document charges 3.2 GiB, so a node with a smaller budget refuses it with a retryable 429 (a budget that can never fit it says so).
+- Engine memory still grows about 5x the text through the indexing chain's 12-byte token occurrences. That is upstream, filed as huyz0/lucene-rust#447 (PR-53); the charge can fall when it lands.
+- Replay still has no admission charge (increment 3).
