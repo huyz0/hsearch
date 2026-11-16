@@ -2076,7 +2076,7 @@
             "M03.09"
           ],
           "owner": "cost/architecture/operations",
-          "status": "in_progress",
+          "status": "planned",
           "evidence": [
             {
               "path": "evidence/m03-08-lanes.md",
