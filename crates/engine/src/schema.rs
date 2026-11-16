@@ -1,4 +1,6 @@
 //! Bounded, explicit materialized-index schema. No wire parsing or coercion.
+use std::sync::Arc;
+
 use lucene_analysis::{Analyzer, StandardAnalyzer};
 use lucene_index::document::{Document, KeywordField, LongField, Store, TextField};
 
@@ -268,7 +270,13 @@ impl Schema {
                             return Err(Error::Limit);
                         }
                     }
-                    document.add(TextField::new(*name, *s, Store::Yes));
+                    // One copy of the text, shared by the analyzer: an owned `String` would be
+                    // copied again into the analysis reader.
+                    document.add(TextField::new_shared(
+                        *name,
+                        Arc::<str>::from(*s),
+                        Store::Yes,
+                    ));
                 }
                 (Kind::Integer, Value::Integer(n)) | (Kind::Date, Value::Date(n)) => {
                     document.add(LongField::new(*name, *n, Store::Yes))
