@@ -1,6 +1,6 @@
 # M05.01 and M05.02: identity, authorization and the key-provider contract
 
-Code: `crates/security` (`hsearch-security`), 61 tests (17 unit, 16 identity, 28 key), 96.4% line coverage (floor 90). Contract summary: [security.md](../security.md#implemented-contracts-m0501-m0502).
+Code: `crates/security` (`hsearch-security`), 66 tests (17 unit, 17 identity, 32 key), 96.2% line coverage (floor 90). Contract summary: [security.md](../security.md#implemented-contracts-m0501-m0502).
 
 ## Negative controls (all run, all refused)
 
@@ -38,3 +38,9 @@ Create 1 object: 1 wrap. 1,000 reads: 0 provider calls. After the 300 s lifetime
 ## Not covered
 
 No TLS listener, no policy loading or delivery, no real KMS (M15), no KMS latency or cost per path (M05.08), no ARM run (x86_64 only), no mlock or core-dump controls.
+
+## Independent security review (round 1) and what changed
+
+Fixed: an extended-key-usage-less certificate was accepted for both client and server use (now required, with a test); a cache hit skipped the per-object binding that a cold read enforces (object now in the cache scope); a panic in the provider or audit sink left the key's single-flight entry stuck (drop guard); an unwrap that raced a revocation was cached afterwards (invalidation epoch); expired keys sat in memory until capacity pressure (purged on insert); evicting a policy forgot its generation (bounded floors); any provider denial flushed the whole index's cache, a KMS amplification lever (only a revocation flushes); token labels were unvalidated (now `[A-Za-z0-9._-]`, at most 64); the test KMS is behind the non-default `test-kms` feature.
+
+Left as stated: `Profile` is still a constructor argument, so a deployment that passes `Development` in production defeats the test-provider refusal; deriving it from the build or the deployment record belongs with the node wiring. Tokens have no expiry or per-token revocation (the table is rebuilt to revoke), which the OIDC credential work replaces.

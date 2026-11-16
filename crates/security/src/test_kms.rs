@@ -154,13 +154,6 @@ impl TestKms {
         self.wrap_calls() + self.unwrap_calls() + self.infos.load(Ordering::Relaxed)
     }
 
-    /// The plaintext of a wrapped key, decrypted without checks. For tests asserting that the plaintext
-    /// does not appear in logs; it exists so a test can know what to search for.
-    pub fn peek_for_tests(&self, wrapped: &WrappedKey, ctx: &KeyContext) -> Option<[u8; 32]> {
-        let key = self.unwrap(wrapped, ctx, &CallOptions::default()).ok()?;
-        Some(*key.expose())
-    }
-
     /// The common prelude of every call: cancellation, injected faults, latency.
     fn enter(&self, opts: &CallOptions) -> Result<(), ProviderError> {
         if opts.cancel.is_cancelled() {

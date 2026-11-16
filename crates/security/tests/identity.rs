@@ -555,3 +555,23 @@ fn an_extra_unrelated_certificate_in_the_chain_is_not_trusted() {
     );
     assert!(r.is_ok());
 }
+
+#[test]
+fn a_certificate_without_extended_key_usage_authenticates_nobody() {
+    let f = fixture();
+    let leaf =
+        f.ca.issue_without_eku(&NodeCert::spiffe(
+            "spiffe://example.test/hsearch/prod/coordinator",
+        ))
+        .unwrap();
+    for usage in [CertUse::Client, CertUse::Server] {
+        let r = f.provider.verify(
+            &Presented::Certificate {
+                chain: std::slice::from_ref(&leaf.der),
+                usage,
+            },
+            now(),
+        );
+        assert_eq!(r.unwrap_err(), IdentityError::WrongUsage, "{usage:?}");
+    }
+}

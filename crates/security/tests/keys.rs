@@ -725,30 +725,176 @@ fn revoking_one_indexes_key_blocks_that_index_only() {
 }
 
 #[test]
-fn a_provider_denial_drops_that_indexes_cached_keys() {
+fn a_revocation_seen_at_the_provider_flushes_that_index_but_a_denial_does_not() {
     let rig = rig();
-    let a = ctx("orders", 1);
-    let b = ctx("orders", 2);
-    let other = ctx("payroll", 1);
+    let (a, other) = (ctx("orders", 1), ctx("payroll", 1));
     let (_, wa) = rig.manager.create_object_key(None, &a, 1, &opts()).unwrap();
-    let (_, wb) = rig.manager.create_object_key(None, &b, 1, &opts()).unwrap();
+    rig.manager
+        .create_object_key(None, &ctx("orders", 2), 1, &opts())
+        .unwrap();
     let (_, wo) = rig
         .manager
         .create_object_key(None, &other, 1, &opts())
         .unwrap();
-    rig.clock.advance(Duration::from_secs(10));
-    // Invalidate the object we are about to read so the next read goes to the provider, which denies.
-    rig.manager
-        .invalidate_key(&key("default"), &idx("orders"), 1);
+    // A denial (which anyone planting wrapped keys could provoke) must not flush the index's cache.
+    // A different object of the same index forces a provider call that is denied.
+    let (_, planted) = wrap_direct(&rig.kms, &key("default"), &ctx("orders", 7));
     rig.kms.inject(Fault::Deny, 1);
     assert_eq!(
         rig.manager
-            .open_object_key(&wa, &a, 1, &opts())
+            .open_object_key(&planted, &ctx("orders", 7), 1, &opts())
             .unwrap_err(),
         KeyError::Provider(ProviderError::Denied)
     );
-    assert_eq!(rig.manager.cached(), 0);
-    let _ = (wb, wo);
+    assert_eq!(rig.manager.cached(), 3);
+    // A revocation seen by the provider does flush that index, and only that index.
+    rig.kms.revoke(&key("default"));
+    assert_eq!(
+        rig.manager
+            .open_object_key(&planted, &ctx("orders", 7), 1, &opts())
+            .unwrap_err(),
+        KeyError::Provider(ProviderError::Revoked)
+    );
+    assert_eq!(rig.manager.cached(), 1);
+    let _ = (wa, wo);
+}
+
+#[test]
+fn a_cached_key_is_bound_to_its_object_like_a_cold_one() {
+    let rig = rig();
+    let (a, b) = (ctx("orders", 1), ctx("orders", 2));
+    let (_, wa) = rig.manager.create_object_key(None, &a, 1, &opts()).unwrap();
+    // Object A's wrapped key pasted into object B's header, same index and domain: warm cache must refuse
+    // exactly as a cold one does.
+    let warm = rig.manager.open_object_key(&wa, &b, 1, &opts());
+    assert_eq!(
+        warm.unwrap_err(),
+        KeyError::Provider(ProviderError::ContextMismatch)
+    );
+    rig.manager.invalidate_index(&idx("orders"), 1);
+    let cold = rig.manager.open_object_key(&wa, &b, 1, &opts());
+    assert_eq!(
+        cold.unwrap_err(),
+        KeyError::Provider(ProviderError::ContextMismatch)
+    );
+}
+
+#[test]
+fn an_unwrap_that_raced_a_revocation_is_not_cached() {
+    let rig = rig();
+    let c = ctx("orders", 1);
+    let (_dek, wrapped) = wrap_direct(&rig.kms, &key("default"), &c);
+    rig.kms.set_latency(Duration::from_millis(150));
+    let reader = {
+        let (m, c, w) = (rig.manager.clone(), c.clone(), wrapped.clone());
+        thread::spawn(move || {
+            m.open_object_key(
+                &w,
+                &c,
+                1,
+                &CallOptions {
+                    timeout: Duration::from_secs(5),
+                    ..CallOptions::default()
+                },
+            )
+        })
+    };
+    thread::sleep(Duration::from_millis(40));
+    rig.manager.invalidate_index(&idx("orders"), 2);
+    assert!(
+        reader.join().unwrap().is_ok(),
+        "the in-flight call still answers its own caller"
+    );
+    assert_eq!(
+        rig.manager.cached(),
+        0,
+        "but its key must not outlive the invalidation"
+    );
+}
+
+#[test]
+fn expired_keys_leave_memory_on_the_next_insert() {
+    let rig = rig();
+    for n in 0..5u8 {
+        rig.manager
+            .create_object_key(None, &ctx("orders", n), 1, &opts())
+            .unwrap();
+    }
+    assert_eq!(rig.manager.cached(), 5);
+    rig.clock.advance(Duration::from_secs(301));
+    rig.manager
+        .create_object_key(None, &ctx("orders", 9), 1, &opts())
+        .unwrap();
+    assert_eq!(rig.manager.cached(), 1);
+}
+
+struct PanickingKms(TestKms);
+
+impl KeyProvider for PanickingKms {
+    fn name(&self) -> &str {
+        "test"
+    }
+    fn is_test(&self) -> bool {
+        true
+    }
+    fn key_info(
+        &self,
+        k: &KeyRef,
+        o: &CallOptions,
+    ) -> Result<hsearch_security::keys::KeyInfo, ProviderError> {
+        self.0.key_info(k, o)
+    }
+    fn wrap(
+        &self,
+        k: &KeyRef,
+        c: &KeyContext,
+        d: &SecretKey,
+        o: &CallOptions,
+    ) -> Result<WrappedKey, ProviderError> {
+        self.0.wrap(k, c, d, o)
+    }
+    fn unwrap(
+        &self,
+        _: &WrappedKey,
+        _: &KeyContext,
+        _: &CallOptions,
+    ) -> Result<SecretKey, ProviderError> {
+        panic!("provider bug")
+    }
+}
+
+#[test]
+fn a_panicking_provider_does_not_wedge_the_key() {
+    let kms = TestKms::new();
+    kms.create_key(&key("default")).unwrap();
+    let c = ctx("orders", 1);
+    let (_dek, wrapped) = wrap_direct(&kms, &key("default"), &c);
+    let manager = Arc::new(
+        KeyManager::new(
+            Profile::Development,
+            Arc::new(PanickingKms(kms)),
+            KeyAllowlist::new(vec![("test".into(), "acct".into())]),
+            key("default"),
+            CachePolicy::default(),
+            Arc::new(MemoryAuditSink::new(10)),
+            Arc::new(ManualClock::new()),
+        )
+        .unwrap(),
+    );
+    let m = manager.clone();
+    let (w, c2) = (wrapped.clone(), c.clone());
+    assert!(
+        thread::spawn(move || m.open_object_key(&w, &c2, 1, &CallOptions::default()))
+            .join()
+            .is_err()
+    );
+    // The next reader gets an answer at once, not a wait on a flight nobody will finish.
+    let started = std::time::Instant::now();
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        manager.open_object_key(&wrapped, &c, 1, &CallOptions::default())
+    }));
+    assert!(r.is_err(), "it became the leader and hit the same panic");
+    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 #[test]

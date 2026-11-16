@@ -10,6 +10,8 @@ description = "Verified identity, per-index authorization and the key-provider c
 [features]
 # The development CA mints throw-away certificates. It is not a default feature and no production crate enables it.
 dev-ca = ["dep:rcgen", "dep:time"]
+# The in-memory test key provider. Non-default; no production crate enables it.
+test-kms = []
 
 [dependencies]
 aes-gcm = { version = "=0.11.1", features = ["zeroize"] }
@@ -26,9 +28,13 @@ time = { version = "=0.3.55", default-features = false, optional = true }
 name = "identity"
 required-features = ["dev-ca"]
 
+[[test]]
+name = "keys"
+required-features = ["test-kms"]
+
 [[example]]
 name = "security_bench"
-required-features = ["dev-ca"]
+required-features = ["dev-ca", "test-kms"]
 
 [lints]
 workspace = true

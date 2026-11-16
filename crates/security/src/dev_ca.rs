@@ -77,8 +77,17 @@ impl DevCa {
         self.cert.der().to_vec()
     }
 
+    /// Issues a leaf with no extended key usage extension at all, as a general-purpose CA might.
+    pub fn issue_without_eku(&self, spec: &NodeCert) -> Result<Minted, rcgen::Error> {
+        self.mint(spec, false)
+    }
+
     /// Issues a leaf.
     pub fn issue(&self, spec: &NodeCert) -> Result<Minted, rcgen::Error> {
+        self.mint(spec, true)
+    }
+
+    fn mint(&self, spec: &NodeCert, with_eku: bool) -> Result<Minted, rcgen::Error> {
         let mut params = CertificateParams::new(Vec::<String>::new())?;
         params
             .distinguished_name
@@ -96,7 +105,9 @@ impl DevCa {
         params.not_before = OffsetDateTime::now_utc() + time::Duration::seconds(spec.not_before);
         params.not_after = OffsetDateTime::now_utc() + time::Duration::seconds(spec.not_after);
         params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-        params.extended_key_usages = if spec.client_and_server {
+        params.extended_key_usages = if !with_eku {
+            vec![]
+        } else if spec.client_and_server {
             vec![
                 ExtendedKeyUsagePurpose::ClientAuth,
                 ExtendedKeyUsagePurpose::ServerAuth,

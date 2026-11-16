@@ -43,6 +43,10 @@ static SIGNATURE_ALGS: &[&dyn SignatureVerificationAlgorithm] = &[
     webpki::ring::RSA_PKCS1_2048_8192_SHA384,
     webpki::ring::RSA_PKCS1_2048_8192_SHA512,
 ];
+/// id-kp-clientAuth and id-kp-serverAuth. The usage is *required*, not "required if present": a leaf with no
+/// extended key usage at all, which a shared CA may issue for other purposes, does not authenticate a peer.
+const EKU_CLIENT_AUTH: &[u8] = &[0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02];
+const EKU_SERVER_AUTH: &[u8] = &[0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01];
 /// The most SAN entries examined in one certificate.
 const MAX_SANS: usize = 32;
 
@@ -207,8 +211,8 @@ impl ChainVerifier {
             .collect();
         let try_at = |at: SystemTime| {
             let eku = match usage {
-                CertUse::Client => KeyUsage::client_auth(),
-                CertUse::Server => KeyUsage::server_auth(),
+                CertUse::Client => KeyUsage::required(EKU_CLIENT_AUTH),
+                CertUse::Server => KeyUsage::required(EKU_SERVER_AUTH),
             };
             leaf.verify_for_usage(
                 SIGNATURE_ALGS,

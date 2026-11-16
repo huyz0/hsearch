@@ -5,7 +5,8 @@
 //! longer than their policy allows:
 //!
 //! * Bounded: at most [`CachePolicy::max_entries`] keys, oldest inserted evicted first (insertion order is
-//!   also expiry order, so this is also earliest-expiry first). Memory is `max_entries * ~200 B`.
+//!   expiry order, apart from an entry re-inserted over itself, so this is nearly earliest-expiry first;
+//!   expired entries at the front are also dropped on every insert). Memory is `max_entries * ~200 B`.
 //! * Sharded: the cache is [`CachePolicy::shards`] independent locks, picked by the envelope digest, so
 //!   reads of different objects do not contend. The cost is that the bound and the eviction order hold per
 //!   shard: a shard can evict while another has room. `shards: 1` is one exact global order.
@@ -143,6 +144,7 @@ struct Counters {
 struct CacheKey {
     index: IndexId,
     domain: [u8; 16],
+    object: [u8; 16],
     digest: [u8; 32],
     generation: u64,
 }
@@ -156,6 +158,7 @@ struct Slot {
     key: KeyRef,
     index: IndexId,
     domain: [u8; 16],
+    object: [u8; 16],
     generation: u64,
 }
 
@@ -187,6 +190,8 @@ pub struct KeyManager {
     clock: Arc<dyn Clock>,
     shards: Box<[Shard]>,
     inflight: Mutex<HashMap<CacheKey, Arc<Flight>>>,
+    /// Bumped by every invalidation, before it drops anything.
+    epoch: AtomicU64,
     counters: Counters,
 }
 
@@ -227,6 +232,7 @@ impl KeyManager {
                 })
                 .collect(),
             inflight: Mutex::new(HashMap::new()),
+            epoch: AtomicU64::new(0),
             counters: Counters::default(),
         };
         manager.admit(&manager.default_key)?;
@@ -351,6 +357,7 @@ impl KeyManager {
                 "not_allowed",
             )
         })?;
+        let epoch = self.epoch.load(Ordering::SeqCst);
         let dek = SecretKey::generate()?;
         let wrapped = match self.provider.wrap(key, ctx, &dek, opts) {
             Ok(w) => w,
@@ -379,6 +386,7 @@ impl KeyManager {
             CacheKey::new(ctx, &wrapped, generation),
             &dek,
             wrapped.key(),
+            epoch,
         );
         Ok((dek, wrapped))
     }
@@ -431,6 +439,7 @@ impl KeyManager {
                 now < slot.expires
                     && slot.generation == key.generation
                     && slot.domain == key.domain
+                    && slot.object == key.object
                     && slot.index == key.index
             })
             .map(|slot| slot.dek.clone())
@@ -468,6 +477,15 @@ impl KeyManager {
             return self.wait(&flight, opts);
         }
         self.counters.misses.fetch_add(1, Ordering::Relaxed);
+        // However this call ends, even by a panic in the provider or the audit sink, the flight is completed
+        // and removed; otherwise every later reader of this key would wait on it until restart.
+        let mut guard = FlightGuard {
+            manager: self,
+            key: cache_key,
+            flight: &flight,
+            done: false,
+        };
+        let epoch = self.epoch.load(Ordering::SeqCst);
         let outcome = self.provider.unwrap(wrapped, ctx, opts).map(Arc::new);
         match &outcome {
             Ok(dek) => {
@@ -479,7 +497,7 @@ impl KeyManager {
                     generation,
                     "ok",
                 );
-                self.insert(cache_key.clone(), dek, wrapped.key());
+                self.insert(cache_key.clone(), dek, wrapped.key(), epoch);
             }
             Err(e) => {
                 self.record(
@@ -490,17 +508,14 @@ impl KeyManager {
                     generation,
                     e.code(),
                 );
-                if matches!(e, ProviderError::Revoked | ProviderError::Denied) {
+                // Only the key owner's revocation flushes the index. A plain denial, which anyone who can
+                // plant wrapped keys in storage could provoke, must not turn into a flush of every cached key.
+                if matches!(e, ProviderError::Revoked) {
                     self.invalidate_index(&ctx.index, generation);
                 }
             }
         }
-        *flight.result.lock().unwrap_or_else(|p| p.into_inner()) = Some(outcome.clone());
-        self.inflight
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(cache_key);
-        flight.done.notify_all();
+        guard.finish(outcome.clone());
         outcome
     }
 
@@ -527,19 +542,39 @@ impl KeyManager {
         }
     }
 
-    fn insert(&self, key: CacheKey, dek: &Arc<SecretKey>, wrapper: &KeyRef) {
+    /// Caches `dek` unless an invalidation ran since `epoch` was read (a key unwrapped while a revocation
+    /// was being applied must not outlive it).
+    fn insert(&self, key: CacheKey, dek: &Arc<SecretKey>, wrapper: &KeyRef, epoch: u64) {
         let slot = Slot {
             dek: dek.clone(),
             expires: self.clock.monotonic() + self.policy.ttl,
             key: wrapper.clone(),
             index: key.index.clone(),
             domain: key.domain,
+            object: key.object,
             generation: key.generation,
         };
         let shard = self.shard(&key);
         let mut cache = shard.state.write().unwrap_or_else(|p| p.into_inner());
+        if self.epoch.load(Ordering::SeqCst) != epoch {
+            return;
+        }
         if cache.map.insert(key.digest, slot).is_none() {
             cache.order.push_back(key.digest);
+        }
+        // Expired keys leave memory here instead of waiting for capacity pressure on an idle shard.
+        let now = self.clock.monotonic();
+        while let Some(front) = cache.order.front().copied() {
+            match cache.map.get(&front) {
+                None => {
+                    cache.order.pop_front();
+                }
+                Some(slot) if slot.expires <= now => {
+                    cache.order.pop_front();
+                    cache.map.remove(&front);
+                }
+                Some(_) => break,
+            }
         }
         while cache.map.len() > shard.cap {
             let Some(oldest) = cache.order.pop_front() else {
@@ -594,6 +629,7 @@ impl KeyManager {
     }
 
     fn drop_where(&self, doomed: impl Fn(&Slot) -> bool) -> usize {
+        self.epoch.fetch_add(1, Ordering::SeqCst);
         let mut dropped = 0;
         for shard in &self.shards {
             let mut cache = shard.state.write().unwrap_or_else(|p| p.into_inner());
@@ -635,8 +671,37 @@ impl CacheKey {
         Self {
             index: ctx.index.clone(),
             domain: ctx.domain,
+            object: ctx.object,
             digest: *wrapped.digest(),
             generation,
+        }
+    }
+}
+
+struct FlightGuard<'a> {
+    manager: &'a KeyManager,
+    key: &'a CacheKey,
+    flight: &'a Flight,
+    done: bool,
+}
+
+impl FlightGuard<'_> {
+    fn finish(&mut self, outcome: Outcome) {
+        self.done = true;
+        *self.flight.result.lock().unwrap_or_else(|p| p.into_inner()) = Some(outcome);
+        self.manager
+            .inflight
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(self.key);
+        self.flight.done.notify_all();
+    }
+}
+
+impl Drop for FlightGuard<'_> {
+    fn drop(&mut self) {
+        if !self.done {
+            self.finish(Err(ProviderError::Unavailable));
         }
     }
 }

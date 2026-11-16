@@ -235,6 +235,9 @@ pub enum TokenError {
     TooShort,
     /// Two labels would share one token.
     Duplicate,
+    /// The label is empty, over 64 bytes or outside `[A-Za-z0-9._-]`: it becomes the principal's name in
+    /// policies and logs, so it cannot carry separators or control characters.
+    BadLabel,
 }
 
 impl TokenProvider {
@@ -251,6 +254,14 @@ impl TokenProvider {
 
     /// Registers `token` as `label` holding `role`.
     pub fn add(&mut self, label: &str, token: &str, role: Role) -> Result<(), TokenError> {
+        let label_ok = !label.is_empty()
+            && label.len() <= 64
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+        if !label_ok {
+            return Err(TokenError::BadLabel);
+        }
         if !matches!(role, Role::Client | Role::Admin) {
             return Err(TokenError::PeerRoleRefused);
         }

@@ -221,6 +221,10 @@ struct Entry {
 /// The policies a node currently holds, one per index, bounded.
 pub struct PolicyStore {
     entries: RwLock<HashMap<IndexId, Arc<Entry>>>,
+    /// The highest generation of each evicted policy, so an eviction cannot be followed by installing an
+    /// older, laxer copy. Bounded: past [`PolicyStore::MAX_FLOORS`] an arbitrary floor is forgotten, which
+    /// leaves the authority's own generation as the only protection for that index.
+    floors: RwLock<HashMap<IndexId, u64>>,
 }
 
 impl Default for PolicyStore {
@@ -233,16 +237,32 @@ impl PolicyStore {
     /// The most indexes whose policy one node holds at once. Beyond this the caller evicts an idle one.
     pub const MAX_INDEXES: usize = 200_000;
 
+    /// The most evicted-generation floors remembered.
+    pub const MAX_FLOORS: usize = 1_000_000;
+
     /// An empty store.
     pub fn new() -> Self {
         Self {
             entries: RwLock::new(HashMap::new()),
+            floors: RwLock::new(HashMap::new()),
         }
     }
 
     /// Installs `policy`, which `now` shows to be current. Generations only grow.
     pub fn install(&self, policy: IndexPolicy, now: SystemTime) -> Result<(), PolicyError> {
         let mut entries = self.entries.write().unwrap_or_else(|p| p.into_inner());
+        let floor = self
+            .floors
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(policy.index())
+            .copied();
+        if let Some(floor) = floor
+            && policy.generation <= floor
+            && !entries.contains_key(policy.index())
+        {
+            return Err(PolicyError::NotNewer { installed: floor });
+        }
         match entries.get(policy.index()) {
             Some(old) if old.policy.generation >= policy.generation => {
                 return Err(PolicyError::NotNewer {
@@ -288,10 +308,21 @@ impl PolicyStore {
 
     /// Drops an index's policy (the index is gone, or the node is making room).
     pub fn evict(&self, index: &IndexId) {
-        self.entries
+        let removed = self
+            .entries
             .write()
             .unwrap_or_else(|p| p.into_inner())
             .remove(index);
+        if let Some(entry) = removed {
+            let mut floors = self.floors.write().unwrap_or_else(|p| p.into_inner());
+            if floors.len() >= Self::MAX_FLOORS
+                && !floors.contains_key(index)
+                && let Some(victim) = floors.keys().next().cloned()
+            {
+                floors.remove(&victim);
+            }
+            floors.insert(index.clone(), entry.policy.generation);
+        }
     }
 
     /// The installed generation of an index's policy.
@@ -847,6 +878,19 @@ mod tests {
         );
         store.evict(&idx("orders"));
         assert!(store.get(&idx("orders")).is_none());
+        // Eviction is not a way to go back: a copy at or below the evicted generation is refused, a newer one is not.
+        assert_eq!(
+            store.install(IndexPolicy::new(idx("orders"), 2), at(2)),
+            Err(PolicyError::NotNewer { installed: 2 })
+        );
+        assert_eq!(
+            store.install(IndexPolicy::new(idx("orders"), 1), at(2)),
+            Err(PolicyError::NotNewer { installed: 2 })
+        );
+        store
+            .install(IndexPolicy::new(idx("orders"), 3), at(2))
+            .unwrap();
+        store.evict(&idx("orders"));
         let mut p = IndexPolicy::new(idx("orders"), 1);
         for n in 0..IndexPolicy::MAX_GRANTS {
             p = p.grant(&format!("token:{n}"), Permission::Search).unwrap();
