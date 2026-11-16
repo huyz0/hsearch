@@ -234,8 +234,9 @@ impl<R: Read> Stream<R> {
                 self.line.clear();
                 // A large line's buffer is as big as the document and nothing
                 // reads it again: keep a small buffer for the next line, free a
-                // large one now rather than when the stream is dropped, after the
-                // document has been indexed.
+                // large one now rather than when the stream is dropped (after the
+                // batch has been written), so it is not held beside the parsed
+                // document while the chunks are written.
                 if self.line.capacity() > LINE_KEEP_BYTES {
                     self.line = Vec::new();
                 }
