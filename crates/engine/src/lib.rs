@@ -10,7 +10,8 @@ pub use local::{LocalFiles, with_local_engine};
 pub use remote::{CachedDirectory, RemoteError, RemoteFiles};
 mod range;
 pub use range::{
-    DEFAULT_DISK_BUDGET, DEFAULT_SPILL_BUDGET, ManifestEntry, ObjectBlobStore, RangeCacheSettings,
+    DEFAULT_DISK_BUDGET, DEFAULT_HEAP_BUDGET, DEFAULT_SPILL_BUDGET, ManifestEntry, ObjectBlobStore,
+    RangeCacheMetrics, RangeCacheSettings,
 };
 mod upload;
 pub use upload::ObjectUploadSink;
@@ -19,8 +20,8 @@ pub use aggregations::{Bucket, Metrics};
 mod adapter;
 mod factory;
 pub use factory::{
-    Capability, EngineFactory, Feature, ShardEngine, Support, WriterMode, capability_of_query,
-    capability_of_sort,
+    Capability, EngineFactory, Feature, ShardEngine, Support, WriterMode, capability_of_mode,
+    capability_of_query, capability_of_sort,
 };
 mod query;
 mod reader;

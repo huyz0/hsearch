@@ -178,3 +178,14 @@ Two lucene-rust changes, both additive and drop-in with Java Lucene's segments: 
 | PUT count | 27 | 27 |
 
 Peak is down about 200 MiB, the stored-field buffer copy; time to searchable is the same within the spread (the old pin's runs differ by 1.3 s between themselves). Request counts are unchanged and there is no LIST. The remaining peak is the engine's single copy of the text, its stored-field value (`Store::Yes` copies once more upstream), and the indexing chain's 12-byte token occurrences (lucene-rust#447, still open), so the 32x admission charge is unchanged.
+
+### What remains to reach the ~1.4x peak target (200 MiB document)
+
+The peak is still about 4.4x the document (884 MiB). Measured on the engine with shared text, `Store::No`, the indexing core adds about 133 MiB over the text, so the engine is not the main remainder. The rest is copies held at the same time:
+
+1. Parse: the request line buffer and the parsed string are alive together (about 200-300 MiB). hsearch work: stream the body into the `Arc<str>` without a second full copy.
+2. Stored value: under `Store::Yes` the stored `FieldValue::String` is a second copy (about 200 MiB). Needs more lucene-rust work: an Arc-backed stored value so stored fields are written straight from the shared text (the streamed flush in lucene-rust#449 is ready for it).
+3. Buffered compressed `.fdt` on the indexing path (about 100 MiB): the spill and `stream_to` path is not used there yet. lucene-rust work.
+4. Occurrence lists (lucene-rust#447, still open).
+
+So yes, reaching ~1.4x needs one more lucene-rust change (item 2, then 3) plus hsearch-side input streaming (item 1).
