@@ -510,7 +510,12 @@ fn refresh_cycles(auto_merge_mb: usize, cycles: usize) -> (usize, crate::reader:
     }
     let last = last.unwrap();
     let segments = last.reader.segment_readers().len();
-    let total = last.search(&Query::All, &[], 0, &[]).unwrap().total;
+    let fox = Query::Term {
+        field: "body",
+        value: Value::String("fox"),
+    };
+    // Counted through the postings, which every merge must carry over.
+    let total = last.search(&fox, &[], 0, &[]).unwrap().total;
     drop(engine);
     (segments, first.unwrap(), total)
 }
@@ -525,6 +530,14 @@ fn without_auto_merge_every_refresh_adds_a_segment() {
 fn auto_merge_keeps_segments_few_and_an_open_snapshot_readable() {
     let (segments, first, total) = refresh_cycles(16, 40);
     assert_eq!(total, 40);
+    // Postings survive the merges: every document is still found by its term.
+    let term = crate::Query::Term {
+        field: "body",
+        value: Value::String("fox"),
+    };
+    let found =
+        |snapshot: &crate::reader::Snapshot| snapshot.search(&term, &[], 0, &[]).unwrap().total;
+    assert_eq!(found(&first), 1);
     assert!(segments <= 20, "{segments} segments after 40 refreshes");
     // A snapshot taken before the merges still answers from its own segments.
     assert_eq!(
@@ -532,4 +545,44 @@ fn auto_merge_keeps_segments_few_and_an_open_snapshot_readable() {
         1
     );
     assert!(first.get("d0", &["body"]).unwrap().is_some());
+}
+
+/// Documents admitted one per refresh before the engine first answers `Limit`
+/// (at most `cycles`).
+fn refreshes_before_the_cap(auto_merge_mb: usize, cycles: usize) -> usize {
+    use crate::{Kind, Limits};
+    let schema = Schema::new(1, &[("body", Kind::Text)])
+        .unwrap()
+        .with_limits(Limits::scale().with_document_bytes(1 << 20))
+        .unwrap()
+        .with_auto_merge_mb(auto_merge_mb);
+    let directory = FaultDirectory::new();
+    let observed = crate::EngineDirectory::new(&directory);
+    let engine = Engine::open(&observed, schema.clone(), None).unwrap();
+    for i in 0..cycles {
+        let id = format!("d{i}");
+        let batch = schema
+            .prepare(
+                &format!("r{i}"),
+                &[Mutation::Put {
+                    id: &id,
+                    version: 1,
+                    fields: &[("body", Value::String("quick fox"))],
+                }],
+            )
+            .unwrap();
+        match engine.apply(batch) {
+            Ok(_) => drop(engine.refresh().unwrap()),
+            Err(Error::Limit) => return i,
+            Err(other) => panic!("{other:?}"),
+        }
+    }
+    cycles
+}
+
+#[test]
+fn the_segment_cap_is_reached_without_auto_merge_and_not_with_it() {
+    // 256 segments allowed, two kept in reserve: the 256th write is refused.
+    assert_eq!(refreshes_before_the_cap(0, 300), 255);
+    assert_eq!(refreshes_before_the_cap(16, 300), 300);
 }

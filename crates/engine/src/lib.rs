@@ -23,8 +23,8 @@ pub use adapter::{Checkpoint, Engine, Mutation, Outcome, PreparedBatch, Receipt}
 pub use query::Query;
 pub use reader::{Hit, SearchResult, Snapshot, Sort, StoredValue};
 pub use schema::{
-    Kind, Limits, MAX_DOCUMENT_BYTES, MAX_DOCUMENTS, MAX_FIELDS, MAX_OPERATIONS, MAX_TERMS, Schema,
-    Token, Value, analyze_text,
+    Kind, Limits, MAX_AUTO_MERGE_MB, MAX_DOCUMENT_BYTES, MAX_DOCUMENTS, MAX_FIELDS, MAX_OPERATIONS,
+    MAX_TERMS, Schema, Token, Value, analyze_text,
 };
 
 /// Exact upstream engine revision.

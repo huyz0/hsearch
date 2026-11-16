@@ -18,6 +18,9 @@ pub const MAX_DOCUMENTS: usize = 128;
 /// Maximum admitted mutation operations over one adapter lifetime/checkpoint.
 pub const MAX_OPERATIONS: usize = 256;
 
+/// Largest `auto_merge_mb` the engine accepts; a larger value is clamped.
+pub const MAX_AUTO_MERGE_MB: usize = 4096;
+
 /// Admission bounds for one adapter. [`Limits::BOUNDED`] is the research
 /// profile and the default; [`Limits::scale`] is the opt-in first-slice profile.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -180,7 +183,7 @@ impl Schema {
     /// the same setting it was taken with.
     #[must_use]
     pub fn with_auto_merge_mb(mut self, mb: usize) -> Self {
-        self.limits.auto_merge_mb = mb;
+        self.limits.auto_merge_mb = mb.min(MAX_AUTO_MERGE_MB);
         self
     }
 
