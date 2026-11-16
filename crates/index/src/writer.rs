@@ -750,6 +750,9 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
     };
     // Replay every slot until the first that is not there, then seal it. A store
     // error other than not-found is never read as the end of the log.
+    // Each lost seal race means a predecessor's write landed: a handful is
+    // normal, many is a store answering HEAD and conflict inconsistently.
+    let mut lost_seals = 0;
     loop {
         let object = key(&slot_key(&core.name, core.seq))?;
         match block(core.store.head(&context(), &object)) {
@@ -778,6 +781,10 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
                 }
                 // A predecessor's late write took the position first: it is
                 // acknowledged and durable, so it is replayed, and the seal moves on.
+                lost_seals += 1;
+                if lost_seals > 8 {
+                    return Err(Error::Fenced);
+                }
             }
             Err(error) => return Err(Error::Store(error)),
         }

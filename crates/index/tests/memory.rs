@@ -950,3 +950,39 @@ fn a_fence_with_an_unresolvable_outcome_fails_the_open_and_the_next_one_reads_it
         .bulk(vec![put("a", "x", 1)], Wait::Searchable)
         .unwrap();
 }
+
+#[test]
+fn a_fence_claiming_another_position_is_corrupt_not_skipped() {
+    let store = store();
+    let (one, two) = (Scratch::new("badfence-a"), Scratch::new("badfence-b"));
+    Index::create(Arc::clone(&store), "orders", schema(), &one.0)
+        .unwrap()
+        .close();
+    let mut planted = planted_slot("orders", 1, "x", 1);
+    planted.payload =
+        hsearch_object::Payload::new(&hsearch_index::format::encode_fence(5)).unwrap();
+    let ctx = hsearch_object::RequestContext::new(
+        std::time::Duration::from_secs(5),
+        hsearch_object::Cancellation::default(),
+        hsearch_object::Budget {
+            request_bytes: 1 << 20,
+            response_bytes: 1 << 20,
+            attempts: 4,
+        },
+    )
+    .unwrap();
+    let mut future = std::pin::pin!(hsearch_object::ObjectBackend::create(
+        &*store, &ctx, &planted
+    ));
+    let waker = std::task::Waker::noop();
+    assert!(matches!(
+        future
+            .as_mut()
+            .poll(&mut std::task::Context::from_waker(waker)),
+        std::task::Poll::Ready(Ok(_))
+    ));
+    assert_eq!(
+        Index::open(Arc::clone(&store), "orders", schema(), &two.0).err(),
+        Some(Error::Corrupt)
+    );
+}
