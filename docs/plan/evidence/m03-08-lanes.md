@@ -66,6 +66,34 @@ Replay costs about 2 ms per slot (one HEAD plus one GET: the version-pinned read
 - Replay is serial (HEAD then GET per slot). The keys are derived, so a bounded read-ahead window is possible and would cut re-establish time; not done here.
 - Placement of an index that already lives in an earlier group would add it to a second group: the catalog (M03.05) must remember the answer, and a crash-retry must consult it first.
 
+## Increment 2: exhaustive fault histories and the head-driven open
+
+`provisional`: same RustFS 1.0.4 container and caveats as above; the enumerations run on the in-memory store, the open costs on RustFS.
+
+**Exhaustive histories** (`crates/lane/tests/histories.rs`). A scripted store wraps the memory store and applies a fault to the nth mutating request: refused, reply lost (resolvable by identity), reply lost (unresolvable), another writer's open lands first, another writer's batch lands first. Steps are open or append by either of two writers, crash of either, and reclaim. Every sequence is run and then checked: acknowledged batches are in the log exactly once and in order; no refused or unattempted batch is in the log; an unknown batch appears at most once; no acknowledgement after another writer's completed open; a dead (poisoned or fenced) writer sends no further request; consecutive acknowledgements have consecutive ordinals; a recovery open replays exactly cover..end and fences the end; an open below a reclaimed cover is refused. Head mode adds: the head's cover is the durable cover, inventory fences ascend, the epoch equals the inventory length, every successful open's fence is in the inventory, the tail is not above the log, the head generation is bounded.
+
+| mode | length | faults | runs |
+|---|---|---|---|
+| marker | 5 | 1 among first 5 requests | 410,571 |
+| marker | 4 | 2 among first 4 | 436,982 |
+| head | 5 | 1 among first 6 | 521,017 |
+| head | 4 | 2 among first 5 | 662,676 |
+
+These four run on every push (about 2.5 minutes in debug together). A length-6 marker sweep (about 2.2 million runs, about 5 minutes) was run once for this evidence; the `#[ignore]`d long test also holds a length-6/7 head sweep that has not been run. The bound is the bound: nothing is claimed about longer histories, more writers or more faults.
+
+**Mutations seen red** (each by a `sed` on `crates/lane/src/log.rs`, run against the histories and headopen tests). Marker path, first round: conflict not poisoning, unknown not poisoning, reclaim deleting fences, an occupied open treated as sealed all survived the first sweep; the dead-writer-sends-no-request invariant, the longer sweep and the preempt faults killed them. Head path: establish skipped; the cover read from the marker instead of the head; the cover re-read after replay removed (killed by the new headopen test, not the sweeps); a later fence accepted in establish; the equal-fence lost-reply check removed; the activation check removed; the below-cover check in establish removed. All killed.
+
+**Head-driven open** (`LaneWriter::open_with_head`). It reads the head, replays from the head's cover, probes the first absent position, re-reads the head's cover (a checkpoint that landed during replay and passed the end found is `BadCover` before any fence is written), creates the retained fence, then records the epoch with one head CAS (`Change::Establish`), retried on contention, and recognised as done if a lost reply had landed. A lane is opened by the head or by the marker, never both: `reclaim_to_checkpoint` removes slots below the head's cover and does not touch the marker.
+
+| open (8 batches in the log, RustFS) | PUT | GET | HEAD | LIST | wall |
+|---|---|---|---|---|---|
+| marker open (replays 9 slots) | 1 | 10 | 12 | 0 | not timed |
+| head open (replays 10 slots, one more fence from the marker open) | 2 | 14 | 15 | 0 | 65-71 ms, 3 runs |
+
+The head open costs one extra PUT (the establish CAS) and about two extra GET/HEAD pairs (the head read, the re-read after replay, the establish read); the rest is the one extra slot replayed. No LIST. Appends still write the head never.
+
+**Downsides.** The epoch inventory is append-only with at most 1024 entries, so one lane can be opened by head about 1,023 times per activation before `Capacity`; the escape is a new activation, which belongs to M03.05's remainder. A head open that loses to a later opener is `Fenced`, and one whose cover was moved by a checkpoint during replay is `BadCover` after the visitor may already have seen slots, so a caller must treat a visitor's output as provisional until the open returns. The open costs a PUT and a few reads more than the marker open for the same lane.
+
 ## Not done here (stated, not claimed)
 
-Structural head, catalog and activation CAS, so a promotion has no routing publication and the promoted index has no writer until M03.05 provides one; engine apply and checkpoint publication that move the cover (M06); inline wrapped-key format and AEAD (M05); slot payload objects above the inline bound are the caller's; no multi-node soak, no MinIO/S3. The two-phase seal, the hole guard and the poison rules follow M03.04's model but this is not a model-checked implementation of it: the runtime histories above are tests and a race stress, not exhaustive. Coverage is measured by CI (`cargo llvm-cov` is not installed in the dev sandbox).
+Catalog and activation routing, so a promotion has no routing publication and the promoted index has no writer until M03.05 provides one; engine apply and checkpoint publication that move the cover (M06); inline wrapped-key format and AEAD (M05); slot payload objects above the inline bound are the caller's; no multi-node soak, no MinIO/S3. The two-phase seal, the hole guard and the poison rules follow M03.04's model but this is not a model-checked implementation of it: the runtime histories above are tests and a race stress; the bounded enumeration in increment 2 is exhaustive only inside its stated bounds. Coverage is measured by CI (`cargo llvm-cov` is not installed in the dev sandbox).

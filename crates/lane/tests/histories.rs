@@ -25,8 +25,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use hsearch_format::Durability;
 use hsearch_format::SlotKind;
-use hsearch_lane::{Error, LaneId, LaneWriter, block_on, create_lane, read_log, shared_group};
+use hsearch_lane::{
+    Advance, Change, Error, LaneId, LaneWriter, advance_head, block_on, create_head, create_lane,
+    read_head, read_log, shared_group,
+};
 use hsearch_object::memory::MemoryStore;
 use hsearch_object::{
     ByteRange, Error as StoreError, MetadataStore, Mutation, ObjectBackend, ObjectInfo, ObjectKey,
@@ -217,6 +221,15 @@ const STEPS: [Step; 7] = [
     Step::Reclaim,
 ];
 
+/// What holds the cover and the writer epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mode {
+    /// The reclaim marker; no head.
+    Marker,
+    /// The structural head; no marker.
+    Head,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Who {
     A,
@@ -248,6 +261,8 @@ struct Trace {
     removed: u64,
     /// The writer whose open completed last.
     opened_by: Option<u8>,
+    /// The fence ordinal of every open that succeeded.
+    opens: Vec<u64>,
     seq: u64,
     /// A violation found while stepping.
     broken: Option<String>,
@@ -256,7 +271,7 @@ struct Trace {
 type Procs = Arc<std::sync::Mutex<BTreeMap<u8, Process>>>;
 type Shared = Arc<std::sync::Mutex<Trace>>;
 
-fn lane(store: &Arc<Scripted>) -> LaneId {
+fn lane(store: &Arc<Scripted>, mode: Mode) -> LaneId {
     let (domain, group) = shared_group(&policy(), 0);
     let lane = LaneId::new(domain);
     block_on(create_lane(
@@ -269,17 +284,33 @@ fn lane(store: &Arc<Scripted>) -> LaneId {
         &[id(1)],
     ))
     .unwrap();
+    if mode == Mode::Head {
+        block_on(create_head(&**store, &layout(), &lane, Durability::Object)).unwrap();
+    }
     lane
 }
 
-fn open(store: &Arc<Scripted>, lane: LaneId, from: u64) -> Result<LaneWriter<Scripted>, Error> {
-    block_on(LaneWriter::open(
-        Arc::clone(store),
-        layout(),
-        lane,
-        from,
-        |_| Ok(()),
-    ))
+fn open(
+    store: &Arc<Scripted>,
+    lane: LaneId,
+    from: u64,
+    mode: Mode,
+) -> Result<LaneWriter<Scripted>, Error> {
+    match mode {
+        Mode::Marker => block_on(LaneWriter::open(
+            Arc::clone(store),
+            layout(),
+            lane,
+            from,
+            |_| Ok(()),
+        )),
+        Mode::Head => block_on(LaneWriter::open_with_head(
+            Arc::clone(store),
+            layout(),
+            lane,
+            |_| Ok(()),
+        )),
+    }
     .map(|(w, _)| w)
 }
 
@@ -347,10 +378,10 @@ fn append(store: &Scripted, procs: &Procs, trace: &Shared, who: u8) -> Result<()
 }
 
 /// Run `steps` against a store scripted with `script`, then check every invariant.
-fn run(steps: &[Step], script: &[Fault]) -> Result<(), String> {
+fn run(steps: &[Step], script: &[Fault], mode: Mode) -> Result<(), String> {
     // The lane is created with no faults; the script starts at the first step.
     let store = Arc::new(Scripted::new());
-    let lane = lane(&store);
+    let lane = lane(&store, mode);
     let procs: Procs = Arc::default();
     let trace: Shared = Arc::default();
     {
@@ -374,7 +405,8 @@ fn run(steps: &[Step], script: &[Fault]) -> Result<(), String> {
                 let who = u8::from(*step == Step::OpenB);
                 let from = trace.lock().unwrap().cover;
                 // An open that failed leaves the old instance, if any, running.
-                if let Ok(writer) = open(&store, lane, from) {
+                if let Ok(writer) = open(&store, lane, from, mode) {
+                    trace.lock().unwrap().opens.push(writer.next_ordinal() - 1);
                     procs.lock().unwrap().insert(
                         who,
                         Process {
@@ -409,7 +441,43 @@ fn run(steps: &[Step], script: &[Fault]) -> Result<(), String> {
                     continue;
                 }
                 let fence = p.writer.next_ordinal().saturating_sub(1);
-                if let Ok(done) = block_on(p.writer.reclaim_below(fence)) {
+                let reclaimed = match mode {
+                    Mode::Marker => block_on(p.writer.reclaim_below(fence)),
+                    Mode::Head => {
+                        // The checkpoint transition comes first; only then are slots removed.
+                        let Ok((head, version)) = block_on(read_head(&*store, &layout(), &lane))
+                        else {
+                            continue;
+                        };
+                        if fence <= head.cover {
+                            continue;
+                        }
+                        let change = Change::Checkpoint {
+                            cover: fence,
+                            root: [9; 16],
+                        };
+                        match block_on(advance_head(
+                            &*store,
+                            &layout(),
+                            &lane,
+                            &head,
+                            &version,
+                            change,
+                        )) {
+                            Ok(Advance::Done(..)) => {}
+                            // Lost, refused or unknown: the cover is only what the head holds.
+                            _ => {
+                                if let Ok((h, _)) = block_on(read_head(&*store, &layout(), &lane)) {
+                                    trace.lock().unwrap().cover = h.cover;
+                                }
+                                continue;
+                            }
+                        }
+                        trace.lock().unwrap().cover = fence;
+                        block_on(p.writer.reclaim_to_checkpoint())
+                    }
+                };
+                if let Ok(done) = reclaimed {
                     let mut t = trace.lock().unwrap();
                     t.cover = t.cover.max(fence);
                     t.removed += done.removed;
@@ -426,15 +494,28 @@ fn run(steps: &[Step], script: &[Fault]) -> Result<(), String> {
         .map_err(|_| "trace still shared".to_string())?
         .into_inner()
         .unwrap();
-    check(&store, lane, &trace)
+    check(&store, lane, &trace, mode)
 }
 
 /// Every invariant, on what the store actually holds.
-fn check(store: &Arc<Scripted>, lane: LaneId, trace: &Trace) -> Result<(), String> {
+fn check(store: &Arc<Scripted>, lane: LaneId, trace: &Trace, mode: Mode) -> Result<(), String> {
     // The checking reads and the recovery open run with no faults left, on the same contents.
     store.arm(&[]);
     store.unresolvable.lock().unwrap().clear();
     let clean = store;
+    let head = (mode == Mode::Head)
+        .then(|| block_on(read_head(&**clean, &layout(), &lane)))
+        .transpose()
+        .map_err(|e| format!("head: {e:?}"))?
+        .map(|(h, _)| h);
+    // The cover is what the durable record holds: the head, or the last marker raise.
+    let cover = head.as_ref().map_or(trace.cover, |h| h.cover);
+    if head.is_some() && trace.cover > cover {
+        return Err(format!(
+            "a checkpoint was acknowledged at {} but the head holds {cover}",
+            trace.cover
+        ));
+    }
     // 4: unique authority.
     if trace.stale_acks > 0 {
         return Err(format!(
@@ -443,32 +524,25 @@ fn check(store: &Arc<Scripted>, lane: LaneId, trace: &Trace) -> Result<(), Strin
         ));
     }
     // 7: a recovery from below the cover is refused when data below it was removed.
-    if trace.removed > 0 {
-        match open(clean, lane, 0) {
+    if trace.removed > 0 && mode == Mode::Marker {
+        match open(clean, lane, 0, mode) {
             Err(Error::BadCover) => {}
             other => return Err(format!("open below a reclaimed cover: {:?}", other.err())),
         }
     }
     let mut seen: Vec<(u64, SlotKind, Vec<u64>)> = Vec::new();
-    let end = block_on(read_log(
-        &**clean,
-        &layout(),
-        &lane,
-        trace.cover,
-        None,
-        |v| {
-            seen.push((
-                v.position.ordinal,
-                v.kind,
-                v.records().map(|r| r.seq).collect(),
-            ));
-            Ok(())
-        },
-    ))
+    let end = block_on(read_log(&**clean, &layout(), &lane, cover, None, |v| {
+        seen.push((
+            v.position.ordinal,
+            v.kind,
+            v.records().map(|r| r.seq).collect(),
+        ));
+        Ok(())
+    }))
     .map_err(|e| format!("read_log: {e:?}"))?;
     // The log from the cover is contiguous by construction of read_log; check it starts there.
     if let Some(first) = seen.first()
-        && first.0 != trace.cover
+        && first.0 != cover
     {
         return Err(format!("log starts at {} not the cover", first.0));
     }
@@ -483,7 +557,7 @@ fn check(store: &Arc<Scripted>, lane: LaneId, trace: &Trace) -> Result<(), Strin
     }
     for (_, ordinal, seq) in &trace.acks {
         // An ack below the cover was reclaimed legitimately.
-        if *ordinal < trace.cover {
+        if *ordinal < cover {
             continue;
         }
         if count.get(seq) != Some(&1) {
@@ -516,13 +590,28 @@ fn check(store: &Arc<Scripted>, lane: LaneId, trace: &Trace) -> Result<(), Strin
         return Err(format!("acks out of order: {ordinals:?}"));
     }
     // 7: a recovery open from the cover replays to the end and seals it.
-    let recovered = block_on(LaneWriter::open(
-        Arc::clone(clean),
-        layout(),
-        lane,
-        trace.cover,
-        |_| Ok(()),
-    ))
+    let mut replayed_kinds = Vec::new();
+    let recovered = match mode {
+        Mode::Marker => block_on(LaneWriter::open(
+            Arc::clone(clean),
+            layout(),
+            lane,
+            cover,
+            |v| {
+                replayed_kinds.push(v.kind);
+                Ok(())
+            },
+        )),
+        Mode::Head => block_on(LaneWriter::open_with_head(
+            Arc::clone(clean),
+            layout(),
+            lane,
+            |v| {
+                replayed_kinds.push(v.kind);
+                Ok(())
+            },
+        )),
+    }
     .map_err(|e| format!("recovery open: {e:?}"))?;
     let (_, report) = recovered;
     if report.fence_ordinal != end {
@@ -531,12 +620,42 @@ fn check(store: &Arc<Scripted>, lane: LaneId, trace: &Trace) -> Result<(), Strin
             report.fence_ordinal
         ));
     }
-    if report.slots_replayed != end - trace.cover {
+    if report.slots_replayed != end - cover {
         return Err(format!(
             "recovery replayed {} slots for {} above the cover",
             report.slots_replayed,
-            end - trace.cover
+            end - cover
         ));
+    }
+    if mode == Mode::Head {
+        let (after, _) = block_on(read_head(&**clean, &layout(), &lane))
+            .map_err(|e| format!("head after recovery: {e:?}"))?;
+        // The head names the epochs in order, each at a fence that exists, and holds every open
+        // that succeeded.
+        let fences: Vec<u64> = after.inventory.iter().map(|e| e.fence).collect();
+        if fences.windows(2).any(|w| w[0] >= w[1]) {
+            return Err(format!("inventory fences do not ascend: {fences:?}"));
+        }
+        if after.writer_epoch as usize != after.inventory.len() {
+            return Err("writer epoch is not the inventory length".into());
+        }
+        for open_fence in trace
+            .opens
+            .iter()
+            .chain(std::iter::once(&report.fence_ordinal))
+        {
+            if !fences.contains(open_fence) {
+                return Err(format!(
+                    "open at fence {open_fence} is not in the head: {fences:?}"
+                ));
+            }
+        }
+        if after.tail.ordinal > report.fence_ordinal + 1 {
+            return Err("the tail locator is above the log".into());
+        }
+        if after.generation > 2 + 2 * (trace.opens.len() as u64 + 1) + 2 {
+            return Err("more head transitions than opens and checkpoints".into());
+        }
     }
     Ok(())
 }
@@ -581,13 +700,13 @@ fn sequences(len: usize) -> Vec<Vec<Step>> {
     out
 }
 
-fn sweep(len: usize, slots: usize, most: usize) -> usize {
+fn sweep(len: usize, slots: usize, most: usize, mode: Mode) -> usize {
     let scripts = scripts(slots, most);
     let mut runs = 0;
     for steps in sequences(len) {
         for script in &scripts {
-            if let Err(why) = run(&steps, script) {
-                panic!("history {steps:?} with faults {script:?}: {why}");
+            if let Err(why) = run(&steps, script, mode) {
+                panic!("{mode:?} history {steps:?} with faults {script:?}: {why}");
             }
             runs += 1;
         }
@@ -597,21 +716,35 @@ fn sweep(len: usize, slots: usize, most: usize) -> usize {
 
 #[test]
 fn every_short_history_with_one_fault_keeps_every_invariant() {
-    let runs = sweep(5, 5, 1);
-    eprintln!("histories: length 5, 1 fault among the first 5 requests, {runs} runs");
+    let runs = sweep(5, 5, 1, Mode::Marker);
+    eprintln!("marker histories: length 5, 1 fault among the first 5 requests, {runs} runs");
 }
 
 #[test]
 fn every_shorter_history_with_two_faults_keeps_every_invariant() {
-    let runs = sweep(4, 4, 2);
-    eprintln!("histories: length 4, 2 faults among the first 4 requests, {runs} runs");
+    let runs = sweep(4, 4, 2, Mode::Marker);
+    eprintln!("marker histories: length 4, 2 faults among the first 4 requests, {runs} runs");
 }
 
-/// The larger bound the evidence reports: 2.2 million histories, about five minutes in a debug
-/// build. `cargo test -p hsearch-lane --test histories -- --ignored`.
 #[test]
-#[ignore = "five minutes: run for the evidence, not on every push"]
+fn every_short_head_driven_history_with_one_fault_keeps_every_invariant() {
+    let runs = sweep(5, 6, 1, Mode::Head);
+    eprintln!("head histories: length 5, 1 fault among the first 6 requests, {runs} runs");
+}
+
+#[test]
+fn every_shorter_head_driven_history_with_two_faults_keeps_every_invariant() {
+    let runs = sweep(4, 5, 2, Mode::Head);
+    eprintln!("head histories: length 4, 2 faults among the first 5 requests, {runs} runs");
+}
+
+/// The larger bounds the evidence reports, about five minutes each in a debug build.
+/// `cargo test -p hsearch-lane --test histories -- --ignored`.
+#[test]
+#[ignore = "minutes: run for the evidence, not on every push"]
 fn every_history_of_length_six_with_one_fault_keeps_every_invariant() {
-    let runs = sweep(6, 6, 1);
-    eprintln!("histories: length 6, 1 fault among the first 6 requests, {runs} runs");
+    let runs = sweep(6, 6, 1, Mode::Marker);
+    eprintln!("marker histories: length 6, 1 fault among the first 6 requests, {runs} runs");
+    let runs = sweep(6, 7, 1, Mode::Head);
+    eprintln!("head histories: length 6, 1 fault among the first 7 requests, {runs} runs");
 }

@@ -310,3 +310,90 @@ fn catalog_names_resolve_race_and_never_resurrect_on_a_real_store() {
     );
     assert_eq!(store.counts().list - before.list, 0, "nothing listed");
 }
+
+#[test]
+fn a_head_driven_open_costs_one_more_put_than_a_marker_open_and_reclaims_to_the_checkpoint() {
+    use hsearch_format::Durability;
+    use hsearch_lane::{Advance, Change, advance_head, create_head, read_head};
+    let Some(store) = store() else { return };
+    let lane = fresh_lane(&store, &[1]);
+    block_on(create_head(&*store, &layout(), &lane, Durability::Object)).unwrap();
+    let (mut writer, _) = open(&store, lane, 0);
+    for n in 0..8u64 {
+        block_on(writer.append(&[put(id(1), n, b"x")])).unwrap();
+    }
+    drop(writer);
+    // Marker open: the baseline.
+    let before = store.counts();
+    let (w, marker) = open(&store, lane, 0);
+    let marker_cost = store.counts();
+    drop(w);
+    // Head open: replays from the head's cover and records an epoch with one head CAS.
+    let before_head = store.counts();
+    let started = std::time::Instant::now();
+    let (mut w, report) = block_on(LaneWriter::open_with_head(
+        Arc::clone(&store),
+        layout(),
+        lane,
+        |_| Ok(()),
+    ))
+    .unwrap();
+    let elapsed = started.elapsed();
+    let after = store.counts();
+    eprintln!(
+        "MEASURE marker open: put {} get {} head {} list {}; head open: put {} get {} head {} list {} in {elapsed:?}; replayed {} vs {}",
+        marker_cost.put - before.put,
+        marker_cost.get - before.get,
+        marker_cost.head - before.head,
+        marker_cost.list - before.list,
+        after.put - before_head.put,
+        after.get - before_head.get,
+        after.head - before_head.head,
+        after.list - before_head.list,
+        marker.slots_replayed,
+        report.slots_replayed,
+    );
+    assert_eq!(after.list - before_head.list, 0, "no LIST on the open path");
+    assert_eq!(
+        after.put - before_head.put,
+        2,
+        "one fence PUT and one head PUT"
+    );
+    assert_eq!(
+        report.head_epoch, 1,
+        "the first head epoch, recorded by one CAS"
+    );
+    // A checkpoint moves the cover; the next open replays only above it and reclaim follows it.
+    block_on(w.append(&[put(id(1), 100, b"y")])).unwrap();
+    let (h, v) = block_on(read_head(&*store, &layout(), &lane)).unwrap();
+    let cover = report.fence_ordinal;
+    match block_on(advance_head(
+        &*store,
+        &layout(),
+        &lane,
+        &h,
+        &v,
+        Change::Checkpoint {
+            cover,
+            root: [7; 16],
+        },
+    ))
+    .unwrap()
+    {
+        Advance::Done(..) => {}
+        Advance::Lost => panic!("lost"),
+    }
+    block_on(w.reclaim_to_checkpoint()).unwrap();
+    drop(w);
+    let (_w, again) = block_on(LaneWriter::open_with_head(
+        Arc::clone(&store),
+        layout(),
+        lane,
+        |_| Ok(()),
+    ))
+    .unwrap();
+    assert!(
+        again.slots_replayed < report.slots_replayed + 2,
+        "replay starts at the checkpoint cover, not at 0"
+    );
+}
