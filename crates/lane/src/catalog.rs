@@ -8,8 +8,8 @@
 //! again, which is what "names cannot resurrect old UUIDs" means here. Tombstones are kept for
 //! the life of the catalog (bounded by the number of distinct names ever used).
 use hsearch_format::{
-    CatalogEntry, CatalogPage, CatalogRoot, Id, Layout, MAX_CATALOG_BUCKET_BITS, NameState,
-    bucket_of,
+    CatalogEntry, CatalogPage, CatalogRoot, Id, IdentityBinding, Layout, MAX_CATALOG_BUCKET_BITS,
+    NameState, bucket_of,
 };
 use hsearch_object::{MetadataStore, Precondition, VersionToken};
 
@@ -203,7 +203,7 @@ impl Catalog {
         if index == [0; 16] {
             return Err(Error::Invalid("the zero id is not an index identity"));
         }
-        self.edit(store, layout, name, |found| match found {
+        self.edit(store, layout, name, Some(&index), |found| match found {
             None => Ok(Edit::Put(CatalogEntry {
                 name: name.to_owned(),
                 state: NameState::Live,
@@ -235,7 +235,7 @@ impl Catalog {
         name: &str,
         index: &Id,
     ) -> Result<()> {
-        self.edit(store, layout, name, |found| match found {
+        self.edit(store, layout, name, None, |found| match found {
             Some(e) if e.state == NameState::Live && &e.index == index => {
                 Ok(Edit::Put(CatalogEntry {
                     name: name.to_owned(),
@@ -250,6 +250,55 @@ impl Catalog {
         .await
     }
 
+    /// Bind `index` to `name` at `generation`, once and for ever: a create-only object per identity,
+    /// written before the page that makes the name live. If the object is already there, the create
+    /// is a retry of the same one (same name, same generation: a lost reply or a crash between the
+    /// binding and the page) or it is a reuse, which is refused. This is what makes "an identity
+    /// never comes back" hold for every identity a name has held, not only the last, at the price of
+    /// one more PUT per create. An identity whose create lost the race for a generation is refused
+    /// if it comes back later (it was never bound, but cannot be told from one that was); the
+    /// caller picks a new identity.
+    async fn bind<S: MetadataStore>(
+        &self,
+        store: &S,
+        layout: &Layout,
+        index: &Id,
+        name: &str,
+        generation: u64,
+    ) -> Result<()> {
+        let binding = IdentityBinding {
+            catalog: self.id,
+            index: *index,
+            name_generation: generation,
+            name: name.to_owned(),
+        };
+        let mut bytes = Vec::new();
+        binding.encode(&mut bytes)?;
+        let k = layout.catalog_identity(&self.id, index);
+        let request = mutation(
+            &request_id("ci", index, generation, &fresh_token()),
+            &k,
+            &bytes,
+            Precondition::Absent,
+        )?;
+        match write(store, &request, false).await {
+            Written::Done(_) => return Ok(()),
+            Written::Refused(error) => return Err(error.into()),
+            Written::Occupied | Written::Unknown => {}
+        }
+        let object = key(&k)?;
+        let Some((stored, _)) = read_object(store, &object, 1024).await? else {
+            return Err(Error::Contended);
+        };
+        if IdentityBinding::decode_at(stored.as_bytes(), &self.id, index)? == binding {
+            Ok(())
+        } else {
+            Err(Error::Invalid(
+                "an identity is bound once and cannot be bound again",
+            ))
+        }
+    }
+
     /// Read the bucket, decide against what is there, write one conditional page, and on a lost
     /// race or an unresolvable reply read again and decide again. The decision is re-made from the
     /// page every time, so an attempt whose reply was lost but which landed is recognised as
@@ -259,10 +308,12 @@ impl Catalog {
         store: &S,
         layout: &Layout,
         name: &str,
+        bind: Option<&Id>,
         decide: impl Fn(Option<&CatalogEntry>) -> Result<Edit>,
     ) -> Result<()> {
         let bucket = bucket_of(&self.id, self.bits, name);
         let k = layout.catalog_page(&self.id, bucket);
+        let mut bound = false;
         for _ in 0..MAX_ATTEMPTS {
             let current = self.read_page(store, layout, bucket).await?;
             let found = current.as_ref().and_then(|(page, _)| {
@@ -274,6 +325,12 @@ impl Catalog {
             let Edit::Put(entry) = decide(found)? else {
                 return Ok(());
             };
+            if let Some(index) = bind.filter(|_| !bound) {
+                self.bind(store, layout, index, name, entry.name_generation)
+                    .await?;
+                // Bound by this call: a retry in the same call (the page moved under it) keeps it.
+                bound = true;
+            }
             let (mut page, precondition) = match current {
                 Some((page, version)) => (page, Precondition::Matches(version)),
                 None => (

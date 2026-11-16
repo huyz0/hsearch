@@ -2114,7 +2114,7 @@
           "evidence": [
             {
               "path": "evidence/m03-05-catalog.md",
-              "result": "Increment 1, provisional (RustFS 1.0.4, one host): structural head (kind 9, create-only, never deleted, one-PUT transitions checked against a no-regression successor rule before any request), catalog root and paged catalog (kinds 10 and 11, up to 65,536 hash buckets, tombstones so a name never resolves to an identity it lost), resolve = 1 HEAD + 1 GET, create = 1 PUT, enumeration by derived keys, 0 LIST uncontended. Downside measured: a lost CAS race makes the S3 adapter list versions (about 0.95 LIST per create and p99 208-252 ms with 4 writers on 2 pages). Not done: lane open reading the head (COVER marker remains), promoted-lane activation routing, name to descriptor resolution (M05/M06), page repair and fan-out growth, an exhaustive model."
+              "result": "Increment 1, provisional (RustFS 1.0.4, one host): structural head (kind 9, create-only, never deleted, one-PUT transitions checked against a no-regression successor rule before any request), catalog root and paged catalog (kinds 10 and 11, up to 65,536 hash buckets, tombstones plus create-only identity bindings (kind 12) so no identity ever comes back to a name), resolve = 1 HEAD + 1 GET, create = 2 PUT (binding, page), enumeration by derived keys, 0 LIST uncontended. Downside measured: a lost CAS race makes the S3 adapter list versions (about 1.3 LIST per create and p99 133 ms with 4 writers on 2 pages). Not done: lane open reading the head (COVER marker remains), promoted-lane activation routing, name to descriptor resolution (M05/M06), page repair and fan-out growth, an exhaustive model."
             }
           ]
         },

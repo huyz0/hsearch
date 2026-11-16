@@ -37,6 +37,8 @@ pub enum Kind {
     CatalogRoot = 10,
     /// One bounded page of a tenant catalog.
     CatalogPage = 11,
+    /// The one-time binding of an identity to a catalog name.
+    IdentityBinding = 12,
 }
 
 impl Kind {
@@ -57,6 +59,7 @@ impl Kind {
             9 => Self::StructuralHead,
             10 => Self::CatalogRoot,
             11 => Self::CatalogPage,
+            12 => Self::IdentityBinding,
             _ => return Err(FormatError::UnknownKind(code)),
         })
     }
@@ -76,6 +79,7 @@ impl Kind {
             Self::StructuralHead => MAX_HEAD_BODY,
             Self::CatalogRoot => MAX_CATALOG_ROOT_BODY,
             Self::CatalogPage => MAX_CATALOG_PAGE_BODY,
+            Self::IdentityBinding => MAX_IDENTITY_BINDING_BODY,
         }
     }
 

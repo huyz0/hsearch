@@ -31,8 +31,8 @@ mod mapping;
 mod pin;
 
 pub use authority::{
-    CatalogEntry, CatalogPage, CatalogRoot, EpochEntry, NameState, StructuralHead, TailLocator,
-    bucket_of,
+    CatalogEntry, CatalogPage, CatalogRoot, EpochEntry, IdentityBinding, NameState, StructuralHead,
+    TailLocator, bucket_of,
 };
 pub use crc::{crc32c, crc32c_bytewise};
 pub use envelope::{Header, Kind, SUPPORTED_MANDATORY_CAPS, open, seal};

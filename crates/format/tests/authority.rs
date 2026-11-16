@@ -443,3 +443,98 @@ fn a_page_holds_at_most_its_bound_and_the_bound_fits_the_body_limit() {
     let b = enc(|o| page(entries).encode(o, 4));
     assert!(CatalogPage::decode(&b, 4).is_ok());
 }
+
+#[test]
+fn an_identity_binding_round_trips_and_is_hardened() {
+    let b = IdentityBinding {
+        catalog: [3; 16],
+        index: [5; 16],
+        name_generation: 4,
+        name: "orders".into(),
+    };
+    let bytes = enc(|o| b.encode(o));
+    assert_eq!(
+        IdentityBinding::decode_at(&bytes, &[3; 16], &[5; 16]).unwrap(),
+        b
+    );
+    assert_hardened(&bytes, |x| {
+        IdentityBinding::decode_at(x, &[3; 16], &[5; 16])
+    });
+    assert!(IdentityBinding::decode_at(&bytes, &[4; 16], &[5; 16]).is_err());
+    assert!(IdentityBinding::decode_at(&bytes, &[3; 16], &[6; 16]).is_err());
+    for bad in [
+        IdentityBinding {
+            name_generation: 0,
+            ..b.clone()
+        },
+        IdentityBinding {
+            name: String::new(),
+            ..b.clone()
+        },
+    ] {
+        assert!(bad.encode(&mut Vec::new()).is_err());
+    }
+    let l = Layout::new("d").unwrap();
+    assert_ne!(
+        l.catalog_identity(&[3; 16], &[5; 16]),
+        l.catalog_identity(&[3; 16], &[6; 16])
+    );
+}
+
+#[test]
+fn a_checkpoint_root_cannot_be_swapped_without_raising_the_cover_and_fences_must_rise() {
+    let mut a = established(1, 1);
+    a.cover = 4;
+    a.checkpoint = Some([5; 16]);
+    a.tail.ordinal = 6;
+    let mut swap = a.clone();
+    swap.generation = 2;
+    swap.token = tok(2);
+    swap.checkpoint = Some([6; 16]);
+    assert!(
+        a.validate_successor(&swap).is_err(),
+        "same cover, different root"
+    );
+    swap.cover = 5;
+    assert_eq!(a.validate_successor(&swap), Ok(()));
+    // A new epoch in the same activation and lane needs a higher fence, and not below the cover.
+    let mut n = a.clone();
+    n.generation = 2;
+    n.token = tok(3);
+    n.writer_epoch = 2;
+    n.inventory.push(EpochEntry {
+        epoch: 2,
+        activation: 1,
+        lane: 0,
+        fence: 10,
+    });
+    assert!(
+        a.validate_successor(&n).is_err(),
+        "fence equal to the previous epoch's"
+    );
+    n.inventory[1].fence = 9;
+    assert!(
+        a.validate_successor(&n).is_err(),
+        "fence below the previous epoch's"
+    );
+    n.inventory[1].fence = 11;
+    assert_eq!(a.validate_successor(&n), Ok(()));
+    let mut low = a.clone();
+    low.cover = 40;
+    low.tail.ordinal = 41;
+    low.checkpoint = Some([5; 16]);
+    low.inventory[0].fence = 41;
+    let mut m = low.clone();
+    m.generation = 2;
+    m.token = tok(4);
+    m.writer_epoch = 2;
+    m.inventory.push(EpochEntry {
+        epoch: 2,
+        activation: 1,
+        lane: 0,
+        fence: 42,
+    });
+    assert_eq!(low.validate_successor(&m), Ok(()));
+    m.inventory[1].fence = 39;
+    assert!(low.validate_successor(&m).is_err());
+}

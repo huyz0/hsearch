@@ -70,6 +70,12 @@ impl Layout {
         self.key(format_args!("catalog/{}/ROOT", hex(catalog)))
     }
 
+    /// The one-time binding of an index identity to a name in a tenant catalog.
+    #[must_use]
+    pub fn catalog_identity(&self, catalog: &Id, index: &Id) -> String {
+        self.key(format_args!("catalog/{}/ids/{}", hex(catalog), hex(index)))
+    }
+
     /// One bucket page of a tenant catalog.
     #[must_use]
     pub fn catalog_page(&self, catalog: &Id, bucket: u32) -> String {

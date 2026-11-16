@@ -41,6 +41,7 @@ pub const MAX_INDEX_NAME_BYTES: usize = 255;
 /// Most bucket bits a catalog may fan out over (65,536 pages).
 pub const MAX_CATALOG_BUCKET_BITS: u8 = 16;
 
+pub(crate) const MAX_IDENTITY_BINDING_BODY: usize = 512;
 pub(crate) const MAX_HEAD_BODY: usize = 64 * 1024;
 pub(crate) const MAX_CATALOG_ROOT_BODY: usize = 256;
 pub(crate) const MAX_CATALOG_PAGE_BODY: usize = 2048 * (1 + 255 + 1 + 16 + 8) + 1024;

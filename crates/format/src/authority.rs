@@ -246,6 +246,20 @@ impl StructuralHead {
         if next.inventory.get(..self.inventory.len()) != Some(&self.inventory[..]) {
             return bad("the epoch inventory is append-only");
         }
+        if next.checkpoint != self.checkpoint && next.cover <= self.cover {
+            return bad("a new checkpoint root needs a higher cover");
+        }
+        if let Some(new) = next.inventory.get(self.inventory.len()) {
+            let above_previous = self.inventory.last().is_none_or(|old| {
+                new.activation != old.activation || new.lane != old.lane || new.fence > old.fence
+            });
+            if !above_previous {
+                return bad("a new epoch's fence must lie above the previous one's");
+            }
+            if new.activation == self.activation && new.fence < self.cover {
+                return bad("a new epoch's fence cannot lie below the cover");
+            }
+        }
         next.check()
     }
 }
@@ -502,5 +516,60 @@ impl CatalogPage {
             }
         }
         Ok(())
+    }
+}
+
+/// The one-time binding of an index identity to a catalog name: written (create-only) before the
+/// page that makes the name live, so an identity can be bound at most once however many
+/// identities the name has held since. `name_generation` is the generation the binding's page
+/// entry takes, which lets a retry of the same create be told from a reuse.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdentityBinding {
+    /// The catalog (also in the key).
+    pub catalog: Id,
+    /// The identity (also in the key).
+    pub index: Id,
+    /// The name generation the binding's create takes.
+    pub name_generation: u64,
+    /// The name it was bound to.
+    pub name: String,
+}
+
+impl IdentityBinding {
+    /// Append the encoded binding to `out`.
+    pub fn encode(&self, out: &mut Vec<u8>) -> Result<()> {
+        if !name_ok(&self.name) || self.name_generation == 0 {
+            return Err(FormatError::Malformed("binding name or generation"));
+        }
+        let mut w = Writer::begin(out, Kind::IdentityBinding, 1, 0);
+        w.bytes(&self.catalog);
+        w.bytes(&self.index);
+        w.u64(self.name_generation);
+        if let Err(e) = w.short_str(&self.name, MAX_INDEX_NAME_BYTES.min(255), "name") {
+            return w.abort(e);
+        }
+        w.finish()
+    }
+
+    /// Decode and require the catalog and identity the key named.
+    pub fn decode_at(bytes: &[u8], catalog: &Id, index: &Id) -> Result<Self> {
+        let (_, body) = open(bytes, Kind::IdentityBinding)?;
+        let mut r = Reader::new(body);
+        let found = Self {
+            catalog: r.id()?,
+            index: r.id()?,
+            name_generation: r.u64()?,
+            name: r
+                .short_str(MAX_INDEX_NAME_BYTES.min(255), "name")?
+                .to_owned(),
+        };
+        r.finish()?;
+        if !name_ok(&found.name) || found.name_generation == 0 {
+            return Err(FormatError::Malformed("binding name or generation"));
+        }
+        if &found.catalog != catalog || &found.index != index {
+            return Err(FormatError::Mismatch("binding identity"));
+        }
+        Ok(found)
     }
 }

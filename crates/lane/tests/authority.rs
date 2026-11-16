@@ -307,17 +307,17 @@ fn concurrent_advances_never_lose_an_epoch_or_regress() {
     let store = Arc::new(memory());
     block_on(create_head(&*store, &layout(), &lane(), Durability::Object)).unwrap();
     let mut joins = Vec::new();
-    for t in 0..4u64 {
+    for _ in 0..4u64 {
         let store = Arc::clone(&store);
         joins.push(std::thread::spawn(move || {
             let mut won = 0u64;
-            for round in 0..15u64 {
+            for _ in 0..15u64 {
                 loop {
                     let (h, v) = block_on(read_head(&*store, &layout(), &lane())).unwrap();
                     let change = Change::Establish {
                         activation: 1,
                         lane: 0,
-                        fence: 100 * t + round + 1,
+                        fence: h.tail.ordinal,
                     };
                     match block_on(advance_head(&*store, &layout(), &lane(), &h, &v, change)) {
                         Ok(Advance::Done(..)) => {
@@ -610,7 +610,7 @@ fn verify_finds_a_page_that_does_not_belong() {
 }
 
 #[test]
-fn a_create_costs_one_read_and_one_put_and_a_resolve_costs_one_read() {
+fn a_resolve_costs_one_read_and_a_first_create_one_head_and_two_creates() {
     let store = counted();
     let catalog = block_on(create_catalog(&*store, &layout(), cat_id(), 8)).unwrap();
     let before = store.requests();
@@ -618,11 +618,65 @@ fn a_create_costs_one_read_and_one_put_and_a_resolve_costs_one_read() {
     let used = store.requests().since(&before);
     assert_eq!(
         (used.head, used.create, used.cas, used.total()),
-        (1, 1, 0, 2),
-        "an empty bucket: one HEAD finds it absent, one conditional create writes it"
+        (1, 2, 0, 3),
+        "an empty bucket: one HEAD finds it absent, one create binds the identity, one writes the page"
     );
     let before = store.requests();
     block_on(catalog.resolve(&*store, &layout(), "orders")).unwrap();
     let r = store.requests().since(&before);
     assert_eq!((r.head, r.read, r.total()), (1, 1, 2));
+}
+
+#[test]
+fn no_older_identity_comes_back_even_after_other_identities_held_the_name() {
+    let store = counted();
+    let catalog = block_on(create_catalog(&*store, &layout(), cat_id(), 4)).unwrap();
+    block_on(catalog.create(&*store, &layout(), "orders", id(1))).unwrap();
+    block_on(catalog.delete(&*store, &layout(), "orders", &id(1))).unwrap();
+    block_on(catalog.create(&*store, &layout(), "orders", id(2))).unwrap();
+    block_on(catalog.delete(&*store, &layout(), "orders", &id(2))).unwrap();
+    // The tombstone now holds identity 2; identity 1 is older and must still be refused.
+    let e = block_on(catalog.create(&*store, &layout(), "orders", id(1))).unwrap_err();
+    assert!(matches!(e, Error::Invalid(_)), "{e:?}");
+    // It is refused under any other name too: an identity is bound once, ever.
+    let e = block_on(catalog.create(&*store, &layout(), "other", id(1))).unwrap_err();
+    assert!(matches!(e, Error::Invalid(_)), "{e:?}");
+    assert_eq!(
+        block_on(catalog.resolve(&*store, &layout(), "orders")).unwrap(),
+        Resolution::Deleted {
+            last: id(2),
+            name_generation: 4
+        }
+    );
+    block_on(catalog.create(&*store, &layout(), "orders", id(3))).unwrap();
+}
+
+#[test]
+fn a_create_interrupted_between_its_binding_and_its_page_can_be_retried() {
+    let chaos = Arc::new(Chaos::new(Arc::new(memory())));
+    let catalog = block_on(create_catalog(&*chaos, &layout(), cat_id(), 3)).unwrap();
+    // One mutation allowed: the binding lands, the page write is refused.
+    chaos.allow(1);
+    let e = block_on(catalog.create(&*chaos, &layout(), "orders", id(1))).unwrap_err();
+    assert!(matches!(e, Error::Store(_)), "{e:?}");
+    assert_eq!(
+        block_on(catalog.resolve(&*chaos, &layout(), "orders")).unwrap(),
+        Resolution::Absent
+    );
+    chaos.allow(i64::MAX);
+    block_on(catalog.create(&*chaos, &layout(), "orders", id(1))).unwrap();
+    assert!(matches!(
+        block_on(catalog.resolve(&*chaos, &layout(), "orders")).unwrap(),
+        Resolution::Live { .. }
+    ));
+}
+
+#[test]
+fn a_create_costs_two_puts_one_for_the_binding_and_one_for_the_page() {
+    let store = counted();
+    let catalog = block_on(create_catalog(&*store, &layout(), cat_id(), 8)).unwrap();
+    let before = store.requests();
+    block_on(catalog.create(&*store, &layout(), "orders", id(1))).unwrap();
+    let used = store.requests().since(&before);
+    assert_eq!((used.create, used.cas, used.head), (2, 0, 1), "{used:?}");
 }
