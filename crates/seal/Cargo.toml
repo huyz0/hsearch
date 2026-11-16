@@ -1,0 +1,19 @@
+[package]
+name = "hsearch-seal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Encrypting decorator over the object contracts (M05.04): sealed blocks with per-object data keys"
+
+[dependencies]
+hsearch-object = { path = "../object" }
+hsearch-security = { path = "../security" }
+sha2 = "=0.10.9"
+
+[dev-dependencies]
+hsearch-security = { path = "../security", features = ["test-kms"] }
+
+[lints]
+workspace = true

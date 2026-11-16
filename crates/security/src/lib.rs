@@ -19,6 +19,7 @@ pub mod ids;
 pub mod keys;
 pub mod manager;
 pub mod policy;
+pub mod readiness;
 #[cfg(feature = "test-kms")]
 #[cfg(feature = "test-kms")]
 pub mod test_kms;
