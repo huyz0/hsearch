@@ -1,0 +1,197 @@
+{
+  "profile": "catalog-index-scale-v1",
+  "growth": 10,
+  "scope": "synthetic SQLite model keyed on the index; not the runtime catalog, no physical I/O",
+  "source_sha256": "2b361cef648170b2ecff204394057204fdbf81b630a88f8db4e0f3baba5f0dc3",
+  "datasets": [
+    {
+      "idle_indexes": 100000,
+      "index_rows": 100001,
+      "route_rows": 100016,
+      "bytes": 10457088,
+      "sha256": "dc28a9bc9f99cfba5785e9a8a50db8db6ef3e46657c75c37413f3d359ecb2e6d"
+    },
+    {
+      "idle_indexes": 1000000,
+      "index_rows": 1000001,
+      "route_rows": 1000016,
+      "bytes": 104427520,
+      "sha256": "4efae2710fa8a1a407a11274d7ee6249aad4dc5afb7eb1fb962f1f036f5bb52a"
+    }
+  ],
+  "samples": [
+    {
+      "variant": "bounded",
+      "peak_rss_bytes": 18984960,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)"
+      ],
+      "idle_indexes": 100000,
+      "repeat": 0
+    },
+    {
+      "variant": "bounded",
+      "peak_rss_bytes": 19107840,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)"
+      ],
+      "idle_indexes": 100000,
+      "repeat": 1
+    },
+    {
+      "variant": "bounded",
+      "peak_rss_bytes": 19087360,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)"
+      ],
+      "idle_indexes": 100000,
+      "repeat": 2
+    },
+    {
+      "variant": "full_scan",
+      "peak_rss_bytes": 47316992,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)",
+        "SCAN indexes"
+      ],
+      "idle_indexes": 100000,
+      "repeat": 0
+    },
+    {
+      "variant": "full_scan",
+      "peak_rss_bytes": 47439872,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)",
+        "SCAN indexes"
+      ],
+      "idle_indexes": 100000,
+      "repeat": 1
+    },
+    {
+      "variant": "full_scan",
+      "peak_rss_bytes": 47210496,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)",
+        "SCAN indexes"
+      ],
+      "idle_indexes": 100000,
+      "repeat": 2
+    },
+    {
+      "variant": "bounded",
+      "peak_rss_bytes": 19054592,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)"
+      ],
+      "idle_indexes": 1000000,
+      "repeat": 0
+    },
+    {
+      "variant": "bounded",
+      "peak_rss_bytes": 19156992,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)"
+      ],
+      "idle_indexes": 1000000,
+      "repeat": 1
+    },
+    {
+      "variant": "bounded",
+      "peak_rss_bytes": 19050496,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)"
+      ],
+      "idle_indexes": 1000000,
+      "repeat": 2
+    },
+    {
+      "variant": "full_scan",
+      "peak_rss_bytes": 292372480,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)",
+        "SCAN indexes"
+      ],
+      "idle_indexes": 1000000,
+      "repeat": 0
+    },
+    {
+      "variant": "full_scan",
+      "peak_rss_bytes": 292478976,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)",
+        "SCAN indexes"
+      ],
+      "idle_indexes": 1000000,
+      "repeat": 1
+    },
+    {
+      "variant": "full_scan",
+      "peak_rss_bytes": 292261888,
+      "statements_per_request": 2,
+      "rows_per_request": 17,
+      "plans": [
+        "SEARCH indexes USING PRIMARY KEY (index_id=?)",
+        "SEARCH routes USING PRIMARY KEY (index_id=? AND incarnation=? AND generation=?)",
+        "SCAN indexes"
+      ],
+      "idle_indexes": 1000000,
+      "repeat": 2
+    }
+  ],
+  "outcomes": {
+    "bounded": {
+      "gate_passed": true,
+      "median_peak_rss_bytes": [
+        19087360,
+        19054592
+      ],
+      "rss_ratio": 0.9982832618025751,
+      "indexed_plans": true,
+      "fixed_selected_work": true
+    },
+    "full_scan": {
+      "gate_passed": false,
+      "median_peak_rss_bytes": [
+        47316992,
+        292372480
+      ],
+      "rss_ratio": 6.179016620498615,
+      "indexed_plans": false,
+      "fixed_selected_work": true
+    }
+  },
+  "passed": true
+}

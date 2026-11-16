@@ -14,6 +14,7 @@
 //!
 //! Not here, by design: engine apply and
 //! checkpoints that move the cover (M06), AEAD (M05). A caller supplies the cover it replays from.
+pub mod activation;
 pub mod batch;
 pub mod catalog;
 pub mod counting;
@@ -25,6 +26,7 @@ pub mod hot;
 mod io;
 pub mod log;
 pub mod members;
+pub mod partition;
 pub mod place;
 pub mod promote;
 

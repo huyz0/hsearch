@@ -58,6 +58,7 @@ class IncidentPlanTests(unittest.TestCase):
         for tid in ("M03.05", "M03.06", "M03.08"):  # Done later; keep this model pre-acceptance.
             self.tasks[tid]["status"] = "planned"
         milestones["M03"]["status"] = "planned"
+        self.tasks["M13.01"]["status"] = "planned"  # Done later; keep this model pre-acceptance.
         self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.
         milestones["M01"]["status"] = "in_progress"
         milestones["M02"]["status"] = "planned"  # Its tasks are reset above; M02 is done in the live plan.
