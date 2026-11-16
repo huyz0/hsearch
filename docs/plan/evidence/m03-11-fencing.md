@@ -1,6 +1,6 @@
 # M03.11 fencing on RustFS (first half)
 
-`provisional`: RustFS 1.0.4 (digest pinned in `scripts/rustfs.sh`) in a container in a sandbox. MinIO and real S3 were **not run**; M03.11 stays `in_progress` for them.
+`provisional`: RustFS 1.0.4 (digest pinned in `scripts/rustfs.sh`) in a container in a sandbox. MinIO and real S3 were **not run**; M03.11 is done on RustFS; those runs are M15.01's.
 
 ## Observed
 

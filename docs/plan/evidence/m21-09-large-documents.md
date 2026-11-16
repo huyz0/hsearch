@@ -45,7 +45,7 @@ About 10x the document, under the 32x admission charge, so the charge is unchang
 - The attempt number is unique per write attempt, so chunks left by a refused slot write never collide with the retry at the same position (found in review).
 - Replay checks each chunk's length against the reference before allocating it. Increment 3 below bounds the text of one slot.
 - A crash after the chunks and before the slot leaves orphan chunk objects. They are never read, and nothing collects them yet.
-- Chunks go through the ordinary create path, not the multipart `LargeObjectWriter` seam (M03.14, still planned), so each chunk is bounded by the 16 MiB payload limit.
+- Chunks go through the ordinary create path, not the multipart `LargeObjectWriter` seam (M03.14, since done), so each chunk is bounded by the 16 MiB payload limit.
 
 # M21.09 evidence (increment 3): 100 MiB measured, replay bounded
 
