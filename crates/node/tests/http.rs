@@ -371,6 +371,7 @@ fn small() -> Limits {
         max_bulk_items: 3000,
         buffer_bytes: 64 * 1024,
         memory_budget_bytes: 8 << 20,
+        auto_merge_mb: 0,
     }
 }
 
@@ -487,6 +488,7 @@ fn concurrent_bulks_beyond_the_memory_budget_are_refused_with_429_and_recover() 
     let limits = Limits {
         // Exactly one full-size request fits.
         memory_budget_bytes: 3 * 64 * 1024 + 64 * 1024,
+        auto_merge_mb: 0,
         ..small()
     };
     let node = start_with(&store, &dir, limits);

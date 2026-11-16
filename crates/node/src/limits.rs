@@ -17,6 +17,9 @@ pub const MAX_BUFFER_BYTES: usize = 1 << 30;
 /// What a request holds beyond its raw buffer: the parsed value and the write
 /// operation derived from it, each about one buffer's worth in the worst case.
 pub const COST_FACTOR: u64 = 3;
+/// Largest segment the engine may merge by itself on a refresh, MiB. A merge runs on
+/// the write path, so its size bounds the stall one refresh can see.
+pub const MAX_AUTO_MERGE_MB: usize = 1024;
 
 /// Per-profile request limits. Every default is the M02.05 frozen value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -33,6 +36,10 @@ pub struct Limits {
     pub buffer_bytes: usize,
     /// Reserved bytes across all concurrent bulk requests.
     pub memory_budget_bytes: u64,
+    /// Largest segment, MiB, the engine merges on refresh by itself; 0 turns
+    /// automatic merging off, so segments pile up until a blocking merge of the
+    /// whole index at the segment cap. Measured in `m21-11-refresh-merge-tail.md`.
+    pub auto_merge_mb: usize,
 }
 
 impl Default for Limits {
@@ -43,6 +50,7 @@ impl Default for Limits {
             max_bulk_items: 5000,
             buffer_bytes: 8 * 1024 * 1024,
             memory_budget_bytes: 256 * 1024 * 1024,
+            auto_merge_mb: 16,
         }
     }
 }
@@ -69,6 +77,11 @@ impl Limits {
         if self.buffer_bytes < MIN_BUFFER_BYTES {
             return Err(format!(
                 "the buffer must be at least {MIN_BUFFER_BYTES} bytes"
+            ));
+        }
+        if self.auto_merge_mb > MAX_AUTO_MERGE_MB {
+            return Err(format!(
+                "the automatic merge size must be at most {MAX_AUTO_MERGE_MB} MiB (0 turns it off)"
             ));
         }
         if self.memory_budget_bytes < self.request_cost(u64::MAX) {

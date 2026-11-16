@@ -181,6 +181,7 @@ fn main() {
         max_bulk_items: 100,
         buffer_bytes: 256 << 20,
         memory_budget_bytes: 8192 << 20,
+        auto_merge_mb: 0,
     };
     let node = Node::with_limits(store, dir.clone(), limits).expect("node");
     let mapping = json!({"mappings":{"properties":{"title":{"type":"text"},"tag":{"type":"keyword"},

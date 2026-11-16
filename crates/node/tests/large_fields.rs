@@ -29,6 +29,7 @@ fn limits() -> Limits {
         max_bulk_items: 100,
         buffer_bytes: 16 << 20,
         memory_budget_bytes: 256 << 20,
+        auto_merge_mb: 0,
     }
 }
 
@@ -84,6 +85,7 @@ fn a_document_past_the_inline_size_is_stored_as_chunk_objects_and_found() {
     // the text lives in two chunk objects.
     let roomy = Limits {
         memory_budget_bytes: 512 << 20,
+        auto_merge_mb: 0,
         ..limits()
     };
     let (store, dir) = (store(), Scratch::new("chunked"));
@@ -149,6 +151,7 @@ fn a_large_document_is_charged_its_indexing_memory_and_refused_per_item_when_the
         max_bulk_items: 100,
         buffer_bytes: 2 << 20,
         memory_budget_bytes: 3 * (2 << 20) + (64 << 10),
+        auto_merge_mb: 0,
     };
     let (store, dir) = (store(), Scratch::new("charged"));
     let node = Arc::new(Node::with_limits(store, dir.0.clone(), tight).unwrap());
@@ -180,6 +183,7 @@ fn the_charge_is_released_after_each_batch_and_a_mixed_batch_is_refused_whole() 
     let one_at_a_time = Limits {
         buffer_bytes: 8 << 20,
         memory_budget_bytes: 40 << 20,
+        auto_merge_mb: 0,
         ..limits()
     };
     let (store, dir) = (store(), Scratch::new("released"));
