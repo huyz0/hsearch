@@ -71,6 +71,12 @@ pub(crate) fn slot_key(index: &str, seq: u64) -> String {
     format!("{index}/log/{seq:020}")
 }
 
+/// The one object that records chunk-write attempts not yet named by a slot, so
+/// a crash between the chunks and the slot leaves keys to derive, not to LIST.
+pub(crate) fn intent_key(index: &str) -> String {
+    format!("{index}/intent")
+}
+
 /// One chunk object of an externalised string, unique to the writer epoch and
 /// to the write attempt, so an orphan from a crashed or failed attempt can never
 /// be mistaken for, or collide with, a later write at the same position.
