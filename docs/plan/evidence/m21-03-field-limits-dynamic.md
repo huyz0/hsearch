@@ -5,12 +5,17 @@ Provisional: one node over the in-memory store, 4-CPU cloud container. Counts ar
 ## What ships
 
 - **Field limit.** `MappingLimits.max_fields`, default 1,000 (the M02.05 value), configurable up to 10,000 (`--max-fields`). A create body over it is refused whole with 400 `illegal_argument_exception` "Limit of total fields [N] has been exceeded"; nothing is created. The engine schema's own cap (14 fields today) still applies underneath, so the effective limit is the smaller of the two.
-- **Depth and nested objects.** `max_depth` 20 and `max_nested_objects` 10,000 (`--max-field-depth`, `--max-nested-objects`), checked by `MappingLimits::check_source` before a document becomes a write: iterative (a 100,000-deep value is refused without recursion), never looks inside a string, so a 100 MiB text field costs nothing, and a document of scalars takes a one-pass fast path.
+- **Depth and nested objects.** `max_depth` 20 and `max_nested_objects` 10,000 (`--max-field-depth`, `--max-nested-objects`), checked by `MappingLimits::check_source` before a document becomes a write: iterative (a 100,000-deep value is refused without recursion), never looks inside a string, so a 100 MiB text field costs nothing, and scalars, including long arrays of them, are never pushed on the work stack.
 - **Per-index `dynamic`.** `true`, `false` or `strict` (booleans and strings, as OpenSearch), in `mappings.dynamic`. It is part of the canonical mapping, so it changes the content hash; `strict`, the behaviour before the setting existed, is the default and is **not written** into the stored form, so every mapping stored earlier keeps its hash and bytes (tested).
   - `strict`: the item is refused, `strict_dynamic_mapping_exception`, per bulk item.
   - `false`: unknown fields are dropped before indexing. Unlike OpenSearch they are not retained in `_source`, because this node rebuilds `_source` from indexed fields.
   - `true`: the field limit is checked first (over it: refused whole, naming the limit); within it the item is refused with `mapping_update_unavailable_exception`, because adding a field to a live index is M21.04.
 - **No partial mapping change.** Nothing in M21.03 writes a mapping after create, so a refused item, or a bulk with several, leaves the stored mapping untouched; the others in the bulk are indexed (per-item errors).
+
+## Compatibility
+
+- **Downgrade.** An index created with `dynamic` `true` or `false` stores a `#dynamic` line that a node from before this change reads as corrupt (500). Strict-only mappings are byte-identical, so nothing written earlier is affected; only a rollback after such an index exists is. Decode accepts the line only first and only non-default, so each mapping has one stored spelling.
+- **`dynamic: true` is accepted but inert** until M21.04: an index can be created with it, and every document with an undeclared field is refused. Refusing it at create would contradict PR-42's three settings, so it is accepted and labelled here.
 
 ## Not reachable yet, said plainly
 

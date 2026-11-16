@@ -113,6 +113,10 @@ fn strict_rejects_an_unknown_field_per_item_and_leaves_the_mapping_alone() {
     assert!(reason.contains("[extra]"), "{reason}");
     assert!(response["items"][0]["index"]["error"].is_null());
     assert!(response["items"][2]["index"]["error"].is_null());
+    // The neighbours of the refused item were indexed; the refused one was not.
+    assert_eq!(node.get("s", "0").unwrap().0, 200);
+    assert_eq!(node.get("s", "1").unwrap().0, 404);
+    assert_eq!(node.get("s", "2").unwrap().0, 200);
 }
 
 #[test]
@@ -170,9 +174,34 @@ fn dynamic_true_checks_the_limit_before_anything_else_and_never_half_applies() {
     let (kind1, reason1) = item_error(&response, 1);
     assert_eq!(kind1, "illegal_argument_exception");
     assert!(reason1.contains("Limit of total fields [3]"), "{reason1}");
-    // The stored mapping is unchanged: a restart reads the same two fields.
-    let (status, doc) = node.get("d", "0").unwrap();
-    assert_eq!(status, 404, "{doc}");
+    assert_eq!(node.get("d", "0").unwrap().0, 404);
+    assert_eq!(node.get("d", "1").unwrap().0, 404);
+}
+
+#[test]
+fn a_refusal_leaves_the_stored_mapping_intact_across_a_restart() {
+    let scratch = Scratch::new("restart");
+    let store = store();
+    let make = |dir: &str| {
+        Node::with_limits(Arc::clone(&store), scratch.0.join(dir), Limits::default()).unwrap()
+    };
+    let first = make("one");
+    first
+        .create("d", &body(Some("false"), &["a", "b"]))
+        .unwrap();
+    let refused = bulk(
+        &first,
+        "d",
+        &[json!({"a": "x"}), json!({"a": "x", "b": "y", "c": "z"})],
+    );
+    assert_eq!(item_error(&refused, 0).0, "mapper_parsing_exception");
+    // A restarted node resolves the same mapping: still dynamic false (the extra
+    // field is dropped, not refused), and still exactly the two declared fields.
+    let second = make("two");
+    let ok = bulk(&second, "d", &[json!({"a": "x", "b": "y", "c": "z"})]);
+    assert_eq!(ok["errors"], json!(false), "{ok}");
+    let (_, got) = second.get("d", "0").unwrap();
+    assert_eq!(got["_source"], json!({"a": "x", "b": "y"}));
 }
 
 #[test]

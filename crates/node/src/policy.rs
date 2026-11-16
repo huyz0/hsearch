@@ -127,7 +127,11 @@ impl MappingLimits {
         }
         let mut objects = 0usize;
         // (value, depth of the field that holds it). Top-level fields are depth 1.
-        let mut stack: Vec<(&Value, usize)> = source.values().map(|v| (v, 1)).collect();
+        let mut stack: Vec<(&Value, usize)> = source
+            .values()
+            .filter(|v| v.is_object() || v.is_array())
+            .map(|v| (v, 1))
+            .collect();
         while let Some((value, depth)) = stack.pop() {
             match value {
                 Value::Object(map) => {
@@ -139,7 +143,11 @@ impl MappingLimits {
                             format!("The depth of field exceeds the limit [{}]", self.max_depth),
                         ));
                     }
-                    stack.extend(map.values().map(|v| (v, depth + 1)));
+                    stack.extend(
+                        map.values()
+                            .filter(|v| v.is_object() || v.is_array())
+                            .map(|v| (v, depth + 1)),
+                    );
                 }
                 Value::Array(items) => {
                     for item in items {
@@ -153,7 +161,11 @@ impl MappingLimits {
                             }
                         }
                         // An array adds no depth: its elements sit where it does.
-                        stack.push((item, depth));
+                        // Scalars are not pushed, so a long array of numbers costs
+                        // one pass and no stack.
+                        if item.is_object() || item.is_array() {
+                            stack.push((item, depth));
+                        }
                     }
                 }
                 _ => {}
@@ -216,6 +228,7 @@ mod tests {
         );
         // Scalars in arrays and objects outside arrays are not nested objects.
         assert!(check(&limits, json!({"a": [1, 2, 3, 4], "o": {"p": 1}})).is_ok());
+        assert!(check(&limits, json!({"v": vec![0.5; 4096]})).is_ok());
     }
 
     #[test]

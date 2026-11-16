@@ -142,9 +142,15 @@ impl Mapping {
         }
         let mut fields = Vec::new();
         let mut dynamic = Dynamic::Strict;
-        for line in lines {
+        for (i, line) in lines.enumerate() {
             if let Some(name) = line.strip_prefix(DYNAMIC_LINE) {
-                dynamic = Dynamic::from_name(name).map_err(|_| corrupt())?;
+                // Only the first line, only a non-default value: the one form
+                // `encode` writes, so a mapping has exactly one stored spelling.
+                let parsed = Dynamic::from_name(name).map_err(|_| corrupt())?;
+                if i != 0 || parsed == Dynamic::Strict {
+                    return Err(corrupt());
+                }
+                dynamic = parsed;
                 continue;
             }
             let (name, kind) = line.split_once('\t').ok_or_else(corrupt)?;
@@ -340,6 +346,13 @@ mod tests {
             assert_eq!(Mapping::decode(&mapping.encode()).unwrap(), mapping);
         }
         assert!(Mapping::decode(b"hsearch-mapping-v0\n#dynamic\tmaybe\na\tkeyword\n").is_err());
+        for bad in [
+            &b"hsearch-mapping-v0\n#dynamic\tstrict\na\tkeyword\n"[..],
+            b"hsearch-mapping-v0\na\tkeyword\n#dynamic\tfalse\n",
+            b"hsearch-mapping-v0\n#dynamic\tfalse\n#dynamic\ttrue\na\tkeyword\n",
+        ] {
+            assert!(Mapping::decode(bad).is_err());
+        }
     }
 
     #[test]
