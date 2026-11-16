@@ -232,7 +232,13 @@ struct Core<'e, 'd, S> {
     /// Cleared when the store reports it cannot delete, so the reclaim pass
     /// stops spending requests it knows will fail.
     can_delete: bool,
+    /// Reclaim passes to skip after a removal failed, so a store that keeps
+    /// failing costs one failed request a few commits, not 256 each commit.
+    reclaim_cooldown: u32,
 }
+
+/// Passes skipped after a failed removal.
+const RECLAIM_COOLDOWN: u32 = 16;
 
 /// Most chunk objects one reclaim pass removes, so a crash that left a 200 MiB
 /// document's worth of chunks cannot hold the writer for an unbounded time.
@@ -597,12 +603,16 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         if self.poisoned || !self.can_delete || self.pending.is_empty() {
             return;
         }
+        if self.reclaim_cooldown > 0 {
+            self.reclaim_cooldown -= 1;
+            return;
+        }
         let head = self.seq;
         let mut budget = RECLAIM_CHUNKS_PER_PASS;
         let mut keep = Vec::with_capacity(self.pending.len());
         let mut entries = std::mem::take(&mut self.pending).into_iter();
         for entry in entries.by_ref() {
-            if entry.seq >= head || !self.can_delete || budget == 0 {
+            if entry.seq >= head || !self.can_delete || budget == 0 || self.reclaim_cooldown > 0 {
                 keep.push(entry);
                 continue;
             }
@@ -621,7 +631,13 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
                         done = false;
                         break;
                     }
-                    Removal::Failed => done = false,
+                    Removal::Failed => {
+                        // Stop this pass: the store is failing, and every
+                        // further attempt would stall the writer thread.
+                        self.reclaim_cooldown = RECLAIM_COOLDOWN;
+                        done = false;
+                        break;
+                    }
                 }
             }
             if !done {
@@ -877,6 +893,7 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
         intent_token,
         pending: Vec::new(),
         can_delete: true,
+        reclaim_cooldown: 0,
     };
     // Replay every slot until the first that is not there. A store error other
     // than not-found is never read as the end of the log.

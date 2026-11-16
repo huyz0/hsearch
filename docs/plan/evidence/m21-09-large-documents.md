@@ -99,7 +99,8 @@ Measured on the pinned RustFS 1.0.4 (provisional: local, not S3): `PutBucketLife
 - **Reclaim** removes the chunks of a pending entry only when its position is behind the log head. Slots are create-only, so once the slot at that position exists nothing else can ever be written there: its chunks are certain orphans. An entry at or past the head stays pending, because a late slot write from the crashed writer may still land and name it. Nothing waits on a clock.
 - It runs after open and after each group commit, off the acknowledgement path, at most 256 chunks per pass (one HEAD for the version, then the removal). A store that cannot delete turns it off for that writer.
 - A definite failure whose delete also fails keeps the attempt pending instead of leaking it.
-- The intent compare-exchange also fences a stale writer: after a newer writer wrote an intent, the old one's next large write fails `Fenced` before it writes a chunk.
+- The intent compare-exchange fences a stale writer in one direction: after a newer writer wrote an intent, the old one's next large write fails `Fenced` before it writes a chunk. If the stale writer writes first, the newer one's next large write fails `Fenced` and must reopen. Safety is unchanged either way (slots are create-only); a stale writer's small slots are not fenced by it.
+- A failed removal stops the pass and skips the next 16, so a failing store costs one request a few commits, not 256 on the writer thread per commit. Reclaim runs on the writer thread, so a pass delays the next bulk, not the acknowledgement of the current one.
 - Past 16,384 pending attempts the oldest are forgotten. Their chunks leak; nothing a slot might name is ever deleted.
 
 A crash on an idle index leaves its orphans until the log next passes that position (the next write). They cost storage only.
@@ -111,6 +112,6 @@ A crash on an idle index leaves its orphans until the log next passes that posit
 | 1.2 MiB, 1 chunk | 2 | 3 | 32 ms | 43-47 ms |
 | 12 MiB, 2 chunks | 3 | 4 | 286-293 ms | 298-304 ms |
 
-One extra small PUT per slot that has a large string, in series before the chunks (it must be durable first). Group commit shares it across every large string in the slot. Open gains one HEAD. No GET, no LIST. Reclaim happens only after a crash or a failed delete. On real S3 the added latency is one small PUT round trip.
+One extra small PUT per slot that has a large string, in series before the chunks (it must be durable first). Group commit shares it across every large string in the slot. Open gains one HEAD, and one GET when an intent exists. No LIST. Reclaim happens only after a crash or a failed delete. On real S3 the added latency is one small PUT round trip.
 
 Tests: `a_crash_between_the_chunks_and_the_slot_is_cleaned_up_once_the_log_passes_it` (chunks are kept until the log passes the position, then removed; replay intact; observed failing with the reclaim call disabled), `reopening_never_removes_the_chunks_of_a_committed_slot`, `an_unknown_slot_write_never_removes_the_chunks_it_may_name` (now also checks a reopen removes nothing), `a_slot_of_small_fields_writes_no_intent`, `a_store_that_cannot_delete_keeps_the_crash_orphans_and_stays_writable`, `a_stale_writer_is_fenced_by_the_intent_before_it_writes_a_chunk`, the intent codec round trip and bounds (format), and on RustFS `a_crash_after_the_chunks_is_recorded_and_the_next_writer_removes_them` (child process aborted after its chunks; 4 PUTs, 0 LIST for the next large write).
