@@ -21,6 +21,7 @@ use hsearch_format::{
 use hsearch_object::{MetadataStore, Precondition};
 
 use crate::cover::{raise_cover, read_cover};
+use crate::head::{Advance, Change, advance_head, read_head};
 use crate::io::{Written, fresh_token, key, mutation, read_object, request_id, write};
 use crate::members::{LaneId, read_descriptor, swap_descriptor, without_member};
 use crate::{Error, Result};
@@ -53,6 +54,11 @@ pub struct OpenReport {
     pub records_replayed: u64,
     /// Fence creates that lost to a live writer before one won.
     pub seal_races: u32,
+    /// For [`LaneWriter::open_with_head`]: the writer epoch the open established in the head, and
+    /// the head generation that recorded it. Both zero for a marker-driven open.
+    pub head_epoch: u64,
+    /// See [`OpenReport::head_epoch`].
+    pub head_generation: u64,
 }
 
 /// An acknowledged append.
@@ -142,12 +148,74 @@ where
     Ok(at)
 }
 
+/// Where an open learns the cover it must not replay below.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CoverSource {
+    /// The lane's reclaim marker (`cover.rs`).
+    Marker,
+    /// The lane's structural head.
+    Head,
+}
+
+/// Most head transitions one establish tries before giving up.
+const MAX_ESTABLISH_ATTEMPTS: u32 = 8;
+
+/// Record the fence this open created as a new writer epoch in the head. A head that already
+/// holds a fence at or above ours means a later opener won: this open has no authority.
+async fn establish<S: MetadataStore>(
+    store: &S,
+    layout: &Layout,
+    id: &LaneId,
+    fence: u64,
+) -> Result<(u64, u64)> {
+    for _ in 0..MAX_ESTABLISH_ATTEMPTS {
+        let (head, version) = read_head(store, layout, id).await?;
+        // The head has moved to a later activation: this lane id no longer holds authority.
+        if id.activation < head.activation {
+            return Err(Error::Fenced);
+        }
+        // A lost reply that did land: the head already holds exactly our epoch.
+        if let Some(entry) = head.inventory.last()
+            && entry.activation == id.activation
+            && entry.lane == id.lane
+        {
+            if entry.fence == fence {
+                return Ok((entry.epoch, head.generation));
+            }
+            if entry.fence > fence {
+                return Err(Error::Fenced);
+            }
+        }
+        if fence < head.cover {
+            return Err(Error::BadCover);
+        }
+        let change = Change::Establish {
+            activation: id.activation,
+            lane: id.lane,
+            fence,
+        };
+        match advance_head(store, layout, id, &head, &version, change).await {
+            Ok(Advance::Done(next, _)) => return Ok((next.writer_epoch, next.generation)),
+            Ok(Advance::Lost) | Err(Error::Contended) => {}
+            Err(Error::Format(_))
+                if head.inventory.len() >= hsearch_format::MAX_EPOCH_INVENTORY =>
+            {
+                return Err(Error::Capacity);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(Error::Contended)
+}
+
 /// The single writer of one lane.
 pub struct LaneWriter<S> {
     store: Arc<S>,
     layout: Layout,
     id: LaneId,
     next: u64,
+    /// Which record this writer's cover lives in; the other reclaim entry point is refused.
+    source: CoverSource,
     descriptor: LaneDescriptor,
     version: hsearch_object::VersionToken,
     sealed: BTreeMap<Id, u64>,
@@ -170,6 +238,50 @@ impl<S: MetadataStore> LaneWriter<S> {
         layout: Layout,
         id: LaneId,
         from: u64,
+        visit: F,
+    ) -> Result<(Self, OpenReport)>
+    where
+        F: FnMut(&SlotView<'_>) -> Result<()>,
+    {
+        Self::open_at(store, layout, id, from, CoverSource::Marker, visit).await
+    }
+
+    /// Become the lane's writer with the cover and the writer epoch held by the lane's structural
+    /// head ([`crate::head`]) instead of the reclaim marker: replay starts at the head's cover, the
+    /// fence is created as in [`LaneWriter::open`], and one head transition then records the new
+    /// writer epoch, its fence and the tail above it. The reclaim marker is neither read nor
+    /// written, so a lane is driven by the head **or** by the marker, never both.
+    ///
+    /// Cost over `open` with no marker: 2 requests to read the head, 2 to re-read it after the
+    /// replay (the cover must not have moved above the end that was found), 2 more to read it
+    /// inside the establish, 1 PUT for the transition, and no marker read. A seal race adds the
+    /// replayed slot's 2 requests and another head re-read. The mode is kept on the writer:
+    /// the reclaim entry point of the other mode is refused with [`Error::Invalid`].
+    ///
+    /// Errors: [`Error::NoHead`] with no head; [`Error::BadCover`] when a checkpoint moved the cover
+    /// above the end the replay found (reopen: the caller's `visit` has already seen slots now
+    /// below the cover); [`Error::Fenced`] when a later opener's fence is already recorded in the
+    /// head, so this open lost the race and holds no authority; [`Error::Capacity`] when the epoch
+    /// inventory is full and the lane needs a new activation.
+    pub async fn open_with_head<F>(
+        store: Arc<S>,
+        layout: Layout,
+        id: LaneId,
+        visit: F,
+    ) -> Result<(Self, OpenReport)>
+    where
+        F: FnMut(&SlotView<'_>) -> Result<()>,
+    {
+        let (head, _) = read_head(&*store, &layout, &id).await?;
+        Self::open_at(store, layout, id, head.cover, CoverSource::Head, visit).await
+    }
+
+    async fn open_at<F>(
+        store: Arc<S>,
+        layout: Layout,
+        id: LaneId,
+        from: u64,
+        source: CoverSource,
         mut visit: F,
     ) -> Result<(Self, OpenReport)>
     where
@@ -202,7 +314,10 @@ impl<S: MetadataStore> LaneWriter<S> {
             // The first absent position is only the end of the log if it is not a reclaimed hole.
             // The cover is written before any slot below it is removed, so reading it after the
             // probe is sufficient: `at` at or above it was never reclaimed (M03.04's rule).
-            let (cover, _) = read_cover(&*store, &layout, &id).await?;
+            let cover = match source {
+                CoverSource::Marker => read_cover(&*store, &layout, &id).await?.0,
+                CoverSource::Head => read_head(&*store, &layout, &id).await?.0.cover,
+            };
             if at < cover {
                 return Err(Error::BadCover);
             }
@@ -235,11 +350,17 @@ impl<S: MetadataStore> LaneWriter<S> {
             }
         }
         report.fence_ordinal = at;
+        if source == CoverSource::Head {
+            let (epoch, generation) = establish(&*store, &layout, &id, at).await?;
+            report.head_epoch = epoch;
+            report.head_generation = generation;
+        }
         let writer = Self {
             store,
             layout,
             id,
             next: at + 1,
+            source,
             descriptor,
             version,
             sealed,
@@ -458,6 +579,11 @@ impl<S: MetadataStore> LaneWriter<S> {
         if self.poisoned {
             return Err(Error::Poisoned);
         }
+        if self.source == CoverSource::Head {
+            return Err(Error::Invalid(
+                "a head-driven lane reclaims to its checkpoint",
+            ));
+        }
         if cover > self.next {
             return Err(Error::Invalid("cover beyond the log"));
         }
@@ -472,6 +598,39 @@ impl<S: MetadataStore> LaneWriter<S> {
             return Ok(Reclaimed::default());
         }
         raise_cover(&*self.store, &self.layout, &self.id, cover).await?;
+        self.remove_below(cover).await
+    }
+
+    /// Remove the data slots below the cover the structural head already records, keeping every
+    /// fence. The head's cover is raised by a checkpoint transition **before** this is called,
+    /// which is the rule the marker enforced for [`LaneWriter::reclaim_below`]: nothing is removed
+    /// that the durable cover does not already pass. The marker is not touched. Refused while a
+    /// promotion started in this lane is unfinished below the cover.
+    pub async fn reclaim_to_checkpoint(&mut self) -> Result<Reclaimed> {
+        if self.poisoned {
+            return Err(Error::Poisoned);
+        }
+        if self.source == CoverSource::Marker {
+            return Err(Error::Invalid(
+                "a marker-driven lane reclaims below a marker",
+            ));
+        }
+        let (head, _) = read_head(&*self.store, &self.layout, &self.id).await?;
+        let cover = head.cover.min(self.next);
+        if self
+            .unfinished_promotions()
+            .iter()
+            .any(|(_, at)| *at < cover)
+        {
+            return Err(Error::Invalid("cover would pass an unfinished promotion"));
+        }
+        if cover <= self.reclaimed_to {
+            return Ok(Reclaimed::default());
+        }
+        self.remove_below(cover).await
+    }
+
+    async fn remove_below(&mut self, cover: u64) -> Result<Reclaimed> {
         let mut out = Reclaimed::default();
         for ordinal in self.reclaimed_to..cover {
             let k = key(&slot_key(&self.layout, &self.id, ordinal))?;
