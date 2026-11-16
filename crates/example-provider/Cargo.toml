@@ -1,0 +1,17 @@
+[package]
+name = "hsearch-example-provider"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "An external object-store provider example: a directory-backed conditional store written against hsearch-object's public contracts only"
+
+[dependencies]
+hsearch-object = { path = "../object" }
+
+[dev-dependencies]
+hsearch-testkit.workspace = true
+
+[lints]
+workspace = true

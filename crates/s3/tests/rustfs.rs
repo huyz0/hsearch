@@ -667,3 +667,26 @@ fn removing_a_version_deletes_only_it_and_is_repeatable() {
         Err(Error::NotFound)
     );
 }
+
+/// The shared provider suite (M03.06) against the real store: the same predicate the fake and
+/// the external example pass. Writes the report to `$HSEARCH_CONFORMANCE_DIR/rustfs.json`.
+#[test]
+fn passes_the_shared_provider_suite() {
+    let Some(store) = store() else { return };
+    let report = hsearch_testkit::provider::qualify(
+        "rustfs",
+        &store,
+        hsearch_testkit::provider::Capabilities {
+            remove_version: true,
+        },
+    );
+    if let Ok(out) = std::env::var("HSEARCH_CONFORMANCE_DIR") {
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(
+            std::path::Path::new(&out).join("rustfs.json"),
+            report.to_json(),
+        )
+        .unwrap();
+    }
+    assert!(report.passed(), "{:?}", report.failures());
+}

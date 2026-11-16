@@ -1706,7 +1706,7 @@
       "title": "Storage semantics, cost-aware formats and metadata",
       "goal": "Create a provider-conformant object substrate and formally reviewable commit/publication model.",
       "owner": "storage/consistency",
-      "status": "planned",
+      "status": "done",
       "depends_on": [
         "M01"
       ],
@@ -2084,7 +2084,7 @@
             "M03.09"
           ],
           "owner": "cost/architecture/operations",
-          "status": "planned",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m03-08-lanes.md",
@@ -2111,7 +2111,7 @@
             "M03.08"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m03-05-catalog.md",
@@ -2137,8 +2137,13 @@
             "M03.07"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-06-conformance.md",
+              "result": "Provisional (RustFS 1.0.4, one host). Reusable provider suite hsearch-object-provider/2 (8 checks, JSON report, panics and stalls reported, fail closed) in hsearch-testkit; memory, a new file-backed external example provider (public contracts only) and RustFS through S3Store all pass 8/8, artifacts in evidence/conformance; disabled, no-CAS, no-fence, unknown-error, stalled and panicking providers are refused. The suite found a real adapter defect (a huge range offset answered NotFound, not InvalidRange), fixed in S3Store::read_range. Format compatibility matrix for all 12 kinds, held to the same promises and to the Kind enum by test. Not done: module drain failures (no module lifecycle exists yet), cross-process fencing of the example, fault injection on arbitrary providers, a local coverage measurement (CI measures)."
+            }
+          ]
         }
       ]
     },
