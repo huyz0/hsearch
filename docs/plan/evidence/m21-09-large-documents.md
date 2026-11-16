@@ -115,3 +115,26 @@ The next open of the index removes a crash's orphans, at most 256 chunks per pas
 One extra small PUT per slot that has a large string, in series before the chunks (it must be durable first). Group commit shares it across every large string in the slot. Open gains one HEAD, and one GET when an intent exists. No LIST. Reclaim happens only after a crash or a failed delete. On real S3 the added latency is one small PUT round trip.
 
 Tests: `a_crash_between_the_chunks_and_the_slot_is_cleaned_up_when_the_next_writer_opens` (removed when the next writer opens and seals; replay intact; observed failing with the reclaim call disabled), `reopening_never_removes_the_chunks_of_a_committed_slot`, `an_unknown_slot_write_never_removes_the_chunks_it_may_name` (now also checks a reopen removes nothing), `a_slot_of_small_fields_writes_no_intent`, `a_store_that_cannot_delete_keeps_the_crash_orphans_and_stays_writable`, `a_stale_writer_is_fenced_by_the_intent_before_it_writes_a_chunk`, the intent codec round trip and bounds (format), and on RustFS `a_crash_after_the_chunks_is_recorded_and_the_next_writer_removes_them` (child process aborted after its chunks; 4 PUTs, 0 LIST for the next large write).
+
+# M21.09 evidence (increment 6): where a 200 MiB document's memory goes
+
+Provisional: RustFS 1.0.4 on a shared cloud host, release build, one document of 200 MiB less 1 KiB through `Node::bulk`, resident memory sampled every 100 ms next to the PUT count (the `large` phase of the RustFS profile harness, with a sampler added for this measurement; the harness itself is another change). The 408 MiB at the start is the test's own input (the text and the bulk body).
+
+| stage | resident | what holds it |
+|---|---|---|
+| input only | 408 MiB | test input |
+| source line parsed | 909 MiB | line buffer 200 MiB and the parsed string 200 MiB held together, plus about 100 MiB of parse overhead |
+| chunk writes (26 PUTs, 1.5 s) | 825 MiB | the line buffer was still held, because `clear()` keeps capacity |
+| durable ack | 625 MiB | the body and parsed copies released |
+| engine `apply` | up to 1,030 MiB | the engine's Document copy (200 MiB) and the indexing chain's per-token occurrence list |
+| refresh (flush) | up to 1,489 MiB | postings and stored-field encoding on top of the buffered postings |
+
+The engine alone (a 200 MiB text through `Schema::prepare`, `apply`, `commit`, `refresh`, one process): `prepare` adds 200 MiB (the Document owns a copy of the text), `apply` reaches 1,062 MiB at its high-water mark, 657 MiB above the prepared state. That is the indexing chain keeping every token as an `Occurrence` of three `i32` (12 bytes) until flush: a 200 MiB text of 5,000 distinct terms is about 35 million tokens, 420 MiB. The pinned lucene-rust accumulates them in `indexing_chain.rs` (`per_term` and `PostingEntry.occurrences`), so peak memory for one document grows with its token count whatever the node does around it.
+
+## What changed
+
+The node frees a source line's buffer as soon as it is parsed when it is larger than 1 MiB. Resident memory during the chunk writes of a 200 MiB document went from 825 MiB to 625 MiB (`a_large_lines_buffer_is_released_once_it_is_parsed_and_a_small_ones_is_kept`, seen failing without the change). The peak is unchanged (1,084 MiB over baseline before, 1,092 after, same harness; noise), because the peak is at flush.
+
+## Not done: the peak
+
+Bounding the peak needs lucene-rust to stop holding 12 bytes per token: delta-encoded positions (about 1 to 2 bytes) with offsets kept only when the field indexes them, as Java's `TermsHash` byte pools do, or flushing a partial segment's postings while a single document is still being inverted. Either changes `PostingEntry` and its consumers in the codecs and must stay drop-in compatible with Java Lucene's segments (the on-disk format is unaffected; the in-memory type is not). That is upstream work in `huyz0/lucene-rust`, not a change to the writer here; until it lands the node's 32x admission charge (6.25 GiB for 200 MiB) is the bound, measured peak 5.4x.

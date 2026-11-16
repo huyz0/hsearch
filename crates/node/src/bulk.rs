@@ -232,11 +232,22 @@ impl<R: Read> Stream<R> {
                     }),
                 };
                 self.line.clear();
+                // A large line's buffer is as big as the document and nothing
+                // reads it again: keep a small buffer for the next line, free a
+                // large one now rather than when the stream is dropped, after the
+                // document has been indexed.
+                if self.line.capacity() > LINE_KEEP_BYTES {
+                    self.line = Vec::new();
+                }
                 Ok(parsed)
             }
         }
     }
 }
+
+/// Capacity of the line buffer kept between lines. A larger one is released as
+/// soon as its line is parsed.
+const LINE_KEEP_BYTES: usize = 1 << 20;
 
 /// Largest source line the write path can index: the index's document ceiling
 /// less what the engine charges to a document but the source line does not carry:
@@ -386,6 +397,27 @@ mod tests {
         body.push_str("\"}\n");
         let mut stream = Stream::new(body.as_bytes(), small);
         assert_eq!(stream.next(Some("d")).unwrap_err().status, 413);
+    }
+
+    #[test]
+    fn a_large_lines_buffer_is_released_once_it_is_parsed_and_a_small_ones_is_kept() {
+        let big = format!(
+            "{{\"index\":{{\"_id\":\"1\"}}}}\n{}\n{{\"index\":{{\"_id\":\"2\"}}}}\n{}\n",
+            doc_of(3 << 20),
+            doc_of(100)
+        );
+        let mut stream = Stream::new(big.as_bytes(), limits(8 << 20, 8 << 20));
+        assert!(stream.next(Some("d")).unwrap().is_some());
+        assert!(
+            stream.line.capacity() <= LINE_KEEP_BYTES,
+            "the 3 MiB line's buffer is still held: {}",
+            stream.line.capacity()
+        );
+        assert!(stream.next(Some("d")).unwrap().is_some());
+        assert!(
+            stream.line.capacity() >= 100,
+            "a small line's buffer is reused"
+        );
     }
 
     fn limits(document: u64, buffer: usize) -> Limits {
