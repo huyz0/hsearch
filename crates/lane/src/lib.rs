@@ -9,12 +9,17 @@
 //! rule; [`promote`] hot-index promotion; [`headcas`] the payload-plus-head-CAS alternative, kept
 //! for the request comparison; [`counting`] request accounting over any store.
 //!
-//! Not here, by design: the structural head, catalog and activation CAS (M03.05), engine apply and
+//! [`head`] and [`catalog`] are M03.05: the structural head (authority, epoch inventory, cover and
+//! tail locators, changed only by conditional transition) and the paged name catalog.
+//!
+//! Not here, by design: activation routing for a promoted lane, engine apply and
 //! checkpoints that move the cover (M06), AEAD (M05). A caller supplies the cover it replays from.
 pub mod batch;
+pub mod catalog;
 pub mod counting;
 mod cover;
 mod error;
+pub mod head;
 pub mod headcas;
 pub mod hot;
 mod io;
@@ -23,7 +28,9 @@ pub mod members;
 pub mod place;
 pub mod promote;
 
+pub use catalog::{Catalog, CatalogCursor, Resolution, VerifyReport, create_catalog, open_catalog};
 pub use error::{Error, Result};
+pub use head::{Advance, Change, advance_head, create_head, read_head};
 pub use io::block_on;
 pub use log::{Ack, LaneWriter, OpenReport, Reclaimed, WriterStats, read_log};
 pub use members::{
