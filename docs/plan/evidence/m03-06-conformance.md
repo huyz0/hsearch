@@ -21,7 +21,7 @@ Negative providers (`crates/testkit/tests/provider.rs`): disabled (every call `U
 
 ## What the suite found
 
-Run against RustFS the suite failed `ranges_exact_and_key_bound`: a range with offset `u64::MAX - 1` was answered `NotFound`, because the store rejects an offset it cannot parse with 400 and the adapter reads 400 as a missing version. The contract says `InvalidRange`. Fixed in `S3Store::read_range`: no S3 object reaches 2^62 bytes (limit 5 TiB), so such an offset is answered `InvalidRange` before any request. Downside: a ghost version at that offset reports `InvalidRange` rather than `NotFound`.
+Run against RustFS the suite failed `ranges_exact_and_key_bound`: a range with offset `u64::MAX - 1` was answered `NotFound`, because the store rejects an offset it cannot parse with 400 and the adapter reads 400 as a missing version. The contract says `InvalidRange`. Fixed in `S3Store::read_range`: no S3 object reaches 2^62 bytes (limit 5 TiB), so such an offset is answered `InvalidRange` before any request. Downside: a missing key or ghost version at that offset reports `InvalidRange` rather than `NotFound` (the memory store says `NotFound`); the suite probes the offset only on an existing version.
 
 ## Mutations seen red
 
@@ -32,6 +32,7 @@ Run against RustFS the suite failed `ranges_exact_and_key_bound`: a range with o
 ## Limits
 
 - **Module drain failures** (the ledger's validation list): no provider registry, module lifecycle or drain exists in the code yet (M04 and later own it), so there is nothing to drain. What is covered is the provider side: a disabled, missing capability, unknown-error, stalled or panicking provider is refused. Drain failure tests belong with the module lifecycle.
+- Crash safety of the example is by write order (version file, then pointer flip, then identity; removal clears the pointer before the file) and a directory fsync after each rename; no test injects a crash, so it is argued, not measured.
 - The example provider is single process: its mutex orders writes, so it does not claim cross-process fencing, and a shared filesystem would need the real CAS primitive of that filesystem. The suite's concurrency check uses threads, not processes or hosts.
 - The suite does not inject faults into arbitrary providers (lost replies, partial writes); those histories run on the reference store (M03.08, M03.05 models).
 - `S3Store` does not implement `LargeObjectWriter` in this suite's sense; the multipart probe for it is the existing `a_create_only_upload_passes_the_shared_probe`.

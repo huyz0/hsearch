@@ -50,7 +50,15 @@ fn put(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     let mut file = fs::File::create(&tmp).map_err(io)?;
     file.write_all(bytes).map_err(io)?;
     file.sync_all().map_err(io)?;
-    fs::rename(&tmp, path).map_err(io)
+    fs::rename(&tmp, path).map_err(io)?;
+    // The rename is only durable once its directory is: without this a power loss could keep a
+    // later commit's record while losing the earlier rename it depends on.
+    if let Some(dir) = path.parent()
+        && let Ok(dir) = fs::File::open(dir)
+    {
+        dir.sync_all().map_err(io)?;
+    }
+    Ok(())
 }
 
 fn field(out: &mut Vec<u8>, bytes: &[u8]) {
@@ -176,6 +184,10 @@ impl DirectoryStore {
     }
 
     fn identity(&self, id: &RequestId) -> Result<Option<(Mutation, WriteReceipt)>, Error> {
+        // A request id that would not fit a file name is refused, not retried as `Unavailable`.
+        if id.as_bytes().len() > MAX_KEY {
+            return Err(Error::InvalidInput);
+        }
         match fs::read(self.root.join("ids").join(hex(id.as_bytes()))) {
             Ok(bytes) => decode_identity(&bytes).map(Some),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -339,14 +351,18 @@ impl MetadataStore for DirectoryStore {
             let _guard = self.lock.lock().map_err(|_| Error::Unavailable)?;
             context.check()?;
             let dir = self.key_dir(key)?;
-            match fs::remove_file(dir.join(hex(version.as_bytes()))) {
-                Ok(()) => {}
+            let file = dir.join(hex(version.as_bytes()));
+            match fs::metadata(&file) {
+                Ok(_) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(Error::NotFound),
                 Err(e) => return Err(io(e)),
             }
+            // The pointer goes first: a crash between the two steps leaves an unreferenced
+            // version file, never a pointer to a missing one that nothing could clear.
             if self.current(key)?.as_ref() == Some(version) {
                 fs::remove_file(dir.join("CURRENT")).map_err(io)?;
             }
+            fs::remove_file(&file).map_err(io)?;
             Ok(())
         })
     }

@@ -124,3 +124,48 @@ fn a_key_too_long_for_a_directory_name_is_refused_not_truncated() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a_request_id_too_long_for_a_file_name_is_refused_not_retried() {
+    let root = dir("longid");
+    let store = DirectoryStore::open(&root).unwrap();
+    let id = vec![b'i'; hsearch_example_provider::MAX_KEY + 1];
+    let Ok(request_id) = RequestId::new(&id) else {
+        // The contract bounds the id below this length: nothing to refuse.
+        std::fs::remove_dir_all(root).unwrap();
+        return;
+    };
+    let request = Mutation {
+        request_id,
+        key: ObjectKey::new(b"k").unwrap(),
+        payload: Payload::new(b"x").unwrap(),
+        metadata: Metadata::new(b"m").unwrap(),
+        precondition: Precondition::Absent,
+    };
+    assert_eq!(
+        block(store.create(&ctx(), &request)),
+        Err(Error::InvalidInput)
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn removing_the_current_version_leaves_a_key_that_can_be_created_again() {
+    let root = dir("removecurrent");
+    let store = DirectoryStore::open(&root).unwrap();
+    let make = |id: &[u8]| Mutation {
+        request_id: RequestId::new(id).unwrap(),
+        key: ObjectKey::new(b"k").unwrap(),
+        payload: Payload::new(b"x").unwrap(),
+        metadata: Metadata::new(b"m").unwrap(),
+        precondition: Precondition::Absent,
+    };
+    let first = block(store.create(&ctx(), &make(b"one"))).unwrap();
+    block(store.remove_version(&ctx(), &make(b"one").key, &first.object.version)).unwrap();
+    assert_eq!(
+        block(store.head(&ctx(), &make(b"one").key)),
+        Err(Error::NotFound)
+    );
+    block(store.create(&ctx(), &make(b"two"))).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}

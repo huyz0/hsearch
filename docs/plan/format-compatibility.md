@@ -29,8 +29,8 @@ cannot ship without a row.
 - A body above the bound is refused from the header, before the body is read or allocated.
 - An object of one kind is never accepted as another (`Mismatch`), and a kind code beyond the
   table is refused (`UnknownKind`). Codes are stable and never reused.
-- Every byte is covered by a checksum, so truncation and corruption never decode (per-kind
-  coverage is in `formats.rs`).
+- Truncation and corruption never decode: the header and body each carry a checksum. The
+  every-byte sweeps per kind are in `formats.rs`, not in the matrix test.
 
 ## Changing a layout
 

@@ -45,7 +45,7 @@ fn sealed(kind: Kind, version: u16, caps: u64) -> Vec<u8> {
 
 #[test]
 fn every_kind_is_listed_and_codes_are_dense() {
-    assert!(ALL.iter().all(|k| listed(*k)));
+    assert_eq!(ALL.iter().filter(|k| listed(**k)).count(), ALL.len());
     for (i, kind) in ALL.iter().enumerate() {
         assert_eq!(*kind as usize, i + 1, "codes are stable and never reused");
     }
@@ -84,13 +84,14 @@ fn each_kind_reads_its_own_version_and_refuses_the_rest() {
             FormatError::UnknownMandatoryCapability(1 << 40),
             "{kind:?}"
         );
-        // A body above the kind's bound is refused from the header alone.
-        let big = vec![0u8; kind.max_body() + 1];
-        let mut out = Vec::new();
-        let sealed_big = seal(&mut out, kind, v, 0, &big);
-        assert!(
-            sealed_big.is_err() || open(&out, kind).is_err(),
-            "{kind:?} accepted an oversized body"
+        // A body length above the bound is refused from the 40-byte header alone: no body bytes
+        // are present at all, so nothing could have been read or allocated.
+        let oversize = (kind.max_body() as u32 + 1).to_le_bytes();
+        let header = patch_header(&sealed(kind, v, 0)[..Header::LEN], 28, &oversize);
+        assert_eq!(
+            Header::parse(&header).unwrap_err(),
+            FormatError::TooLarge("body"),
+            "{kind:?}"
         );
     }
 }
