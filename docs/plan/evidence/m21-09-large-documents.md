@@ -189,3 +189,31 @@ The peak is still about 4.4x the document (884 MiB). Measured on the engine with
 4. Occurrence lists (lucene-rust#447, still open).
 
 So yes, reaching ~1.4x needs one more lucene-rust change (item 2, then 3) plus hsearch-side input streaming (item 1).
+
+# M21.09 (increment 9): one copy of the text from the op to the stored value, 200 MiB peak 884 to 488 MiB
+
+Provisional: RustFS 1.0.4 (pinned image), shared cloud container, release build, `rustfs_profile large 200`, one 200 MiB document through `Node::bulk`, two runs each.
+
+Two changes, measured separately:
+
+1. **Pin 9f5aa6d** (lucene-rust#450): a `TextField::new_shared` with `Store::Yes` stores the `Arc<str>` it was given instead of copying it into a `String`, and the stored-fields writer streams it like a `String` of the same text (byte-identical, tested in all three modes).
+2. **hsearch holds the text once.** `hsearch_index::Field::Str` is an `Arc<str>` and the engine's `Value` has a `Shared(&Arc<str>)` variant, so the op that carries the text to the writer, the engine's `Document` and the stored value all share one allocation. Before, the engine copied the op's `String` into an `Arc` and the op kept its own copy for the whole bulk.
+
+| | main at pin 52b630e (increment 8) | pin 9f5aa6d | plus one shared copy (this change) |
+|---|---|---|---|
+| peak over baseline | 884.4, 892.2 MiB (4.4x) | 684.5, 691.9 MiB (3.4x to 3.5x) | 492.1, 484.1 MiB (2.4x to 2.5x) |
+| durable ack | 3.17 s, 3.08 s | 2.84 s, 2.78 s | 3.14 s, 3.28 s |
+| searchable | 8.26 s, 8.58 s | 7.68 s, 7.89 s | 8.52 s, 9.07 s |
+| PUT count | 27 | 27 | 27 |
+
+Time is within the spread this host shows between identical runs (increment 8 listed a 1.3 s gap); the one extra copy made when the parsed `String` becomes the `Arc<str>` is transient and costs about the length of a memcpy. No LIST, request counts unchanged.
+
+## What remains to the ~1.4x target
+
+The peak is 2.4x the document. An allocation trace of the same 200 MiB document in lucene-rust (`shared_text_mem 200 shared`) corrects the earlier estimate that the indexing core adds about 133 MiB over the text: it adds about 270 MiB with `Store::No`, and about 130 MiB more for the compressed `.fdt` that `Store::Yes` holds until commit.
+
+1. **Postings and positions, about 270 MiB (1.35x).** The indexing chain's per-token occurrences and the position encoder's growing buffers (a 64 MiB doubling `Vec` in `for_util::pfor_encode`). That is lucene-rust#447; on its own it keeps the peak above 2x, and it needs an upstream change to the inverter (not something hsearch can shorten).
+2. **Compressed `.fdt` held until commit, about 130 MiB (0.65x).** `IndexWriter` compresses stored fields into memory and writes the file at flush; a spill during `add_streamed` needs a destination file chosen at add time, which only the concurrent writer reserves. lucene-rust work, smaller than item 1.
+3. **Line buffer plus parsed string at parse time** is already released before indexing (increment 7), so it no longer shows in the peak.
+
+So ~1.4x needs lucene-rust#447 (item 1) and the `.fdt` spill in `IndexWriter` (item 2); no further hsearch change would move the peak.

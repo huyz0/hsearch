@@ -530,7 +530,7 @@ fn big_put(id: &str, body: String) -> hsearch_index::Op {
         id: id.to_string(),
         fields: vec![
             hsearch_index::Field::Str("t".into()),
-            hsearch_index::Field::Str(body),
+            hsearch_index::Field::Str(body.into()),
         ],
     }
 }

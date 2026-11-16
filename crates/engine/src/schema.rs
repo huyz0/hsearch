@@ -130,12 +130,26 @@ pub enum Kind {
 pub enum Value<'a> {
     /// UTF-8 keyword or analyzed text.
     String(&'a str),
+    /// The same, held in a shared allocation the document keeps: an analyzed text field
+    /// indexes and stores these bytes without copying them, so a very large text is held once.
+    Shared(&'a Arc<str>),
     /// Integer, checked against the declared numeric domain.
     Integer(i64),
     /// Boolean.
     Boolean(bool),
     /// UTC epoch milliseconds, checked against years 0000 through 9999.
     Date(i64),
+}
+
+impl Value<'_> {
+    /// The text of a string value, borrowed or shared.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            Value::String(s) => Some(s),
+            Value::Shared(s) => Some(s),
+            _ => None,
+        }
+    }
 }
 
 /// An explicit versioned schema with unique bounded field names.
@@ -228,6 +242,7 @@ impl Schema {
                 .and_then(|n| {
                     n.checked_add(match value {
                         Value::String(s) => s.len(),
+                        Value::Shared(s) => s.len(),
                         _ => 8,
                     })
                 })
@@ -237,7 +252,7 @@ impl Schema {
             }
             let kind = self.kind(name)?;
             validate(kind, *value)?;
-            if let (Kind::Keyword, Value::String(s)) = (kind, value)
+            if let (Kind::Keyword, Some(s)) = (kind, value.text())
                 && s.len() > MAX_KEYWORD_BYTES
             {
                 return Err(Error::Limit);
@@ -249,7 +264,7 @@ impl Schema {
         let text_bytes: usize = fields
             .iter()
             .filter_map(|(name, value)| match (self.kind(name), value) {
-                (Ok(Kind::Text), Value::String(s)) => Some(s.len()),
+                (Ok(Kind::Text), v) => v.text().map(str::len),
                 _ => None,
             })
             .sum();
@@ -263,20 +278,24 @@ impl Schema {
                 (Kind::Keyword, Value::String(s)) => {
                     document.add(KeywordField::new(*name, *s, Store::Yes))
                 }
-                (Kind::Text, Value::String(s)) => {
+                (Kind::Keyword, Value::Shared(s)) => {
+                    document.add(KeywordField::new(*name, &***s, Store::Yes))
+                }
+                (Kind::Text, Value::String(_) | Value::Shared(_)) => {
+                    let text = value.text().ok_or(Error::Document)?;
                     if count_terms {
-                        analyzed_terms += count_tokens(s)?;
+                        analyzed_terms += count_tokens(text)?;
                         if analyzed_terms > self.limits.terms {
                             return Err(Error::Limit);
                         }
                     }
-                    // One copy of the text, shared by the analyzer: an owned `String` would be
-                    // copied again into the analysis reader.
-                    document.add(TextField::new_shared(
-                        *name,
-                        Arc::<str>::from(*s),
-                        Store::Yes,
-                    ));
+                    // One copy of the text, shared by the analyzer and the stored value: a
+                    // caller's `Arc` is used as it is, a borrowed `str` is copied once.
+                    let shared = match value {
+                        Value::Shared(s) => Arc::clone(s),
+                        _ => Arc::<str>::from(text),
+                    };
+                    document.add(TextField::new_shared(*name, shared, Store::Yes));
                 }
                 (Kind::Integer, Value::Integer(n)) | (Kind::Date, Value::Date(n)) => {
                     document.add(LongField::new(*name, *n, Store::Yes))
@@ -303,9 +322,8 @@ fn count_tokens(text: &str) -> Result<usize> {
 
 pub(crate) fn validate(kind: Kind, value: Value<'_>) -> Result<()> {
     match (kind, value) {
-        (Kind::Keyword | Kind::Text, Value::String(_)) | (Kind::Boolean, Value::Boolean(_)) => {
-            Ok(())
-        }
+        (Kind::Keyword | Kind::Text, Value::String(_) | Value::Shared(_))
+        | (Kind::Boolean, Value::Boolean(_)) => Ok(()),
         (Kind::Integer, Value::Integer(n)) if i32::try_from(n).is_ok() => Ok(()),
         (Kind::Date, Value::Date(n))
             if (-62_167_219_200_000..=253_402_300_799_999).contains(&n) =>

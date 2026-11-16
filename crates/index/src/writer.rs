@@ -99,7 +99,7 @@ pub(crate) type Shared = Arc<Mutex<Option<Arc<Snapshot>>>>;
 
 fn value(field: &Field) -> Value<'_> {
     match field {
-        Field::Str(s) => Value::String(s),
+        Field::Str(s) => Value::Shared(s),
         Field::Int(n) => Value::Integer(*n),
         Field::Bool(b) => Value::Boolean(*b),
         Field::Date(n) => Value::Date(*n),

@@ -271,7 +271,7 @@ pub(crate) fn typed(kind: Kind, value: &Value) -> Result<Field, String> {
 /// copying it: the ingest path, where a value can be large. No coercion between kinds.
 pub(crate) fn typed_owned(kind: Kind, value: Value) -> Result<Field, String> {
     match (kind, value) {
-        (Kind::Keyword | Kind::Text, Value::String(s)) => Ok(Field::Str(s)),
+        (Kind::Keyword | Kind::Text, Value::String(s)) => Ok(Field::Str(s.into())),
         (Kind::Integer, Value::Number(n)) => n
             .as_i64()
             .filter(|n| i32::try_from(*n).is_ok())
