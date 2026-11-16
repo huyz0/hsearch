@@ -24,4 +24,4 @@
 - Parts go one at a time, with no parallel upload, resume or adaptive part size.
 - MinIO and real S3 behaviour of multipart is unmeasured.
 
-Status: the task stays `planned` in the ledger because its dependency M03.10 is not settled (MinIO not run); the work above is merged evidence, not a completion claim.
+Status: done on 16 Nov 2026. M03.10 is settled on RustFS (the MinIO leg moved to M15.01), so this task's dependency is met; the multipart behaviour on MinIO and real S3 is measured in M15.01.

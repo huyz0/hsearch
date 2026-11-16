@@ -1780,21 +1780,19 @@
           "goal": "Close the M03.02 probe gaps that need fault injection against the real store.",
           "deliverables": [
             "Probe cases for multipart failure and for losing a response after commit, using a fault-injecting TCP proxy in front of the pinned RustFS",
-            "Run the M03.01 contract suite against a pinned MinIO image as the second S3-compatible target",
             "A create-only multipart upload in the adapter (begin, part, complete with If-None-Match, abort) with every request attributed and every part charged to the request budget"
           ],
           "validation": [
-            "Each case runs against the pinned image and records the observed outcome next to the M03.02 evidence.",
-            "The contract suite passes on MinIO, or the failing capability is recorded."
+            "Each case runs against the pinned image and records the observed outcome next to the M03.02 evidence."
           ],
           "definition_of_done": [
-            "A lost response after a committed write resolves to the original receipt on the real store, and multipart failure leaves no visible partial object."
+            "A lost response after a committed write resolves to the original receipt on the real store, and multipart failure leaves no visible partial object. The pinned MinIO second-target run is not part of this task; it moved to M15.01 because RustFS is the only object-store target until provider qualification (decided 16 Nov 2026)."
           ],
           "depends_on": [
             "M03.02"
           ],
           "owner": "storage/consistency",
-          "status": "in_progress",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m03-02-rustfs-probe.md",
@@ -1808,29 +1806,27 @@
         },
         {
           "id": "M03.11",
-          "title": "Fence commits with a unique per-commit token and probe it across S3 targets",
+          "title": "Fence commits with a unique per-commit token and probe it on RustFS",
           "goal": "Close the fencing gap M02.10 found: on RustFS 1.0.4 an If-Match update with identical bytes from a stale version is accepted, so a conditional write is not fenced by content-hash ETag equality.",
           "deliverables": [
             "A commit rule and adapter support so every conditional write that must fence carries a unique per-commit token (a sequence number or nonce inside the body, or a per-commit key), never relying on ETag equality of unchanged content",
             "A conformance probe, in the shared contract suite, that updates from the same stale version twice with identical bytes and with distinct bytes, and records which stores fence which case",
-            "The probe run against the pinned RustFS, the pinned MinIO image from M03.10 and a real S3 bucket, with the observed outcome recorded beside the M02.10 evidence",
             "Per-provider conditional-write probe results are the support gate for each provider: RustFS passing is not evidence for S3, GCS or Azure (M02.06 C5)"
           ],
           "validation": [
             "The stale-identical-bytes case is a named test that fails (red) against a deliberately unfenced adapter path before the rule exists, then passes with the token rule.",
             "Each store's observed outcome is recorded; a store that does not fence distinct-body stale updates is a blocking finding for M06's commit protocol, not a footnote.",
-            "Real-S3 run has a frozen envelope (requests, spend) recorded beside the raw output and is labelled provisional if the account or region is not production.",
             "Normal independent review of the code and the claimed results, and green CI."
           ],
           "definition_of_done": [
-            "No commit path accepts a stale conditional write on identical bytes; the per-commit token rule is stated where the commit protocol (M06) consumes it, and the fencing behaviour of RustFS, MinIO and S3 is measured, not assumed."
+            "No commit path accepts a stale conditional write on identical bytes; the per-commit token rule is stated where the commit protocol (M06) consumes it, and the fencing behaviour of RustFS is measured, not assumed (MinIO and S3 are measured in M15.01, and RustFS passing is not evidence for them)."
           ],
           "depends_on": [
             "M03.10",
             "M02.10"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m02-bench-profile-bulk.md",
@@ -1916,7 +1912,7 @@
             "M03.10"
           ],
           "owner": "storage/consistency",
-          "status": "planned",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m03-10-adapter-multipart.md",
@@ -2510,7 +2506,8 @@
           "deliverables": [
             "Dirty-only group committer, conditional-create ordered WAL slots, inline wrapped-DEK envelope, explicit committed receipts and unknown-outcome resolution",
             "Structural authority/checkpoint publication separate from append; resolved operation/crypto/schema dependencies validated before the commit PUT",
-            "The unique per-commit token inside every fenced commit payload (sequence number or nonce), because content-hash ETags do not fence A-B-A (M03.11 evidence)"
+            "The unique per-commit token inside every fenced commit payload (sequence number or nonce), because content-hash ETags do not fence A-B-A (M03.11 evidence)",
+            "Note: until M15.01 runs the fencing probe on S3, this commit protocol is qualified on RustFS only and is not claimed for any other provider"
           ],
           "validation": [
             "Kill/response-loss at upload/CAS/ack boundaries and concurrent old/new owners with independent receipts.",
@@ -4846,10 +4843,12 @@
           "title": "Deliver S3 and AWS KMS adapters",
           "goal": "Qualify exact AWS object/identity/key semantics.",
           "deliverables": [
-            "Production S3/KMS providers, least-privilege policy and endpoint/version handling"
+            "Production S3/KMS providers, least-privilege policy and endpoint/version handling",
+            "Run the M03.01 contract suite, the M03.10 response-loss and multipart probes the M03.11 stale-identical-bytes fencing probe and the M03.13 real-SDK and multipart attribution reconciliation against the independent wire record against a pinned MinIO image and a real S3 bucket, with the real-S3 run's frozen request and spend envelope recorded beside the raw output; a store that does not fence distinct-body stale updates blocks M06's commit protocol"
           ],
           "validation": [
-            "Actual conditional-write/unknown-response/multipart/range histories; KMS grant/version/revoke/rotate tests."
+            "Actual conditional-write/unknown-response/multipart/range histories; KMS grant/version/revoke/rotate tests.",
+            "The M03.10, M03.11 and M03.13 probes run on the pinned MinIO image and on a real S3 bucket, with the real-S3 envelope (requests, spend) frozen beside the raw output and the result labelled provisional if the account or region is not production."
           ],
           "definition_of_done": [
             "Real account/region artifacts pass; unsupported capability blocks readiness and missing credentials report NOT-RUN."
