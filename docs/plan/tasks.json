@@ -2764,8 +2764,13 @@
             "M21.02"
           ],
           "owner": "engine/api",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m21-03-field-limits-dynamic.md",
+              "result": "Field limits and per-index dynamic policy: a create body over the field limit (default 1,000, configurable to 10,000) is refused whole; strict rejects and false drops an unknown field per bulk item with the mapping never changed (verified across a restart); dynamic is in the canonical mapping and strict stays unwritten so existing hashes hold; depth (20) and nested-object (10,000) checks cost 33 ns of a 383 ns document build and are unit-tested but unreachable over HTTP because bulk refuses all nesting. dynamic true is limit-checked but cannot add fields until M21.04; the engine's 14-field cap sits under the 1,000 default. Provisional, 4-CPU container. Independent review done, findings fixed, CI green."
+            }
+          ]
         },
         {
           "id": "M21.04",
