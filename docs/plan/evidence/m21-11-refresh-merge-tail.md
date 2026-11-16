@@ -14,7 +14,7 @@ Because the cost is per call index, not per document, the same stall shows with 
 
 ## Fix
 
-An engine setting `auto_merge_mb` (`Limits`, node flag `--auto-merge-mb`, default 16, 0 turns it off): the writer gets a tiered merge policy whose largest merged segment is that many MiB. The policy runs inside the refresh's flush and folds small segments as they appear, so segments stay few and no refresh merges more than a few small ones. The policy only merges segments below half the cap (8 MiB at 16): a larger segment is left alone, and the forced merge at the cap stays as the backstop. The stall is therefore deferred, not removed, for workloads whose single refresh writes 8 MiB or more (fat documents, or very large batches): after about 250 such refreshes the old whole-index merge returns. The runs below only cover small documents; a larger `--auto-merge-mb` moves the threshold but made the tier stalls longer (below). The engine's own default stays 0 (the research profile and every existing test pin the old behaviour); the node turns it on.
+An engine setting `auto_merge_mb` (`Limits`, node flag `--auto-merge-mb`, default 4 (was 16, see the follow-up below), 0 turns it off. The sections above were measured at 16: their 8 MiB threshold is 2 MiB at 4, and their ratios against off (worst call 8 to 12x, bytes +19%, +60%, +84%) are for 16, not 4): the writer gets a tiered merge policy whose largest merged segment is that many MiB. The policy runs inside the refresh's flush and folds small segments as they appear, so segments stay few and no refresh merges more than a few small ones. The policy only merges segments below half the cap (8 MiB at 16): a larger segment is left alone, and the forced merge at the cap stays as the backstop. The stall is therefore deferred, not removed, for workloads whose single refresh writes 8 MiB or more (fat documents, or very large batches): after about 250 such refreshes the old whole-index merge returns. The runs below only cover small documents; a larger `--auto-merge-mb` moves the threshold but made the tier stalls longer (below). The engine's own default stays 0 (the research profile and every existing test pin the old behaviour); the node turns it on.
 
 ## Numbers
 
@@ -36,7 +36,7 @@ At 25,000 documents (the m21-10 size) the worst call went from 1.4 to 1.7 s to 0
 | 4,000 x 240 | off | 4.62 s (also 2.72, 3.23 s) | 158 ms | 2,718 ms | 127 MiB |
 | 4,000 x 240 | 16 | 0.40 s | 144 ms | 366 ms | 234 MiB |
 
-At 300,000 documents in batches of 100, 64 MiB left a 0.38 to 0.40 s stall against 0.26 to 0.31 s at 16 MiB, and at 1,000 per batch 64 and 256 were worse than 16, so the default is 16. Note the cost: with 1,000 or 4,000 documents per refresh the bytes written rose 60% and 84%, and p99 rose from 88 ms to 170 ms at 1,000 per batch (off had only the stalls above p99).
+At 300,000 documents in batches of 100, 64 MiB left a 0.38 to 0.40 s stall against 0.26 to 0.31 s at 16 MiB, and at 1,000 per batch 64 and 256 were worse than 16, so the first default was 16; the follow-up below moved it to 4. Note the cost: with 1,000 or 4,000 documents per refresh the bytes written rose 60% and 84%, and p99 rose from 88 ms to 170 ms at 1,000 per batch (off had only the stalls above p99).
 
 ## Trade-offs and downsides
 
@@ -51,4 +51,40 @@ At 300,000 documents in batches of 100, 64 MiB left a 0.38 to 0.40 s stall again
 
 ## Tests
 
-`without_auto_merge_every_refresh_adds_a_segment` (40 refreshes, 40 segments, all documents found by term: pins the old behaviour), `auto_merge_keeps_segments_few_and_an_open_snapshot_readable` (at most 20 segments, every document still found through the postings after the merges, a snapshot opened before them still answers), and `the_segment_cap_is_reached_without_auto_merge_and_not_with_it` (the 256th refresh is refused without merging, all 300 succeed with it). The second was observed failing (40 segments after 40 refreshes) with the policy disabled before it passed. Node: the flag parses, defaults to 16, `0` disables, over 1,024 is refused (`cli` test); the node passes its setting to every index schema and the engine clamps a larger value to 4,096 (`node` unit test). Not covered by a test: publish and reopen after merges, and remote segments.
+`without_auto_merge_every_refresh_adds_a_segment` (40 refreshes, 40 segments, all documents found by term: pins the old behaviour), `auto_merge_keeps_segments_few_and_an_open_snapshot_readable` (at most 20 segments, every document still found through the postings after the merges, a snapshot opened before them still answers), and `the_segment_cap_is_reached_without_auto_merge_and_not_with_it` (the 256th refresh is refused without merging, all 300 succeed with it). The second was observed failing (40 segments after 40 refreshes) with the policy disabled before it passed. Node: the flag parses, defaults to 4 (16 when first written), `0` disables, over 1,024 is refused (`cli` test); the node passes its setting to every index schema and the engine clamps a larger value to 4,096 (`node` unit test). Not covered by a test: publish and reopen after merges, and remote segments.
+
+## Follow-up: a smaller tier is better, so the default is now 4
+
+The merge still ran inline, so the worst call was set by the biggest merge a tier allows. A sweep on a faster, noisier machine (same in-memory harness, relative numbers only, one run per cell unless noted; runs of the same cell differed by up to 2x in p50, so only the worst call and the bytes are read):
+
+| batch x calls | `auto_merge_mb` | worst call | p99 | bytes written |
+|---|---|---|---|---|
+| 100 x 3,000 | 4 | 80 ms (second run 104) | 27 ms (40) | 117 MiB |
+| 100 x 3,000 | 8 | 163 ms | 39 ms | 128 MiB |
+| 100 x 3,000 | 16 | 249 ms (second run 266) | 36 ms (34) | 138 MiB |
+| 1,000 x 800 | 4 | 136 ms | 110 ms | 138 MiB |
+| 1,000 x 800 | 16 | 303 ms | 189 ms | 191 MiB |
+| 4,000 x 240 | 2 | 304 ms | 229 ms | 141 MiB |
+| 4,000 x 240 | 4 | 331 ms | 277 ms | 167 MiB |
+| 4,000 x 240 | 16 | 405 ms | 373 ms | 234 MiB |
+
+Worst call, tier 4 against 16: 3.1x smaller (second run 2.6x) at 100 x 3,000, 2.2x at 1,000 x 800, and only 1.2x at 4,000 x 240 (tier 2: 1.3x), which is inside the 2x run-to-run noise above, so no gain is shown at 4,000 per batch. Bytes written, tier 4 against 16: 15%, 28% and 29% fewer. Against off the default of 4 was not measured here, so its extra bytes over the old behaviour are unknown (at 300,000 small documents tier 4 wrote 117 MiB against 138 at 16 and 116 off in the first sweep, a different machine, so that comparison is indicative only).
+
+Making each merge narrower (`max_merge_at_once` and `segments_per_tier` set together; 100 per batch, one run each; the table lists worst call and bytes) was tried and not adopted:
+
+| calls | `auto_merge_mb` | width (at once / per tier) | worst call | bytes written |
+|---|---|---|---|---|
+| 1,500 | 16 | 10 / 8 | 155 ms | 64 MiB |
+| 1,500 | 16 | 4 / 4 | 129 ms | 79 MiB |
+| 1,500 | 16 | 3 / 3 | 140 ms | 80 MiB |
+| 1,500 | 16 | 2 / 2 | 170 ms | 98 MiB |
+| 3,000 | 4 | 10 / 8 | 80 ms | 117 MiB |
+| 3,000 | 4 | 4 / 4 | 84 ms | 145 MiB |
+| 3,000 | 8 | 10 / 8 | 163 ms | 128 MiB |
+| 3,000 | 8 | 4 / 4 | 180 ms | 155 MiB |
+| 3,000 | 16 | 10 / 8 | 249 ms | 138 MiB |
+| 3,000 | 16 | 4 / 4 | 372 ms | 172 MiB |
+
+Narrower merges never cut the worst call meaningfully and always wrote more bytes (up to 25% more at 3,000 calls, 53% at 1,500 for 2 / 2).
+
+Downsides that remain: the policy only merges segments below half the cap, so at 4 a refresh that writes 2 MiB or more per segment is never merged by the policy and the forced whole-index merge at the segment cap comes back for that workload (4,000-document batches are in that range; the 4,000 x 240 cell makes only 240 calls, below the 256-segment cap, so it cannot show that fallback and its 331 ms is a pre-cap figure). The merge is still inline under the engine's lock, so this bounds the stall rather than removing it. Memory and I/O per merge should fall with a smaller tier but were not measured. Not measured on RustFS (the harness uses the in-memory store); the background merger follow-up will measure there.

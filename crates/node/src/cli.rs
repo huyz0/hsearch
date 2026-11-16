@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn auto_merge_is_on_by_default_and_a_flag_sets_or_disables_it() {
-        assert_eq!(parse(&[]).unwrap().limits.auto_merge_mb, 16);
+        assert_eq!(parse(&[]).unwrap().limits.auto_merge_mb, 4);
         assert_eq!(
             parse(&["--auto-merge-mb", "64"])
                 .unwrap()
