@@ -1125,3 +1125,31 @@ fn a_root_never_encodes_what_its_decoder_refuses() {
         assert_eq!(out, vec![1u8]);
     }
 }
+
+#[test]
+fn a_seal_record_has_no_payload_and_round_trips() {
+    let at = SlotPosition {
+        domain: id(1),
+        activation: 1,
+        lane: 0,
+        ordinal: 4,
+    };
+    let seal = [RecordSpec {
+        index: id(9),
+        seq: 77,
+        op: RecordOp::Seal,
+        payload: PayloadRef::None,
+    }];
+    let mut out = Vec::new();
+    encode_slot(&mut out, &at, tok(1), &SlotBody::Data(&seal)).unwrap();
+    let view = SlotView::parse_at(&out, &at).unwrap();
+    assert_eq!(view.records().collect::<Vec<_>>(), seal.to_vec());
+    // A seal that carries a payload is refused, as is a put without one.
+    let bad = [RecordSpec {
+        index: id(9),
+        seq: 1,
+        op: RecordOp::Seal,
+        payload: PayloadRef::Inline(b"x"),
+    }];
+    assert!(encode_slot(&mut Vec::new(), &at, tok(1), &SlotBody::Data(&bad)).is_err());
+}
