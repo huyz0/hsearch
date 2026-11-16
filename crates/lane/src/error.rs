@@ -12,7 +12,13 @@ pub enum Error {
     Format(FormatError),
     /// The lane has no descriptor.
     NoLane,
-    /// The lane (or group) already exists.
+    /// The lane has no structural head.
+    NoHead,
+    /// There is no catalog with this identity.
+    NoCatalog,
+    /// The catalog holds no live binding of this name to this identity.
+    NoName,
+    /// The lane (or group), head, catalog or live name already exists.
     Exists,
     /// A record names an index that is not a member of this lane.
     NotMember(Id),
