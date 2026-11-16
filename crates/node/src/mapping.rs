@@ -7,14 +7,22 @@ use serde_json::Value;
 
 use crate::ApiError;
 use crate::date::parse_date;
+use crate::policy::{Dynamic, MappingLimits};
 
 /// Declared fields, sorted by name so the schema order is canonical.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Mapping {
     pub(crate) fields: Vec<(String, Kind)>,
+    /// What the index does with an undeclared field. `Strict`, the behaviour
+    /// before the setting existed, is the default and is not written into the
+    /// stored form, so every mapping stored earlier keeps its hash.
+    pub(crate) dynamic: Dynamic,
 }
 
 const INLINE_HEADER: &str = "hsearch-mapping-v0\n";
+/// A stored line naming a non-default dynamic setting. Field names cannot start
+/// with `#`, so it is never a field.
+const DYNAMIC_LINE: &str = "#dynamic\t";
 const REFERENCE_HEADER: &str = "hsearch-mapping-ref-v0\n";
 
 fn kind_name(kind: Kind) -> &'static str {
@@ -41,6 +49,12 @@ fn kind_of(name: &str) -> Option<Kind> {
 impl Mapping {
     /// Parse a create-index body: `{"mappings": {"properties": {...}}}`.
     pub fn parse(body: &Value) -> Result<Self, ApiError> {
+        Self::parse_with(body, &MappingLimits::default())
+    }
+
+    /// [`Self::parse`] under explicit limits: a mapping over the field limit is
+    /// refused whole.
+    pub fn parse_with(body: &Value, limits: &MappingLimits) -> Result<Self, ApiError> {
         let object = body
             .as_object()
             .ok_or_else(|| ApiError::parse("the body must be a JSON object"))?;
@@ -51,7 +65,10 @@ impl Mapping {
             .get("mappings")
             .and_then(Value::as_object)
             .ok_or_else(|| ApiError::parse("[mappings] is required"))?;
-        if let Some(extra) = mappings.keys().find(|k| *k != "properties") {
+        if let Some(extra) = mappings
+            .keys()
+            .find(|k| *k != "properties" && *k != "dynamic")
+        {
             return Err(ApiError::parse(format!(
                 "unsupported mappings key [{extra}]"
             )));
@@ -60,6 +77,12 @@ impl Mapping {
             .get("properties")
             .and_then(Value::as_object)
             .ok_or_else(|| ApiError::parse("[mappings.properties] is required"))?;
+        let dynamic = mappings
+            .get("dynamic")
+            .map(Dynamic::parse)
+            .transpose()?
+            .unwrap_or(Dynamic::Strict);
+        limits.check_fields(properties.len())?;
         let mut fields = Vec::new();
         for (name, definition) in properties {
             let definition = definition
@@ -86,7 +109,7 @@ impl Mapping {
             fields.push((name.clone(), kind));
         }
         fields.sort_by(|a, b| a.0.cmp(&b.0));
-        let mapping = Self { fields };
+        let mapping = Self { fields, dynamic };
         mapping.schema()?;
         Ok(mapping)
     }
@@ -95,6 +118,11 @@ impl Mapping {
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut out = String::from(INLINE_HEADER);
+        if self.dynamic != Dynamic::Strict {
+            out.push_str(DYNAMIC_LINE);
+            out.push_str(self.dynamic.name());
+            out.push('\n');
+        }
         for (name, kind) in &self.fields {
             out.push_str(name);
             out.push('\t');
@@ -113,11 +141,16 @@ impl Mapping {
             return Err(corrupt());
         }
         let mut fields = Vec::new();
+        let mut dynamic = Dynamic::Strict;
         for line in lines {
+            if let Some(name) = line.strip_prefix(DYNAMIC_LINE) {
+                dynamic = Dynamic::from_name(name).map_err(|_| corrupt())?;
+                continue;
+            }
             let (name, kind) = line.split_once('\t').ok_or_else(corrupt)?;
             fields.push((name.to_string(), kind_of(kind).ok_or_else(corrupt)?));
         }
-        Ok(Self { fields })
+        Ok(Self { fields, dynamic })
     }
 
     /// The content hash that names this mapping: SHA-256 of its canonical stored
@@ -290,6 +323,43 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_is_stored_only_when_not_strict_so_old_hashes_hold() {
+        let strict = r#"{"mappings":{"properties":{"a":{"type":"keyword"}}}}"#;
+        let explicit = r#"{"mappings":{"dynamic":"strict","properties":{"a":{"type":"keyword"}}}}"#;
+        let off = r#"{"mappings":{"dynamic":false,"properties":{"a":{"type":"keyword"}}}}"#;
+        let on = r#"{"mappings":{"dynamic":true,"properties":{"a":{"type":"keyword"}}}}"#;
+        let parse = |b: &str| Mapping::parse(&serde_json::from_str(b).unwrap()).unwrap();
+        // The default and the explicit default are one mapping, byte for byte as before.
+        assert_eq!(parse(strict).encode(), b"hsearch-mapping-v0\na\tkeyword\n");
+        assert_eq!(parse(strict).hash(), parse(explicit).hash());
+        // Each other setting is a different mapping and survives the stored form.
+        assert_ne!(parse(strict).hash(), parse(off).hash());
+        assert_ne!(parse(off).hash(), parse(on).hash());
+        for body in [off, on, strict] {
+            let mapping = parse(body);
+            assert_eq!(Mapping::decode(&mapping.encode()).unwrap(), mapping);
+        }
+        assert!(Mapping::decode(b"hsearch-mapping-v0\n#dynamic\tmaybe\na\tkeyword\n").is_err());
+    }
+
+    #[test]
+    fn a_mapping_over_the_field_limit_is_refused_and_one_at_it_is_not() {
+        let limits = MappingLimits {
+            max_fields: 2,
+            ..MappingLimits::default()
+        };
+        let body = |n: usize| {
+            let props: serde_json::Map<String, Value> = (0..n)
+                .map(|i| (format!("f{i}"), json!({"type": "keyword"})))
+                .collect();
+            json!({"mappings": {"properties": props}})
+        };
+        assert!(Mapping::parse_with(&body(2), &limits).is_ok());
+        let error = Mapping::parse_with(&body(3), &limits).unwrap_err();
+        assert!(error.reason.contains("Limit of total fields [2]"));
+    }
+
+    #[test]
     fn a_shared_object_and_a_reference_round_trip_and_refuse_tampering() {
         let body = json!({"mappings": {"properties": {"a": {"type": "keyword"}}}});
         let mapping = Mapping::parse(&body).unwrap();
@@ -330,7 +400,8 @@ mod tests {
             json!([]),
             json!({}),
             json!({"settings": {}, "mappings": {"properties": {"a": {"type": "keyword"}}}}),
-            json!({"mappings": {"dynamic": "true", "properties": {"a": {"type": "keyword"}}}}),
+            json!({"mappings": {"dynamic": "maybe", "properties": {"a": {"type": "keyword"}}}}),
+            json!({"mappings": {"dynamic_templates": [], "properties": {"a": {"type": "keyword"}}}}),
             json!({"mappings": {"properties": {"a": {"type": "geo_point"}}}}),
             json!({"mappings": {"properties": {"a": {"type": "keyword", "index": false}}}}),
             json!({"mappings": {"properties": {"a": "keyword"}}}),
