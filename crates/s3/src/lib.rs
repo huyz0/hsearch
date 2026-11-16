@@ -67,6 +67,17 @@ pub const MAX_METADATA: usize = 700;
 /// Upper bound charged to the response budget for one write receipt's version token.
 const TOKEN_BOUND: u64 = 128;
 
+const USER_AGENT: &str = "hsearch-s3";
+
+/// Length of the canonical reason phrase of `status`, which the status line carries and the
+/// client does not expose.
+fn reason_len(status: u16) -> u64 {
+    ureq::http::StatusCode::from_u16(status)
+        .ok()
+        .and_then(|s| s.canonical_reason())
+        .map_or(0, |r| r.len() as u64)
+}
+
 const META_REQUEST: &str = "x-amz-meta-hs-request";
 const META_DIGEST: &str = "x-amz-meta-hs-digest";
 const META_OPAQUE: &str = "x-amz-meta-hs-meta";
@@ -415,6 +426,38 @@ impl S3Store {
         }
     }
 
+    /// Attribute one attempt made by a client the adapter does not control, such as an SDK whose
+    /// retry loop runs inside its own call. The caller reports each attempt as the client's
+    /// interceptor sees it, so a hidden retry is counted and flagged exactly as the adapter's own
+    /// is: `status` is `None` when no response arrived, `retry` is true from the second attempt of
+    /// one client call. Nothing is sent and no budget is charged: the foreign client spent them.
+    /// A client call is one [`Ledger::logical`] call, recorded with [`S3Store::record_logical`].
+    pub fn record_attempt(
+        &self,
+        role: Role,
+        verb: Verb,
+        status: Option<u16>,
+        request_bytes: u64,
+        response_bytes: u64,
+        retry: bool,
+    ) {
+        let op = match verb {
+            Verb::Get => Op::Get,
+            Verb::Put => Op::Put,
+            Verb::Head => Op::Head,
+            Verb::List => Op::List,
+            Verb::Delete => Op::Delete,
+            Verb::Post => Op::Post,
+        };
+        self.count(op);
+        self.attribute(role, op, status, request_bytes, response_bytes, retry);
+    }
+
+    /// Count one logical call made through a foreign client; see [`S3Store::record_attempt`].
+    pub fn record_logical(&self, role: Role) {
+        self.logical(role);
+    }
+
     /// Requests sent so far, by operation type.
     #[must_use]
     pub fn counts(&self) -> RequestCounts {
@@ -552,8 +595,16 @@ impl S3Store {
         } else {
             format!("{path}?{query}")
         };
+        // The headers the client adds below the signature are set explicitly in `dispatch`, so
+        // the encoded size is what is sent, not a lower bound (the independent wire record of
+        // M03.13 pins this): a body method also carries its content length.
         let mut on_wire = signed.clone();
         on_wire.push(("authorization".to_owned(), authorization.clone()));
+        on_wire.push(("user-agent".to_owned(), USER_AGENT.to_owned()));
+        on_wire.push(("accept".to_owned(), "*/*".to_owned()));
+        if matches!(op, Op::Put | Op::Post) {
+            on_wire.push(("content-length".to_owned(), body.len().to_string()));
+        }
         let request_size = encoded_request_bytes(op.method(), &target, &on_wire, body.len() as u64);
         self.count(op);
         let outcome = self.dispatch(op, &url, &signed, &authorization, body, timeout);
@@ -608,7 +659,9 @@ impl S3Store {
             op,
             Some(status),
             request_size,
-            encoded_response_bytes(&headers, body_len),
+            // The status line's reason phrase is not kept by the client; the canonical one is what
+            // stores send.
+            encoded_response_bytes(&headers, body_len) + reason_len(status),
             retry,
         );
         let body = body?;
@@ -635,6 +688,8 @@ impl S3Store {
                     request = request.header(name.as_str(), value.as_str());
                 }
                 request = request.header("authorization", authorization);
+                request = request.header("user-agent", USER_AGENT);
+                request = request.header("accept", "*/*");
                 request
             }};
         }
