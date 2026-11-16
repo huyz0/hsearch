@@ -16,6 +16,7 @@ use crate::ApiError;
 use crate::bulk::{self, Action, Item};
 use crate::limits::{Limits, MemoryGate};
 use crate::mapping::{Mapping, typed_owned};
+use crate::policy::{Dynamic, MappingLimits};
 use crate::search::{self, Source};
 
 /// Operations per call to the write path, below its slot bound.
@@ -48,6 +49,7 @@ pub struct Node<S> {
     data_dir: PathBuf,
     indexes: Mutex<HashMap<String, Slot>>,
     limits: Limits,
+    mapping_limits: MappingLimits,
     gate: MemoryGate,
     /// Shared mappings this node has stored or verified, by content hash.
     shared: Mutex<HashMap<Digest, Arc<Mapping>>>,
@@ -119,7 +121,22 @@ impl<S: MetadataStore + 'static> Node<S> {
             gate: MemoryGate::new(limits.memory_budget_bytes),
             shared: Mutex::new(HashMap::new()),
             limits,
+            mapping_limits: MappingLimits::default(),
         })
+    }
+
+    /// This node under explicit field, depth and nested-object limits (PR-42),
+    /// refused if they cannot work.
+    pub fn with_mapping_limits(mut self, limits: MappingLimits) -> Result<Self, String> {
+        limits.validate()?;
+        self.mapping_limits = limits;
+        Ok(self)
+    }
+
+    /// The field, depth and nested-object limits in force.
+    #[must_use]
+    pub fn mapping_limits(&self) -> &MappingLimits {
+        &self.mapping_limits
     }
 
     /// How many distinct parsed mappings this node holds: one per distinct
@@ -259,7 +276,7 @@ impl<S: MetadataStore + 'static> Node<S> {
     /// retry that finds a root without a mapping finishes the creation.
     pub fn create(&self, name: &str, body: &Value) -> Result<Value, ApiError> {
         valid_index(name)?;
-        let mapping = Mapping::parse(body)?;
+        let mapping = Mapping::parse_with(body, &self.mapping_limits)?;
         let schema = mapping.schema()?;
         let slot = self.slot(name)?;
         let created = {
@@ -453,7 +470,7 @@ impl<S: MetadataStore + 'static> Node<S> {
                         id: item.id.clone(),
                     }),
                     (Ok(entry), Ok((Action::Index, Some(source)))) => {
-                        document(&entry.mapping, &item.id, source)
+                        document(&entry.mapping, &self.mapping_limits, &item.id, source)
                     }
                     (Ok(_), Ok((Action::Index, None))) => Err(ApiError::bad("missing source")),
                 };
@@ -559,7 +576,12 @@ impl<S: MetadataStore + 'static> Node<S> {
 
 /// Build the write path's operation from a source object, in schema order. The
 /// source is consumed: its strings move into the operation instead of being copied.
-fn document(mapping: &Mapping, id: &str, source: Value) -> Result<Op, ApiError> {
+fn document(
+    mapping: &Mapping,
+    limits: &MappingLimits,
+    id: &str,
+    source: Value,
+) -> Result<Op, ApiError> {
     let Value::Object(mut object) = source else {
         return Err(ApiError::new(
             400,
@@ -567,12 +589,37 @@ fn document(mapping: &Mapping, id: &str, source: Value) -> Result<Op, ApiError> 
             "the source must be a JSON object",
         ));
     };
-    if let Some(extra) = object.keys().find(|k| mapping.kind(k).is_none()) {
-        return Err(ApiError::new(
-            400,
-            "strict_dynamic_mapping_exception",
-            format!("unknown field [{extra}]; this node has no dynamic mapping"),
-        ));
+    limits.check_source(&object)?;
+    // Counting first keeps the common case, no unknown field, to one pass over
+    // the keys that the lookups below already make.
+    let unknown = object.keys().filter(|k| mapping.kind(k).is_none()).count();
+    if unknown > 0 {
+        match mapping.dynamic {
+            Dynamic::Strict => {
+                let extra = object.keys().find(|k| mapping.kind(k).is_none());
+                return Err(ApiError::new(
+                    400,
+                    "strict_dynamic_mapping_exception",
+                    format!(
+                        "mapping is set to strict: dynamic introduction of [{}] is not allowed",
+                        extra.map_or("", String::as_str)
+                    ),
+                ));
+            }
+            Dynamic::False => object.retain(|k, _| mapping.kind(k).is_some()),
+            Dynamic::True => {
+                // A change that would pass the limit is refused whole, before
+                // anything else is said about it; a change within it cannot be
+                // published yet, because adding fields to a live index is M21.04.
+                limits.check_fields(mapping.fields.len() + unknown)?;
+                return Err(ApiError::new(
+                    400,
+                    "mapping_update_unavailable_exception",
+                    "dynamic [true] would add fields, which needs online mapping evolution; \
+                     declare them in the mapping or use dynamic [false] or [strict]",
+                ));
+            }
+        }
     }
     let mut fields = Vec::with_capacity(mapping.fields.len());
     for (name, kind) in &mapping.fields {
@@ -662,5 +709,43 @@ mod tests {
         assert!(Arc::ptr_eq(&after[0], &after[1]) && Arc::ptr_eq(&after[1], &after[2]));
         assert_eq!(restarted.shared_mapping_count(), 2);
         let _ = (std::fs::remove_dir_all(one), std::fs::remove_dir_all(two));
+    }
+
+    /// Hot-path cost of building a write from a typical five-field source, with
+    /// and without the limit and dynamic checks. Run:
+    /// `cargo test --release -p hsearch-node document_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore = "a measurement, not a check"]
+    fn document_cost() {
+        let mapping = Mapping::parse(&json!({"mappings": {"properties": {
+            "title": {"type": "text"}, "tag": {"type": "keyword"}, "n": {"type": "integer"},
+            "ok": {"type": "boolean"}, "at": {"type": "date"}}}}))
+        .unwrap();
+        let source =
+            json!({"title": "a short title here", "tag": "x", "n": 5, "ok": true, "at": 1000});
+        let limits = MappingLimits::default();
+        let rounds = 2_000_000u32;
+        let time = |f: &dyn Fn()| {
+            let start = Instant::now();
+            for _ in 0..rounds {
+                f();
+            }
+            start.elapsed().as_nanos() as f64 / f64::from(rounds)
+        };
+        let whole = time(&|| {
+            std::hint::black_box(document(&mapping, &limits, "id", source.clone()).unwrap());
+        });
+        let clone_only = time(&|| {
+            std::hint::black_box(source.clone());
+        });
+        let checks = time(&|| {
+            let object = source.as_object().unwrap();
+            limits.check_source(object).unwrap();
+            std::hint::black_box(object.keys().filter(|k| mapping.kind(k).is_none()).count());
+        });
+        println!(
+            "document() {whole:.0} ns (of which the source clone {clone_only:.0} ns); \
+                  the new checks alone {checks:.0} ns"
+        );
     }
 }

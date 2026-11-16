@@ -575,3 +575,95 @@ fn control_bytes_in_a_token_never_reach_the_network() {
     );
     assert_eq!(store.counts(), before);
 }
+
+/// `remove_version` on a real store (M21.09 increment 4 left it unproven here): the
+/// version is gone, a neighbour is not touched, a repeat answers success (S3 does
+/// not report a missing version), each call is exactly one DELETE and no other
+/// request, and the key accepts a create again.
+#[test]
+fn removing_a_version_deletes_only_it_and_is_repeatable() {
+    let Some(store) = store() else { return };
+    let ctx = context();
+    let keep = mutation(
+        b"keep",
+        b"i/blob/1/1/0/d.f/0",
+        b"keep",
+        Precondition::Absent,
+    );
+    let gone = mutation(
+        b"gone",
+        b"i/blob/1/1/0/d.f/1",
+        &vec![7u8; 1 << 20],
+        Precondition::Absent,
+    );
+    let kept = run(store.create(&ctx, &keep)).unwrap();
+    let dropped = run(store.create(&ctx, &gone)).unwrap();
+    let before = store.counts();
+    run(store.remove_version(&ctx, &gone.key, &dropped.object.version)).unwrap();
+    let after = store.counts();
+    assert_eq!(
+        (
+            after.delete - before.delete,
+            after.get - before.get,
+            after.put - before.put,
+            after.list - before.list
+        ),
+        (1, 0, 0, 0)
+    );
+    let range = ByteRange::new(0, 4).unwrap();
+    assert_eq!(
+        run(store.read_range(&ctx, &gone.key, &dropped.object.version, range)).map(|_| ()),
+        Err(Error::NotFound)
+    );
+    assert_eq!(
+        run(store.head(&ctx, &gone.key)).map(|_| ()),
+        Err(Error::NotFound)
+    );
+    assert_eq!(
+        run(store.read_range(&ctx, &keep.key, &kept.object.version, range))
+            .unwrap()
+            .as_bytes(),
+        b"keep"
+    );
+    run(store.remove_version(&ctx, &gone.key, &dropped.object.version)).unwrap();
+    assert_eq!(store.counts().delete - after.delete, 1);
+    let again = mutation(
+        b"again",
+        b"i/blob/1/1/0/d.f/1",
+        b"again",
+        Precondition::Absent,
+    );
+    run(store.create(&ctx, &again)).unwrap();
+    // Removing one version of a key leaves its other version alone.
+    let v1 = mutation(b"v1", b"i/blob/2/k", b"one", Precondition::Absent);
+    let first = run(store.create(&ctx, &v1)).unwrap();
+    let v2 = mutation(
+        b"v2",
+        b"i/blob/2/k",
+        b"two",
+        Precondition::Matches(first.object.version.clone()),
+    );
+    let second = run(store.compare_exchange(&ctx, &v2)).unwrap();
+    run(store.remove_version(&ctx, &v1.key, &first.object.version)).unwrap();
+    assert_eq!(
+        run(store.read_range(
+            &ctx,
+            &v2.key,
+            &second.object.version,
+            ByteRange::new(0, 3).unwrap()
+        ))
+        .unwrap()
+        .as_bytes(),
+        b"two"
+    );
+    assert_eq!(
+        run(store.read_range(
+            &ctx,
+            &v1.key,
+            &first.object.version,
+            ByteRange::new(0, 3).unwrap()
+        ))
+        .map(|_| ()),
+        Err(Error::NotFound)
+    );
+}

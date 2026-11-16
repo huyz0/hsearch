@@ -67,3 +67,7 @@ Only the disk-HNSW and IVF floors are measured upstream; the HNSW rows are propo
 Not done, so as to be clear: no upstream benchmark run reached a standard corpus; the `disk_hnsw_bench`, `knn_formats` and `hnsw_quant_bench` examples all need a dataset that is not here.
 
 Owner for every upstream item above is `engine/architecture` (the M02.12 owner); the `main` revision in this file is `918cee02`, before #307 landed.
+
+## Update 16 November (M02.06 review)
+
+The "pin lacks IVF, disk HNSW and BBQ/OSQ" finding above was true of `46e280bc` and is **stale**: hsearch now builds `17a6254c`, and at that rev `crates/` contains `lucene-ivf`, `lucene-disk-hnsw` and `lucene-vector-quant`, and `lucene-util/src/cpu.rs` has `check_baseline` (#307). M23.02 and M23.03 need no pin bump for those crates. The tests listed above were run at `46e280bc` and `918cee02`; M23.01 reruns them at the pin it builds. See [M02.06](../decisions/M02.06-feasibility-review.md).
