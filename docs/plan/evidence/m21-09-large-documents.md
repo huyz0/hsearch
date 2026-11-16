@@ -217,3 +217,25 @@ The peak is 2.4x the document. An allocation trace of the same 200 MiB document 
 3. **Line buffer plus parsed string at parse time** is already released before indexing (increment 7), so it no longer shows in the peak.
 
 So ~1.4x needs lucene-rust#447 (item 1) and the `.fdt` spill in `IndexWriter` (item 2); no further hsearch change would move the peak.
+
+# M21.09 (increment 10): the stored `.fdt` spills at flush, 200 MiB peak 488 to 400 MiB
+
+Provisional: RustFS 1.0.4 (pinned image), shared cloud container, release build, `rustfs_profile large 200`, two runs.
+
+Pin 1abdba1 (lucene-rust#451): a flush whose documents hold at least 1 MiB of stored values writes the `.fdt` as it compresses instead of building the whole file in memory first. The bytes are the ones the buffered path writes (tested against it, including a `Shared` value).
+
+| | increment 9 (pin 9f5aa6d) | this pin (1abdba1) |
+|---|---|---|
+| peak over baseline | 492.1, 484.1 MiB (2.4x) | 399.8, 399.7 MiB (2.0x) |
+| durable ack | 3.14 s, 3.28 s | 2.63 s, 2.78 s |
+| searchable | 8.52 s, 9.07 s | 7.08 s, 7.36 s |
+| PUT count | 27 | 27 |
+
+## Correction to increments 8 and 9
+
+An allocation-tracing build was used to attribute the remaining memory, and tracing inflated the figures: the "about 270 MiB of postings and positions plus about 130 MiB of `.fdt`" split in increment 9 is wrong. Uninstrumented, lucene-rust's `shared_text_mem 200 shared` peaks at 337 MiB with `Store::No` and 461 MiB with `Store::Yes` on 9f5aa6d, and 337 and 338 MiB on 1abdba1: the indexing core costs about 133 MiB (0.65x) over the 205 MiB of text, and storing the field now costs nothing extra. The earlier "about 133 MiB" in increment 8 was right.
+
+## What remains to the ~1.4x target
+
+1. **Parse.** The bulk parser makes a `String` of the field and then an `Arc<str>` of it (`Arc::from(String)` copies), so the text is briefly held twice, and the line buffer is alive at the same time. That transient is now the floor at about 2x. Removing it needs a shared text that wraps a `String` without copying (lucene-rust) and parsing the source line straight into that `String` (hsearch).
+2. **Token occurrences** (lucene-rust#447): about 0.65x over the text while the field is inverted; delta-coded positions would shrink it.
