@@ -50,7 +50,7 @@ impl Default for Limits {
             max_bulk_items: 5000,
             buffer_bytes: 8 * 1024 * 1024,
             memory_budget_bytes: 256 * 1024 * 1024,
-            auto_merge_mb: 16,
+            auto_merge_mb: 4,
         }
     }
 }
