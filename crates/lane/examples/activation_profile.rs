@@ -60,6 +60,7 @@ fn footprint(idle: u64, kind: &str) {
                 max_active: 4096,
                 max_bytes: 1 << 40,
                 max_loading: 64,
+                load_ticks: 1 << 20,
             })
             .expect("limits");
             let mut x = 0x9E37_79B9_7F4A_7C15u64;
@@ -70,11 +71,14 @@ fn footprint(idle: u64, kind: &str) {
                 x ^= x << 17;
                 let n = x % idle.max(1);
                 let s0 = set.stats().steps;
-                match set.begin(id(n), 1 << 20).expect("begin") {
+                match set.begin(id(n), 1 << 20, 0).expect("begin") {
                     Begin::Load { ticket, .. } => {
                         set.finish(ticket, [n, 0, 0, 0], 1 << 20).expect("finish");
                     }
-                    Begin::Hit | Begin::Pending => {}
+                    Begin::Hit => {
+                        set.get(&id(n));
+                    }
+                    Begin::Pending => {}
                 }
                 worst = worst.max(set.stats().steps - s0);
             }
@@ -168,6 +172,7 @@ fn cold(tenants: u64, per_tenant: u64) {
         max_active: 64,
         max_bytes: 1 << 30,
         max_loading: 8,
+        load_ticks: 1 << 20,
     })
     .expect("limits");
     let activate = |set: &mut ActiveSet<Id>, t: u64, i: u64, with_head: bool| -> Duration {
@@ -182,7 +187,7 @@ fn cold(tenants: u64, per_tenant: u64) {
         if with_head {
             block_on(read_head(&store, &layout, &lane)).expect("head");
         }
-        match set.begin(index, 1 << 20).expect("begin") {
+        match set.begin(index, 1 << 20, 0).expect("begin") {
             Begin::Load { ticket, .. } => {
                 set.finish(ticket, index, 1 << 20).expect("finish");
             }
@@ -218,19 +223,20 @@ fn cold(tenants: u64, per_tenant: u64) {
         let t = Instant::now();
         let index = id((k % tenants) * per_tenant + (k / tenants % per_tenant) + 1);
         assert!(matches!(
-            set.begin(index, 1 << 20).expect("begin"),
+            set.begin(index, 1 << 20, 0).expect("begin"),
             Begin::Hit
         ));
         lat.push(t.elapsed());
     }
     row("active (hit)", n, c0, lat);
 
-    // 3. A burst: every index cold at once, 8 workers, 64 active at most, 8 loads at most.
+    // 3. A burst: every index cold at once, 16 workers, 64 active at most, 8 loads at most.
     let total = tenants * per_tenant;
     let burst = ActiveSet::<Id>::new(Limits {
         max_active: 64,
         max_bytes: 1 << 30,
         max_loading: 8,
+        load_ticks: 1 << 20,
     })
     .expect("limits");
     let shared = Mutex::new(burst);
@@ -253,7 +259,7 @@ fn cold(tenants: u64, per_tenant: u64) {
                     let catalog = &catalogs[t as usize];
                     loop {
                         let index = id(t * per_tenant + i + 1);
-                        let step = shared.lock().expect("lock").begin(index, 1 << 20);
+                        let step = shared.lock().expect("lock").begin(index, 1 << 20, 0);
                         match step {
                             Ok(Begin::Load { ticket, .. }) => {
                                 let ok = block_on(catalog.resolve(

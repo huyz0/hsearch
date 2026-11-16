@@ -24,6 +24,9 @@ pub struct Limits {
     pub max_bytes: u64,
     /// Most loads in flight at once.
     pub max_loading: usize,
+    /// A load not finished or failed after this many ticks (the caller's logical clock) is
+    /// reclaimed, so a caller that was cancelled or panicked cannot hold a loading place forever.
+    pub load_ticks: u64,
 }
 
 /// Why an activation was refused. Nothing was changed.
@@ -55,10 +58,21 @@ pub enum Begin<H> {
     },
 }
 
-/// The right to finish one load.
+/// The right to finish one load. Valid only for the load that issued it: after the load is
+/// reclaimed, or finished, a ticket is refused.
 #[derive(Debug, Eq, PartialEq)]
 pub struct Ticket {
     id: Id,
+    serial: u64,
+}
+
+/// A load that could not be accepted; the handle is returned so the caller can close it.
+#[derive(Debug, Eq, PartialEq)]
+pub struct Rejected<H> {
+    /// Why.
+    pub refusal: Refusal,
+    /// The handle the caller offered.
+    pub handle: H,
 }
 
 /// Counters. `steps` counts hash lookups and list links touched, the unit of "fixed work".
@@ -74,6 +88,8 @@ pub struct Stats {
     pub failed: u64,
     /// Refused activations.
     pub refused: u64,
+    /// Loads reclaimed after `load_ticks` without an answer.
+    pub reaped: u64,
     /// Lookups and links touched.
     pub steps: u64,
 }
@@ -85,6 +101,7 @@ struct Node<H> {
     handle: Option<H>,
     bytes: u64,
     leases: u32,
+    serial: u64,
     prev: usize,
     next: usize,
     listed: bool,
@@ -104,13 +121,20 @@ pub struct ActiveSet<H> {
     /// Entries on the eviction list (active and unleased) and their bytes.
     listed_count: usize,
     listed_bytes: u64,
+    /// Loads in flight: (id, serial, started). At most `max_loading` long.
+    inflight: Vec<(Id, u64, u64)>,
+    next_serial: u64,
     stats: Stats,
 }
 
 impl<H> ActiveSet<H> {
     /// An empty set. [`Refusal::Invalid`] if any cap is zero.
     pub fn new(limits: Limits) -> Result<Self, Refusal> {
-        if limits.max_active == 0 || limits.max_bytes == 0 || limits.max_loading == 0 {
+        if limits.max_active == 0
+            || limits.max_bytes == 0
+            || limits.max_loading == 0
+            || limits.load_ticks == 0
+        {
             return Err(Refusal::Invalid);
         }
         Ok(Self {
@@ -125,6 +149,8 @@ impl<H> ActiveSet<H> {
             bytes: 0,
             listed_count: 0,
             listed_bytes: 0,
+            inflight: Vec::with_capacity(limits.max_loading),
+            next_serial: 0,
             stats: Stats::default(),
         })
     }
@@ -233,9 +259,43 @@ impl<H> ActiveSet<H> {
             && self.bytes - self.listed_bytes + bytes <= self.limits.max_bytes
     }
 
-    /// Ask to use `id`, which will cost about `bytes`.
-    pub fn begin(&mut self, id: Id, bytes: u64) -> Result<Begin<H>, Refusal> {
+    /// Reclaim loads that have had no answer for `load_ticks`. At most `max_loading` are in flight,
+    /// so this is bounded by that cap, not by the population.
+    fn reap(&mut self, now: u64) {
+        let mut i = 0;
+        while i < self.inflight.len() {
+            self.stats.steps += 1;
+            let (id, serial, started) = self.inflight[i];
+            if now.saturating_sub(started) < self.limits.load_ticks {
+                i += 1;
+                continue;
+            }
+            self.inflight.swap_remove(i);
+            if let Some(&at) = self.map.get(&id)
+                && self.nodes[at].serial == serial
+                && self.nodes[at].handle.is_none()
+            {
+                self.loading -= 1;
+                self.remove(at);
+                self.stats.reaped += 1;
+            }
+        }
+    }
+
+    fn settle(&mut self, id: &Id, serial: u64) {
+        if let Some(i) = self
+            .inflight
+            .iter()
+            .position(|(other, s, _)| other == id && *s == serial)
+        {
+            self.inflight.swap_remove(i);
+        }
+    }
+
+    /// Ask to use `id`, which will cost about `bytes`; `now` is the caller's logical clock.
+    pub fn begin(&mut self, id: Id, bytes: u64, now: u64) -> Result<Begin<H>, Refusal> {
         self.stats.steps += 1;
+        self.reap(now);
         if let Some(&at) = self.map.get(&id) {
             if self.nodes[at].handle.is_none() {
                 return Ok(Begin::Pending);
@@ -272,6 +332,7 @@ impl<H> ActiveSet<H> {
             handle: None,
             bytes,
             leases: 0,
+            serial: self.next_serial,
             prev: NONE,
             next: NONE,
             listed: false,
@@ -284,27 +345,42 @@ impl<H> ActiveSet<H> {
             self.nodes.len() - 1
         };
         self.map.insert(id, at);
+        self.inflight.push((id, self.next_serial, now));
+        self.next_serial += 1;
         self.loading += 1;
         self.bytes += bytes;
         self.stats.activations += 1;
         self.stats.steps += 1;
         Ok(Begin::Load {
-            ticket: Ticket { id },
+            ticket: Ticket {
+                id,
+                serial: self.next_serial - 1,
+            },
             evicted,
         })
     }
 
     /// The load succeeded: `handle` is `id`'s engine, costing `bytes` (which may differ from the
     /// estimate given to [`begin`](Self::begin)). Returns indexes evicted to fit the difference.
-    /// Refuses ([`Refusal::Capacity`]) if it cannot fit; the load is then abandoned.
+    /// Refused ([`Refusal::Capacity`]) if it cannot fit, and ([`Refusal::Invalid`]) if the load was
+    /// reclaimed or already settled; either way the handle comes back to be closed.
     pub fn finish(
         &mut self,
         ticket: Ticket,
         handle: H,
         bytes: u64,
-    ) -> Result<Vec<(Id, H)>, Refusal> {
-        let at = *self.map.get(&ticket.id).ok_or(Refusal::Invalid)?;
+    ) -> Result<Vec<(Id, H)>, Rejected<H>> {
+        let current = self.map.get(&ticket.id).copied().filter(|&at| {
+            self.nodes[at].serial == ticket.serial && self.nodes[at].handle.is_none()
+        });
+        let Some(at) = current else {
+            return Err(Rejected {
+                refusal: Refusal::Invalid,
+                handle,
+            });
+        };
         self.stats.steps += 1;
+        self.settle(&ticket.id, ticket.serial);
         let reserved = self.nodes[at].bytes;
         let mut evicted = Vec::new();
         if bytes > reserved {
@@ -314,7 +390,10 @@ impl<H> ActiveSet<H> {
                 self.remove(at);
                 self.stats.failed += 1;
                 self.stats.refused += 1;
-                return Err(Refusal::Capacity);
+                return Err(Rejected {
+                    refusal: Refusal::Capacity,
+                    handle,
+                });
             }
             self.bytes -= reserved;
             self.nodes[at].bytes = 0;
@@ -335,10 +414,13 @@ impl<H> ActiveSet<H> {
     }
 
     /// The load failed or was cancelled; its place is free again and the index may be tried again.
+    /// A ticket whose load was already reclaimed or settled does nothing.
     pub fn fail(&mut self, ticket: Ticket) {
         if let Some(&at) = self.map.get(&ticket.id)
+            && self.nodes[at].serial == ticket.serial
             && self.nodes[at].handle.is_none()
         {
+            self.settle(&ticket.id, ticket.serial);
             self.loading -= 1;
             self.remove(at);
             self.stats.failed += 1;

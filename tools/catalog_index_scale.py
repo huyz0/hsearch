@@ -6,7 +6,7 @@ M02.06 condition C8: the original model keyed rows by (tenant, collection) and p
 the index alone. This builds that catalog (one row per index, one route row per idle index, sixteen
 for the hot one) at 100,000 and 1,000,000 idle indexes, and checks in fresh processes that selecting
 the hot index costs the same two statements and 17 rows, uses only indexed plans, and does not grow
-the process's peak RSS by more than 10%. A full-scan control must refuse. Synthetic SQLite model:
+the process's peak RSS by more than 10%. Two controls must refuse: a scan that holds every row and one that streams them without holding any (so memory alone cannot be what refuses it). The work check counts the rows a request touches. Synthetic SQLite model:
 not the runtime catalog, not physical I/O, not a fleet result. Run:
 
     python3 tools/catalog_index_scale.py --output /private/new-directory [--small 100000 --large 1000000]
@@ -71,20 +71,25 @@ def probe(path: Path, iterations: int, variant: str) -> dict:
         db.set_trace_callback(lambda s: statements.append(s) if s.lstrip().upper().startswith("SELECT ") else None)
         plans = [r[3] for r in db.execute("EXPLAIN QUERY PLAN " + SELECT_INDEX, (HOT,))]
         plans += [r[3] for r in db.execute("EXPLAIN QUERY PLAN " + SELECT_ROUTES, (HOT, 1, 1, HASH_SPACE, 0, 17))]
-        if variant == "full_scan":
+        if variant in ("full_scan", "scan_stream"):
             plans += [r[3] for r in db.execute("EXPLAIN QUERY PLAN " + SCAN)]
         statements.clear()
         rows_per_request = 0
         for _ in range(iterations):
             statements.clear()
-            if variant == "full_scan":
-                held = db.execute(SCAN).fetchmany(2000000)
-                assert held
+            scanned = 0
+            if variant == "full_scan":  # holds every row, as a registry of all indexes would
+                scanned = len(db.execute(SCAN).fetchmany(2000000))
+            elif variant == "scan_stream":  # visits every row without holding any
+                for _ in db.execute(SCAN):
+                    scanned += 1
             inc, gen = db.execute(SELECT_INDEX, (HOT,)).fetchone()
             routes = db.execute(SELECT_ROUTES, (HOT, inc, gen, HASH_SPACE, 0, 17)).fetchall()
             assert len(routes) == 16
-            rows_per_request = 1 + len(routes)
+            rows_per_request = 1 + len(routes) + scanned  # rows the request actually touched
         per_request = len([s for s in statements if "FROM indexes LIMIT" not in s])
+        # The scan statements are counted too: a request that scans is not two statements.
+        per_request += len([s for s in statements if "FROM indexes LIMIT" in s])
     return {"variant": variant, "peak_rss_bytes": rss("VmHWM"), "statements_per_request": per_request,
             "rows_per_request": rows_per_request, "plans": plans}
 
@@ -106,7 +111,7 @@ def experiment(directory: Path, small: int, large: int, repetitions: int, iterat
                 digest.update(chunk)
         datasets.append({"idle_indexes": idle, "index_rows": counts[0], "route_rows": counts[1],
                          "bytes": path.stat().st_size, "sha256": digest.hexdigest()})
-        for variant in ("bounded", "full_scan"):
+        for variant in ("bounded", "full_scan", "scan_stream"):
             for repeat in range(repetitions):
                 out = subprocess.run([sys.executable, __file__, "probe", "--db", str(path), "--variant", variant,
                                       "--iterations", str(iterations)], capture_output=True, text=True, timeout=300, check=True)
@@ -114,7 +119,7 @@ def experiment(directory: Path, small: int, large: int, repetitions: int, iterat
                 sample.update(idle_indexes=idle, repeat=repeat)
                 samples.append(sample)
     outcomes = {}
-    for variant in ("bounded", "full_scan"):
+    for variant in ("bounded", "full_scan", "scan_stream"):
         groups = [[s for s in samples if s["variant"] == variant and s["idle_indexes"] == n] for n in (small, large)]
         medians = [statistics.median(s["peak_rss_bytes"] for s in g) for g in groups]
         ratio = medians[1] / medians[0]
@@ -126,7 +131,8 @@ def experiment(directory: Path, small: int, large: int, repetitions: int, iterat
               "scope": "synthetic SQLite model keyed on the index; not the runtime catalog, no physical I/O",
               "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               "datasets": datasets, "samples": samples, "outcomes": outcomes,
-              "passed": outcomes["bounded"]["gate_passed"] and not outcomes["full_scan"]["gate_passed"]}
+              "passed": outcomes["bounded"]["gate_passed"] and not outcomes["full_scan"]["gate_passed"]
+              and not outcomes["scan_stream"]["gate_passed"]}
     with (directory / "report.json").open("x") as f:
         json.dump(report, f, indent=2)
     return report
