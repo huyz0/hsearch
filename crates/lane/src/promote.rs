@@ -145,7 +145,14 @@ impl<S: MetadataStore> LaneWriter<S> {
         )
         .await
         {
-            Ok(_) | Err(Error::Exists) => {}
+            Ok(_) => {}
+            // A repeat after a crash finds the head it made; one of another mode is not ours.
+            Err(Error::Exists) => {
+                let (head, _) = read_head(self.store_ref(), self.layout_ref(), &target).await?;
+                if head.mode != policy.durability {
+                    return Err(Error::Exists);
+                }
+            }
             Err(error) => return Err(error),
         }
         self.remove_member(&index).await?;

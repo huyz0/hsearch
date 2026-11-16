@@ -478,17 +478,24 @@ impl Catalog {
         let k = layout.catalog_page(&self.id, bucket);
         let object = key(&k)?;
         // Decide what is there before reading a single binding.
-        let version = match read_object(store, &object, PAGE_READ_BOUND).await {
-            Ok(None) => None,
-            Ok(Some((bytes, version))) => {
-                if CatalogPage::decode_at(bytes.as_bytes(), self.bits, &self.id, bucket).is_ok() {
-                    return Err(Error::Invalid("the page is healthy"));
+        // One HEAD names the version; the length check and the read are pinned to it, so the
+        // version the replacement swaps against is the one that was judged unreadable.
+        let version = match store.head(&context(), &object).await {
+            Err(hsearch_object::Error::NotFound) => None,
+            Err(error) => return Err(error.into()),
+            Ok(info) => {
+                if info.length != 0 && info.length <= PAGE_READ_BOUND {
+                    let range = hsearch_object::ByteRange::new(0, info.length)?;
+                    let bytes = store
+                        .read_range(&context(), &object, &info.version, range)
+                        .await?;
+                    if CatalogPage::decode_at(bytes.as_bytes(), self.bits, &self.id, bucket).is_ok()
+                    {
+                        return Err(Error::Invalid("the page is healthy"));
+                    }
                 }
-                Some(version)
+                Some(info.version)
             }
-            // Empty or oversized: still an object to replace, at its current version.
-            Err(Error::Format(_)) => Some(store.head(&context(), &object).await?.version),
-            Err(error) => return Err(error),
         };
         let mut chosen: std::collections::BTreeMap<String, CatalogEntry> =
             std::collections::BTreeMap::new();

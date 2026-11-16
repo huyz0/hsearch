@@ -47,12 +47,16 @@ fn page_key(bucket: u32) -> ObjectKey {
 
 /// Overwrite the page object with bytes that do not decode, as bit rot or a bad tool would.
 fn corrupt(store: &impl hsearch_object::MetadataStore, bucket: u32) {
+    corrupt_with(store, bucket, b"not a catalog page at all");
+}
+
+fn corrupt_with(store: &impl hsearch_object::MetadataStore, bucket: u32, bytes: &[u8]) {
     let k = page_key(bucket);
     let info = block_on(store.head(&ctx(), &k)).unwrap();
     let m = Mutation {
         request_id: RequestId::new(format!("rot-{bucket}").as_bytes()).unwrap(),
         key: k,
-        payload: Payload::new(b"not a catalog page at all").unwrap(),
+        payload: Payload::new(bytes).unwrap(),
         metadata: Metadata::new(b"").unwrap(),
         precondition: Precondition::Matches(info.version),
     };
@@ -215,6 +219,37 @@ fn two_repairs_racing_leave_exactly_one_page() {
             "{r:?}"
         );
     }
+    let report = block_on(c.verify(&*store, &layout())).unwrap();
+    assert_eq!((report.pages_bad, report.live, report.deleted), (0, 2, 1));
+}
+
+#[test]
+fn an_oversized_page_is_repaired_once_and_a_second_repairer_never_overwrites_the_first() {
+    let store = counted();
+    let c = catalog(&*store);
+    let n = populated(&*store, &c);
+    // Longer than any page may be: it is never read, only replaced at the version that was judged.
+    corrupt_with(&*store, 1, &vec![7u8; 700 * 1024]);
+    let claims = good_claims(&n);
+    let results: Vec<_> = (0..4)
+        .map(|_| {
+            let (s, c, claims) = (Arc::clone(&store), c.clone(), claims.clone());
+            std::thread::spawn(move || block_on(c.repair_page(&*s, &layout(), 1, &claims)))
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect();
+    assert_eq!(
+        results.iter().filter(|r| r.is_ok()).count(),
+        1,
+        "{results:?}"
+    );
+    // Repairing the repaired page is refused, not redone.
+    assert!(matches!(
+        block_on(c.repair_page(&*store, &layout(), 1, &claims)),
+        Err(Error::Invalid(_))
+    ));
     let report = block_on(c.verify(&*store, &layout())).unwrap();
     assert_eq!((report.pages_bad, report.live, report.deleted), (0, 2, 1));
 }
