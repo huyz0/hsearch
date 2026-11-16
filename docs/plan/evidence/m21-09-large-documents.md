@@ -163,3 +163,29 @@ No LIST anywhere. The factor stays between 3.7x and 5.7x (5.4x at 200 MiB, incre
 - The 32x charge is about 5.6x the measured peak: admission refuses documents that would fit. A 100 MiB document charges 3.2 GiB, so a node with a smaller budget refuses it with a retryable 429 (a budget that can never fit it says so).
 - Engine memory still grows about 5x the text through the indexing chain's 12-byte token occurrences. That is upstream, filed as huyz0/lucene-rust#447 (PR-53); the charge can fall when it lands.
 - Replay still has no admission charge (increment 3).
+
+# M21.09 (increment 8): stored text shared and streamed, 200 MiB peak down by 200 MiB
+
+Provisional: RustFS 1.0.4 (pinned image), shared cloud container, release build, `rustfs_profile large 200`, one 200 MiB document through `Node::bulk`. Both sides built and run back to back on the same host; the old pin's two runs and the new pin's two runs are listed, so the spread is visible.
+
+Two lucene-rust changes, both additive and drop-in with Java Lucene's segments: an `Arc<str>` text field the analyzer reads without copying it into its reader (lucene-rust#390), and a stored document of at least twice a chunk written to the `.fdt` slice by slice instead of through a whole-document buffer, byte-identical to the buffered path (lucene-rust#449). `Schema::document` now makes one `Arc<str>` of the text instead of a `String`, which is the one copy the engine's Document holds.
+
+| | pin 17a6254 | pin 52b630e |
+|---|---|---|
+| peak over baseline | 1,091.8, 1,092.3 MiB (5.5x) | 884.4, 892.2 MiB (4.4x to 4.5x) |
+| durable ack | 3.05 s, 4.08 s | 3.17 s, 3.08 s |
+| searchable | 8.83 s, 10.11 s | 8.26 s, 8.58 s |
+| PUT count | 27 | 27 |
+
+Peak is down about 200 MiB, the stored-field buffer copy; time to searchable is the same within the spread (the old pin's runs differ by 1.3 s between themselves). Request counts are unchanged and there is no LIST. The remaining peak is the engine's single copy of the text, its stored-field value (`Store::Yes` copies once more upstream), and the indexing chain's 12-byte token occurrences (lucene-rust#447, still open), so the 32x admission charge is unchanged.
+
+### What remains to reach the ~1.4x peak target (200 MiB document)
+
+The peak is still about 4.4x the document (884 MiB). Measured on the engine with shared text, `Store::No`, the indexing core adds about 133 MiB over the text, so the engine is not the main remainder. The rest is copies held at the same time:
+
+1. Parse: the request line buffer and the parsed string are alive together (about 200-300 MiB). hsearch work: stream the body into the `Arc<str>` without a second full copy.
+2. Stored value: under `Store::Yes` the stored `FieldValue::String` is a second copy (about 200 MiB). Needs more lucene-rust work: an Arc-backed stored value so stored fields are written straight from the shared text (the streamed flush in lucene-rust#449 is ready for it).
+3. Buffered compressed `.fdt` on the indexing path (about 100 MiB): the spill and `stream_to` path is not used there yet. lucene-rust work.
+4. Occurrence lists (lucene-rust#447, still open).
+
+So yes, reaching ~1.4x needs one more lucene-rust change (item 2, then 3) plus hsearch-side input streaming (item 1).
