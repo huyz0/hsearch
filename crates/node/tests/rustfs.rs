@@ -270,8 +270,12 @@ fn a_hundred_mib_text_field_is_found_by_its_last_term_returned_whole_and_bounded
     assert_eq!(title.len() + overhead, LIMIT);
     let body = wrap(&title);
 
-    let _ = std::fs::write("/proc/self/clear_refs", "5");
+    std::fs::write("/proc/self/clear_refs", "5").expect("reset the high-water mark (Linux)");
     let baseline = status_kb("VmRSS:");
+    assert!(
+        baseline > 0,
+        "VmRSS unreadable: the memory bound would be vacuous"
+    );
     let (status, out) = call(addr, "POST", "/orders/_bulk?refresh=true", &body);
     assert_eq!(
         (status, out["items"][0]["index"]["status"].as_u64()),
@@ -302,6 +306,16 @@ fn a_hundred_mib_text_field_is_found_by_its_last_term_returned_whole_and_bounded
     let back = got["_source"]["title"].as_str().expect("source");
     assert_eq!(back.len(), title.len());
     assert!(back == title, "the text came back changed");
+    // The read path too: the search and the whole-document GET stay under the charge.
+    let read_peak = status_kb("VmHWM:").saturating_sub(baseline) * 1024;
+    eprintln!(
+        "after search and GET: peak over baseline {:.1} MiB",
+        read_peak as f64 / 1_048_576.0
+    );
+    assert!(
+        read_peak < charge,
+        "read path peak {read_peak} exceeds {charge}"
+    );
     drop(got);
 
     // One byte over the limit: refused by name, nothing committed.

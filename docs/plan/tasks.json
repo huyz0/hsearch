@@ -2989,7 +2989,7 @@
           "evidence": [
             {
               "path": "evidence/m21-09-large-documents.md",
-              "result": "Increment 1: retry history keeps a 128-bit digest instead of an owned copy of each document; peak RSS 16x to 12.7x at 1 MiB and 12.6x to 9.8x at 3.9 MiB, throughput unchanged. Provisional, 4-CPU container. The object lane and the 4-100 MiB admission factor are still open."
+              "result": "Increment 1: retry history keeps a 128-bit digest instead of an owned copy of each document; peak RSS 16x to 12.7x at 1 MiB and 12.6x to 9.8x at 3.9 MiB, throughput unchanged. Provisional, 4-CPU container. (Superseded: the object lane and the factor were finished in later increments.)"
             },
             {
               "path": "evidence/m21-09-large-documents.md",
