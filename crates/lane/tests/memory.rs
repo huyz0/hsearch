@@ -454,8 +454,8 @@ fn promotion_seals_in_order_moves_membership_and_resumes_after_a_crash_at_every_
     let used = clean.inner.requests().since(&before);
     assert_eq!(
         (used.create, used.cas),
-        (2, 1),
-        "seal slot, target descriptor, source leave"
+        (3, 1),
+        "seal slot, target descriptor, target head, source leave"
     );
     assert_eq!(done.sealed_at, 2);
     assert_eq!(
@@ -484,7 +484,7 @@ fn promotion_seals_in_order_moves_membership_and_resumes_after_a_crash_at_every_
         "its put, then its seal at the position promote returned"
     );
 
-    for crash_after in 0..3 {
+    for crash_after in 0..4 {
         let store = Arc::new(Chaos::new(counted()));
         let lane = lane_with(&*store.inner, &[1, 2]);
         let (mut w, _) = open(&store, lane, 0);

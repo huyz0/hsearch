@@ -12,7 +12,7 @@
 //! [`head`] and [`catalog`] are M03.05: the structural head (authority, epoch inventory, cover and
 //! tail locators, changed only by conditional transition) and the paged name catalog.
 //!
-//! Not here, by design: activation routing for a promoted lane, engine apply and
+//! Not here, by design: engine apply and
 //! checkpoints that move the cover (M06), AEAD (M05). A caller supplies the cover it replays from.
 pub mod batch;
 pub mod catalog;
@@ -37,3 +37,4 @@ pub use members::{
     LaneId, create_lane, dedicated_group, join_members, lane_exists, read_descriptor, shared_group,
 };
 pub use place::{Placement, Placer};
+pub use promote::{Promotion, Route, route};
