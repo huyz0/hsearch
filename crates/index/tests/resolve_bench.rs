@@ -33,7 +33,15 @@ fn prepare_a_full_batch_of_partial_updates() {
         })
         .collect();
     let s = S(docs);
-    let r = Resolver::new(1, &["title", "price", "active"], 1 << 20);
+    let r = Resolver::new(
+        1,
+        &[
+            ("title", hsearch_engine::Kind::Text),
+            ("price", hsearch_engine::Kind::Integer),
+            ("active", hsearch_engine::Kind::Boolean),
+        ],
+        1 << 20,
+    );
     let reqs: Vec<Request> = (0..4096)
         .map(|i| Request::Update {
             id: format!("k{i}"),

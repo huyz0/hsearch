@@ -2226,7 +2226,7 @@
           "evidence": [
             {
               "path": "evidence/m04-03-resolved-operations.md",
-              "result": "Sans-I/O resolver (partial update, upsert, doc_as_upsert, detect_noop, if_seq_no/if_primary_term, create), logged as resolved whole-document ops, staleness check on the committed head, bounded OutcomeStore; 16 tests with five mutations seen red, clippy clean; 913 ns/op for 4,096 partial updates (provisional, release, shared host). Not yet wired into the writer or API (M06.05, M21.06); seq_no/term mapping across routing movement is M06.05/M07.03."
+              "result": "Sans-I/O resolver (partial update, upsert, doc_as_upsert, detect_noop, if_seq_no/if_primary_term, create), logged as resolved whole-document ops, staleness check on the committed head, bounded OutcomeStore; 22 tests with six mutations seen red, clippy clean; 754 to 913 ns/op for 4,096 partial updates (provisional, release, shared host). Not yet wired into the writer or API (M06.05, M21.06); seq_no/term mapping across routing movement is M06.05/M07.03."
             }
           ]
         },

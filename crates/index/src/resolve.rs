@@ -24,6 +24,10 @@
 //! document up to three times (read, merge, log); it suits ordinary documents,
 //! and a very large field belongs on the whole-document index path.
 use crate::format::{Field, MAX_SLOT_OPS, Op, slot_text_cap, text_fits};
+use hsearch_engine::Kind;
+
+/// Longest document identity a slot decodes (`format` reads ids with this cap).
+pub const MAX_ID_BYTES: usize = 256;
 use std::collections::{HashMap, VecDeque};
 
 /// A committed document: where it sits in the log and what it holds.
@@ -222,6 +226,7 @@ impl Prepared {
 pub struct Resolver {
     primary_term: u64,
     names: Vec<String>,
+    kinds: Vec<Kind>,
     max_document_bytes: usize,
 }
 
@@ -235,15 +240,26 @@ fn bytes(fields: &[Field]) -> usize {
 }
 
 impl Resolver {
-    /// `names` are the schema's field names in order; `max_document_bytes`
-    /// bounds a merged document.
+    /// `fields` are the schema's field names and kinds in order;
+    /// `max_document_bytes` bounds a merged document.
     #[must_use]
-    pub fn new(primary_term: u64, names: &[&str], max_document_bytes: usize) -> Self {
+    pub fn new(primary_term: u64, fields: &[(&str, Kind)], max_document_bytes: usize) -> Self {
         Self {
             primary_term,
-            names: names.iter().map(|n| (*n).to_owned()).collect(),
+            names: fields.iter().map(|(n, _)| (*n).to_owned()).collect(),
+            kinds: fields.iter().map(|(_, k)| *k).collect(),
             max_document_bytes,
         }
+    }
+
+    fn kind_matches(&self, i: usize, field: &Field) -> bool {
+        matches!(
+            (self.kinds[i], field),
+            (Kind::Keyword | Kind::Text, Field::Str(_))
+                | (Kind::Integer, Field::Int(_))
+                | (Kind::Boolean, Field::Bool(_))
+                | (Kind::Date, Field::Date(_))
+        )
     }
 
     /// Resolve `requests` against `state`. Item `i` that logs an operation takes
@@ -258,9 +274,16 @@ impl Resolver {
         first_version: i64,
         requests: &[Request],
     ) -> crate::Result<Prepared> {
-        if requests.is_empty() || requests.len() > MAX_SLOT_OPS || first_version < 1 {
+        if requests.is_empty()
+            || requests.len() > MAX_SLOT_OPS
+            || first_version < 1
+            || first_version.checked_add(MAX_SLOT_OPS as i64).is_none()
+        {
             return Err(crate::Error::Invalid);
         }
+        // Read the head before any document: a slot that commits mid-batch then
+        // makes this preparation stale instead of being hidden by a later read.
+        let base_head = state.head();
         let mut overlay: HashMap<String, Live> = HashMap::new();
         let mut ops = Vec::new();
         let mut items = Vec::with_capacity(requests.len());
@@ -274,6 +297,15 @@ impl Resolver {
                 | Request::Delete { id, .. }
                 | Request::Update { id, .. } => id,
             };
+            if id.is_empty() || id.len() > MAX_ID_BYTES {
+                items.push(Item {
+                    id: id.clone(),
+                    seq_no: 0,
+                    primary_term: 0,
+                    outcome: Outcome::Rejected(Reject::Invalid),
+                });
+                continue;
+            }
             let current: Live = match overlay.get(id) {
                 Some(entry) => entry.clone(),
                 None => state.get(id).map(|c| (c.seq_no, c.primary_term, c.fields)),
@@ -321,7 +353,7 @@ impl Resolver {
             }
         }
         Ok(Prepared {
-            base_head: state.head(),
+            base_head,
             first_version,
             ops,
             items,
@@ -329,7 +361,12 @@ impl Resolver {
     }
 
     fn shaped(&self, fields: &[Field]) -> Result<(), Reject> {
-        if fields.len() != self.names.len() {
+        if fields.len() != self.names.len()
+            || fields
+                .iter()
+                .enumerate()
+                .any(|(i, f)| !self.kind_matches(i, f))
+        {
             Err(Reject::Invalid)
         } else if bytes(fields) > self.max_document_bytes {
             Err(Reject::Limit)
@@ -449,7 +486,7 @@ impl Resolver {
         }
         let mut merged = existing.2.clone();
         for (i, value) in slots {
-            if std::mem::discriminant(&merged[i]) != std::mem::discriminant(value) {
+            if !self.kind_matches(i, value) {
                 return bad(Reject::Invalid);
             }
             merged[i] = value.clone();
@@ -481,42 +518,80 @@ fn check(cond: Cond, current: Option<&(u64, u64, Vec<Field>)>) -> Result<(), Rej
     }
 }
 
-/// Outcomes of recently committed requests, keyed by the client's request id,
-/// so a retry gets the original answer instead of being resolved again against
-/// state its first attempt changed. Bounded by entry count; the oldest goes
-/// first. Record only after the slot is durable.
+/// What [`OutcomeStore::get`] found for a request id.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Lookup<'a> {
+    /// Remembered with the same fingerprint: answer with these.
+    Replay(&'a [Item]),
+    /// The id is remembered for a different request body: refuse the reuse.
+    Mismatch,
+    /// Not remembered (new, or evicted).
+    Unknown,
+}
+
+/// Outcomes of recently committed requests, keyed by the client's request id and
+/// guarded by a fingerprint of the request body, so a retry gets the original
+/// answer instead of being resolved again against state its first attempt
+/// changed, and an id reused for a different body is caught. Bounded by entry
+/// count and by estimated bytes; the oldest goes first. Record only after the
+/// slot is durable.
 #[derive(Debug)]
 pub struct OutcomeStore {
     max: usize,
+    max_bytes: usize,
+    bytes: usize,
     order: VecDeque<String>,
-    map: HashMap<String, Vec<Item>>,
+    map: HashMap<String, (u64, usize, Vec<Item>)>,
+}
+
+fn cost(request: &str, items: &[Item]) -> usize {
+    request.len() + 48 + items.iter().map(|i| i.id.len() + 48).sum::<usize>()
 }
 
 impl OutcomeStore {
-    /// A store holding at most `max` requests.
+    /// A store holding at most `max` requests and about `max_bytes` of results.
     #[must_use]
-    pub fn new(max: usize) -> Self {
+    pub fn new(max: usize, max_bytes: usize) -> Self {
         Self {
             max: max.max(1),
+            max_bytes,
+            bytes: 0,
             order: VecDeque::new(),
             map: HashMap::new(),
         }
     }
-    /// Remember a committed request's results.
-    pub fn record(&mut self, request: &str, items: Vec<Item>) {
-        if self.map.insert(request.to_owned(), items).is_none() {
-            self.order.push_back(request.to_owned());
+    /// Remember a committed request's results. An entry larger than the byte
+    /// bound is not kept (a retry of it is resolved again, never replayed).
+    pub fn record(&mut self, request: &str, fingerprint: u64, items: Vec<Item>) {
+        let size = cost(request, &items);
+        if size > self.max_bytes {
+            return;
         }
-        while self.order.len() > self.max {
-            if let Some(old) = self.order.pop_front() {
-                self.map.remove(&old);
+        match self
+            .map
+            .insert(request.to_owned(), (fingerprint, size, items))
+        {
+            Some((_, old, _)) => self.bytes -= old,
+            None => self.order.push_back(request.to_owned()),
+        }
+        self.bytes += size;
+        while self.order.len() > self.max || self.bytes > self.max_bytes {
+            let Some(old) = self.order.pop_front() else {
+                break;
+            };
+            if let Some((_, size, _)) = self.map.remove(&old) {
+                self.bytes -= size;
             }
         }
     }
-    /// The recorded results, if the request is still remembered.
+    /// The recorded results for this request id and body fingerprint.
     #[must_use]
-    pub fn get(&self, request: &str) -> Option<&[Item]> {
-        self.map.get(request).map(Vec::as_slice)
+    pub fn get(&self, request: &str, fingerprint: u64) -> Lookup<'_> {
+        match self.map.get(request) {
+            None => Lookup::Unknown,
+            Some((f, _, items)) if *f == fingerprint => Lookup::Replay(items),
+            Some(_) => Lookup::Mismatch,
+        }
     }
     /// Requests remembered.
     #[must_use]

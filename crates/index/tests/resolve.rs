@@ -1,7 +1,8 @@
 //! M04.03: resolved-operation preparation. Pure functions of committed state and
 //! the request: no clock, no randomness, no I/O.
+use hsearch_engine::Kind;
 use hsearch_index::resolve::{
-    Committed, CommittedState, Cond, Item, Outcome, OutcomeStore, Reject, Request, Resolver,
+    Committed, CommittedState, Cond, Item, Lookup, Outcome, OutcomeStore, Reject, Request, Resolver,
 };
 use hsearch_index::{Field, Op};
 use std::collections::HashMap;
@@ -44,8 +45,14 @@ impl State {
     }
 }
 
+const FIELDS: [(&str, Kind); 3] = [
+    ("title", Kind::Text),
+    ("price", Kind::Integer),
+    ("active", Kind::Boolean),
+];
+
 fn resolver() -> Resolver {
-    Resolver::new(1, &["title", "price", "active"], 1 << 20)
+    Resolver::new(1, &FIELDS, 1 << 20)
 }
 fn doc(title: &str, price: i64, active: bool) -> Vec<Field> {
     vec![
@@ -292,7 +299,7 @@ fn create_races_resolve_in_order_against_committed_state_plus_earlier_items() {
 }
 
 #[test]
-fn a_failed_commit_leaves_nothing_behind_for_the_next_preparation() {
+fn a_dropped_preparation_is_not_state_so_the_next_one_reads_committed_state_only() {
     let s = State::default();
     let r = resolver();
     let first = r
@@ -324,7 +331,7 @@ fn a_preparation_is_stale_once_any_slot_committed_after_it() {
 }
 
 #[test]
-fn preparation_is_deterministic_and_replay_of_the_logged_ops_reproduces_state() {
+fn preparation_is_repeatable_and_logged_ops_alone_reproduce_committed_state() {
     let r = resolver();
     let reqs = [
         index("a", doc("x", 1, true)),
@@ -376,7 +383,7 @@ fn unknown_duplicate_and_mistyped_update_fields_are_invalid_not_ignored() {
 #[test]
 fn a_merged_document_over_the_byte_bound_is_a_limit_refusal() {
     let s = seeded();
-    let r = Resolver::new(1, &["title", "price", "active"], 16);
+    let r = Resolver::new(1, &FIELDS, 16);
     let p = r
         .prepare(
             &s,
@@ -401,25 +408,144 @@ fn the_outcome_store_replays_a_recorded_request_and_is_bounded() {
     let s = State::default();
     let r = resolver();
     let p = r.prepare(&s, 1, &[index("k", doc("x", 1, true))]).unwrap();
-    let mut store = OutcomeStore::new(2);
-    assert!(store.get("req-1").is_none());
-    store.record("req-1", p.items().to_vec());
-    assert_eq!(store.get("req-1").unwrap(), p.items());
-    store.record("req-2", vec![]);
-    store.record("req-3", vec![]);
-    assert!(
-        store.get("req-1").is_none(),
+    let mut store = OutcomeStore::new(2, 1 << 20);
+    assert_eq!(store.get("req-1", 7), Lookup::Unknown);
+    store.record("req-1", 7, p.items().to_vec());
+    assert_eq!(store.get("req-1", 7), Lookup::Replay(p.items()));
+    assert_eq!(
+        store.get("req-1", 8),
+        Lookup::Mismatch,
+        "same id, different body"
+    );
+    store.record("req-2", 1, vec![]);
+    store.record("req-3", 1, vec![]);
+    assert_eq!(
+        store.get("req-1", 7),
+        Lookup::Unknown,
         "oldest entry evicted at the bound"
     );
-    assert!(store.get("req-3").is_some());
+    assert!(matches!(store.get("req-3", 1), Lookup::Replay(_)));
     assert!(store.len() <= 2);
+}
+
+#[test]
+fn the_outcome_store_is_bounded_in_bytes_too() {
+    let item = |n: usize| Item {
+        id: "i".repeat(n),
+        seq_no: 1,
+        primary_term: 1,
+        outcome: Outcome::Created,
+    };
+    let mut store = OutcomeStore::new(100, 700);
+    store.record("a", 1, vec![item(200)]);
+    store.record("b", 1, vec![item(200)]);
+    store.record("c", 1, vec![item(200)]); // 891 estimated bytes against 700: the oldest goes
+    assert_eq!(store.get("a", 1), Lookup::Unknown);
+    assert!(matches!(store.get("c", 1), Lookup::Replay(_)));
+    store.record("huge", 1, vec![item(5000)]);
+    assert_eq!(
+        store.get("huge", 1),
+        Lookup::Unknown,
+        "an entry over the bound is never kept"
+    );
+}
+
+#[test]
+fn ids_the_slot_cannot_decode_are_refused_before_logging() {
+    let s = State::default();
+    let r = resolver();
+    let p = r
+        .prepare(
+            &s,
+            1,
+            &[
+                index(&"a".repeat(257), doc("x", 1, true)),
+                index("", doc("x", 1, true)),
+                index(&"a".repeat(256), doc("x", 1, true)),
+            ],
+        )
+        .unwrap();
+    assert_eq!(
+        outcomes(p.items()),
+        [
+            Outcome::Rejected(Reject::Invalid),
+            Outcome::Rejected(Reject::Invalid),
+            Outcome::Created
+        ]
+    );
+}
+
+#[test]
+fn whole_documents_must_match_the_schema_kinds() {
+    let s = State::default();
+    let r = resolver();
+    let bad = vec![
+        Field::Str("x".into()),
+        Field::Str("1".into()),
+        Field::Bool(true),
+    ];
+    let p = r.prepare(&s, 1, &[index("k", bad)]).unwrap();
+    assert_eq!(outcomes(p.items()), [Outcome::Rejected(Reject::Invalid)]);
+}
+
+#[test]
+fn a_version_counter_near_the_end_of_the_range_is_refused_not_wrapped() {
+    let s = State::default();
+    let r = resolver();
+    assert!(
+        r.prepare(&s, i64::MAX - 10, &[index("k", doc("x", 1, true))])
+            .is_err()
+    );
+}
+
+#[test]
+fn conditions_apply_to_updates() {
+    let s = seeded(); // a: seq 1, term 1
+    let r = resolver();
+    let upd = |id: &str, price, cond| Request::Update {
+        id: id.into(),
+        doc: vec![("price".into(), Field::Int(price))],
+        upsert: None,
+        doc_as_upsert: false,
+        detect_noop: true,
+        cond,
+    };
+    let ok = r
+        .prepare(&s, 2, &[upd("a", 9, Cond::new(Some(1), Some(1)))])
+        .unwrap();
+    assert_eq!(outcomes(ok.items()), [Outcome::Updated]);
+    for stale in [Cond::new(Some(2), Some(1)), Cond::new(Some(1), Some(2))] {
+        let p = r.prepare(&s, 2, &[upd("a", 9, stale)]).unwrap();
+        assert_eq!(outcomes(p.items()), [Outcome::Rejected(Reject::Conflict)]);
+        assert!(p.ops().is_empty());
+    }
+    let p = r
+        .prepare(&s, 2, &[upd("a", 9, Cond::new(Some(1), None))])
+        .unwrap();
+    assert_eq!(outcomes(p.items()), [Outcome::Rejected(Reject::Invalid)]);
+    // A condition on a document that is not there conflicts (documented difference).
+    let p = r
+        .prepare(&s, 2, &[upd("zz", 9, Cond::new(Some(1), Some(1)))])
+        .unwrap();
+    assert_eq!(outcomes(p.items()), [Outcome::Rejected(Reject::Conflict)]);
+    // A condition cannot ride with an upsert.
+    let with_upsert = Request::Update {
+        id: "a".into(),
+        doc: vec![("price".into(), Field::Int(9))],
+        upsert: Some(doc("n", 0, false)),
+        doc_as_upsert: false,
+        detect_noop: true,
+        cond: Cond::new(Some(1), Some(1)),
+    };
+    let p = r.prepare(&s, 2, &[with_upsert]).unwrap();
+    assert_eq!(outcomes(p.items()), [Outcome::Rejected(Reject::Invalid)]);
 }
 
 #[test]
 fn a_batch_cannot_log_more_text_than_one_slot_may_carry() {
     let s = State::default();
     // Per-document bound 6 MiB; the slot cap is the larger of 8 MiB and that.
-    let r = Resolver::new(1, &["title", "price", "active"], 6 << 20);
+    let r = Resolver::new(1, &FIELDS, 6 << 20);
     let big = |id: &str| index(id, doc(&"x".repeat(5 << 20), 1, true));
     let p = r.prepare(&s, 1, &[big("a"), big("b")]).unwrap();
     assert_eq!(
@@ -427,4 +553,28 @@ fn a_batch_cannot_log_more_text_than_one_slot_may_carry() {
         [Outcome::Created, Outcome::Rejected(Reject::Limit)]
     );
     assert_eq!(p.ops().len(), 1);
+}
+
+#[test]
+fn a_slot_committing_during_preparation_makes_it_stale() {
+    use std::cell::Cell;
+    // `get` models a slot committing between two reads.
+    struct Racy(Cell<u64>);
+    impl CommittedState for Racy {
+        fn head(&self) -> u64 {
+            self.0.get()
+        }
+        fn get(&self, _id: &str) -> Option<Committed> {
+            self.0.set(self.0.get() + 1);
+            None
+        }
+    }
+    let s = Racy(Cell::new(10));
+    let p = resolver()
+        .prepare(&s, 1, &[index("k", doc("x", 1, true))])
+        .unwrap();
+    assert!(
+        p.ensure_current(s.head()).is_err(),
+        "resolved at head 10, committed head is 11"
+    );
 }
