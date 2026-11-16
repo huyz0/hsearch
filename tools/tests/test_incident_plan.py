@@ -20,6 +20,7 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M02.02"]["status"] = "planned"  # Private preacceptance model only.
         self.tasks["M02.03"]["status"] = "planned"  # Done later; keep this model pre-acceptance.
         self.tasks["M02.12"]["status"] = "planned"  # Depends on M02.02; keep this model pre-acceptance.
+        self.tasks["M02.06"]["status"] = "planned"  # Depends on M02.03, M02.05, M02.07 and M02.12 above.
         self.tasks["M03.01"]["status"] = "planned"  # Private preacceptance model only.
         self.tasks["M03.02"]["status"] = "planned"  # Done later; keep this model pre-acceptance.
         for tid in self.tasks:  # The first runnable slice lands after this draft model.
@@ -45,6 +46,7 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M03.12"]["status"] = "planned"  # Depends on M03.07; keep the model pre-acceptance.
         self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.
         milestones["M01"]["status"] = "in_progress"
+        milestones["M02"]["status"] = "planned"  # Its tasks are reset above; M02 is done in the live plan.
 
     def reject(self, message):
         with self.assertRaisesRegex(PLAN["InvalidPlan"], message):
