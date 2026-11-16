@@ -2175,12 +2175,18 @@
           ],
           "depends_on": [
             "M02",
-            "M03",
-            "M19"
+            "M19",
+            "M03.01",
+            "M03.02"
           ],
           "owner": "engine",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m04-01-engine-adapter.md",
+              "result": "EngineFactory, 17-row feature inventory with owner-named reasons (consulted by Snapshot::search), exhaustive query/sort/capability classification, ShardEngine trait, a gate refusing Engine::open or lucene_ names outside the engine crate, and `cargo test -p hsearch-engine` as the revision command (bridge_contract: 9 tests; unsupported-capability and bypass mutations seen red; full suite green). Provisional (one host, no remote store). index/node do not yet use the trait."
+            }
+          ]
         },
         {
           "id": "M04.02",
