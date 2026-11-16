@@ -1,6 +1,6 @@
 # M05.04: encrypt every persistent data path
 
-Code: `crates/security/src/readiness.rs` (tests `crates/security/tests/readiness.rs`, 10) and the new crate `crates/seal` (`SealedBackend`, tests `crates/seal/tests/seal.rs`, 21, bench `crates/seal/examples/seal_bench.rs`); `block::object_id` in `crates/security`. Contract summary and spill inventory: [security.md](../security.md#implemented-persistent-path-readiness-and-the-sealed-object-backend-m0504).
+Code: `crates/security/src/readiness.rs` (tests `crates/security/tests/readiness.rs`, 10) and the new crate `crates/seal` (`SealedBackend`, tests `crates/seal/tests/seal.rs`, 24, bench `crates/seal/examples/seal_bench.rs`); `block::object_id` in `crates/security`. Contract summary and spill inventory: [security.md](../security.md#implemented-persistent-path-readiness-and-the-sealed-object-backend-m0504).
 
 ## Red first
 
@@ -25,12 +25,16 @@ Readiness, 12 mutants: all killed. Sealed backend, about 25 mutants: all killed 
 
 | Block size | Read | Plain (us) | Sealed (us) |
 |---|---|---|---|
-| 4 KiB | 4 KiB | 1.1 | 3.8 |
-| 4 KiB | 256 KiB | 10.2 | 107 |
-| 64 KiB | 4 KiB | 0.8 | 22.8 |
-| 64 KiB | 256 KiB | 10.0 | 122 |
+| 4 KiB | 4 KiB | 0.8 | 2.6 |
+| 4 KiB | 256 KiB | 10.8 | 145 |
+| 64 KiB | 4 KiB | 0.9 | 26.6 |
+| 64 KiB | 256 KiB | 8.1 | 116 |
 
-A point read decrypts a whole block, so a large block makes a small read slower (64 KiB blocks: 4 KiB read costs 29x a plain memcpy); a small block costs tag bytes and more blocks per large read. The block size is a writer's choice. Against a real object store a first-byte latency of tens of milliseconds dwarfs these microseconds; the request count is what matters, and it is unchanged after a `head` (one backend read per range), plus one header read per uncached object.
+A point read decrypts a whole block, so a large block makes a small read slower (64 KiB blocks: a 4 KiB read costs about 29x a plain memcpy); a small block costs tag bytes and more blocks per large read. The block size is a writer's choice. Against a real object store a first-byte latency of tens of milliseconds dwarfs these microseconds; the request count is what matters, and it is unchanged after a `head` (one backend read per range), plus one header read per uncached object.
+
+## Independent review (round 1) and what changed
+
+No plaintext or unauthenticated byte returned, no nonce or key reuse, no panic on stored bytes. Fixed: a warm opened object bypassed key revocation and the scope resolver until FIFO eviction (every head and read now resolves the scope again and asks the key manager again under the current policy generation, so invalidation, revocation and the key-cache lifetime apply; tested warm); a payload too large to fit once sealed was refused only after a key was made (now refused first); retry byte accounting now counts the key, identity and metadata held with the sealed body; a multi-block ranged-read damage test was added. Recorded, not changed: key-provider calls and sealing are synchronous inside the async methods (the `KeyProvider` contract is synchronous), so an async runtime must run a network provider adapter off its executor threads, which the M15 adapters own; two callers racing one new identity can each wrap once, and the loser's key is discarded unused (a cost, never a reuse); `AtRestClaim::Full` means every path is declared and every volume claim was confirmed by the probe, while a `Sealed` declaration is the node's own assertion until `SealedBackend` is wired into the write path, and nothing calls `enforce` yet, so no production node reports protection today.
 
 ## What this does not claim
 

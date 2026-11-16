@@ -138,6 +138,17 @@ impl ObjectBackend for Tap {
     }
 }
 
+/// A resolver the test can switch to refusing everything.
+struct Switch(Arc<AtomicBool>);
+impl ScopeResolver for Switch {
+    fn scope(&self, key: &ObjectKey) -> Result<Scope, Error> {
+        if self.0.load(Ordering::SeqCst) {
+            return Err(Error::PermissionDenied);
+        }
+        Scopes.scope(key)
+    }
+}
+
 struct Rig {
     kms: Arc<TestKms>,
     keys: Arc<KeyManager>,
@@ -628,4 +639,101 @@ fn a_sealed_request_larger_than_the_retry_byte_bound_is_not_remembered() {
     .unwrap_err();
     assert_eq!(err, Error::IdentityConflict);
     assert_eq!(r.kms.wrap_calls(), 2);
+}
+
+#[test]
+fn a_warm_object_is_rechecked_against_the_key_and_the_scope_on_every_use() {
+    let r = rig();
+    put(&r, "r1", "invoices/a", &plain(300));
+    put(&r, "r2", "orders/a", &plain(300));
+    let v = block_on(r.sealed.head(&ctx(), &key("invoices/a")))
+        .unwrap()
+        .version;
+    let vo = block_on(r.sealed.head(&ctx(), &key("orders/a")))
+        .unwrap()
+        .version;
+    assert!(read(&r, "invoices/a", &v, 0, 10).is_ok());
+    // The owner revokes the key and the node is told: the same decorator, warm, now refuses that index.
+    r.kms.revoke(&kref("invoices"));
+    r.keys
+        .invalidate_index(&IndexId::new("invoices").unwrap(), 2);
+    assert_eq!(
+        read(&r, "invoices/a", &v, 0, 10),
+        Err(Error::PermissionDenied)
+    );
+    assert_eq!(
+        block_on(r.sealed.head(&ctx(), &key("invoices/a"))).unwrap_err(),
+        Error::PermissionDenied
+    );
+    // Another index is untouched.
+    assert!(read(&r, "orders/a", &vo, 0, 10).is_ok());
+    // A scope the resolver now refuses is refused even though the object is warm.
+    let deny = Arc::new(AtomicBool::new(false));
+    let warm = SealedBackend::new(
+        Shared(r.tap.clone()),
+        r.keys.clone(),
+        Arc::new(Switch(deny.clone())),
+        config(),
+    )
+    .unwrap();
+    let range = || ByteRange::new(0, 10).unwrap();
+    block_on(warm.head(&ctx(), &key("orders/a"))).unwrap();
+    assert!(block_on(warm.read_range(&ctx(), &key("orders/a"), &vo, range())).is_ok());
+    deny.store(true, Ordering::SeqCst);
+    assert_eq!(
+        block_on(warm.read_range(&ctx(), &key("orders/a"), &vo, range())),
+        Err(Error::PermissionDenied)
+    );
+    assert_eq!(
+        block_on(warm.head(&ctx(), &key("orders/a"))).unwrap_err(),
+        Error::PermissionDenied
+    );
+}
+
+#[test]
+fn a_flipped_byte_anywhere_in_a_multi_block_ranged_read_is_refused() {
+    let r = rig();
+    put(&r, "r1", "orders/a", &plain(300));
+    let len = stored(&r, "orders/a").len();
+    let v = block_on(r.sealed.head(&ctx(), &key("orders/a")))
+        .unwrap()
+        .version;
+    for at in 0..len {
+        *r.tap.flip.lock().unwrap() = Some(at);
+        // A fresh decorator each time so the header is re-read through the damage too.
+        let fresh = SealedBackend::new(
+            Shared(r.tap.clone()),
+            r.keys.clone(),
+            Arc::new(Scopes),
+            config(),
+        )
+        .unwrap();
+        let result = block_on(async {
+            fresh
+                .read_range(
+                    &ctx(),
+                    &key("orders/a"),
+                    &v,
+                    ByteRange::new(10, 280).unwrap(),
+                )
+                .await
+        });
+        // Bytes the range does not touch (the first 10 plaintext bytes' block is read whole, the tail of
+        // the last block too) are all authenticated, so any flip inside the object fails the read.
+        assert!(result.is_err(), "byte {at} of {len} was accepted");
+    }
+    *r.tap.flip.lock().unwrap() = None;
+}
+
+#[test]
+fn a_payload_that_cannot_fit_once_sealed_is_refused_before_any_key_is_made() {
+    let r = rig();
+    let big = vec![1u8; (16 << 20) - 100];
+    let err = block_on(
+        r.sealed
+            .create(&ctx(), &mutation("big", "orders/big", &big)),
+    )
+    .unwrap_err();
+    assert_eq!(err, Error::InvalidInput);
+    assert_eq!(r.kms.total_calls(), 0);
 }

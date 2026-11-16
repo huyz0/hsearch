@@ -12,6 +12,11 @@
 //! * **Head and read.** `head` reports the *plaintext* length. It reads the header once and caches the opened
 //!   object, so a read after a head is one backend request for exactly the blocks the range touches. A read
 //!   of an uncached object costs a head and a header read first.
+//! * **Warm objects are rechecked.** Every head and read resolves the scope again and asks the key manager
+//!   again under the current policy generation, so revocation, invalidation and the key-cache lifetime reach
+//!   an object the decorator already opened.
+//! * **Blocking.** Key-provider calls and sealing are synchronous (the `KeyProvider` contract is); an async
+//!   runtime runs a network provider adapter off its executor threads.
 //! * **Not covered.** [`hsearch_object::MetadataStore`] mutations (`compare_exchange`, `resolve`) are not
 //!   decorated: conditional replacement has no fresh-key-per-object form, and the M03 lane and head bodies are
 //!   covered by the format envelope's capability bit, not by this crate. Object metadata is opaque caller data
@@ -28,7 +33,7 @@ use hsearch_security::block::{
     HEAD_LEN, Header, MAX_BLOCK_SIZE, MAX_HEADER_LEN, Opener, TAG_LEN, object_id, seal_object,
 };
 use hsearch_security::ids::IndexId;
-use hsearch_security::keys::{CallOptions, KeyContext, KeyRef, ProviderError};
+use hsearch_security::keys::{CallOptions, KeyContext, KeyRef, ProviderError, WrappedKey};
 use hsearch_security::manager::{KeyError, KeyManager};
 use sha2::{Digest, Sha256};
 
@@ -77,6 +82,7 @@ struct Retry {
 struct OpenedObject {
     opener: Opener,
     plain_len: u64,
+    wrapped: WrappedKey,
 }
 
 /// A small FIFO-evicting map with an entry and a byte bound.
@@ -215,6 +221,13 @@ impl<B: ObjectBackend> SealedBackend<B> {
                 Err(Error::IdentityConflict)
             };
         }
+        // The largest sealed form of this plaintext, checked before a key is made for it.
+        let blocks = (request.payload.len() as u64).div_ceil(u64::from(self.block_size));
+        if request.payload.len() as u64 + blocks * TAG_LEN as u64 + MAX_HEADER_LEN as u64
+            > MAX_PAYLOAD
+        {
+            return Err(Error::InvalidInput);
+        }
         let object = object_id(request.key.as_bytes());
         let context = KeyContext {
             index: scope.index.clone(),
@@ -257,8 +270,30 @@ impl<B: ObjectBackend> SealedBackend<B> {
                 Err(Error::IdentityConflict)
             };
         }
-        retries.insert(request.request_id.clone(), made.clone(), body.len());
+        let held =
+            body.len() + request.key.len() + request.metadata.len() + request.request_id.len();
+        retries.insert(request.request_id.clone(), made.clone(), held);
         Ok(made)
+    }
+
+    /// A warm object is not trusted past the key and scope that opened it: every use asks the key manager
+    /// again (a cache hit there costs a lookup, and it honours invalidation, revocation and the cache
+    /// lifetime) under the **current** scope and policy generation.
+    fn recheck(&self, key: &ObjectKey, scope: &Scope, opened: &OpenedObject) -> Result<(), Error> {
+        let kc = KeyContext {
+            index: scope.index.clone(),
+            domain: scope.domain,
+            object: object_id(key.as_bytes()),
+        };
+        self.keys
+            .open_object_key(
+                &opened.wrapped,
+                &kc,
+                scope.generation,
+                &CallOptions::default(),
+            )
+            .map(|_| ())
+            .map_err(key_error)
     }
 
     /// The opened object for a key at a version whose full stored length is `stored_len`.
@@ -270,14 +305,14 @@ impl<B: ObjectBackend> SealedBackend<B> {
         stored_len: u64,
     ) -> Result<Arc<OpenedObject>, Error> {
         let cache_key = (key.clone(), version.clone());
-        if let Some(found) = lock(&self.opened).get(&cache_key) {
-            return if found.opener.object_len() == stored_len {
-                Ok(found)
-            } else {
-                Err(Error::Corrupt)
-            };
-        }
         let scope = self.scopes.scope(key)?;
+        if let Some(found) = lock(&self.opened).get(&cache_key) {
+            if found.opener.object_len() != stored_len {
+                return Err(Error::Corrupt);
+            }
+            self.recheck(key, &scope, &found)?;
+            return Ok(found);
+        }
         if stored_len < HEAD_LEN as u64 {
             return Err(Error::Corrupt);
         }
@@ -316,6 +351,7 @@ impl<B: ObjectBackend> SealedBackend<B> {
         }
         let opened = Arc::new(OpenedObject {
             plain_len: opener.header().plaintext_len(),
+            wrapped: opener.header().wrapped().clone(),
             opener,
         });
         lock(&self.opened).insert(cache_key, opened.clone(), 0);
@@ -370,7 +406,11 @@ impl<B: ObjectBackend> ObjectBackend for SealedBackend<B> {
             }
             let cached = lock(&self.opened).get(&(key.clone(), version.clone()));
             let opened = match cached {
-                Some(found) => found,
+                Some(found) => {
+                    let scope = self.scopes.scope(key)?;
+                    self.recheck(key, &scope, &found)?;
+                    found
+                }
                 None => {
                     let info = self.inner.head(context, key).await?;
                     if &info.version != version {
