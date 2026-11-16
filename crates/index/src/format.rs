@@ -3,6 +3,7 @@
 use crate::{Error, Result};
 
 const SLOT_MAGIC: &[u8; 8] = b"HSLOG0\0\0";
+const FENCE_MAGIC: &[u8; 8] = b"HSFENC0\0";
 const ROOT_MAGIC: &[u8; 8] = b"HSROOT0\0";
 /// Most operations one slot may carry.
 pub const MAX_SLOT_OPS: usize = 4096;
@@ -314,6 +315,35 @@ pub fn encoded_len(ops: &[Op]) -> usize {
     })
 }
 
+/// The fence a successor creates at the first absent slot when it opens. It
+/// occupies the position, so a late write from a predecessor is refused, and it
+/// is kept: recovery counts it as one consumed position and applies nothing.
+#[must_use]
+pub fn encode_fence(seq: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(16);
+    out.extend_from_slice(FENCE_MAGIC);
+    out.extend_from_slice(&seq.to_le_bytes());
+    out
+}
+
+/// Whether `bytes` is a fence rather than a slot, by its magic alone.
+#[must_use]
+pub fn is_fence(bytes: &[u8]) -> bool {
+    bytes.starts_with(FENCE_MAGIC)
+}
+
+/// Decode a fence and return the position it claims, which must be exactly the
+/// bytes [`encode_fence`] writes.
+pub fn decode_fence(bytes: &[u8]) -> Result<u64> {
+    let mut r = Reader { bytes, at: 0 };
+    if r.take(8)? != FENCE_MAGIC {
+        return Err(Error::Corrupt);
+    }
+    let seq = r.u64()?;
+    r.done()?;
+    Ok(seq)
+}
+
 /// Decode a slot with every string inline, refusing anything that is not exactly
 /// a v0 slot, including a reference to an externalised string.
 pub fn decode_slot(bytes: &[u8]) -> Result<Slot> {
@@ -460,6 +490,21 @@ mod tests {
                 Op::Delete { id: "b".into() },
             ],
         }
+    }
+
+    #[test]
+    fn a_fence_round_trips_and_is_never_a_slot() {
+        let bytes = encode_fence(7);
+        assert!(is_fence(&bytes));
+        assert_eq!(decode_fence(&bytes).unwrap(), 7);
+        assert!(decode_slot(&bytes).is_err());
+        assert!(!is_fence(&encode_slot(&slot()).unwrap()));
+        for cut in 0..bytes.len() {
+            assert!(decode_fence(&bytes[..cut]).is_err());
+        }
+        let mut long = bytes.clone();
+        long.push(0);
+        assert!(decode_fence(&long).is_err());
     }
 
     #[test]

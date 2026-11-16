@@ -18,8 +18,9 @@ use hsearch_object::{MetadataStore, ObjectKey, Precondition, VersionToken};
 
 use crate::format::{
     BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, MAX_INDEXED_DOCUMENT_BYTES,
-    MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_root, decode_slot_with, encode_root,
-    encode_slot_with, encoded_len, slot_text_cap, text_fits, text_len,
+    MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_fence, decode_root, decode_slot_with,
+    encode_fence, encode_root, encode_slot_with, encoded_len, is_fence, slot_text_cap, text_fits,
+    text_len,
 };
 use crate::store::{
     Written, blob_key, block, context, key, mutation, read_all, read_version, root_key,
@@ -747,13 +748,21 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
         published: None,
         poisoned: false,
     };
-    // Replay every slot until the first that is not there. A store error other
-    // than not-found is never read as the end of the log.
+    // Replay every slot until the first that is not there, then seal it. A store
+    // error other than not-found is never read as the end of the log.
     loop {
         let object = key(&slot_key(&core.name, core.seq))?;
         match block(core.store.head(&context(), &object)) {
             Ok(info) => {
                 let bytes = read_version(&*core.store, &object, &info.version, info.length)?;
+                if is_fence(&bytes) {
+                    // A predecessor's seal: one consumed position, nothing to apply.
+                    if decode_fence(&bytes)? != core.seq {
+                        return Err(Error::Corrupt);
+                    }
+                    core.seq += 1;
+                    continue;
+                }
                 let slot = decode_slot_with(&bytes, &mut |at, blob| {
                     read_blob(&*core.store, &core.name, at, blob)
                 })?;
@@ -762,7 +771,14 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
                 }
                 core.apply(&slot)?;
             }
-            Err(hsearch_object::Error::NotFound) => break,
+            Err(hsearch_object::Error::NotFound) => {
+                if seal(&core, core.seq)? {
+                    core.seq += 1;
+                    break;
+                }
+                // A predecessor's late write took the position first: it is
+                // acknowledged and durable, so it is replayed, and the seal moves on.
+            }
             Err(error) => return Err(Error::Store(error)),
         }
     }
@@ -783,6 +799,30 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
     core.swap_root(&bumped, &request)?;
     core.refresh()?;
     Ok(core)
+}
+
+/// Create the fence at `seq`, the first absent position at or above the root's
+/// cover. From here a predecessor's PUT to `seq` is refused, so nothing it has
+/// not yet had acknowledged can land behind this writer's view of the log.
+/// `Ok(false)` means the position was taken by someone else first. The fence is
+/// never removed: a late PUT into a reclaimed fence slot would succeed and be
+/// acknowledged yet invisible to recovery.
+fn seal<S: MetadataStore>(core: &Core<'_, '_, S>, seq: u64) -> Result<bool> {
+    let object = slot_key(&core.name, seq);
+    // A per-open identity: a replayed seal must not read as ours when the
+    // position holds a predecessor's slot.
+    let request = mutation(
+        &format!("{}/fence/{seq}/{}", core.name, nonce()),
+        &object,
+        &encode_fence(seq),
+        Precondition::Absent,
+    )?;
+    match write(&*core.store, &request, false) {
+        Written::Done(_) => Ok(true),
+        Written::Occupied => Ok(false),
+        Written::Refused(error) => Err(Error::Store(error)),
+        Written::Unknown => Err(Error::Unknown),
+    }
 }
 
 /// Write `text` as chunk objects of at most [`BLOB_CHUNK_BYTES`], each create-only,
