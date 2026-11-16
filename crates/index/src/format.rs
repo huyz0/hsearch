@@ -4,6 +4,12 @@ use crate::{Error, Result};
 
 const SLOT_MAGIC: &[u8; 8] = b"HSLOG0\0\0";
 const ROOT_MAGIC: &[u8; 8] = b"HSROOT0\0";
+const INTENT_MAGIC: &[u8; 8] = b"HSINT0\0\0";
+/// Most chunk-write attempts one intent object records. Bounds its size
+/// (36 bytes each, well under the object contract's payload bound) and the
+/// memory the writer holds for them; past it the oldest are forgotten, which
+/// leaks their chunks and never deletes one a slot might name.
+pub const MAX_INTENT_ENTRIES: usize = 16_384;
 /// Most operations one slot may carry.
 pub const MAX_SLOT_OPS: usize = 4096;
 /// Largest encoded slot, below the object contract's 16 MiB payload bound.
@@ -131,6 +137,37 @@ pub struct Root {
     pub covered: u64,
     /// Native file names and their object keys.
     pub files: Vec<(String, String)>,
+}
+
+/// One recorded attempt to write the chunks of one string, made *before* any of
+/// its chunks, so a crash between the chunks and the slot leaves a record from
+/// which every chunk key is derived (no LIST).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IntentEntry {
+    /// Slot position the attempt was for.
+    pub seq: u64,
+    /// Writer incarnation.
+    pub epoch: u64,
+    /// The attempt number in the chunk keys.
+    pub attempt: u64,
+    /// Operation index within the slot.
+    pub op: u32,
+    /// Field index within the operation.
+    pub field: u32,
+    /// Number of chunk objects the attempt writes.
+    pub chunks: u32,
+}
+
+impl IntentEntry {
+    /// Where the attempt's strings sit in the slot.
+    #[must_use]
+    pub fn at(&self) -> BlobAt {
+        BlobAt {
+            seq: self.seq,
+            op: self.op as usize,
+            field: self.field as usize,
+        }
+    }
 }
 
 fn put_str(out: &mut Vec<u8>, bytes: &[u8]) {
@@ -439,9 +476,108 @@ pub fn decode_root(bytes: &[u8]) -> Result<Root> {
     })
 }
 
+/// Encode an intent: the attempts whose chunks may exist with no slot naming them.
+#[must_use]
+pub fn encode_intent(entries: &[IntentEntry]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(12 + entries.len() * 36);
+    out.extend_from_slice(INTENT_MAGIC);
+    out.extend_from_slice(
+        &u32::try_from(entries.len())
+            .unwrap_or(u32::MAX)
+            .to_le_bytes(),
+    );
+    for e in entries {
+        out.extend_from_slice(&e.seq.to_le_bytes());
+        out.extend_from_slice(&e.epoch.to_le_bytes());
+        out.extend_from_slice(&e.attempt.to_le_bytes());
+        out.extend_from_slice(&e.op.to_le_bytes());
+        out.extend_from_slice(&e.field.to_le_bytes());
+        out.extend_from_slice(&e.chunks.to_le_bytes());
+    }
+    out
+}
+
+/// Decode an intent, refusing anything that is not exactly a v0 intent.
+pub fn decode_intent(bytes: &[u8]) -> Result<Vec<IntentEntry>> {
+    let mut r = Reader { bytes, at: 0 };
+    if r.take(8)? != INTENT_MAGIC {
+        return Err(Error::Corrupt);
+    }
+    let count = r.u32()? as usize;
+    if count > MAX_INTENT_ENTRIES {
+        return Err(Error::Corrupt);
+    }
+    let mut out = Vec::with_capacity(count.min(1024));
+    for _ in 0..count {
+        let entry = IntentEntry {
+            seq: r.u64()?,
+            epoch: r.u64()?,
+            attempt: r.u64()?,
+            op: r.u32()?,
+            field: r.u32()?,
+            chunks: r.u32()?,
+        };
+        let max = MAX_INDEXED_DOCUMENT_BYTES.div_ceil(BLOB_CHUNK_BYTES);
+        if entry.chunks == 0 || entry.chunks as usize > max {
+            return Err(Error::Corrupt);
+        }
+        out.push(entry);
+    }
+    r.done()?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn entry(n: u64) -> IntentEntry {
+        IntentEntry {
+            seq: n,
+            epoch: 3,
+            attempt: 40 + n,
+            op: 2,
+            field: 1,
+            chunks: 2,
+        }
+    }
+
+    #[test]
+    fn intent_round_trips_and_every_truncation_is_refused() {
+        let entries = vec![entry(0), entry(1), entry(7)];
+        let bytes = encode_intent(&entries);
+        assert_eq!(decode_intent(&bytes).unwrap(), entries);
+        assert_eq!(decode_intent(&encode_intent(&[])).unwrap(), vec![]);
+        for cut in 0..bytes.len() {
+            assert_eq!(decode_intent(&bytes[..cut]), Err(Error::Corrupt), "{cut}");
+        }
+        let mut longer = bytes.clone();
+        longer.push(0);
+        assert_eq!(decode_intent(&longer), Err(Error::Corrupt));
+        let mut magic = bytes;
+        magic[0] ^= 1;
+        assert_eq!(decode_intent(&magic), Err(Error::Corrupt));
+    }
+
+    #[test]
+    fn intent_refuses_impossible_counts_and_chunk_numbers() {
+        let mut zero = entry(0);
+        zero.chunks = 0;
+        assert_eq!(decode_intent(&encode_intent(&[zero])), Err(Error::Corrupt));
+        let mut huge = entry(0);
+        huge.chunks = u32::try_from(MAX_INDEXED_DOCUMENT_BYTES / BLOB_CHUNK_BYTES).unwrap() + 1;
+        assert_eq!(decode_intent(&encode_intent(&[huge])), Err(Error::Corrupt));
+        let mut max = entry(0);
+        max.chunks = u32::try_from(MAX_INDEXED_DOCUMENT_BYTES / BLOB_CHUNK_BYTES).unwrap();
+        assert!(decode_intent(&encode_intent(&[max])).is_ok());
+        let many: Vec<_> = (0..=MAX_INTENT_ENTRIES as u64).map(entry).collect();
+        assert_eq!(decode_intent(&encode_intent(&many)), Err(Error::Corrupt));
+        let at_bound: Vec<_> = (0..MAX_INTENT_ENTRIES as u64).map(entry).collect();
+        assert_eq!(
+            decode_intent(&encode_intent(&at_bound)).unwrap().len(),
+            MAX_INTENT_ENTRIES
+        );
+    }
 
     fn slot() -> Slot {
         Slot {

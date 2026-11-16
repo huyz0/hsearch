@@ -637,6 +637,7 @@ struct Flaky {
     commit_then_unknown: std::sync::Mutex<Option<&'static str>>,
     resolve_blind: std::sync::atomic::AtomicBool,
     can_delete: bool,
+    created: std::sync::Mutex<Vec<String>>,
 }
 
 impl Flaky {
@@ -649,6 +650,7 @@ impl Flaky {
             commit_then_unknown: std::sync::Mutex::new(None),
             resolve_blind: std::sync::atomic::AtomicBool::new(false),
             can_delete,
+            created: std::sync::Mutex::new(Vec::new()),
         }
     }
 }
@@ -666,6 +668,10 @@ impl hsearch_object::ObjectBackend for Flaky {
         c: &'a hsearch_object::RequestContext,
         r: &'a hsearch_object::Mutation,
     ) -> hsearch_object::Operation<'a, hsearch_object::WriteReceipt> {
+        self.created
+            .lock()
+            .unwrap()
+            .push(String::from_utf8_lossy(r.key.as_bytes()).into_owned());
         let hit = {
             let mut refuse = self.refuse.lock().unwrap();
             match *refuse {
@@ -844,6 +850,234 @@ fn an_unknown_slot_write_never_removes_the_chunks_it_may_name() {
     store
         .resolve_blind
         .store(false, std::sync::atomic::Ordering::Relaxed);
-    let again = Index::open(store, "docs", big_schema(), &two.0).unwrap();
+    let again = Index::open(Arc::clone(&store), "docs", big_schema(), &two.0).unwrap();
     assert_eq!(needles(&again), 1);
+    // Reopening read the intent that lists the committed attempt: the replay
+    // found a slot naming it, so it removed nothing.
+    assert_eq!(store.deleted.load(std::sync::atomic::Ordering::Relaxed), 0);
+}
+
+/// Panics on the writer thread at one point: the in-process stand-in for a crash,
+/// which leaves everything already in the store and tells nobody.
+struct CrashAt(hsearch_index::Point);
+impl hsearch_index::Hooks for CrashAt {
+    fn at(&self, point: hsearch_index::Point) {
+        if point == self.0 {
+            panic!("simulated crash at {point:?}");
+        }
+    }
+}
+
+fn read_object(store: &Flaky, key: &str) -> Option<Vec<u8>> {
+    use hsearch_object::{ByteRange, ObjectBackend, ObjectKey};
+    let key = ObjectKey::new(key.as_bytes()).unwrap();
+    let ctx = hsearch_object::RequestContext::new(
+        std::time::Duration::from_secs(5),
+        hsearch_object::Cancellation::default(),
+        hsearch_object::Budget {
+            request_bytes: 1 << 20,
+            response_bytes: 64 << 20,
+            attempts: 4,
+        },
+    )
+    .unwrap();
+    let waker = std::task::Waker::noop();
+    let mut cx = std::task::Context::from_waker(waker);
+    let info = match std::pin::pin!(store.head(&ctx, &key))
+        .as_mut()
+        .poll(&mut cx)
+    {
+        std::task::Poll::Ready(Ok(info)) => info,
+        _ => return None,
+    };
+    let range = ByteRange::new(0, info.length).unwrap();
+    match std::pin::pin!(store.read_range(&ctx, &key, &info.version, range))
+        .as_mut()
+        .poll(&mut cx)
+    {
+        std::task::Poll::Ready(Ok(payload)) => Some(payload.as_bytes().to_vec()),
+        _ => None,
+    }
+}
+
+fn chunk_keys(entry: &hsearch_index::format::IntentEntry) -> Vec<String> {
+    (0..entry.chunks)
+        .map(|n| {
+            format!(
+                "docs/blob/{:020}/{:020}/{:020}/{}.{}/{n:06}",
+                entry.epoch, entry.attempt, entry.seq, entry.op, entry.field
+            )
+        })
+        .collect()
+}
+
+fn intent(store: &Flaky) -> Vec<hsearch_index::format::IntentEntry> {
+    hsearch_index::format::decode_intent(&read_object(store, "docs/intent").expect("an intent"))
+        .unwrap()
+}
+
+#[test]
+fn a_crash_between_the_chunks_and_the_slot_is_cleaned_up_once_the_log_passes_it() {
+    let store = Arc::new(Flaky::new(true));
+    let (one, two, three) = (
+        Scratch::new("crash-a"),
+        Scratch::new("crash-b"),
+        Scratch::new("crash-c"),
+    );
+    Index::create(Arc::clone(&store), "docs", big_schema(), &three.0)
+        .unwrap()
+        .close();
+    let doomed = Index::open_with(
+        Arc::clone(&store),
+        "docs",
+        big_schema(),
+        &one.0,
+        Arc::new(CrashAt(hsearch_index::Point::AfterChunks)),
+    )
+    .unwrap();
+    assert!(
+        doomed
+            .bulk(vec![big_put("a", big_body())], Wait::Durable)
+            .is_err()
+    );
+    drop(doomed);
+    // The attempt was recorded before its chunks, and every chunk exists.
+    let recorded = intent(&store);
+    assert_eq!(recorded.len(), 1);
+    let orphans = chunk_keys(&recorded[0]);
+    assert_eq!(orphans.len(), 2);
+    assert!(orphans.iter().all(|k| read_object(&store, k).is_some()));
+    assert!(read_object(&store, "docs/log/00000000000000000000").is_none());
+
+    // The next writer finds the log has not reached that position: the slot
+    // may still land, so nothing is removed.
+    let index = Index::open(Arc::clone(&store), "docs", big_schema(), &two.0).unwrap();
+    assert_eq!(store.deleted.load(std::sync::atomic::Ordering::Relaxed), 0);
+    assert!(orphans.iter().all(|k| read_object(&store, k).is_some()));
+
+    // It writes that position itself, which makes the orphan certain.
+    index
+        .bulk(vec![big_put("b", big_body())], Wait::Searchable)
+        .unwrap();
+    // The reclaim runs after the reply; a refresh is queued behind it.
+    index.refresh().unwrap();
+    assert!(orphans.iter().all(|k| read_object(&store, k).is_none()));
+    let removed = store.removed.lock().unwrap().clone();
+    assert_eq!(
+        removed
+            .iter()
+            .filter(|(k, ok)| *ok && orphans.contains(k))
+            .count(),
+        2,
+        "{removed:?}"
+    );
+    // Its own chunks are untouched: a fresh process replays the document.
+    assert_eq!(needles(&index), 1);
+    index.close();
+    let again = Index::open(Arc::clone(&store), "docs", big_schema(), &one.0).unwrap();
+    assert_eq!(needles(&again), 1);
+}
+
+#[test]
+fn reopening_never_removes_the_chunks_of_a_committed_slot() {
+    let store = Arc::new(Flaky::new(true));
+    let (one, two, three) = (
+        Scratch::new("keep-a"),
+        Scratch::new("keep-b"),
+        Scratch::new("keep-c"),
+    );
+    let index = Index::create(Arc::clone(&store), "docs", big_schema(), &one.0).unwrap();
+    index
+        .bulk(vec![big_put("a", big_body())], Wait::Searchable)
+        .unwrap();
+    index.close();
+    // The intent still lists the committed attempt; a replay names it.
+    let recorded = intent(&store);
+    assert_eq!(recorded.len(), 1);
+    for _ in 0..2 {
+        let again = Index::open(Arc::clone(&store), "docs", big_schema(), &two.0).unwrap();
+        assert_eq!(needles(&again), 1);
+        again.close();
+    }
+    assert_eq!(store.deleted.load(std::sync::atomic::Ordering::Relaxed), 0);
+    assert!(
+        chunk_keys(&recorded[0])
+            .iter()
+            .all(|k| read_object(&store, k).is_some())
+    );
+    let _ = three;
+}
+
+#[test]
+fn a_slot_of_small_fields_writes_no_intent() {
+    let store = Arc::new(Flaky::new(true));
+    let scratch = Scratch::new("no-intent");
+    let index = Index::create(Arc::clone(&store), "docs", big_schema(), &scratch.0).unwrap();
+    index
+        .bulk(vec![big_put("a", "small".into())], Wait::Searchable)
+        .unwrap();
+    assert!(read_object(&store, "docs/intent").is_none());
+    let created = store.created.lock().unwrap().clone();
+    assert!(
+        created.iter().all(|k| !k.contains("/intent")),
+        "{created:?}"
+    );
+}
+
+#[test]
+fn a_store_that_cannot_delete_keeps_the_crash_orphans_and_stays_writable() {
+    let store = Arc::new(Flaky::new(false));
+    let (one, two) = (Scratch::new("nodel-a"), Scratch::new("nodel-b"));
+    Index::create(Arc::clone(&store), "docs", big_schema(), &one.0)
+        .unwrap()
+        .close();
+    let doomed = Index::open_with(
+        Arc::clone(&store),
+        "docs",
+        big_schema(),
+        &one.0,
+        Arc::new(CrashAt(hsearch_index::Point::AfterChunks)),
+    )
+    .unwrap();
+    assert!(
+        doomed
+            .bulk(vec![big_put("a", big_body())], Wait::Durable)
+            .is_err()
+    );
+    drop(doomed);
+    let orphans = chunk_keys(&intent(&store)[0]);
+    let index = Index::open(Arc::clone(&store), "docs", big_schema(), &two.0).unwrap();
+    for id in ["b", "c"] {
+        index
+            .bulk(vec![big_put(id, big_body())], Wait::Searchable)
+            .unwrap();
+    }
+    assert_eq!(needles(&index), 2);
+    // Never removed: nothing could delete, and nothing reads them.
+    assert!(orphans.iter().all(|k| read_object(&store, k).is_some()));
+}
+
+#[test]
+fn a_stale_writer_is_fenced_by_the_intent_before_it_writes_a_chunk() {
+    let store = Arc::new(Flaky::new(true));
+    let (one, two, three) = (
+        Scratch::new("fence-a"),
+        Scratch::new("fence-b"),
+        Scratch::new("fence-c"),
+    );
+    Index::create(Arc::clone(&store), "docs", big_schema(), &one.0)
+        .unwrap()
+        .close();
+    let old = Index::open(Arc::clone(&store), "docs", big_schema(), &two.0).unwrap();
+    let new = Index::open(Arc::clone(&store), "docs", big_schema(), &three.0).unwrap();
+    new.bulk(vec![big_put("n", big_body())], Wait::Searchable)
+        .unwrap();
+    let before = store.created.lock().unwrap().len();
+    let stale = old.bulk(vec![big_put("o", big_body())], Wait::Durable);
+    assert_eq!(stale.err(), Some(Error::Fenced));
+    let created = store.created.lock().unwrap()[before..].to_vec();
+    assert!(
+        created.iter().all(|k| !k.contains("/blob/")),
+        "a fenced writer wrote chunks: {created:?}"
+    );
 }

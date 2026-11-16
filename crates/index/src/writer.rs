@@ -17,12 +17,13 @@ use hsearch_engine::{
 use hsearch_object::{MetadataStore, ObjectKey, Precondition, VersionToken};
 
 use crate::format::{
-    BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, MAX_INDEXED_DOCUMENT_BYTES,
-    MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot, decode_root, decode_slot_with, encode_root,
-    encode_slot_with, encoded_len, slot_text_cap, text_fits, text_len,
+    BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, IntentEntry,
+    MAX_INDEXED_DOCUMENT_BYTES, MAX_INTENT_ENTRIES, MAX_SLOT_BYTES, MAX_SLOT_OPS, Op, Root, Slot,
+    decode_intent, decode_root, decode_slot_with, encode_intent, encode_root, encode_slot_with,
+    encoded_len, slot_text_cap, text_fits, text_len,
 };
 use crate::store::{
-    Written, blob_key, block, context, key, mutation, read_all, read_version, root_key,
+    Written, blob_key, block, context, intent_key, key, mutation, read_all, read_version, root_key,
     segment_key, slot_key, write,
 };
 use crate::{Error, Result};
@@ -52,6 +53,8 @@ pub struct ItemResult {
 pub enum Point {
     /// A slot is built and validated; nothing is in the store yet.
     BeforeSlot,
+    /// The intent and every chunk are durable; the slot is not written yet.
+    AfterChunks,
     /// The slot is durable; nobody has been told.
     AfterSlot,
     /// A durable acknowledgement was sent; the slot is not applied yet.
@@ -219,7 +222,21 @@ struct Core<'e, 'd, S> {
     uploaded: BTreeMap<String, String>,
     published: Option<u64>,
     poisoned: bool,
+    /// Version of the intent object this writer last wrote or read, `None` while
+    /// it does not exist: the compare-exchange token that also fences a stale
+    /// writer's chunks.
+    intent_token: Option<VersionToken>,
+    /// Chunk-write attempts whose chunks may still exist with no slot naming
+    /// them: a failed delete, or an attempt a crashed writer left in the intent.
+    pending: Vec<IntentEntry>,
+    /// Cleared when the store reports it cannot delete, so the reclaim pass
+    /// stops spending requests it knows will fail.
+    can_delete: bool,
 }
+
+/// Most chunk objects one reclaim pass removes, so a crash that left a 200 MiB
+/// document's worth of chunks cannot hold the writer for an unbounded time.
+const RECLAIM_CHUNKS_PER_PASS: usize = 256;
 
 impl<S: MetadataStore + 'static> Core<'_, '_, S> {
     fn track(&mut self, ops: &[Op]) {
@@ -449,15 +466,27 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
     }
 
     fn write_slot(&mut self, slot: &Slot) -> Result<()> {
+        // Every large string gets its attempt number now, and the attempts are
+        // recorded durably before the first chunk: a crash after any chunk
+        // leaves a record the next writer can derive the chunk keys from.
+        let plan = plan_blobs(self.epoch, slot)?;
+        if !plan.is_empty() {
+            self.record_intent(&plan)?;
+        }
         let (store, name, epoch, seq) = (&*self.store, &self.name, self.epoch, slot.seq);
         // Large strings go to their own objects first; the slot, written last,
         // is what makes them reachable.
         let mut written: Vec<(ObjectKey, VersionToken)> = Vec::new();
         let encoded = encode_slot_with(slot, &mut |op, field, text| {
+            let entry = plan
+                .iter()
+                .find(|e| e.op as usize == op && e.field as usize == field)
+                .ok_or(Error::Invalid)?;
             write_blob(
                 store,
                 name,
                 epoch,
+                entry.attempt,
                 BlobAt { seq, op, field },
                 text,
                 &mut written,
@@ -472,11 +501,12 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
                     // these chunks: never delete on it.
                     self.poison();
                 } else {
-                    discard_chunks(store, &written);
+                    self.discard(&plan, &written);
                 }
                 return Err(error);
             }
         };
+        self.hooks.at(Point::AfterChunks);
         let request = match mutation(
             &format!("{}/slot/{}/{}", self.name, slot.seq, self.epoch),
             &slot_key(&self.name, slot.seq),
@@ -486,7 +516,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             Ok(request) => request,
             Err(error) => {
                 // No slot was attempted, so nothing names the chunks.
-                discard_chunks(store, &written);
+                self.discard(&plan, &written);
                 return Err(error);
             }
         };
@@ -494,7 +524,7 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             Written::Done(_) => Ok(()),
             Written::Refused(error) => {
                 // The slot certainly does not exist, so nothing names the chunks.
-                discard_chunks(store, &written);
+                self.discard(&plan, &written);
                 Err(Error::Store(error))
             }
             Written::Occupied => {
@@ -506,6 +536,99 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
                 Err(Error::Unknown)
             }
         }
+    }
+
+    /// Record, before any chunk is written, every attempt this slot will make
+    /// together with the attempts still unresolved. One conditional write, only
+    /// for a slot that has a large string: a slot of small fields costs nothing.
+    fn record_intent(&mut self, plan: &[IntentEntry]) -> Result<()> {
+        if plan.len() > MAX_INTENT_ENTRIES {
+            return Err(Error::Capacity);
+        }
+        let mut entries: Vec<IntentEntry> = self.pending.iter().chain(plan).copied().collect();
+        // Past the bound the oldest unresolved attempts are forgotten: their
+        // chunks leak, and nothing a slot might name is ever deleted.
+        let drop = entries.len().saturating_sub(MAX_INTENT_ENTRIES);
+        entries.drain(..drop);
+        self.pending.drain(..drop.min(self.pending.len()));
+        let request = mutation(
+            &format!("{}/intent/{}/{}", self.name, self.epoch, plan[0].attempt),
+            &intent_key(&self.name),
+            &encode_intent(&entries),
+            self.intent_token
+                .clone()
+                .map_or(Precondition::Absent, Precondition::Matches),
+        )?;
+        match write(&*self.store, &request, self.intent_token.is_some()) {
+            Written::Done(receipt) => {
+                self.intent_token = Some(receipt.object.version);
+                Ok(())
+            }
+            // Nothing was written yet: the caller may retry the whole slot.
+            Written::Refused(error) => Err(Error::Store(error)),
+            Written::Occupied => {
+                self.poison();
+                Err(Error::Fenced)
+            }
+            Written::Unknown => {
+                self.poison();
+                Err(Error::Unknown)
+            }
+        }
+    }
+
+    /// After a definite failure: remove what was written, and keep the attempts
+    /// pending if any chunk could not be removed.
+    fn discard(&mut self, plan: &[IntentEntry], written: &[(ObjectKey, VersionToken)]) {
+        if !discard_chunks(&*self.store, written) {
+            self.pending.extend_from_slice(plan);
+            let over = self.pending.len().saturating_sub(MAX_INTENT_ENTRIES);
+            self.pending.drain(..over);
+        }
+    }
+
+    /// Remove the chunks of attempts that can no longer be named by any slot:
+    /// those for a position the log has already moved past, whose slot was
+    /// replayed or written by this writer without naming them. A slot is
+    /// create-only, so once the slot at `seq` exists nothing else can ever be
+    /// written there. An attempt for a position the log has not reached stays
+    /// pending: its slot may still land.
+    fn reclaim_pending(&mut self) {
+        if self.poisoned || !self.can_delete || self.pending.is_empty() {
+            return;
+        }
+        let head = self.seq;
+        let mut budget = RECLAIM_CHUNKS_PER_PASS;
+        let mut keep = Vec::with_capacity(self.pending.len());
+        let mut entries = std::mem::take(&mut self.pending).into_iter();
+        for entry in entries.by_ref() {
+            if entry.seq >= head || !self.can_delete || budget == 0 {
+                keep.push(entry);
+                continue;
+            }
+            let mut done = true;
+            for n in 0..entry.chunks {
+                if budget == 0 {
+                    done = false;
+                    break;
+                }
+                budget -= 1;
+                let object = blob_key(&self.name, entry.epoch, entry.attempt, entry.at(), n);
+                match remove_chunk(&*self.store, &object) {
+                    Removal::Gone => {}
+                    Removal::Unsupported => {
+                        self.can_delete = false;
+                        done = false;
+                        break;
+                    }
+                    Removal::Failed => done = false,
+                }
+            }
+            if !done {
+                keep.push(entry);
+            }
+        }
+        self.pending = keep;
     }
 
     fn publish(&mut self) -> Result<Published> {
@@ -727,6 +850,11 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
     shared: Shared,
 ) -> Result<Core<'e, 'd, S>> {
     let (root, token) = read_root(&*store, &name)?;
+    // The attempts a crashed writer may have left chunks for. Read before the
+    // replay, so the replay can see which of them a slot names.
+    let (recorded, intent_token) = read_intent(&*store, &name)?;
+    let interest: HashSet<(u64, u64)> = recorded.iter().map(|e| (e.epoch, e.attempt)).collect();
+    let mut named: HashSet<(u64, u64)> = HashSet::new();
     let mut core = Core {
         store,
         name,
@@ -746,6 +874,9 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
         uploaded: BTreeMap::new(),
         published: None,
         poisoned: false,
+        intent_token,
+        pending: Vec::new(),
+        can_delete: true,
     };
     // Replay every slot until the first that is not there. A store error other
     // than not-found is never read as the end of the log.
@@ -755,6 +886,9 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
             Ok(info) => {
                 let bytes = read_version(&*core.store, &object, &info.version, info.length)?;
                 let slot = decode_slot_with(&bytes, &mut |at, blob| {
+                    if interest.contains(&(blob.epoch, blob.attempt)) {
+                        named.insert((blob.epoch, blob.attempt));
+                    }
                     read_blob(&*core.store, &core.name, at, blob)
                 })?;
                 if slot.seq != core.seq {
@@ -782,7 +916,51 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
     let request = format!("{}/root/open/{}/{}", core.name, core.epoch, nonce());
     core.swap_root(&bumped, &request)?;
     core.refresh()?;
+    // An attempt no slot names whose position the log has passed is an orphan;
+    // one for a position not yet written stays pending until a slot is.
+    core.pending = recorded
+        .into_iter()
+        .filter(|e| !named.contains(&(e.epoch, e.attempt)))
+        .collect();
+    core.reclaim_pending();
     Ok(core)
+}
+
+/// A number no earlier write attempt in this process used.
+fn next_attempt() -> u64 {
+    static ATTEMPTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    ATTEMPTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// One intent entry for each string of `slot` that goes to chunk objects,
+/// with its attempt number. A string over the document ceiling is refused here,
+/// before anything is written.
+fn plan_blobs(epoch: u64, slot: &Slot) -> Result<Vec<IntentEntry>> {
+    let mut plan = Vec::new();
+    for (op_at, op) in slot.ops.iter().enumerate() {
+        let Op::Put { fields, .. } = op else {
+            continue;
+        };
+        for (field_at, field) in fields.iter().enumerate() {
+            let Field::Str(s) = field else { continue };
+            if s.len() <= INLINE_FIELD_MAX {
+                continue;
+            }
+            if s.len() > MAX_INDEXED_DOCUMENT_BYTES {
+                return Err(Error::Engine(hsearch_engine::Error::Limit));
+            }
+            plan.push(IntentEntry {
+                seq: slot.seq,
+                epoch,
+                attempt: next_attempt(),
+                op: u32::try_from(op_at).map_err(|_| Error::Invalid)?,
+                field: u32::try_from(field_at).map_err(|_| Error::Invalid)?,
+                chunks: u32::try_from(s.len().div_ceil(BLOB_CHUNK_BYTES))
+                    .map_err(|_| Error::Invalid)?,
+            });
+        }
+    }
+    Ok(plan)
 }
 
 /// Write `text` as chunk objects of at most [`BLOB_CHUNK_BYTES`], each create-only,
@@ -791,6 +969,7 @@ fn write_blob<S: MetadataStore>(
     store: &S,
     name: &str,
     epoch: u64,
+    attempt: u64,
     at: BlobAt,
     text: &str,
     written: &mut Vec<(ObjectKey, VersionToken)>,
@@ -799,8 +978,6 @@ fn write_blob<S: MetadataStore>(
     if bytes.len() > MAX_INDEXED_DOCUMENT_BYTES {
         return Err(Error::Engine(hsearch_engine::Error::Limit));
     }
-    static ATTEMPTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    let attempt = ATTEMPTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let chunks =
         u32::try_from(bytes.len().div_ceil(BLOB_CHUNK_BYTES)).map_err(|_| Error::Invalid)?;
     for (n, chunk) in bytes.chunks(BLOB_CHUNK_BYTES).enumerate() {
@@ -824,9 +1001,53 @@ fn write_blob<S: MetadataStore>(
 /// Best-effort removal of chunks no slot names, after a definite failure. A store
 /// that cannot delete, or a failed delete, leaves an orphan and nothing else: no
 /// reader ever looks at a chunk without a slot that names it.
-fn discard_chunks<S: MetadataStore>(store: &S, written: &[(ObjectKey, VersionToken)]) {
+fn discard_chunks<S: MetadataStore>(store: &S, written: &[(ObjectKey, VersionToken)]) -> bool {
+    let mut all = true;
     for (object, version) in written {
-        let _ = block(store.remove_version(&context(), object, version));
+        match block(store.remove_version(&context(), object, version)) {
+            Ok(()) | Err(hsearch_object::Error::NotFound) => {}
+            Err(_) => all = false,
+        }
+    }
+    all
+}
+
+enum Removal {
+    Gone,
+    Unsupported,
+    Failed,
+}
+
+/// Remove one chunk by key: one HEAD for its version, then the removal. A chunk
+/// already gone is removed.
+fn remove_chunk<S: MetadataStore>(store: &S, object: &str) -> Removal {
+    let Ok(object) = key(object) else {
+        return Removal::Failed;
+    };
+    match block(store.head(&context(), &object)) {
+        Err(hsearch_object::Error::NotFound) => Removal::Gone,
+        Err(_) => Removal::Failed,
+        Ok(info) => match block(store.remove_version(&context(), &object, &info.version)) {
+            Ok(()) | Err(hsearch_object::Error::NotFound) => Removal::Gone,
+            Err(hsearch_object::Error::Unsupported) => Removal::Unsupported,
+            Err(_) => Removal::Failed,
+        },
+    }
+}
+
+/// Read the intent and the version it is at; none yet is an empty list.
+fn read_intent<S: MetadataStore>(
+    store: &S,
+    name: &str,
+) -> Result<(Vec<IntentEntry>, Option<VersionToken>)> {
+    let object = key(&intent_key(name))?;
+    match block(store.head(&context(), &object)) {
+        Err(hsearch_object::Error::NotFound) => Ok((Vec::new(), None)),
+        Err(error) => Err(Error::Store(error)),
+        Ok(info) => {
+            let bytes = read_version(store, &object, &info.version, info.length)?;
+            Ok((decode_intent(&bytes)?, Some(info.version)))
+        }
     }
 }
 
@@ -900,6 +1121,7 @@ fn serve<S: MetadataStore + 'static>(core: &mut Core<'_, '_, S>, commands: &Rece
                     }
                 }
                 core.handle_group(group);
+                core.reclaim_pending();
             }
         }
     }
@@ -938,8 +1160,8 @@ mod blob_tests {
             text('a', INLINE_FIELD_MAX + 5),
             text('b', INLINE_FIELD_MAX + 5),
         );
-        let first = write_blob(&store, "ix", 1, AT, &a, &mut Vec::new()).unwrap();
-        let second = write_blob(&store, "ix", 1, AT, &b, &mut Vec::new()).unwrap();
+        let first = write_blob(&store, "ix", 1, next_attempt(), AT, &a, &mut Vec::new()).unwrap();
+        let second = write_blob(&store, "ix", 1, next_attempt(), AT, &b, &mut Vec::new()).unwrap();
         assert_ne!(first.attempt, second.attempt);
         assert_eq!(read_blob(&store, "ix", AT, first).unwrap(), a);
         assert_eq!(read_blob(&store, "ix", AT, second).unwrap(), b);
@@ -949,7 +1171,8 @@ mod blob_tests {
     fn a_chunk_boundary_document_spans_exact_chunks() {
         let store = store();
         let exact = text('c', BLOB_CHUNK_BYTES * 2);
-        let blob = write_blob(&store, "ix", 1, AT, &exact, &mut Vec::new()).unwrap();
+        let blob =
+            write_blob(&store, "ix", 1, next_attempt(), AT, &exact, &mut Vec::new()).unwrap();
         assert_eq!(blob.chunks, 2);
         assert_eq!(
             read_blob(&store, "ix", AT, blob).unwrap().len(),
@@ -961,7 +1184,7 @@ mod blob_tests {
     fn a_missing_chunk_a_wrong_shape_or_a_bad_length_is_corrupt_never_a_short_read() {
         let store = store();
         let t = text('d', INLINE_FIELD_MAX + 1);
-        let blob = write_blob(&store, "ix", 1, AT, &t, &mut Vec::new()).unwrap();
+        let blob = write_blob(&store, "ix", 1, next_attempt(), AT, &t, &mut Vec::new()).unwrap();
         // Another position has no chunk object.
         let elsewhere = BlobAt { seq: 4, ..AT };
         assert!(read_blob(&store, "ix", elsewhere, blob).is_err());

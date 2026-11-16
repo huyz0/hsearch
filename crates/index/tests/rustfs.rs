@@ -6,6 +6,7 @@
 mod support;
 
 use hsearch_index::{Hooks, Index, Point, Wait, open_published};
+use hsearch_object::{ByteRange, ObjectBackend, ObjectKey};
 use hsearch_s3::{S3Config, S3Store};
 use std::io::Write;
 use std::process::Command;
@@ -112,8 +113,8 @@ fn requests_per_bulk_refresh_publish_and_open_never_list() {
     assert_eq!(opened.get - after_publish.get, 1 + 1, "root + the one slot");
     assert_eq!(
         opened.head - after_publish.head,
-        1 + 1 + 1,
-        "root + slot + end of log"
+        1 + 1 + 1 + 1,
+        "root + intent (absent: no large string was ever written) + slot + end of log"
     );
     assert_eq!(all(&reopened.snapshot().unwrap()), live);
 
@@ -310,4 +311,170 @@ fn crash_after_the_ack_before_apply() {
 #[test]
 fn crash_in_the_middle_of_a_publish() {
     run_crash("before-root");
+}
+
+// ---- Large strings: the chunks a crash leaves behind -----------------------
+
+fn block<T>(future: impl std::future::Future<Output = T>) -> T {
+    struct Unpark(std::thread::Thread);
+    impl std::task::Wake for Unpark {
+        fn wake(self: Arc<Self>) {
+            self.0.unpark();
+        }
+    }
+    let waker = std::task::Waker::from(Arc::new(Unpark(std::thread::current())));
+    let mut cx = std::task::Context::from_waker(&waker);
+    let mut future = std::pin::pin!(future);
+    loop {
+        if let std::task::Poll::Ready(value) = future.as_mut().poll(&mut cx) {
+            return value;
+        }
+        std::thread::park();
+    }
+}
+
+fn read_object(store: &S3Store, key: &str) -> Option<Vec<u8>> {
+    let key = ObjectKey::new(key.as_bytes()).unwrap();
+    let info = block(store.head(&context(), &key)).ok()?;
+    let range = ByteRange::new(0, info.length).unwrap();
+    let payload = block(store.read_range(&context(), &key, &info.version, range)).ok()?;
+    Some(payload.as_bytes().to_vec())
+}
+
+fn big_schema() -> hsearch_engine::Schema {
+    hsearch_engine::Schema::new(
+        1,
+        &[
+            ("tag", hsearch_engine::Kind::Keyword),
+            ("body", hsearch_engine::Kind::Text),
+        ],
+    )
+    .unwrap()
+    .with_limits(hsearch_engine::Limits::scale().with_document_bytes(32 << 20))
+    .unwrap()
+}
+
+fn big_put(id: &str) -> hsearch_index::Op {
+    // 12 MiB: two chunks.
+    let body = format!("{}needle", "word ".repeat(12 * (1 << 20) / 5));
+    hsearch_index::Op::Put {
+        id: id.to_string(),
+        fields: vec![
+            hsearch_index::Field::Str("t".into()),
+            hsearch_index::Field::Str(body),
+        ],
+    }
+}
+
+fn needles(index: &Index) -> u64 {
+    use hsearch_engine::{Query, Value};
+    index
+        .snapshot()
+        .unwrap()
+        .search(
+            &Query::Term {
+                field: "body",
+                value: Value::String("needle"),
+            },
+            &[],
+            0,
+            &[],
+        )
+        .unwrap()
+        .total
+}
+
+/// The child half: writes one large document and dies after its chunks.
+#[test]
+fn crash_large_child() {
+    let (Ok(bucket), Ok(scratch), Ok(_)) = (
+        std::env::var("HSEARCH_CRASH_BUCKET"),
+        std::env::var("HSEARCH_CRASH_SCRATCH"),
+        std::env::var("HSEARCH_CRASH_LARGE"),
+    ) else {
+        return;
+    };
+    let store = store_for(config(bucket).expect("endpoint"), false);
+    let hooks = Arc::new(Abort {
+        point: Point::AfterChunks,
+        after: 1,
+        seen: AtomicU32::new(0),
+    });
+    let index = Index::open_with(
+        store,
+        "big",
+        big_schema(),
+        std::path::Path::new(&scratch),
+        hooks,
+    )
+    .expect("open");
+    let _ = index.bulk(vec![big_put("lost")], Wait::Durable);
+    println!("SURVIVED");
+}
+
+#[test]
+fn a_crash_after_the_chunks_is_recorded_and_the_next_writer_removes_them() {
+    let Some(config) = config(fresh_bucket()) else {
+        return;
+    };
+    let store = store_for(config.clone(), true);
+    let (child, next) = (Scratch::new("large-child"), Scratch::new("large-next"));
+    Index::create(Arc::clone(&store), "big", big_schema(), &child.0)
+        .unwrap()
+        .close();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "crash_large_child",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("HSEARCH_CRASH_BUCKET", &config.bucket)
+        .env("HSEARCH_CRASH_SCRATCH", &child.0)
+        .env("HSEARCH_CRASH_LARGE", "1")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("SURVIVED"));
+
+    // Nothing LISTed to find them: the record names every chunk key.
+    let recorded =
+        hsearch_index::format::decode_intent(&read_object(&store, "big/intent").expect("intent"))
+            .unwrap();
+    assert_eq!(recorded.len(), 1);
+    let chunks: Vec<String> = (0..recorded[0].chunks)
+        .map(|n| {
+            format!(
+                "big/blob/{:020}/{:020}/{:020}/{}.{}/{n:06}",
+                recorded[0].epoch,
+                recorded[0].attempt,
+                recorded[0].seq,
+                recorded[0].op,
+                recorded[0].field
+            )
+        })
+        .collect();
+    assert_eq!(chunks.len(), 2);
+    assert!(chunks.iter().all(|k| read_object(&store, k).is_some()));
+    assert!(read_object(&store, "big/log/00000000000000000000").is_none());
+
+    // The next writer must not remove them yet: the slot may still land.
+    let index = Index::open(Arc::clone(&store), "big", big_schema(), &next.0).unwrap();
+    assert!(chunks.iter().all(|k| read_object(&store, k).is_some()));
+
+    // Writing that position makes them certain orphans. Four PUTs: two chunks,
+    // the intent, the slot, and no LIST.
+    let before = store.counts();
+    index.bulk(vec![big_put("kept")], Wait::Searchable).unwrap();
+    index.refresh().unwrap();
+    let after = store.counts();
+    assert_eq!(after.put - before.put, 4, "chunks + intent + slot");
+    assert_eq!(after.list, 0);
+    assert!(chunks.iter().all(|k| read_object(&store, k).is_none()));
+    assert_eq!(needles(&index), 1);
+
+    // A fresh process replays the committed document.
+    index.close();
+    let again = Index::open(Arc::clone(&store), "big", big_schema(), &child.0).unwrap();
+    assert_eq!(needles(&again), 1);
 }

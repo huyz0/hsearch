@@ -81,4 +81,36 @@ Tests: `removing_a_version_frees_its_bytes_and_leaves_other_objects_alone`, `a_r
 - A bucket lifecycle expiry for `<index>/blob/` is not configured or documented anywhere yet.
 - Removal runs one delete at a time on the writer thread after a definite failure, so a throttled store makes that bulk's refusal slower.
 
-M21.09 stays open: crash orphans and a measured 200 MiB run remain.
+M21.09 stays open: crash orphans and a measured 200 MiB run remain. (Crash orphans: increment 5, below.)
+
+# M21.09 evidence (increment 5): chunks orphaned by a crash
+
+## Decision: a recorded attempt, not a lifecycle rule
+
+A bucket lifecycle rule on `<index>/blob/` cannot be used, and not for cost. Expiry is by age, and a committed slot's chunks look exactly like an orphan's: the log is never truncated (open replays every slot from 0, `start` in `writer.rs`), so committed chunks must live as long as the index. An age rule would delete live documents. Making the rule safe needs a tag on every chunk and a retag after commit (one more PUT per chunk, doubling the large-field PUT cost), and the adapter has no tagging.
+
+Measured on the pinned RustFS 1.0.4 (provisional: local, not S3): `PutBucketLifecycleConfiguration` accepts prefix, tag-and-prefix, date and abort-incomplete-multipart rules, and it enforces them. A date rule on `docs/blob/` expired `docs/blob/a` within 60 s and left `docs/log/a`. So the rule works and would remove committed chunks without hesitation. (The multipart abort rule the `s3` crate already assumes is a different, safe case: an incomplete upload is never read.)
+
+## What changed
+
+`<index>/intent` is one object, compare-exchanged with the version the writer last saw, holding up to 16,384 attempts (36 bytes each): slot position, epoch, attempt, op, field, chunk count. Every chunk key is derived from an entry, so nothing is LISTed. A slot with a large string writes it once, before its first chunk. A slot of small fields writes nothing.
+
+- **Open** reads the intent (one HEAD, plus one GET if it exists) before replay. The replay marks the entries a slot names. Entries a slot names are committed and dropped. The rest are pending.
+- **Reclaim** removes the chunks of a pending entry only when its position is behind the log head. Slots are create-only, so once the slot at that position exists nothing else can ever be written there: its chunks are certain orphans. An entry at or past the head stays pending, because a late slot write from the crashed writer may still land and name it. Nothing waits on a clock.
+- It runs after open and after each group commit, off the acknowledgement path, at most 256 chunks per pass (one HEAD for the version, then the removal). A store that cannot delete turns it off for that writer.
+- A definite failure whose delete also fails keeps the attempt pending instead of leaking it.
+- The intent compare-exchange also fences a stale writer: after a newer writer wrote an intent, the old one's next large write fails `Fenced` before it writes a chunk.
+- Past 16,384 pending attempts the oldest are forgotten. Their chunks leak; nothing a slot might name is ever deleted.
+
+A crash on an idle index leaves its orphans until the log next passes that position (the next write). They cost storage only.
+
+## Cost and latency (RustFS, release build, 30 sequential single-document bulks, provisional)
+
+| Document | PUTs/bulk before | after | p50 before | p50 after |
+|---|---|---|---|---|
+| 1.2 MiB, 1 chunk | 2 | 3 | 32 ms | 43-47 ms |
+| 12 MiB, 2 chunks | 3 | 4 | 286-293 ms | 298-304 ms |
+
+One extra small PUT per slot that has a large string, in series before the chunks (it must be durable first). Group commit shares it across every large string in the slot. Open gains one HEAD. No GET, no LIST. Reclaim happens only after a crash or a failed delete. On real S3 the added latency is one small PUT round trip.
+
+Tests: `a_crash_between_the_chunks_and_the_slot_is_cleaned_up_once_the_log_passes_it` (chunks are kept until the log passes the position, then removed; replay intact; observed failing with the reclaim call disabled), `reopening_never_removes_the_chunks_of_a_committed_slot`, `an_unknown_slot_write_never_removes_the_chunks_it_may_name` (now also checks a reopen removes nothing), `a_slot_of_small_fields_writes_no_intent`, `a_store_that_cannot_delete_keeps_the_crash_orphans_and_stays_writable`, `a_stale_writer_is_fenced_by_the_intent_before_it_writes_a_chunk`, the intent codec round trip and bounds (format), and on RustFS `a_crash_after_the_chunks_is_recorded_and_the_next_writer_removes_them` (child process aborted after its chunks; 4 PUTs, 0 LIST for the next large write).
