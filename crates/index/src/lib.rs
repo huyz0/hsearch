@@ -27,6 +27,7 @@
 mod error;
 pub mod format;
 mod index;
+pub mod resolve;
 mod store;
 mod writer;
 

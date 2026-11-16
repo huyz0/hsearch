@@ -1889,8 +1889,13 @@
             "M03.10"
           ],
           "owner": "cost/architecture/operations",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m03-13-wire-reconciliation.md",
+              "result": "Real aws-sdk-s3 retry loop and the adapter's multipart path reconciled against an independent TCP-proxy wire record: attempts per (verb, outcome) and request/response bytes agree exactly on RustFS 1.0.4 over loopback (12 tests, stable over 6 runs); a misclassifying attribution path and five source mutations seen red; residual byte gaps found and fixed. Provisional: RustFS only, canonical reason phrase assumed; the MinIO and real S3 legs are M15.01's."
+            }
+          ]
         },
         {
           "id": "M03.14",
@@ -2222,8 +2227,13 @@
             "M04.01"
           ],
           "owner": "engine",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m04-03-resolved-operations.md",
+              "result": "Sans-I/O resolver (partial update, upsert, doc_as_upsert, detect_noop, if_seq_no/if_primary_term, create), logged as resolved whole-document ops, staleness check on the committed head, bounded OutcomeStore; 22 tests with six mutations seen red, clippy clean; 754 to 913 ns/op for 4,096 partial updates (provisional, release, shared host). Not yet wired into the writer or API (M06.05, M21.06); seq_no/term mapping across routing movement is M06.05/M07.03."
+            }
+          ]
         },
         {
           "id": "M04.04",
