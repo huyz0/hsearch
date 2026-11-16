@@ -31,6 +31,8 @@ LAYERS = {
     # M05: identity, authorization and the key-provider contract. Independent of every other crate for now:
     # the peer listener and the object-format encryption that use it come later and depend on it, not the reverse.
     "hsearch-security": set(),
+    # M05.04: the encrypting decorator joins the object contracts to the key provider; nothing depends on it yet.
+    "hsearch-seal": {"hsearch-object", "hsearch-security"},
     "hsearch-module-abi": set(),
     "hsearch-module-native": {"hsearch-module-abi"},
     "hsearch-module-wasm": {"hsearch-module-abi"},
@@ -40,7 +42,7 @@ LAYERS = {
     "xtask": set(),
 }
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-lane", "hsearch-node",
-              "hsearch-security", "hsearch-module-abi", "hsearch-module-native", "hsearch-module-wasm"}
+              "hsearch-security", "hsearch-seal", "hsearch-module-abi", "hsearch-module-native", "hsearch-module-wasm"}
 # D18: the one crate whose manifest may relax the workspace `unsafe_code = "forbid"`. Inside it the
 # `unsafe_code = "deny"` lint leaves exactly one `#[allow]`, on `mod sys` (the compiler enforces that).
 UNSAFE_CRATES = {"hsearch-module-native"}
@@ -58,6 +60,8 @@ EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 # AES-256-GCM for the isolated test KMS wrap, SHA-256 digests, OS randomness and zeroizing key bytes. All exact-pinned
 # in crates/security/Cargo.toml. rcgen (and time, for certificate dates) are the optional `dev-ca` feature only.
 EXTERNAL["hsearch-security"] = {"aes-gcm", "getrandom", "rcgen", "rustls-pki-types", "rustls-webpki", "sha2", "time", "x509-parser", "zeroize"}
+# Request-retry fingerprints (SHA-256), exact-pinned in crates/seal/Cargo.toml.
+EXTERNAL["hsearch-seal"] = {"sha2"}
 # Extension module contract (JSON descriptor) and the native loader: dynamic library open, SHA-256 pin and a sealed memfd copy.
 EXTERNAL["hsearch-module-abi"] = {"serde_json"}
 EXTERNAL["hsearch-module-native"] = {"libloading", "rustix", "sha2"}

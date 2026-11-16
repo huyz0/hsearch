@@ -1301,6 +1301,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hsearch-seal"
+version = "0.1.0"
+dependencies = [
+ "hsearch-object",
+ "hsearch-security",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "hsearch-security"
 version = "0.1.0"
 dependencies = [
