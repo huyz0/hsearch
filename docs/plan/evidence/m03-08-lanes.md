@@ -4,7 +4,7 @@
 
 ## What is built (`crates/lane`, new crate `hsearch-lane`)
 
-- **Fenced ordered-slot log** (`log.rs`): one conditional create per batch at the next position; one append in flight (`&mut self`); a conflict (`Fenced`) or an unresolvable lost reply (`Unknown`) poisons the writer; a certain refusal does not. `open` replays from the caller's cover to the first absent position and creates a retained fence there (PR 83's rule, now on the lane format). Fences are never deleted; `reclaim_below(cover)` removes data slots only. `open` refuses a cover that leaves a hole below the first absent position (`BadCover`, M03.04's seal-above-the-cover rule) with one extra HEAD, so a wrong cover cannot fork the log.
+- **Fenced ordered-slot log** (`log.rs`): one conditional create per batch at the next position; one append in flight (`&mut self`); a conflict (`Fenced`) or an unresolvable lost reply (`Unknown`) poisons the writer; a certain refusal does not. `open` replays from the caller's cover to the first absent position and creates a retained fence there (PR 83's rule, now on the lane format). Fences are never deleted; `reclaim_below(cover)` removes data slots only. `reclaim_below` first raises a durable, monotonic cover marker (`COVER`, a 32-byte record kept here until the structural head of M03.05 takes it over); `open` reads it after replaying and refuses (`BadCover`) if the first absent position is below it, so a replay start inside a reclaimed run of any length cannot fork the log (M03.04's seal-above-the-cover rule). Reclaim is refused while a promotion started in this lane is unfinished below the cover, because a reopen could not know of the seal.
 - **Shared lanes** (`members.rs`, `place.rs`): descriptor written only on membership change; identical policy tuple, ceiling 1,000 (format ceiling 4,096), BYOK alone (format-enforced); several joiners in one CAS; a placer finds the open group by doubling and bisection over derived keys (no LIST) and joins with one CAS.
 - **Batcher** (`batch.rs`): sans-IO, bounded by 4,096 records and a 4 MiB byte target (a larger record is its own batch), wait from the first record; an idle batcher has no deadline.
 - **Hot rule and promotion** (`hot.rs`, `promote.rs`): a quarter of a window's bytes on a lane with at least 1,000 records; promotion = seal record in the source log, create target lane, CAS the member out; resumable at every step. New format op `Seal` (record op 3, no payload).
@@ -12,7 +12,7 @@
 
 ## Tests
 
-28 tests in the lane crate (24 on the memory store with injected lost replies, refusals and unresolvable resolution; 4 threads racing to open and append over 20 rounds with the property "no acknowledged slot lands behind a later opener's fence, every ack is in the log"; crash after each prefix of a promotion; reclaim keeping fences and a late writer still refused; placement; batcher; hot rule; head CAS fencing) and 4 against RustFS (all run in CI). Mutations seen red: no fence written, conflict not poisoning, seals ignored on replay, unknown outcome not poisoning.
+33 tests in the lane crate (28 on the memory store with injected lost replies, refusals and unresolvable resolution; 4 threads racing to open and append over 20 rounds with the property "no acknowledged slot lands behind a later opener's fence, every ack is in the log"; crash after each prefix of a promotion; reclaim keeping fences and a late writer still refused; placement; batcher; hot rule; head CAS fencing) and 5 against RustFS (all run in CI). Four mutations were seen red by hand during development (no fence written, conflict not poisoning, seals ignored on replay, unknown outcome not poisoning); they are not kept as a mutation suite.
 
 ## Requests per write and latency (RustFS)
 
@@ -23,7 +23,7 @@ Append, one writer, 1 KiB records, 300 appends:
 | fenced slot | 1 / 16 / 256 | 5.9 / 6.9 / 8.4 | 8.3 / 9.9 / 13.7 | 1.00 | 0 / 0 |
 | payload + head CAS | 1 / 16 / 256 | 13.2 / 13.4 / 15.9 | 18.9 / 22.2 / 33.4 | 2.00 | 0 / 0 |
 
-Fenced slot costs half the PUTs and about 45-55% of the latency of the head-CAS design in its **best case** (one writer, no contention, version token carried from the last CAS). The head-CAS design's contended cost (about 1.29 PUT, 1.38 HEAD, 0.29 LIST per commit, M02.10) is not re-measured here and only makes it worse.
+Fenced slot costs half the PUTs and about 45-55% of the p50 latency (41-44% at p99) of the head-CAS design in its **best case** (one writer, no contention, version token carried from the last CAS). The head-CAS design's contended cost (about 1.29 PUT, 1.38 HEAD, 0.29 LIST per commit, M02.10) is not re-measured here and only makes it worse.
 
 Small-index sweep, M03.09's workloads and parameters at 1M active indexes (option A run at scale 0.05 because it needs a lane per written index; write storm capped at 0.1; per-lane arrival rates are unchanged by scale). Commit PUT per write is data slots only; the all-in column adds lane creation and open (once per lane in the window, not per write):
 
@@ -62,7 +62,9 @@ Replay costs about 2 ms per slot (one HEAD plus one GET: the version-pinned read
 - Replay reads each slot with a HEAD and a GET (2 requests) because reads are version-pinned; a successor that cannot be told its cover pays for every slot above it. Advancing the cover is M06's checkpoint.
 - Retained fences accumulate one per open and are replayed by every later open above the cover; they are never reclaimed.
 - Descriptor CAS rewrites up to 16 KiB per join; `join_members` joins many in one CAS, a placer joins one at a time.
-- `open` adds one HEAD (the hole guard) per open for safety.
+- `open` reads the cover marker once (one HEAD when none exists, plus one GET when it does) for safety; `reclaim_below` costs one HEAD and one 93-byte ranged read per position plus one delete per data slot, and one marker PUT.
+- Replay is serial (HEAD then GET per slot). The keys are derived, so a bounded read-ahead window is possible and would cut re-establish time; not done here.
+- Placement of an index that already lives in an earlier group would add it to a second group: the catalog (M03.05) must remember the answer, and a crash-retry must consult it first.
 
 ## Not done here (stated, not claimed)
 

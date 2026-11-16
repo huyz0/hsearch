@@ -28,8 +28,9 @@ pub enum Error {
         /// The slot position that was being written.
         ordinal: u64,
     },
-    /// The replay start is below the lane's reclaim cover: the log has a hole at the position that
-    /// read as its end, and sealing there would fork it. Reopen from the durable cover or above.
+    /// The replay start is below the lane's durable reclaim cover: the position that read as the
+    /// end of the log is a reclaimed hole, and sealing there would fork it. Reopen from the
+    /// durable cover or above.
     BadCover,
     /// Sealing kept losing races to a live writer, or a descriptor change kept losing its CAS.
     Contended,

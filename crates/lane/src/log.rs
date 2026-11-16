@@ -20,6 +20,7 @@ use hsearch_format::{
 };
 use hsearch_object::{MetadataStore, Precondition};
 
+use crate::cover::{raise_cover, read_cover};
 use crate::io::{Written, fresh_token, key, mutation, read_object, request_id, write};
 use crate::members::{LaneId, read_descriptor, swap_descriptor, without_member};
 use crate::{Error, Result};
@@ -30,6 +31,11 @@ const MAX_SEAL_RACES: u32 = 8;
 /// Seals one writer remembers; each promotion of a lane adds one, and a reopen rebuilds from the
 /// cover, so this bounds a single long-lived writer, not the lane.
 const MAX_SEALED: usize = 1 << 16;
+/// Offset of the slot-kind byte: envelope header 40, then domain 16, activation 8, lane 4, ordinal 8
+/// and token 16. Kind 2 is a fence.
+const FENCE_KIND_AT: u64 = 40 + 16 + 8 + 4 + 8 + 16;
+/// Scratch capacity a writer keeps between appends.
+const SCRATCH_KEEP: usize = 1 << 20;
 const SLOT_READ_BOUND: u64 = MAX_SLOT_BODY_BYTES as u64 + 4096;
 
 /// What opening replayed and where the writer now stands.
@@ -95,20 +101,6 @@ async fn read_slot<S: MetadataStore>(
     Ok(read_object(store, &k, SLOT_READ_BOUND)
         .await?
         .map(|(bytes, _)| bytes))
-}
-
-async fn slot_exists<S: MetadataStore>(
-    store: &S,
-    layout: &Layout,
-    id: &LaneId,
-    ordinal: u64,
-) -> Result<bool> {
-    let k = key(&slot_key(layout, id, ordinal))?;
-    match store.head(&crate::io::context(), &k).await {
-        Ok(_) => Ok(true),
-        Err(hsearch_object::Error::NotFound) => Ok(false),
-        Err(error) => Err(error.into()),
-    }
 }
 
 /// What a reclaim removed.
@@ -207,18 +199,11 @@ impl<S: MetadataStore> LaneWriter<S> {
                 visit(view)
             })
             .await?;
-            // The first absent position is only the end of the log if nothing lies above it. A hole
-            // there means `from` was below the reclaim cover (M03.04's seal-above-the-cover rule):
-            // a fence created in it would fork the log. One HEAD, once per open.
-            if slot_exists(&*store, &layout, &id, at + 1).await? {
-                if read_slot(&*store, &layout, &id, at).await?.is_some() {
-                    // A live writer landed `at` and moved on while we looked: replay it.
-                    report.seal_races += 1;
-                    if report.seal_races > MAX_SEAL_RACES {
-                        return Err(Error::Contended);
-                    }
-                    continue;
-                }
+            // The first absent position is only the end of the log if it is not a reclaimed hole.
+            // The cover is written before any slot below it is removed, so reading it after the
+            // probe is sufficient: `at` at or above it was never reclaimed (M03.04's rule).
+            let (cover, _) = read_cover(&*store, &layout, &id).await?;
+            if at < cover {
                 return Err(Error::BadCover);
             }
             let token = fresh_token();
@@ -427,11 +412,16 @@ impl<S: MetadataStore> LaneWriter<S> {
                 self.stats.slots += 1;
                 self.stats.records += records.len() as u64;
                 self.stats.bytes += self.scratch.len() as u64;
-                Ok(Ack {
+                let ack = Ack {
                     ordinal,
                     records: records.len(),
                     bytes: self.scratch.len(),
-                })
+                };
+                // A writer that once sent a big slot does not keep that buffer for life.
+                if self.scratch.capacity() > SCRATCH_KEEP {
+                    self.scratch = Vec::new();
+                }
+                Ok(ack)
             }
             Written::Occupied => {
                 self.poisoned = true;
@@ -445,31 +435,70 @@ impl<S: MetadataStore> LaneWriter<S> {
         }
     }
 
+    /// Seals still waiting for their index to leave the descriptor: an unfinished promotion.
+    /// The cover must not pass one, or a reopen would forget the seal.
+    #[must_use]
+    pub fn unfinished_promotions(&self) -> Vec<(Id, u64)> {
+        self.sealed
+            .iter()
+            .filter(|(index, _)| self.descriptor.members.binary_search(index).is_ok())
+            .map(|(index, at)| (*index, *at))
+            .collect()
+    }
+
     /// Remove the **data** slots below `cover`, which the caller's checkpoint has made durable and
-    /// covers (every record in them is in published segments). Fences are never removed: a late
-    /// create into a removed fence would succeed and be acknowledged behind the successor's view
-    /// (M03.04's `BUG_reclaim_deletes_fences`). Cost: per position one HEAD, one GET and, for data,
-    /// one delete. Repeatable; `cover` may not pass this writer's next position.
+    /// covers (every record in them is in published segments). The cover is first raised in its
+    /// durable marker, so an opener below it is refused. Fences are never removed: a late create
+    /// into a removed fence would succeed and be acknowledged behind the successor's view
+    /// (M03.04's `BUG_reclaim_deletes_fences`). Refused while a promotion started in this lane is
+    /// unfinished below `cover`. Cost: one HEAD per position, one 93-byte ranged read to tell a
+    /// fence from data, and one delete per data slot. Repeatable; `cover` may not pass this
+    /// writer's next position; a poisoned writer reclaims nothing.
     pub async fn reclaim_below(&mut self, cover: u64) -> Result<Reclaimed> {
+        if self.poisoned {
+            return Err(Error::Poisoned);
+        }
         if cover > self.next {
             return Err(Error::Invalid("cover beyond the log"));
         }
+        if self
+            .unfinished_promotions()
+            .iter()
+            .any(|(_, at)| *at < cover)
+        {
+            return Err(Error::Invalid("cover would pass an unfinished promotion"));
+        }
+        if cover <= self.reclaimed_to {
+            return Ok(Reclaimed::default());
+        }
+        raise_cover(&*self.store, &self.layout, &self.id, cover).await?;
         let mut out = Reclaimed::default();
         for ordinal in self.reclaimed_to..cover {
             let k = key(&slot_key(&self.layout, &self.id, ordinal))?;
-            let Some((bytes, version)) = read_object(&*self.store, &k, SLOT_READ_BOUND).await?
-            else {
-                out.absent += 1;
-                continue;
+            let info = match self.store.head(&crate::io::context(), &k).await {
+                Ok(info) => info,
+                Err(hsearch_object::Error::NotFound) => {
+                    out.absent += 1;
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
             };
-            let view = SlotView::parse_at(bytes.as_bytes(), &position(&self.id, ordinal))?;
-            if view.kind == SlotKind::Fence {
+            if info.length <= FENCE_KIND_AT {
+                return Err(Error::Format(hsearch_format::FormatError::Truncated));
+            }
+            let range =
+                hsearch_object::ByteRange::new(0, FENCE_KIND_AT + 1).map_err(Error::from)?;
+            let head = self
+                .store
+                .read_range(&crate::io::context(), &k, &info.version, range)
+                .await?;
+            if head.as_bytes().get(FENCE_KIND_AT as usize) == Some(&2) {
                 out.fences_kept += 1;
                 continue;
             }
             match self
                 .store
-                .remove_version(&crate::io::context(), &k, &version)
+                .remove_version(&crate::io::context(), &k, &info.version)
                 .await
             {
                 Ok(()) | Err(hsearch_object::Error::NotFound) => out.removed += 1,
@@ -510,6 +539,9 @@ impl<S: MetadataStore> LaneWriter<S> {
     /// Remove a sealed `index` from the descriptor by CAS (one PUT, plus a re-read per lost race).
     /// The seal is what stops its writes; this frees its slot in the group's ceiling.
     pub async fn remove_member(&mut self, index: &Id) -> Result<()> {
+        if self.poisoned {
+            return Err(Error::Poisoned);
+        }
         if !self.sealed.contains_key(index) {
             return Err(Error::Invalid("remove only a sealed index"));
         }

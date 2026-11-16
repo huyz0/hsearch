@@ -202,3 +202,35 @@ fn head_cas_comparison_costs_two_puts_and_fences_on_a_real_store() {
     .unwrap();
     assert_eq!(got, vec![b"a".to_vec(), b"b".to_vec()]);
 }
+
+#[test]
+fn reclaim_keeps_fences_and_refuses_an_open_below_the_cover_on_a_real_store() {
+    let Some(store) = store() else { return };
+    let lane = fresh_lane(&store, &[1]);
+    let (mut old, _) = open(&store, lane, 0);
+    for n in 0..3u64 {
+        block_on(old.append(&[put(id(1), n, b"x")])).unwrap();
+    }
+    let (mut new, _) = open(&store, lane, 0); // fence at 4
+    block_on(new.append(&[put(id(1), 9, b"y")])).unwrap(); // 5
+    let done = block_on(new.reclaim_below(5)).unwrap();
+    assert_eq!((done.removed, done.fences_kept), (3, 2));
+    assert_eq!(
+        block_on(old.append(&[put(id(1), 7, b"late")])).unwrap_err(),
+        Error::Fenced
+    );
+    for from in [0, 1, 2] {
+        let err = block_on(LaneWriter::open(
+            Arc::clone(&store),
+            layout(),
+            lane,
+            from,
+            |_| Ok(()),
+        ))
+        .err()
+        .unwrap();
+        assert_eq!(err, Error::BadCover, "from {from}");
+    }
+    let (_w, report) = open(&store, lane, 5);
+    assert_eq!(report.slots_replayed, 1);
+}

@@ -157,7 +157,20 @@ pub(crate) async fn write<S: MetadataStore>(
                 Err(_) => Written::Unknown,
             }
         }
-        Err(error) => Written::Refused(error),
+        // Only errors that precede acceptance are a certain refusal. Anything else (corrupt
+        // response, exhausted budget, a missing key on a write) may follow acceptance: resolve.
+        Err(
+            error @ (StoreError::Unavailable
+            | StoreError::Throttled
+            | StoreError::PermissionDenied
+            | StoreError::InvalidInput
+            | StoreError::Unsupported
+            | StoreError::Cancelled),
+        ) => Written::Refused(error),
+        Err(_) => match store.resolve(&context(), request).await {
+            Ok(receipt) => Written::Done(receipt),
+            Err(_) => Written::Unknown,
+        },
     }
 }
 

@@ -37,6 +37,9 @@ impl<S: MetadataStore> LaneWriter<S> {
     /// (recorded in the seal). Safe to repeat from any crash point; a writer reopened after a crash
     /// between the steps sees the seal in its replay and resumes at step 2.
     pub async fn promote(&mut self, index: Id, last_seq: u64) -> Result<Promotion> {
+        if self.is_poisoned() {
+            return Err(Error::Poisoned);
+        }
         let policy = self.policy().clone();
         if matches!(policy.key, KeyIdentity::Byok(_)) {
             return Err(Error::Invalid("a BYOK index already has its own lane"));
@@ -45,9 +48,9 @@ impl<S: MetadataStore> LaneWriter<S> {
             Some(at) => at,
             None => self.seal_index(index, last_seq).await?.ordinal,
         };
+        // One target per (source lane, index): a repeat after a crash finds it.
         let mut origin = b"promoted".to_vec();
         origin.extend_from_slice(&self.id().domain);
-        origin.extend_from_slice(&sealed_at.to_le_bytes());
         let (domain, group_id) = dedicated_group(&policy, &index, &origin);
         let target = LaneId::new(domain);
         match create_lane(

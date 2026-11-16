@@ -458,7 +458,10 @@ fn promotion_seals_in_order_moves_membership_and_resumes_after_a_crash_at_every_
         "seal slot, target descriptor, source leave"
     );
     assert_eq!(done.sealed_at, 2);
-    assert!(block_on(w.append(&[put(id(1), 2, b"no")])).is_err());
+    assert_eq!(
+        block_on(w.append(&[put(id(1), 2, b"no")])).unwrap_err(),
+        Error::Sealed(id(1))
+    );
     block_on(w.append(&[put(id(2), 2, b"mate")])).unwrap();
     let source = block_on(read_descriptor(&*clean.inner, &layout(), &lane))
         .unwrap()
@@ -625,4 +628,34 @@ fn a_batch_naming_many_unknown_indexes_costs_one_descriptor_read() {
         (1, 1, 0),
         "one re-read, nothing written"
     );
+}
+
+#[test]
+fn the_cover_may_not_pass_an_unfinished_promotion_and_a_poisoned_writer_reclaims_nothing() {
+    let store = Arc::new(Chaos::new(counted()));
+    let lane = lane_with(&*store.inner, &[1, 2]);
+    let (mut w, _) = open(&store, lane, 0);
+    block_on(w.append(&[put(id(1), 1, b"a"), put(id(2), 1, b"b")])).unwrap();
+    // Crash after the seal, before the descriptor change: the seal is durable, X still a member.
+    store.allow(1);
+    assert!(block_on(w.promote(id(1), 1)).is_err());
+    assert_eq!(w.unfinished_promotions(), vec![(id(1), 2)]);
+    assert!(matches!(
+        block_on(w.reclaim_below(3)),
+        Err(Error::Invalid(_))
+    ));
+    // Finishing the promotion lifts the block.
+    store.allow(i64::MAX);
+    block_on(w.promote(id(1), 1)).unwrap();
+    assert!(w.unfinished_promotions().is_empty());
+    block_on(w.reclaim_below(3)).unwrap();
+    // A fenced (poisoned) writer reclaims nothing.
+    let (mut newer, _) = open(&store, lane, 3);
+    assert_eq!(
+        block_on(w.append(&[put(id(2), 2, b"late")])).unwrap_err(),
+        Error::Fenced
+    );
+    assert_eq!(block_on(w.reclaim_below(4)).unwrap_err(), Error::Poisoned);
+    assert_eq!(block_on(w.promote(id(2), 1)).unwrap_err(), Error::Poisoned);
+    block_on(newer.append(&[put(id(2), 2, b"ok")])).unwrap();
 }

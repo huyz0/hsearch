@@ -254,3 +254,110 @@ fn head_cas_fences_a_stale_writer_and_never_reads_its_orphan() {
         "the orphan 'stale' payload is unreferenced"
     );
 }
+
+#[test]
+fn a_bad_record_is_refused_at_the_batcher_not_inside_a_batch_with_lane_mates() {
+    let mut b = Batcher::new(BatchPolicy::default()).unwrap();
+    let bad = |op, payload| OwnedRecord {
+        index: id(1),
+        seq: 1,
+        op,
+        payload,
+    };
+    assert!(
+        b.push(bad(RecordOp::Put, OwnedPayload::None), MS(0))
+            .is_err()
+    );
+    assert!(
+        b.push(bad(RecordOp::Delete, OwnedPayload::Inline(vec![1])), MS(0))
+            .is_err()
+    );
+    assert!(
+        b.push(bad(RecordOp::Seal, OwnedPayload::None), MS(0))
+            .is_err()
+    );
+    let external = |length| OwnedPayload::External {
+        object: id(3),
+        length,
+        digest: [0; 32],
+    };
+    assert!(b.push(bad(RecordOp::Put, external(0)), MS(0)).is_err());
+    assert!(
+        b.push(
+            bad(
+                RecordOp::Put,
+                external(hsearch_format::MAX_DOCUMENT_BYTES + 1)
+            ),
+            MS(0)
+        )
+        .is_err()
+    );
+    assert!(
+        b.push(
+            bad(RecordOp::Put, external(hsearch_format::MAX_DOCUMENT_BYTES)),
+            MS(0)
+        )
+        .is_ok()
+    );
+    assert_eq!(b.pending_records(), 1);
+}
+
+#[test]
+fn records_of_an_index_sealed_after_queueing_come_out_of_the_batch_without_failing_the_rest() {
+    let mut b = Batcher::new(BatchPolicy::default()).unwrap();
+    for n in [1, 2, 1, 3] {
+        b.push(rec(n, 10), MS(0)).unwrap();
+    }
+    let mut batch = b.flush().unwrap();
+    let removed = batch.remove_index(&id(1));
+    assert_eq!(removed.len(), 2);
+    assert_eq!(batch.records.len(), 2);
+    assert_eq!(
+        batch.bytes,
+        batch
+            .records
+            .iter()
+            .map(OwnedRecord::encoded_len)
+            .sum::<usize>()
+    );
+}
+
+#[test]
+fn a_batch_at_the_byte_cap_always_encodes() {
+    let max = hsearch_format::MAX_SLOT_BODY_BYTES - 1024;
+    assert!(
+        Batcher::new(BatchPolicy {
+            max_bytes: max + 1,
+            ..BatchPolicy::default()
+        })
+        .is_err()
+    );
+    let mut b = Batcher::new(BatchPolicy {
+        max_bytes: max,
+        ..BatchPolicy::default()
+    })
+    .unwrap();
+    let mut closed = Vec::new();
+    for n in 0..9u32 {
+        closed.extend(b.push(rec(n, 1 << 20), MS(0)).unwrap());
+    }
+    closed.extend(b.flush());
+    let at = hsearch_format::SlotPosition {
+        domain: id(1),
+        activation: 1,
+        lane: 0,
+        ordinal: 0,
+    };
+    for batch in &closed {
+        let mut out = Vec::new();
+        hsearch_format::encode_slot(
+            &mut out,
+            &at,
+            hsearch_format::CommitToken::new([1; 16]).unwrap(),
+            &hsearch_format::SlotBody::Data(&batch.specs()),
+        )
+        .unwrap();
+        assert!(out.len() <= hsearch_format::MAX_SLOT_BODY_BYTES + 64);
+    }
+    assert!(closed.iter().map(|c| c.records.len()).sum::<usize>() == 9);
+}

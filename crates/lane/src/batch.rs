@@ -4,12 +4,15 @@
 use std::time::Duration;
 
 use hsearch_format::{
-    Digest, Id, MAX_INLINE_RECORD_BYTES, MAX_SLOT_RECORDS, PayloadRef, RecordOp, RecordSpec,
+    Digest, Id, MAX_DOCUMENT_BYTES, MAX_INLINE_RECORD_BYTES, MAX_SLOT_RECORDS, PayloadRef,
+    RecordOp, RecordSpec,
 };
 
 use crate::{Error, Result};
 
 /// Fixed part of an encoded record: index 16, seq 8, op 1, payload kind 1.
+/// Slot body outside its records: header fields and the record count, with room to spare.
+const SLOT_OVERHEAD: usize = 1024;
 const RECORD_FIXED: usize = 26;
 
 /// A record's payload, owned until the slot is encoded.
@@ -113,6 +116,17 @@ pub struct Batch {
 }
 
 impl Batch {
+    /// Take out every record of `index` (it was sealed or left after they were queued), so the
+    /// rest of the batch can be appended instead of failing with it. Returns the removed records.
+    pub fn remove_index(&mut self, index: &Id) -> Vec<OwnedRecord> {
+        let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.records)
+            .into_iter()
+            .partition(|r| &r.index == index);
+        self.bytes -= gone.iter().map(OwnedRecord::encoded_len).sum::<usize>();
+        self.records = kept;
+        gone
+    }
+
     /// The borrowed records for `LaneWriter::append`.
     #[must_use]
     pub fn specs(&self) -> Vec<RecordSpec<'_>> {
@@ -136,7 +150,7 @@ impl Batcher {
         if policy.max_records == 0
             || policy.max_records > MAX_SLOT_RECORDS
             || policy.max_bytes == 0
-            || policy.max_bytes > hsearch_format::MAX_SLOT_BODY_BYTES
+            || policy.max_bytes > hsearch_format::MAX_SLOT_BODY_BYTES - SLOT_OVERHEAD
         {
             return Err(Error::Invalid("batch policy"));
         }
@@ -163,10 +177,15 @@ impl Batcher {
     /// one if this record would overflow it, and the record's own if it alone exceeds the byte
     /// target.
     pub fn push(&mut self, record: OwnedRecord, now: Duration) -> Result<Vec<Batch>> {
-        if let OwnedPayload::Inline(bytes) = &record.payload
-            && (bytes.is_empty() || bytes.len() > MAX_INLINE_RECORD_BYTES)
-        {
-            return Err(Error::Invalid("inline record size"));
+        // Everything the slot encoder would refuse is refused here, so a bad record cannot sit in a
+        // batch and fail its lane-mates' records on every retry.
+        match (&record.op, &record.payload) {
+            (RecordOp::Put, OwnedPayload::Inline(bytes))
+                if !bytes.is_empty() && bytes.len() <= MAX_INLINE_RECORD_BYTES => {}
+            (RecordOp::Put, OwnedPayload::External { length, .. })
+                if (1..=MAX_DOCUMENT_BYTES).contains(length) => {}
+            (RecordOp::Delete, OwnedPayload::None) => {}
+            _ => return Err(Error::Invalid("record op and payload")),
         }
         let cost = record.encoded_len();
         let mut closed = Vec::new();

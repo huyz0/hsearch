@@ -13,6 +13,7 @@
 //! checkpoints that move the cover (M06), AEAD (M05). A caller supplies the cover it replays from.
 pub mod batch;
 pub mod counting;
+mod cover;
 mod error;
 pub mod headcas;
 pub mod hot;

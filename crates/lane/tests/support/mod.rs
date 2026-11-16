@@ -120,6 +120,14 @@ impl<S: MetadataStore> MetadataStore for Chaos<S> {
         }
         self.inner.compare_exchange(c, r)
     }
+    fn remove_version<'a>(
+        &'a self,
+        c: &'a RequestContext,
+        k: &'a ObjectKey,
+        v: &'a VersionToken,
+    ) -> Operation<'a, ()> {
+        self.inner.remove_version(c, k, v)
+    }
     fn resolve<'a>(
         &'a self,
         c: &'a RequestContext,
