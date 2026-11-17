@@ -1195,6 +1195,7 @@ dependencies = [
  "lucene-index",
  "lucene-search",
  "lucene-store",
+ "lucene-util",
 ]
 
 [[package]]

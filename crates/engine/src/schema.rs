@@ -2,8 +2,11 @@
 use std::sync::Arc;
 
 use lucene_analysis::{Analyzer, StandardAnalyzer};
-use lucene_index::document::{Document, KeywordField, LongField, SharedText, Store, TextField};
+use lucene_index::document::{
+    Document, KeywordField, KnnFloatVectorField, LongField, SharedText, Store, TextField,
+};
 
+use crate::vector::{MAX_VECTOR_FIELDS, VectorSpec};
 use crate::{Error, Result};
 
 /// Maximum native fields, including two reserved identity/version fields.
@@ -123,10 +126,14 @@ pub enum Kind {
     Boolean,
     /// Caller-parsed UTC epoch milliseconds in the four-digit year domain.
     Date,
+    /// A dense float vector, indexed as HNSW (plain or quantized) and searched
+    /// by nearest neighbour. Indexed only: the vector is not a stored field, so
+    /// a projection cannot return it.
+    Vector(VectorSpec),
 }
 
 /// Typed input. Date parsing belongs to the caller; strings are never coerced.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Value<'a> {
     /// UTF-8 keyword or analyzed text.
     String(&'a str),
@@ -139,6 +146,8 @@ pub enum Value<'a> {
     Boolean(bool),
     /// UTC epoch milliseconds, checked against years 0000 through 9999.
     Date(i64),
+    /// A vector of exactly the field's dimension, every component finite.
+    Vector(&'a [f32]),
 }
 
 impl Value<'_> {
@@ -175,6 +184,13 @@ impl Schema {
             {
                 return Err(Error::Schema);
             }
+        }
+        let vectors = fields.iter().filter_map(|(_, k)| match k {
+            Kind::Vector(spec) => Some(spec),
+            _ => None,
+        });
+        if vectors.clone().count() > MAX_VECTOR_FIELDS || vectors.into_iter().any(|s| !s.valid()) {
+            return Err(Error::Schema);
         }
         Ok(Self {
             revision,
@@ -243,6 +259,7 @@ impl Schema {
                     n.checked_add(match value {
                         Value::String(s) => s.len(),
                         Value::Shared(s) => s.len(),
+                        Value::Vector(v) => v.len().saturating_mul(4),
                         _ => 8,
                     })
                 })
@@ -300,6 +317,10 @@ impl Schema {
                 (Kind::Integer, Value::Integer(n)) | (Kind::Date, Value::Date(n)) => {
                     document.add(LongField::new(*name, *n, Store::Yes))
                 }
+                (Kind::Vector(spec), Value::Vector(v)) => document.add(
+                    KnnFloatVectorField::new(*name, v.to_vec(), spec.native_similarity())
+                        .map_err(|_| Error::Document)?,
+                ),
                 (Kind::Boolean, Value::Boolean(b)) => {
                     document.add(KeywordField::new(*name, b.to_string(), Store::Yes))
                 }
@@ -324,6 +345,7 @@ pub(crate) fn validate(kind: Kind, value: Value<'_>) -> Result<()> {
     match (kind, value) {
         (Kind::Keyword | Kind::Text, Value::String(_) | Value::Shared(_))
         | (Kind::Boolean, Value::Boolean(_)) => Ok(()),
+        (Kind::Vector(spec), Value::Vector(v)) => spec.check(v),
         (Kind::Integer, Value::Integer(n)) if i32::try_from(n).is_ok() => Ok(()),
         (Kind::Date, Value::Date(n))
             if (-62_167_219_200_000..=253_402_300_799_999).contains(&n) =>

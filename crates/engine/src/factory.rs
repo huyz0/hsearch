@@ -27,6 +27,8 @@ pub enum Capability {
     QueryMatch,
     /// Boolean combination.
     QueryBool,
+    /// k-nearest-neighbour search over a vector field, optionally filtered.
+    QueryKnn,
     /// A query shape outside the selected IR.
     UnsupportedQuery,
     /// Local BM25 score order.
@@ -71,6 +73,7 @@ impl Capability {
             Self::RemoteRangeInput => 14,
             Self::ScriptedUpdate => 15,
             Self::MultiWriter => 16,
+            Self::QueryKnn => 17,
         }
     }
     /// Every capability, so the inventory can be checked for completeness.
@@ -92,6 +95,7 @@ impl Capability {
         Self::RemoteRangeInput,
         Self::ScriptedUpdate,
         Self::MultiWriter,
+        Self::QueryKnn,
     ];
 }
 
@@ -156,6 +160,7 @@ static INVENTORY: &[Feature] = &[
         Capability::MultiWriter,
         "one writer per directory; authority is the commit lane's, not the engine's",
     ),
+    yes(Capability::QueryKnn),
 ];
 
 /// How segment bytes reach the reader.
@@ -180,6 +185,7 @@ pub fn capability_of_query(query: &Query<'_>) -> Capability {
         Query::Range { .. } => Capability::QueryRange,
         Query::Match { .. } => Capability::QueryMatch,
         Query::Bool { .. } => Capability::QueryBool,
+        Query::Knn { .. } => Capability::QueryKnn,
         Query::Unsupported => Capability::UnsupportedQuery,
     }
 }
