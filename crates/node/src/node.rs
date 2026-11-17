@@ -50,6 +50,7 @@ pub struct Node<S> {
     indexes: Mutex<HashMap<String, Slot>>,
     limits: Limits,
     mapping_limits: MappingLimits,
+    background_merge: bool,
     gate: MemoryGate,
     /// Shared mappings this node has stored or verified, by content hash.
     shared: Mutex<HashMap<Digest, Arc<Mapping>>>,
@@ -122,7 +123,24 @@ impl<S: MetadataStore + 'static> Node<S> {
             shared: Mutex::new(HashMap::new()),
             limits,
             mapping_limits: MappingLimits::default(),
+            background_merge: false,
         })
+    }
+
+    /// This node running every index's automatic merges on a background thread
+    /// instead of inside the refresh that triggers them (needs `auto_merge_mb`).
+    #[must_use]
+    pub fn with_background_merge(mut self, on: bool) -> Self {
+        self.background_merge = on;
+        self
+    }
+
+    fn merge_mode(&self) -> hsearch_engine::MergeMode {
+        if self.background_merge {
+            hsearch_engine::MergeMode::Background
+        } else {
+            hsearch_engine::MergeMode::Inline
+        }
     }
 
     /// This node under explicit field, depth and nested-object limits (PR-42),
@@ -270,11 +288,12 @@ impl<S: MetadataStore + 'static> Node<S> {
 
     fn open(&self, name: &str) -> Result<Arc<Entry>, ApiError> {
         let mapping = self.load_mapping(name)?;
-        let index = Index::open(
+        let index = Index::open_merging(
             Arc::clone(&self.store),
             name,
             self.schema_of(&mapping)?,
             &self.scratch(name),
+            self.merge_mode(),
         )?;
         Ok(Arc::new(Entry { index, mapping }))
     }
@@ -291,18 +310,23 @@ impl<S: MetadataStore + 'static> Node<S> {
             if guard.is_some() {
                 return Err(hsearch_index::Error::Exists.into());
             }
-            let index = match Index::create(
+            let index = match Index::create_merging(
                 Arc::clone(&self.store),
                 name,
                 schema.clone(),
                 &self.scratch(name),
+                self.merge_mode(),
             ) {
                 Ok(index) => Ok(index),
                 Err(hsearch_index::Error::Exists) => {
                     match hsearch_index::get_mapping(&*self.store, name) {
-                        Err(hsearch_index::Error::NotFound) => {
-                            Index::open(Arc::clone(&self.store), name, schema, &self.scratch(name))
-                        }
+                        Err(hsearch_index::Error::NotFound) => Index::open_merging(
+                            Arc::clone(&self.store),
+                            name,
+                            schema,
+                            &self.scratch(name),
+                            self.merge_mode(),
+                        ),
                         _ => Err(hsearch_index::Error::Exists),
                     }
                 }

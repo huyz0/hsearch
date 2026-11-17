@@ -44,7 +44,8 @@ fn run() -> Result<(), String> {
         .map_err(|e| format!("preparing the bucket: {e}"))?;
     let node = Arc::new(
         Node::with_limits(Arc::new(store), options.data_dir, options.limits)?
-            .with_mapping_limits(options.mapping_limits)?,
+            .with_mapping_limits(options.mapping_limits)?
+            .with_background_merge(options.background_merge),
     );
     let running = serve(node, &options.listen, 8, options.insecure)?;
     println!("listening on http://{}", running.addr);
