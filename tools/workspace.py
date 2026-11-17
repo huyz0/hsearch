@@ -58,8 +58,10 @@ EXTERNAL["hsearch-lane"] = {"sha2"}
 EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 # Identity and key provider: X.509 chain verification (rustls-webpki over ring) and SAN parsing (x509-parser),
 # AES-256-GCM for the isolated test KMS wrap, SHA-256 digests, OS randomness and zeroizing key bytes. All exact-pinned
-# in crates/security/Cargo.toml. rcgen (and time, for certificate dates) are the optional `dev-ca` feature only.
-EXTERNAL["hsearch-security"] = {"aes-gcm", "getrandom", "rcgen", "rustls-pki-types", "rustls-webpki", "sha2", "time", "x509-parser", "zeroize"}
+# in crates/security/Cargo.toml. rcgen (and time, for certificate dates) are the optional `dev-ca` feature only;
+# rustls (TLS 1.3 transport with rotating certificates) is the optional `tls` feature only, and `aes` is the AES
+# block cipher aes-gcm already uses, named directly so the backend in use can be reported.
+EXTERNAL["hsearch-security"] = {"aes", "aes-gcm", "rustls", "getrandom", "rcgen", "rustls-pki-types", "rustls-webpki", "sha2", "time", "x509-parser", "zeroize"}
 # Request-retry fingerprints (SHA-256), exact-pinned in crates/seal/Cargo.toml.
 EXTERNAL["hsearch-seal"] = {"sha2"}
 # Extension module contract (JSON descriptor) and the native loader: dynamic library open, SHA-256 pin and a sealed memfd copy.

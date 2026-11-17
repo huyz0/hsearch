@@ -12,17 +12,31 @@ description = "Verified identity, per-index authorization and the key-provider c
 dev-ca = ["dep:rcgen", "dep:time"]
 # The in-memory test key provider. Non-default; no production crate enables it.
 test-kms = []
+# TLS 1.3 mutual-TLS transport with certificates and trust bundles that rotate while connections stay open.
+tls = ["dep:rustls"]
 
 [dependencies]
+aes = "=0.9.4"
 aes-gcm = { version = "=0.11.1", features = ["zeroize"] }
 rustls-webpki = { version = "=0.103.17", default-features = false, features = ["ring", "std"] }
 rustls-pki-types = { version = "=1.16.0", default-features = false, features = ["std"] }
 sha2 = "=0.10.9"
 x509-parser = "=0.18.1"
 zeroize = "=1.9.1"
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std"], optional = true }
 getrandom = "=0.4.3"
 rcgen = { version = "=0.14.10", default-features = false, features = ["ring", "pem"], optional = true }
 time = { version = "=0.3.55", default-features = false, optional = true }
+
+[[test]]
+name = "backend"
+
+[dev-dependencies]
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+
+[[test]]
+name = "tls"
+required-features = ["tls", "dev-ca"]
 
 [[test]]
 name = "identity"
@@ -30,6 +44,18 @@ required-features = ["dev-ca"]
 
 [[test]]
 name = "block"
+required-features = ["test-kms"]
+
+[[test]]
+name = "adversarial"
+required-features = ["test-kms"]
+
+[[test]]
+name = "conformance"
+required-features = ["test-kms"]
+
+[[test]]
+name = "kms_paths"
 required-features = ["test-kms"]
 
 [[test]]
@@ -42,6 +68,10 @@ required-features = ["test-kms"]
 
 [[example]]
 name = "block_bench"
+required-features = ["test-kms"]
+
+[[example]]
+name = "kms_path"
 required-features = ["test-kms"]
 
 [[example]]
