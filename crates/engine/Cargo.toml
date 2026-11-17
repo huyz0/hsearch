@@ -16,6 +16,7 @@ lucene-index.workspace = true
 lucene-search.workspace = true
 lucene-store.workspace = true
 lucene-util.workspace = true
+sha2 = "=0.11.1"
 
 [dev-dependencies]
 hsearch-s3 = { path = "../s3" }

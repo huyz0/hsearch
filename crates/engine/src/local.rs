@@ -13,6 +13,10 @@ pub struct LocalFiles {
 }
 
 impl LocalFiles {
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// Names of the native files present, excluding the write lock.
     pub fn names(&self) -> Result<Vec<String>> {
         let mut names: Vec<String> = FsDirectory::open(&self.root)

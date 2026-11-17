@@ -5,6 +5,8 @@ mod budget;
 pub use budget::{DiskBudget, DiskReservation};
 mod integrity;
 pub use integrity::{verify_directory, verify_files};
+mod publish;
+pub use publish::{PublishError, UploadedFile, upload_files, upload_local};
 mod maintenance;
 pub use maintenance::{MergeScheduler, MergeTicket};
 mod checkpoint;
