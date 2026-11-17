@@ -154,6 +154,8 @@ impl Snapshot {
         for s in sort {
             factory.require(crate::capability_of_sort(s))?;
         }
+        // Refuse what can be refused before any segment is opened.
+        crate::query::validate(&self.schema, query)?;
         for (i, name) in projection.iter().enumerate() {
             if matches!(self.schema.kind(name)?, Kind::Vector(_)) {
                 return Err(Error::Unsupported);
@@ -320,6 +322,16 @@ pub(crate) fn verify(
         .map_err(|_| Error::Native)?
         .search(&query, schema.limits.documents)
         .map_err(|_| Error::Native)?;
+    // Each vector field's segments are opened once, not once per document.
+    let mut vectors = Vec::new();
+    for (name, kind) in &schema.fields {
+        if let Kind::Vector(spec) = kind {
+            vectors.push((
+                name.as_str(),
+                crate::vector::StoredVectors::open(reader, name, usize::from(spec.dimension))?,
+            ));
+        }
+    }
     let mut seen = std::collections::BTreeSet::new();
     if result.score_docs.len()
         != expected
@@ -345,12 +357,14 @@ pub(crate) fn verify(
         let mut values = Vec::with_capacity(fields.len());
         for (name, kind) in schema.fields.iter().map(|(n, k)| (n.as_str(), *k)) {
             values.push(match kind {
-                Kind::Vector(spec) => Recovered::Floats(crate::vector::stored_vector(
-                    reader,
-                    hit.doc,
-                    name,
-                    usize::from(spec.dimension),
-                )?),
+                Kind::Vector(_) => Recovered::Floats(
+                    vectors
+                        .iter()
+                        .find(|(n, _)| *n == name)
+                        .ok_or(Error::Checkpoint)?
+                        .1
+                        .get(hit.doc)?,
+                ),
                 _ => match (kind, stored(reader, hit.doc, name)?) {
                     (Kind::Keyword | Kind::Text | Kind::Boolean, FieldValue::String(s)) => {
                         Recovered::Text(s)

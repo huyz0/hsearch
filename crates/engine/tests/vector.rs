@@ -459,8 +459,14 @@ fn a_checkpoint_reopens_with_the_same_top_k() {
     let queries = corpus(10, DIM, 31);
     for quantizer in [
         Quantizer::None,
+        Quantizer::Scalar(ScalarBits::Eight),
+        Quantizer::Scalar(ScalarBits::Seven),
         Quantizer::Scalar(ScalarBits::Four),
+        Quantizer::Scalar(ScalarBits::Two),
+        Quantizer::Scalar(ScalarBits::One),
         Quantizer::Bbq,
+        Quantizer::RaBitQ,
+        Quantizer::Erq(4),
     ] {
         let schema = schema(VectorSpec::hnsw(DIM as u16, Similarity::L2).with_quantizer(quantizer));
         let directory = ByteBuffersDirectory::new();
@@ -650,4 +656,55 @@ fn schema_rejects_malformed_vector_declarations() {
         .collect();
     let refs: Vec<(&str, Kind)> = many.iter().map(|(n, k)| (n.as_str(), *k)).collect();
     assert_eq!(Schema::new(1, &refs), Err(Error::Schema));
+}
+
+#[test]
+fn a_batch_of_large_vectors_is_charged_at_their_real_size() {
+    // 16 documents of 2,000 components are 128 KB: over the batch bound, though
+    // each document alone is within its own.
+    let schema = schema(VectorSpec::hnsw(2000, Similarity::L2));
+    let vector = vec![0.5f32; 2000];
+    let ids: Vec<String> = (0..16).map(|i| format!("d{i}")).collect();
+    let fields = [
+        ("category", Value::String("c")),
+        ("embedding", Value::Vector(&vector)),
+    ];
+    let mutations: Vec<Mutation> = ids
+        .iter()
+        .map(|id| Mutation::Put {
+            id,
+            version: 1,
+            fields: &fields,
+        })
+        .collect();
+    assert!(matches!(
+        schema.prepare("big", &mutations),
+        Err(Error::Limit)
+    ));
+    assert!(schema.prepare("small", &mutations[..4]).is_ok());
+}
+
+#[test]
+fn a_query_may_run_only_a_few_knn_searches() {
+    let schema = schema(VectorSpec::hnsw(4, Similarity::L2));
+    let directory = ByteBuffersDirectory::new();
+    let observed = EngineDirectory::new(&directory);
+    let engine = open(&observed, &schema);
+    let snapshot = engine.refresh().unwrap();
+    let v = [0.0f32; 4];
+    let searches: Vec<Query> = (0..5).map(|_| knn(&v, 1, None)).collect();
+    let bool_of = |n: usize| Query::Bool {
+        must: &[],
+        filter: &[],
+        should: &searches[..n],
+        must_not: &[],
+        minimum_should_match: 1,
+    };
+    assert!(snapshot.search(&bool_of(4), &[], 1, &[]).is_ok());
+    assert!(matches!(
+        snapshot.search(&bool_of(5), &[], 1, &[]),
+        Err(Error::Limit)
+    ));
+    drop(snapshot);
+    engine.close().unwrap();
 }

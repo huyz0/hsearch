@@ -83,10 +83,17 @@ pub enum Query<'a> {
     Unsupported,
 }
 
+/// Most kNN searches one query may run, each a graph walk per segment.
+const MAX_KNN_CLAUSES: usize = 4;
+
 struct Budget {
     nodes: usize,
     bytes: usize,
     terms: usize,
+    /// kNN clauses seen so far.
+    knn: usize,
+    /// Validate only: a kNN clause is checked but not run.
+    dry: bool,
 }
 impl Budget {
     fn charge(&mut self, nodes: usize, bytes: usize, terms: usize) -> Result<()> {
@@ -102,6 +109,24 @@ impl Budget {
 }
 pub(crate) fn lower(schema: &Schema, query: &Query<'_>) -> Result<BooleanQuery> {
     lower_with(schema, query, None)
+}
+/// Check a query against the schema and its budgets without running any kNN
+/// search, so a refusable query is refused before any segment is opened.
+pub(crate) fn validate(schema: &Schema, query: &Query<'_>) -> Result<()> {
+    clause(
+        schema,
+        query,
+        0,
+        &mut Budget {
+            nodes: 0,
+            bytes: 0,
+            terms: 0,
+            knn: 0,
+            dry: true,
+        },
+        None,
+    )
+    .map(|_| ())
 }
 /// [`lower`] for a query that may carry a kNN search, which needs the segments
 /// it runs over: each is resolved to its fixed hits here.
@@ -119,6 +144,8 @@ pub(crate) fn lower_with(
                 nodes: 0,
                 bytes: 0,
                 terms: 0,
+                knn: 0,
+                dry: false,
             },
             knn,
         )?],
@@ -184,10 +211,20 @@ fn clause(
             };
             spec.check(vector)?;
             budget.charge(0, field.len(), 0)?;
-            let context = knn.ok_or(Error::Unsupported)?;
+            budget.knn += 1;
+            if budget.knn > MAX_KNN_CLAUSES || *k == 0 || *k > crate::MAX_KNN_K {
+                return Err(Error::Limit);
+            }
+            if *candidates > crate::MAX_KNN_CANDIDATES || *nprobe > crate::MAX_NPROBE {
+                return Err(Error::Limit);
+            }
             let filter = filter
                 .map(|f| clause(schema, f, depth + 1, budget, knn))
                 .transpose()?;
+            if budget.dry {
+                return Ok(Clause::MatchNoDocs(MatchNoDocsQuery::new()));
+            }
+            let context = knn.ok_or(Error::Unsupported)?;
             crate::vector::resolve(
                 context,
                 field,

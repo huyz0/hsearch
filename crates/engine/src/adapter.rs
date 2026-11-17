@@ -182,6 +182,7 @@ impl Schema {
                             n.checked_add(match value {
                                 Value::String(s) => s.len(),
                                 Value::Shared(s) => s.len(),
+                                Value::Vector(v) => v.len().saturating_mul(4),
                                 _ => 8,
                             })
                         })

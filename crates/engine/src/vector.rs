@@ -8,6 +8,7 @@
 //! exactness of the final order.
 use lucene_codecs::field_infos::VectorSimilarityFunction;
 use lucene_codecs::per_field_knn_vectors::KnnVectorsFormat;
+use lucene_codecs::vectors::FloatVectorValues;
 use lucene_search::directory_reader::DirectoryReader;
 use lucene_search::extended_query::{DocAndScoreQuery, ExtendedQuery};
 use lucene_search::knn_search::{KnnTarget, knn_top_hits_with};
@@ -17,7 +18,9 @@ use lucene_util::quantization::ScalarEncoding;
 
 use crate::{Error, Result};
 
-/// Largest vector dimension a field may declare.
+/// Largest vector dimension a field may declare. A document also has to fit
+/// `Limits::document_bytes` at 4 bytes a component, so the default 8 KiB bound
+/// reaches about 2,000 dimensions; raise the limit for more.
 pub const MAX_DIMENSION: usize = 4096;
 /// Most vector fields in one schema.
 pub const MAX_VECTOR_FIELDS: usize = 4;
@@ -219,20 +222,20 @@ pub(crate) fn resolve(
     ))))
 }
 
-/// The raw vector stored for global document `doc`, read back from the segment
-/// that holds it. Every document of a schema with a vector field has one, so
-/// ordinals equal local document ids; anything else is a damaged index.
-pub(crate) fn stored_vector(
-    reader: &DirectoryReader,
-    mut doc: i32,
-    name: &str,
-    dimension: usize,
-) -> Result<Vec<f32>> {
-    if doc < 0 {
-        return Err(Error::Native);
-    }
-    for segment in reader.segment_readers() {
-        if doc < segment.max_doc {
+/// The raw vectors of one field, opened once per segment so reading one back
+/// costs no more than the read itself. Every document of a schema with a vector
+/// field has one, so a vector's ordinal is its local document id; anything else
+/// is a damaged index.
+pub(crate) struct StoredVectors<'r> {
+    /// Per segment: its first global document, its document count and its vectors.
+    segments: Vec<(i32, i32, FloatVectorValues<'r>)>,
+}
+
+impl<'r> StoredVectors<'r> {
+    pub(crate) fn open(reader: &'r DirectoryReader, name: &str, dimension: usize) -> Result<Self> {
+        let mut segments = Vec::with_capacity(reader.segment_readers().len());
+        let mut base = 0i32;
+        for segment in reader.segment_readers() {
             let number = segment
                 .field_infos()
                 .fields
@@ -250,11 +253,24 @@ pub(crate) fn stored_vector(
             if values.dimension() != dimension || values.size() != segment.max_doc {
                 return Err(Error::Checkpoint);
             }
-            return values.vector(doc).map_err(|_| Error::Native);
+            segments.push((base, segment.max_doc, values));
+            base = base.checked_add(segment.max_doc).ok_or(Error::Limit)?;
         }
-        doc -= segment.max_doc;
+        Ok(Self { segments })
     }
-    Err(Error::Native)
+
+    /// The vector of global document `doc`.
+    pub(crate) fn get(&self, doc: i32) -> Result<Vec<f32>> {
+        let at = self.segments.partition_point(|(base, _, _)| *base <= doc);
+        let (base, max_doc, values) = at
+            .checked_sub(1)
+            .and_then(|i| self.segments.get(i))
+            .ok_or(Error::Native)?;
+        if doc - base >= *max_doc {
+            return Err(Error::Native);
+        }
+        values.vector(doc - base).map_err(|_| Error::Native)
+    }
 }
 
 #[cfg(test)]
