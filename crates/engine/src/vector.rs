@@ -114,10 +114,11 @@ pub enum Rerank {
     Int8,
 }
 
-/// The codes an IVF field keeps in each cluster's posting list. Every IVF
-/// field has codes; the full-precision vectors are what it reranks on.
+/// The codes an IVF or disk-HNSW field keeps beside its full-precision
+/// vectors: IVF's posting lists hold them, and disk HNSW scores neighbours on
+/// them in memory. Every such field has codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IvfQuantizer {
+pub enum CodeQuantizer {
     /// 1 bit per dimension plus 16 bytes, 4-bit queries.
     Bbq,
     /// The same quantizer at 2, 4 or 7 bits per dimension.
@@ -126,11 +127,11 @@ pub enum IvfQuantizer {
     Erq(u8),
     /// BBQ after a random rotation.
     RaBitQ,
-    /// Picked per segment from the field's own vectors.
+    /// Picked per segment from the field's own vectors (IVF only).
     Auto,
 }
 
-impl IvfQuantizer {
+impl CodeQuantizer {
     fn valid(self) -> bool {
         match self {
             Self::Osq(bits) => matches!(bits, 2 | 4 | 7),
@@ -139,7 +140,7 @@ impl IvfQuantizer {
         }
     }
 
-    /// Its place in `IVF_QUANTIZERS`, the wire number the format records.
+    /// Its place in `CODE_QUANTIZERS`, the wire number the format records.
     fn wire(self) -> u8 {
         match self {
             Self::Bbq => 0,
@@ -169,7 +170,14 @@ pub enum Index {
         /// Encoding of the vectors reranked on.
         rerank: Rerank,
         /// Codes of the posting lists.
-        quantizer: IvfQuantizer,
+        quantizer: CodeQuantizer,
+    },
+    /// An HNSW graph in page-aligned node records (`lucene-disk-hnsw`): one
+    /// aligned read per expanded node, neighbours scored on in-memory
+    /// `quantizer` codes. `m` and `ef_construction` apply as for HNSW.
+    HnswDisk {
+        /// Codes kept in memory; every one but `Auto`.
+        quantizer: CodeQuantizer,
     },
 }
 
@@ -210,7 +218,7 @@ impl VectorSpec {
         dimension: u16,
         similarity: Similarity,
         target_cluster_size: u32,
-        quantizer: IvfQuantizer,
+        quantizer: CodeQuantizer,
         rerank: Rerank,
     ) -> Self {
         let mut spec = Self::hnsw(dimension, similarity);
@@ -228,6 +236,19 @@ impl VectorSpec {
     pub const fn with_quantizer(mut self, quantizer: Quantizer) -> Self {
         self.quantizer = quantizer;
         self
+    }
+
+    /// A disk-HNSW field: the graph of `hnsw(..)` (`m`, `ef_construction`),
+    /// stored as node records read one page at a time, with `quantizer` codes
+    /// scoring neighbours in memory.
+    pub const fn hnsw_disk(
+        dimension: u16,
+        similarity: Similarity,
+        quantizer: CodeQuantizer,
+    ) -> Self {
+        let mut spec = Self::hnsw(dimension, similarity);
+        spec.index = Index::HnswDisk { quantizer };
+        spec
     }
 
     /// An IVF spec probing `nprobe` clusters by default (0: the automatic
@@ -256,7 +277,7 @@ impl VectorSpec {
     pub const fn default_nprobe(&self) -> usize {
         match self.index {
             Index::Ivf { nprobe, .. } => nprobe as usize,
-            Index::Hnsw => 0,
+            Index::Hnsw | Index::HnswDisk { .. } => 0,
         }
     }
 
@@ -275,6 +296,11 @@ impl VectorSpec {
             && self.quantizer.valid()
             && match self.index {
                 Index::Hnsw => true,
+                Index::HnswDisk { quantizer } => {
+                    quantizer != CodeQuantizer::Auto
+                        && quantizer.valid()
+                        && self.quantizer == Quantizer::None
+                }
                 Index::Ivf {
                     target_cluster_size,
                     nprobe,
@@ -314,12 +340,19 @@ impl VectorSpec {
             };
         }
         let (max_conn, beam_width) = (i32::from(self.m), i32::from(self.ef_construction));
+        if let Index::HnswDisk { quantizer } = self.index {
+            return KnnVectorsFormat::HnswDisk {
+                quantizer: quantizer.wire(),
+                max_conn,
+                beam_width,
+            };
+        }
         let scalar = |encoding| KnnVectorsFormat::HnswScalarQuantized {
             encoding,
             max_conn,
             beam_width,
         };
-        // The wire number of a quantizer is its place in `IVF_QUANTIZERS`.
+        // The wire number of a quantizer is its place in `CODE_QUANTIZERS`.
         let coded = |quantizer: u8| KnnVectorsFormat::HnswQuantized {
             quantizer,
             max_conn,
@@ -487,7 +520,7 @@ mod tests {
     fn ivf_specs_route_to_the_ivf_format_and_keep_their_bounds() {
         let ivf = |size, q, r| VectorSpec::ivf(8, Similarity::L2, size, q, r);
         assert!(matches!(
-            ivf(512, IvfQuantizer::Erq(4), Rerank::F16).format(),
+            ivf(512, CodeQuantizer::Erq(4), Rerank::F16).format(),
             KnnVectorsFormat::Ivf {
                 target_cluster_size: 512,
                 rerank_encoding: 1,
@@ -498,24 +531,24 @@ mod tests {
             KnnVectorsFormat::Ivf { quantizer, .. } => quantizer,
             other => panic!("not ivf: {other:?}"),
         };
-        assert_eq!(wire(IvfQuantizer::Bbq), 0);
-        assert_eq!(wire(IvfQuantizer::Osq(2)), 1);
-        assert_eq!(wire(IvfQuantizer::Osq(4)), 2);
-        assert_eq!(wire(IvfQuantizer::Osq(7)), 3);
-        assert_eq!(wire(IvfQuantizer::RaBitQ), 11);
-        assert_eq!(wire(IvfQuantizer::Auto), 12);
-        assert!(ivf(16, IvfQuantizer::Bbq, Rerank::Int8).valid());
-        assert!(!ivf(15, IvfQuantizer::Bbq, Rerank::F32).valid());
-        assert!(!ivf(65_537, IvfQuantizer::Bbq, Rerank::F32).valid());
-        assert!(!ivf(512, IvfQuantizer::Osq(3), Rerank::F32).valid());
-        let probing = ivf(512, IvfQuantizer::Bbq, Rerank::F32).with_nprobe(16);
+        assert_eq!(wire(CodeQuantizer::Bbq), 0);
+        assert_eq!(wire(CodeQuantizer::Osq(2)), 1);
+        assert_eq!(wire(CodeQuantizer::Osq(4)), 2);
+        assert_eq!(wire(CodeQuantizer::Osq(7)), 3);
+        assert_eq!(wire(CodeQuantizer::RaBitQ), 11);
+        assert_eq!(wire(CodeQuantizer::Auto), 12);
+        assert!(ivf(16, CodeQuantizer::Bbq, Rerank::Int8).valid());
+        assert!(!ivf(15, CodeQuantizer::Bbq, Rerank::F32).valid());
+        assert!(!ivf(65_537, CodeQuantizer::Bbq, Rerank::F32).valid());
+        assert!(!ivf(512, CodeQuantizer::Osq(3), Rerank::F32).valid());
+        let probing = ivf(512, CodeQuantizer::Bbq, Rerank::F32).with_nprobe(16);
         assert!(probing.valid());
         assert_eq!(probing.default_nprobe(), 16);
         assert!(!probing.with_nprobe(MAX_NPROBE as u32 + 1).valid());
         // The default does not change which files an ivf field writes.
         assert_eq!(
             probing.format(),
-            ivf(512, IvfQuantizer::Bbq, Rerank::F32).format()
+            ivf(512, CodeQuantizer::Bbq, Rerank::F32).format()
         );
         assert_eq!(
             VectorSpec::hnsw(8, Similarity::L2)
@@ -523,10 +556,33 @@ mod tests {
                 .default_nprobe(),
             0
         );
-        assert!(!ivf(512, IvfQuantizer::Erq(9), Rerank::F32).valid());
+        assert!(!ivf(512, CodeQuantizer::Erq(9), Rerank::F32).valid());
         let with_hnsw_codes =
-            ivf(512, IvfQuantizer::Bbq, Rerank::F32).with_quantizer(Quantizer::Bbq);
+            ivf(512, CodeQuantizer::Bbq, Rerank::F32).with_quantizer(Quantizer::Bbq);
         assert!(!with_hnsw_codes.valid());
+    }
+
+    #[test]
+    fn disk_hnsw_specs_route_to_the_disk_format_and_keep_their_bounds() {
+        let disk = |q| VectorSpec::hnsw_disk(8, Similarity::L2, q).with_graph(24, 150);
+        assert!(matches!(
+            disk(CodeQuantizer::Bbq).format(),
+            KnnVectorsFormat::HnswDisk {
+                quantizer: 0,
+                max_conn: 24,
+                beam_width: 150
+            }
+        ));
+        assert!(disk(CodeQuantizer::Erq(8)).valid());
+        assert!(!disk(CodeQuantizer::Auto).valid());
+        assert!(!disk(CodeQuantizer::Osq(3)).valid());
+        assert!(!disk(CodeQuantizer::Bbq).with_graph(0, 100).valid());
+        assert!(
+            !disk(CodeQuantizer::Bbq)
+                .with_quantizer(Quantizer::Bbq)
+                .valid()
+        );
+        assert_eq!(disk(CodeQuantizer::Bbq).default_nprobe(), 0);
     }
 
     #[test]

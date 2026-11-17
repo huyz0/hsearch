@@ -1,7 +1,7 @@
 //! The `knn_vector` mapping type: parsing its OpenSearch-shaped parameters and
 //! the one-line stored spelling that round-trips them.
 use hsearch_engine::{
-    DEFAULT_IVF_CLUSTER_SIZE, IVF_CLUSTER_SIZE, Index, IvfQuantizer, Kind, MAX_NPROBE, Quantizer,
+    CodeQuantizer, DEFAULT_IVF_CLUSTER_SIZE, IVF_CLUSTER_SIZE, Index, Kind, MAX_NPROBE, Quantizer,
     Rerank, ScalarBits, Similarity, VectorSpec,
 };
 use serde_json::{Map, Value};
@@ -41,20 +41,20 @@ const QUANTIZERS: [(&str, Quantizer); 15] = [
     ("erq8", Quantizer::Erq(8)),
 ];
 
-const IVF_QUANTIZERS: [(&str, IvfQuantizer); 13] = [
-    ("bbq", IvfQuantizer::Bbq),
-    ("osq2", IvfQuantizer::Osq(2)),
-    ("osq4", IvfQuantizer::Osq(4)),
-    ("osq7", IvfQuantizer::Osq(7)),
-    ("erq2", IvfQuantizer::Erq(2)),
-    ("erq3", IvfQuantizer::Erq(3)),
-    ("erq4", IvfQuantizer::Erq(4)),
-    ("erq5", IvfQuantizer::Erq(5)),
-    ("erq6", IvfQuantizer::Erq(6)),
-    ("erq7", IvfQuantizer::Erq(7)),
-    ("erq8", IvfQuantizer::Erq(8)),
-    ("rabitq", IvfQuantizer::RaBitQ),
-    ("auto", IvfQuantizer::Auto),
+const CODE_QUANTIZERS: [(&str, CodeQuantizer); 13] = [
+    ("bbq", CodeQuantizer::Bbq),
+    ("osq2", CodeQuantizer::Osq(2)),
+    ("osq4", CodeQuantizer::Osq(4)),
+    ("osq7", CodeQuantizer::Osq(7)),
+    ("erq2", CodeQuantizer::Erq(2)),
+    ("erq3", CodeQuantizer::Erq(3)),
+    ("erq4", CodeQuantizer::Erq(4)),
+    ("erq5", CodeQuantizer::Erq(5)),
+    ("erq6", CodeQuantizer::Erq(6)),
+    ("erq7", CodeQuantizer::Erq(7)),
+    ("erq8", CodeQuantizer::Erq(8)),
+    ("rabitq", CodeQuantizer::RaBitQ),
+    ("auto", CodeQuantizer::Auto),
 ];
 
 const RERANKS: [(&str, Rerank); 4] = [
@@ -103,7 +103,14 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
     only(
         name,
         definition,
-        &["type", "dimension", "space_type", "method", "quantizer"],
+        &[
+            "type",
+            "dimension",
+            "space_type",
+            "method",
+            "quantizer",
+            "mode",
+        ],
         "knn_vector",
     )?;
     let dimension = definition
@@ -115,6 +122,12 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
     let (mut cluster, mut rerank) = (DEFAULT_IVF_CLUSTER_SIZE, Rerank::F32);
     let mut nprobe = 0u32;
     let mut ivf = false;
+    let disk = match definition.get("mode").map(Value::as_str) {
+        None => false,
+        Some(Some("on_disk")) => true,
+        Some(Some("in_memory")) => false,
+        _ => return Err(bad(name, "[mode] must be [in_memory] or [on_disk]")),
+    };
     if let Some(method) = definition.get("method") {
         let method = method
             .as_object()
@@ -223,10 +236,33 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
         Some(None) => return Err(bad(name, "[space_type] must be a string")),
     };
     let quantizer = definition.get("quantizer").map(Value::as_str);
-    let spec = if ivf {
+    let spec = if disk && ivf {
+        return Err(bad(
+            name,
+            "[mode] on_disk applies to hnsw; an ivf field is already read by range",
+        ));
+    } else if disk {
         let quantizer = match quantizer {
-            None => IvfQuantizer::Bbq,
-            Some(Some(s)) => IVF_QUANTIZERS
+            None => CodeQuantizer::Bbq,
+            Some(Some(s)) => CODE_QUANTIZERS
+                .iter()
+                .find(|(n, _)| *n == s && *n != "auto")
+                .map(|(_, v)| *v)
+                .ok_or_else(|| {
+                    bad(
+                        name,
+                        format!(
+                            "unsupported on_disk quantizer [{s}]; the codes stay in memory: bbq, osq2, osq4, osq7, erq2-erq8 or rabitq"
+                        ),
+                    )
+                })?,
+            Some(None) => return Err(bad(name, "[quantizer] must be a string")),
+        };
+        VectorSpec::hnsw_disk(dimension, similarity, quantizer).with_graph(m, efc)
+    } else if ivf {
+        let quantizer = match quantizer {
+            None => CodeQuantizer::Bbq,
+            Some(Some(s)) => CODE_QUANTIZERS
                 .iter()
                 .find(|(n, _)| *n == s)
                 .map(|(_, v)| *v)
@@ -279,6 +315,16 @@ pub(crate) fn spelling(spec: &VectorSpec) -> String {
         .iter()
         .find(|(_, v)| *v == spec.similarity)
         .map_or("l2", |(n, _)| n);
+    if let Index::HnswDisk { quantizer } = spec.index {
+        let quantizer = CODE_QUANTIZERS
+            .iter()
+            .find(|(_, v)| *v == quantizer)
+            .map_or("bbq", |(n, _)| n);
+        return format!(
+            "knn_vector:dim={},space={space},disk,m={},efc={},q={quantizer}",
+            spec.dimension, spec.m, spec.ef_construction
+        );
+    }
     if let Index::Ivf {
         target_cluster_size,
         nprobe,
@@ -286,7 +332,7 @@ pub(crate) fn spelling(spec: &VectorSpec) -> String {
         quantizer,
     } = spec.index
     {
-        let quantizer = IVF_QUANTIZERS
+        let quantizer = CODE_QUANTIZERS
             .iter()
             .find(|(_, v)| *v == quantizer)
             .map_or("bbq", |(n, _)| n);
@@ -317,13 +363,22 @@ pub(crate) fn from_spelling(text: &str) -> Option<Kind> {
     let space = parts.next()?.strip_prefix("space=")?;
     let similarity = SPACES.iter().find(|(n, _)| *n == space)?.1;
     let third = parts.next()?;
-    let spec = if third == "ivf" {
+    let spec = if third == "disk" {
+        let m = parts.next()?.strip_prefix("m=")?.parse().ok()?;
+        let efc = parts.next()?.strip_prefix("efc=")?.parse().ok()?;
+        let q = parts.next()?.strip_prefix("q=")?;
+        let quantizer = CODE_QUANTIZERS.iter().find(|(n, _)| *n == q)?.1;
+        if quantizer == CodeQuantizer::Auto {
+            return None;
+        }
+        VectorSpec::hnsw_disk(dim, similarity, quantizer).with_graph(m, efc)
+    } else if third == "ivf" {
         let cs = parts.next()?.strip_prefix("cs=")?.parse().ok()?;
         let np = parts.next()?.strip_prefix("np=")?.parse().ok()?;
         let rr = parts.next()?.strip_prefix("rr=")?;
         let q = parts.next()?.strip_prefix("q=")?;
         let rerank = RERANKS.iter().find(|(n, _)| *n == rr)?.1;
-        let quantizer = IVF_QUANTIZERS.iter().find(|(n, _)| *n == q)?.1;
+        let quantizer = CODE_QUANTIZERS.iter().find(|(n, _)| *n == q)?.1;
         if !IVF_CLUSTER_SIZE.contains(&cs) || np as usize > MAX_NPROBE {
             return None;
         }
@@ -364,7 +419,7 @@ mod tests {
     #[test]
     fn every_ivf_variant_round_trips_through_its_spelling() {
         for (_, similarity) in SPACES {
-            for (_, quantizer) in IVF_QUANTIZERS {
+            for (_, quantizer) in CODE_QUANTIZERS {
                 for (_, rerank) in RERANKS {
                     let spec =
                         VectorSpec::ivf(24, similarity, 256, quantizer, rerank).with_nprobe(7);
@@ -372,6 +427,65 @@ mod tests {
                     assert_eq!(from_spelling(&text), Some(Kind::Vector(spec)), "{text}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn every_disk_variant_round_trips_through_its_spelling() {
+        for (_, similarity) in SPACES {
+            for (_, quantizer) in CODE_QUANTIZERS {
+                if quantizer == CodeQuantizer::Auto {
+                    continue;
+                }
+                let spec = VectorSpec::hnsw_disk(24, similarity, quantizer).with_graph(8, 77);
+                let text = spelling(&spec);
+                assert_eq!(from_spelling(&text), Some(Kind::Vector(spec)), "{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn on_disk_mode_parses_and_its_refusals_name_the_reason() {
+        let ok = |v: serde_json::Value| parse("v", v.as_object().unwrap());
+        let Kind::Vector(spec) = ok(serde_json::json!({
+            "type": "knn_vector", "dimension": 8, "mode": "on_disk", "quantizer": "osq4",
+            "method": {"name": "hnsw", "parameters": {"m": 8, "ef_construction": 50}}
+        }))
+        .unwrap() else {
+            panic!()
+        };
+        assert_eq!(
+            spec,
+            VectorSpec::hnsw_disk(8, Similarity::L2, CodeQuantizer::Osq(4)).with_graph(8, 50)
+        );
+        let Kind::Vector(plain) = ok(serde_json::json!(
+            {"type": "knn_vector", "dimension": 8, "mode": "in_memory"}
+        ))
+        .unwrap() else {
+            panic!()
+        };
+        assert_eq!(plain, VectorSpec::hnsw(8, Similarity::L2));
+        for (bad_def, why) in [
+            (
+                serde_json::json!({"type":"knn_vector","dimension":8,"mode":"on_disk","quantizer":"auto"}),
+                "unsupported on_disk quantizer",
+            ),
+            (
+                serde_json::json!({"type":"knn_vector","dimension":8,"mode":"on_disk","quantizer":"scalar8"}),
+                "unsupported on_disk quantizer",
+            ),
+            (
+                serde_json::json!({"type":"knn_vector","dimension":8,"mode":"fast"}),
+                "[mode]",
+            ),
+            (
+                serde_json::json!({"type":"knn_vector","dimension":8,"mode":"on_disk",
+                    "method":{"name":"ivf","parameters":{"nprobes":4}}}),
+                "already read by range",
+            ),
+        ] {
+            let err = ok(bad_def.clone()).unwrap_err();
+            assert!(format!("{err:?}").contains(why), "{bad_def}: {err:?}");
         }
     }
 
@@ -384,6 +498,9 @@ mod tests {
             "knn_vector:dim=4,space=l2,ivf,cs=256,np=0,rr=f64,q=bbq",
             "knn_vector:dim=4,space=l2,ivf,cs=256,np=0,rr=f32,q=none",
             "knn_vector:dim=4,space=l2,ivf,cs=0256,np=0,rr=f32,q=bbq",
+            "knn_vector:dim=4,space=l2,disk,m=16,efc=100,q=auto",
+            "knn_vector:dim=4,space=l2,disk,m=16,efc=100",
+            "knn_vector:dim=4,space=l2,disk,m=16,efc=100,q=bbq,x=1",
         ] {
             assert_eq!(from_spelling(text), None, "{text}");
         }

@@ -11,7 +11,7 @@
 use std::time::Instant;
 
 use hsearch_engine::{
-    Directory, Engine, EngineDirectory, IvfQuantizer, Kind, Limits, Mutation, Quantizer, Query,
+    CodeQuantizer, Directory, Engine, EngineDirectory, Kind, Limits, Mutation, Quantizer, Query,
     Rerank, ScalarBits, Schema, Similarity, Sort, Value, VectorSpec,
 };
 use lucene_store::ByteBuffersDirectory;
@@ -62,15 +62,25 @@ fn main() {
     let nprobe: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(0);
     let ivf = |q, r| VectorSpec::ivf(dim as u16, Similarity::L2, 512, q, r);
     let ivf_spec = match variant.as_str() {
-        "ivf-bbq" => Some(ivf(IvfQuantizer::Bbq, Rerank::F32)),
-        "ivf-osq4" => Some(ivf(IvfQuantizer::Osq(4), Rerank::F32)),
-        "ivf-erq4" => Some(ivf(IvfQuantizer::Erq(4), Rerank::F32)),
-        "ivf-auto" => Some(ivf(IvfQuantizer::Auto, Rerank::F32)),
-        "ivf-bbq-f16" => Some(ivf(IvfQuantizer::Bbq, Rerank::F16)),
+        "ivf-bbq" => Some(ivf(CodeQuantizer::Bbq, Rerank::F32)),
+        "ivf-osq4" => Some(ivf(CodeQuantizer::Osq(4), Rerank::F32)),
+        "ivf-erq4" => Some(ivf(CodeQuantizer::Erq(4), Rerank::F32)),
+        "ivf-auto" => Some(ivf(CodeQuantizer::Auto, Rerank::F32)),
+        "ivf-bbq-f16" => Some(ivf(CodeQuantizer::Bbq, Rerank::F16)),
+        "disk-bbq" => Some(VectorSpec::hnsw_disk(
+            dim as u16,
+            Similarity::L2,
+            CodeQuantizer::Bbq,
+        )),
+        "disk-osq4" => Some(VectorSpec::hnsw_disk(
+            dim as u16,
+            Similarity::L2,
+            CodeQuantizer::Osq(4),
+        )),
         _ => None,
     };
     let quantizer = match variant.as_str() {
-        v if v.starts_with("ivf-") => Quantizer::None,
+        v if v.starts_with("ivf-") || v.starts_with("disk-") => Quantizer::None,
         "plain" => Quantizer::None,
         "scalar8" => Quantizer::Scalar(ScalarBits::Eight),
         "scalar4" => Quantizer::Scalar(ScalarBits::Four),
