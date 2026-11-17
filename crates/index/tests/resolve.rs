@@ -55,11 +55,7 @@ fn resolver() -> Resolver {
     Resolver::new(1, &FIELDS, 1 << 20)
 }
 fn doc(title: &str, price: i64, active: bool) -> Vec<Field> {
-    vec![
-        Field::Str(title.into()),
-        Field::Int(price),
-        Field::Bool(active),
-    ]
+    vec![Field::text(title), Field::Int(price), Field::Bool(active)]
 }
 fn index(id: &str, d: Vec<Field>) -> Request {
     Request::Index {
@@ -187,7 +183,7 @@ fn doc_as_upsert_needs_every_field_and_a_partial_one_is_invalid() {
     };
     let mk = |d| mk_id("zz", d);
     let full = mk(vec![
-        ("title", Field::Str("t".into())),
+        ("title", Field::text("t")),
         ("price", Field::Int(1)),
         ("active", Field::Bool(true)),
     ]);
@@ -371,7 +367,7 @@ fn unknown_duplicate_and_mistyped_update_fields_are_invalid_not_ignored() {
     let cases = [
         update("a", &[("nope", Field::Int(1))]),
         update("a", &[("price", Field::Int(1)), ("price", Field::Int(2))]),
-        update("a", &[("price", Field::Str("1".into()))]),
+        update("a", &[("price", Field::text("1"))]),
         update("a", &[]),
     ];
     for c in cases {
@@ -388,7 +384,7 @@ fn a_merged_document_over_the_byte_bound_is_a_limit_refusal() {
         .prepare(
             &s,
             2,
-            &[update("a", &[("title", Field::Str("x".repeat(64).into()))])],
+            &[update("a", &[("title", Field::text("x".repeat(64)))])],
         )
         .unwrap();
     assert_eq!(outcomes(p.items()), [Outcome::Rejected(Reject::Limit)]);
@@ -479,11 +475,7 @@ fn ids_the_slot_cannot_decode_are_refused_before_logging() {
 fn whole_documents_must_match_the_schema_kinds() {
     let s = State::default();
     let r = resolver();
-    let bad = vec![
-        Field::Str("x".into()),
-        Field::Str("1".into()),
-        Field::Bool(true),
-    ];
+    let bad = vec![Field::text("x"), Field::text("1"), Field::Bool(true)];
     let p = r.prepare(&s, 1, &[index("k", bad)]).unwrap();
     assert_eq!(outcomes(p.items()), [Outcome::Rejected(Reject::Invalid)]);
 }

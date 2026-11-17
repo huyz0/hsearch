@@ -239,3 +239,24 @@ An allocation-tracing build was used to attribute the remaining memory, and trac
 
 1. **Parse.** The bulk parser makes a `String` of the field and then an `Arc<str>` of it (`Arc::from(String)` copies), so the text is briefly held twice, and the line buffer is alive at the same time. That transient is now the floor at about 2x. Removing it needs a shared text that wraps a `String` without copying (lucene-rust) and parsing the source line straight into that `String` (hsearch).
 2. **Token occurrences** (lucene-rust#447): about 0.65x over the text while the field is inverted; delta-coded positions would shrink it.
+
+# M21.09 (increment 11): the source line streams into the field's `String`, 200 MiB peak 400 to 349-357 MiB
+
+Provisional: RustFS 1.0.4 (pinned image), shared cloud container, release build, `rustfs_profile large 200`, two runs.
+
+Two changes. lucene-rust#462 (pin 18d250b) adds `SharedText`, an `Arc<str>` or an `Arc<String>`, so `TextField::new_shared` takes a `String` as it is. In hsearch, `Field::Str` holds an `Arc<String>` and `source_line` parses a bulk source line as it streams off the socket reader: no line buffer and no `serde_json` pass over a buffered line, and a string value is decoded straight into the `String` that becomes the field. Chunkjson's idea (stream the tokens, no buffering) was used; the parser is written for this mapping (a flat object of scalars) and shares no code with it, since that repository is outside this project's access.
+
+| | increment 10 (pin 1abdba1) | this change (pin 18d250b) |
+|---|---|---|
+| peak over baseline | 399.8, 399.7 MiB (2.0x) | 348.6, 356.5 MiB (1.7x, 1.8x) |
+| durable ack | 2.63 s, 2.78 s | 2.34 s, 2.39 s |
+| searchable | 7.08 s, 7.36 s | 7.50 s, 7.50 s |
+| PUT count | 27 | 27 |
+
+The parse step now holds the text once (1.0x). The remaining peak is the text plus the indexing core's ~0.65x, the last item below. The searchable time moved by less than the run-to-run spread seen in earlier increments and is not claimed as a change.
+
+Behaviour kept: the same refusals for a source that is oversized, malformed, nested, over 256 members or not an object (each a per-item `mapper_parsing_exception`, `document_too_large_exception` for size), the stream resynchronising at the next line after each, and the byte budget counting every byte read. Duplicate keys keep the last value. A non-object source that is also malformed now says "the source must be a JSON object" rather than "malformed source line"; both are the same 400 kind.
+
+## What remains to the ~1.4x target
+
+Token occurrences (lucene-rust#447): about 0.65x over the text while the field is inverted; delta-coded positions would shrink it.
