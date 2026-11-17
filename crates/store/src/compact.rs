@@ -123,6 +123,7 @@ impl<S: MetadataStore + hsearch_object::LargeObjectWriter + 'static> Compactor<S
         }
         match self.publisher.replace(at, published, spec, dependencies) {
             Err(PublishError::Swept { boundary }) => Err(Error::Swept { boundary }),
+            Err(PublishError::Boundary) => Err(Error::Boundary),
             other => Ok(other?),
         }
     }

@@ -67,3 +67,9 @@ A reviewer who saw only the diff found: `finish` did not re-validate the source,
 - **`Publisher::activate` and `replace` now refuse a base below the boundary** (`Error::Swept`, two reads), so every writer path is guarded and not only `Compactor::finish`. This closes the gap noted in the first version of this document.
 - **`crates/store/tests/rustfs.rs`**, 3 tests against a real S3-compatible store: publish, recover, compact, sweep and recover again (the log replays to the same ledger before and after, the replaced root is gone, the live root verifies, LIST and DELETE counts asserted); a pin that holds a base on the store until it expires; and the listing itself (7 objects, 3 a page, exact version ids, `LastModified` within an hour of the clock, removal by listed version). They skip with a message unless `HSEARCH_S3_ENDPOINT` is set and fail when `HSEARCH_S3_REQUIRED=1` and it is not (CI).
 - **Not run against RustFS by me.** This sandbox has no Docker daemon and cannot download RustFS, so the three tests printed SKIPPED here; CI's RustFS run is their first execution. The in-memory suites (15 gc, 11 publish, the recover tests) pass locally.
+
+### Review notes on the inventory
+
+- A truncated listing page that holds only delete markers is resumed past (at most 16 times) instead of aborting the sweep.
+- `orphan_grace_ms` must exceed the longest upload: on AWS S3 a multipart object's `LastModified` is the time the upload started. The setting is off by default.
+- A listing page is bounded by 1,000 entries, not by bytes; a response over the 1 MiB read limit fails the listing, which fails the sweep safely (it deletes nothing from that page).

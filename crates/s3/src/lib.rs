@@ -860,7 +860,7 @@ impl S3Store {
     /// sorts after `after`, at most `limit` of them (and at most 1,000, which S3 returns). One LIST
     /// request, priced like a PUT. A page that is cut by the limit gives up the trailing versions of
     /// its last key unless that is the whole page, so a key's versions are never split across pages;
-    /// the keys listed here are written once and never overwritten, so each has one version.
+    /// the keys listed here are written once and never overwritten, so each has one version. A key that does have several yields each of them, newest excluded only by the provider's own order.
     fn list_versions(
         &self,
         context: &RequestContext,
@@ -871,29 +871,51 @@ impl S3Store {
         self.logical(Role::Metadata);
         let limit = limit.clamp(1, 1000);
         context.charge_request(prefix.len() as u64 + after.map_or(0, str::len) as u64 + 64)?;
-        let mut query = String::new();
-        if let Some(after) = after {
-            query.push_str(&format!("key-marker={}&", encode(after.as_bytes(), false)));
-        }
-        query.push_str(&format!(
-            "max-keys={limit}&prefix={}&versions=",
-            encode(prefix.as_bytes(), false)
-        ));
-        let reply = self.send(
-            context,
-            Role::Metadata,
-            Op::List,
-            None,
-            &query,
-            &[],
-            &[],
-            1 << 20,
-        )?;
-        if !(200..300).contains(&reply.status) {
-            return Err(status_error(reply.status, false));
-        }
-        let text = String::from_utf8(reply.body).map_err(|_| Error::Corrupt)?;
-        let page = xml::parse_versions(&text).ok_or(Error::Corrupt)?;
+        let mut marker = after.map(str::to_owned);
+        let mut skipped = 0;
+        let page = loop {
+            let mut query = String::new();
+            if let Some(marker) = &marker {
+                query.push_str(&format!("key-marker={}&", encode(marker.as_bytes(), false)));
+            }
+            query.push_str(&format!(
+                "max-keys={limit}&prefix={}&versions=",
+                encode(prefix.as_bytes(), false)
+            ));
+            let reply = self.send(
+                context,
+                Role::Metadata,
+                Op::List,
+                None,
+                &query,
+                &[],
+                &[],
+                1 << 20,
+            )?;
+            if !(200..300).contains(&reply.status) {
+                return Err(status_error(reply.status, false));
+            }
+            let text = String::from_utf8(reply.body).map_err(|_| Error::Corrupt)?;
+            let page = xml::parse_versions(&text).ok_or(Error::Corrupt)?;
+            // A truncated page holding only delete markers has nothing to hand back; resume past
+            // them rather than report no progress. Bounded so a provider that ignores the marker
+            // cannot loop forever.
+            if page.truncated && page.versions.is_empty() {
+                skipped += 1;
+                let next = page
+                    .last_key
+                    .as_ref()
+                    .and_then(|k| String::from_utf8(k.clone()).ok());
+                match next {
+                    Some(next) if skipped <= 16 && marker.as_deref() != Some(next.as_str()) => {
+                        marker = Some(next);
+                        continue;
+                    }
+                    _ => return Err(Error::Corrupt),
+                }
+            }
+            break page;
+        };
         let mut versions = page.versions;
         if page.truncated
             && let Some(last) = versions.last().map(|v| v.key.clone())

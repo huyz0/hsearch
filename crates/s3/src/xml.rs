@@ -17,6 +17,8 @@ pub(crate) struct Listed {
 pub(crate) struct Page {
     pub(crate) versions: Vec<Listed>,
     pub(crate) truncated: bool,
+    /// The last key scanned, delete markers included: where the next page resumes.
+    pub(crate) last_key: Option<Vec<u8>>,
 }
 
 fn tag<'a>(block: &'a str, name: &str) -> Option<&'a str> {
@@ -114,6 +116,10 @@ pub(crate) fn parse_versions(body: &str) -> Option<Page> {
     Some(Page {
         versions,
         truncated: tag(body, "IsTruncated") == Some("true"),
+        last_key: body
+            .rfind("<Key>")
+            .and_then(|at| tag(&body[at..], "Key"))
+            .map(unescape),
     })
 }
 
@@ -126,6 +132,19 @@ mod tests {
         <Version><Key>a&amp;b</Key><VersionId>v2</VersionId><IsLatest>true</IsLatest></Version>\
         <DeleteMarker><Key>a&amp;b</Key><VersionId>dm</VersionId></DeleteMarker>\
         <Version><Key>a&amp;b</Key><VersionId>v1</VersionId></Version></ListVersionsResult>";
+
+    #[test]
+    fn a_page_of_only_delete_markers_still_names_where_it_ended() {
+        let page = parse_versions(
+            "<ListVersionsResult><IsTruncated>true</IsTruncated>\
+             <DeleteMarker><Key>a</Key><VersionId>d1</VersionId></DeleteMarker>\
+             <DeleteMarker><Key>b&amp;c</Key><VersionId>d2</VersionId></DeleteMarker>\
+             </ListVersionsResult>",
+        )
+        .unwrap();
+        assert!(page.versions.is_empty() && page.truncated);
+        assert_eq!(page.last_key.as_deref(), Some(&b"b&c"[..]));
+    }
 
     #[test]
     fn lists_versions_in_order_and_skips_delete_markers() {
@@ -169,7 +188,8 @@ mod tests {
             empty,
             Some(Page {
                 versions: vec![],
-                truncated: false
+                truncated: false,
+                last_key: None
             })
         );
         assert_eq!(parse_versions("<Error><Code>X</Code></Error>"), None);
