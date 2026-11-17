@@ -62,6 +62,7 @@ class IncidentPlanTests(unittest.TestCase):
         milestones["M03"]["status"] = "planned"
         self.tasks["M13.01"]["status"] = "planned"  # Done later; keep this model pre-acceptance.
         self.tasks["M13.02"]["status"] = "planned"  # Done later; keep this model pre-acceptance.
+        self.tasks["M23.01"]["status"] = "planned"  # Depends on M02.12 above; keep this model pre-acceptance.
         self.tasks["M21.09"]["status"] = "planned"  # Done later; keep this model pre-acceptance.
         self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.
         milestones["M01"]["status"] = "in_progress"
