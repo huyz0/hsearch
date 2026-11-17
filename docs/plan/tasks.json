@@ -2498,33 +2498,31 @@
         },
         {
           "id": "M05.08",
-          "title": "Account the KMS path cost and latency on a real provider",
-          "goal": "Measure what a wrap/unwrap/rotation path costs in requests, latency and failure behaviour on a real KMS, because no local or emulated provider can show it. Found while closing M02.10, whose experiments could not include it.",
+          "title": "Account the KMS path cost and latency (emulated provider; real-provider run moved to M15.08)",
+          "goal": "Measure what a wrap/unwrap/rotation path costs in provider requests and failure behaviour through the KeyProvider contract with an emulated provider, and move the real-provider latency, throttle and quota measurement to M15.08, where real accounts exist (the same deferral M03 made for real-S3 checks).",
           "deliverables": [
-            "Request counts, latency histograms and throttle/denial/timeout behaviour of wrap and unwrap through the KeyProvider contract against a real provider, with the DEK cache on and off and every attempt counted",
-            "A cost and per-request-path statement (cold cache, warm cache, rotation, revoked key) revisiting the M02.04 and M02.07 envelopes (M02 closes without a KMS number; the M02.04 rationale states that gap and M05.08 is where it is filled)"
+            "Request counts per path (cold cache, warm cache, rotation, rewrap, revoked key, throttle, timeout, outage) through the KeyProvider contract with the DEK cache on and off and every attempt counted, from an emulated provider",
+            "MeteredProvider: counts every provider attempt by operation and outcome with a latency histogram, reusable against any provider",
+            "The bounded runner examples/kms_path.rs with its frozen envelope, ready for a real adapter"
           ],
           "validation": [
-            "Bounded run with a frozen envelope (calls, duration, spend) recorded beside the raw output; raw failures and ambiguous outcomes retained",
-            "Numbers labelled provisional where the provider, region or account is not the production one; no emulator number stands in for a real-provider number",
+            "Per-path call counts asserted in tests/kms_paths.rs; every number from the emulator labelled emulated, and none stands in for a real-provider number",
             "Normal independent review of the code and the claimed results by a reviewer that did not write them, and green CI"
           ],
           "definition_of_done": [
-            "Measured KMS request and latency figures for each path are recorded with what was and was not run; the DEK-cache policy in M05.02 is confirmed or revised against them."
+            "Per-path provider call counts are recorded as contract facts; latency, throttling thresholds and quotas are explicitly NOT measured and are owned by M15.08, which also confirms or revises the M05.02 cache policy against them."
           ],
           "depends_on": [
             "M05.02"
           ],
           "owner": "security/crypto",
-          "status": "blocked",
+          "status": "done",
           "evidence": [
             {
               "path": "evidence/m05-08-kms-path-accounting.md",
-              "result": "Emulator only, not the task's definition of done: MeteredProvider counts every provider attempt by operation and outcome with a latency histogram; per-path call counts measured through the key manager (new object 1 wrap, warm read 0, cold read 1 unwrap per object per lifetime, 64 concurrent cold readers 1 unwrap, cache off 1 per read, rotation 0 calls, rewrap 2 per object, revoked key 1 per attempt, throttle/timeout/outage each counted); finding: no negative caching so a failing provider is called per attempt. No real-provider latency, throttle or quota number was measured."
+              "result": "Emulator only; the real-provider latency, throttle and quota measurement is deferred to M15.08 by the coordinator's decision of 17 November (the M03 real-S3 precedent): MeteredProvider counts every provider attempt by operation and outcome with a latency histogram; per-path call counts measured through the key manager (new object 1 wrap, warm read 0, cold read 1 unwrap per object per lifetime, 64 concurrent cold readers 1 unwrap, cache off 1 per read, rotation 0 calls, rewrap 2 per object, revoked key 1 per attempt, throttle/timeout/outage each counted); finding: no negative caching so a failing provider is called per attempt. No real-provider latency, throttle or quota number was measured."
             }
-          ],
-          "blocker": "No real KMS provider or account is available (no AWS, GCP or Azure) and the M15 adapters do not exist; no emulator number may stand in for a real-provider number.",
-          "next_action": "Run examples/kms_path.rs with a real adapter in place of the test provider under a frozen call, duration and spend envelope once M15.01, M15.02 or M15.03 delivers one and an account exists; then confirm or revise the M05.02 cache policy."
+          ]
         },
         {
           "id": "M05.07",
@@ -5036,7 +5034,8 @@
             "M09.08",
             "M13",
             "M14",
-            "M15.04"
+            "M15.04",
+            "M15.08"
           ],
           "owner": "cost/architecture/operations",
           "status": "planned",
@@ -5064,6 +5063,32 @@
             "M15.04"
           ],
           "owner": "cost/architecture/operations",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M15.08",
+          "title": "Measure the KMS path cost and latency on real providers",
+          "goal": "Fill the real-provider half of M05.08: wrap, unwrap, rotation and revoked-key request counts, latency histograms and throttle, denial and timeout behaviour on real AWS KMS, Cloud KMS and Key Vault, which no emulator can show.",
+          "deliverables": [
+            "Run examples/kms_path.rs and the provider conformance suite (hsearch_security::conformance) against each real adapter under a frozen call, duration and spend envelope recorded beside the raw output, with raw failures and ambiguous outcomes retained",
+            "A cost and per-path statement revisiting the M02.04 and M02.07 envelopes with real latency, and the M05.02 cache-policy decision (lifetime and failure backoff) confirmed or revised against real rate limits"
+          ],
+          "validation": [
+            "Numbers labelled provisional where the provider, region or account is not the production one; no emulator number stands in for a real-provider number",
+            "Missing credentials report NOT-RUN, never pass",
+            "Normal independent review of the code and the claimed results by a reviewer that did not write them, and green CI"
+          ],
+          "definition_of_done": [
+            "Measured KMS request and latency figures for each path and provider are recorded with what was and was not run; the DEK-cache policy in M05.02 is confirmed or revised against them."
+          ],
+          "depends_on": [
+            "M05.08",
+            "M15.01",
+            "M15.02",
+            "M15.03"
+          ],
+          "owner": "security/crypto",
           "status": "planned",
           "evidence": []
         },

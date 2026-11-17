@@ -1,6 +1,6 @@
-# M05.08: KMS path accounting (emulated provider; the real-provider run is not done)
+# M05.08: KMS path accounting (emulated provider; the real-provider run moved to M15.08)
 
-`provisional`, **emulator only**. The task asks for request counts, latency histograms and throttle, denial and timeout behaviour on a real KMS. There is no AWS, GCP or Azure account for this project and the M15 adapters do not exist, so **no real-provider number was measured and none is claimed**. What this delivers is the part that does not depend on the provider: the instrument, and the call counts, which are a property of the `KeyProvider` contract and the key manager. The real run is one substitution away (below) and stays open as the task's blocker.
+`provisional`, **emulator only**. The task asks for request counts, latency histograms and throttle, denial and timeout behaviour on a real KMS. There is no AWS, GCP or Azure account for this project and the M15 adapters do not exist, so **no real-provider number was measured and none is claimed**. What this delivers is the part that does not depend on the provider: the instrument, and the call counts, which are a property of the `KeyProvider` contract and the key manager. **Deferral (coordinator's decision, 17 November, following the M03 precedent for real-S3 checks):** M05.08 closes on this emulated accounting, and the real-provider latency, throttle and quota measurement is the new task M15.08, which depends on the real adapters and accounts (M15.01 to M15.03). The real run is one substitution away: replace `provider()` in `examples/kms_path.rs` with an adapter.
 
 Code: `crates/security/src/metered.rs` (`MeteredProvider`: counts every attempt by operation and outcome, power-of-two latency histogram per operation, no key material), `crates/security/tests/kms_paths.rs` (11 tests), `crates/security/examples/kms_path.rs` (the bounded runner: fixed event counts per path, aborts past 20,000 calls or 600 s).
 
@@ -30,7 +30,7 @@ Price at the M02.07 card (USD 0.003 per 1,000 requests): 1 call costs USD 3 per 
 1. **No negative caching: a failing provider is called once per attempt.** A revoked key, a provider outage and throttling all reach the provider on every read of a cold object (100 refused reads is 100 calls; an outage across a cold fleet is a retry storm at read rate). The policy gate (M05.05) stops the revoked case before the manager when callers consult it; outage and throttle have no such stop. A real provider's rate limit would turn this into more throttling. Handled in M05.07 as a setting (bounded failure backoff per key, off by default only if measurement says it hurts), not here.
 2. The cache lifetime (300 s default) is a cost-versus-revocation-exposure dial: calls per hot object are 1 per 300 s, so cutting it to the 60 s revocation target multiplies unwraps by 5 for objects read continuously. That is USD 3 per million unwraps, so the cost is small; the dominant risk is rate limits, not money. The DEK-cache policy in M05.02 is **neither confirmed nor revised** until a real provider shows its limits.
 
-## Not done (the task stays blocked on these)
+## Not done here (all owned by M15.08)
 
 - A bounded run against a real provider with a frozen call, duration and spend envelope, and the raw output beside it.
 - Real throttle, denial, timeout and retry-after behaviour, real latency histograms per region, regional and account quota.
