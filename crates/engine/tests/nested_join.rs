@@ -1158,3 +1158,52 @@ fn nested_and_join_live_in_one_schema() {
     let engine = Engine::open(&observed, schema, Some(checkpoint)).unwrap();
     engine.close().unwrap();
 }
+
+#[test]
+fn zero_min_children_still_needs_a_matching_child_and_unmerged_deletes_reopen() {
+    let schema = post_schema();
+    let items = posts(20, 60, 13);
+    let directory = ByteBuffersDirectory::new();
+    let observed = EngineDirectory::new(&directory);
+    let engine = open(&observed, &schema);
+    put_posts(&engine, &schema, &items, 1, "all");
+    drop(engine.refresh().unwrap());
+    // Replace some documents and delete one, leaving deleted blocks in unmerged segments.
+    let mut moved = posts(20, 60, 13);
+    for a in moved.iter_mut().skip(20).take(10) {
+        a.votes = 5;
+    }
+    put_posts(&engine, &schema, &moved[20..30], 2, "re");
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "d",
+                    &[Mutation::Delete {
+                        id: "a40",
+                        version: 2,
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    let inner = votes_in(5, 5);
+    let query = Query::HasChild {
+        relation: "answer",
+        query: &inner,
+        score_mode: JoinScore::None,
+        min_children: 0,
+        max_children: 0,
+    };
+    moved.retain(|p| p.id != "a40");
+    let snapshot = engine.refresh().unwrap();
+    let found = ids(&snapshot, &query);
+    assert_eq!(found, parents_with(&moved, |a| a.votes == 5, 1, 0));
+    drop(snapshot);
+    // Commit without merging, then reopen: verification walks deleted blocks.
+    let checkpoint = engine.commit().unwrap();
+    engine.close().unwrap();
+    let engine = Engine::open(&observed, schema, Some(checkpoint)).unwrap();
+    assert_eq!(ids(&engine.refresh().unwrap(), &query), found);
+    engine.close().unwrap();
+}

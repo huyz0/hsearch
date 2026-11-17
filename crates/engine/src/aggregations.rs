@@ -30,6 +30,10 @@ impl Snapshot {
             return Err(Error::Limit);
         }
         let query = crate::query::lower(&self.schema, query)?;
+        // A join is resolved against a searcher, which an aggregation does not build.
+        if lucene_search::join::has_late_joins(&query) {
+            return Err(Error::Unsupported);
+        }
         let specs = fields
             .iter()
             .map(|name| {
@@ -89,6 +93,10 @@ impl Snapshot {
             return Err(Error::Unsupported);
         }
         let query = crate::query::lower(&self.schema, query)?;
+        // A join is resolved against a searcher, which an aggregation does not build.
+        if lucene_search::join::has_late_joins(&query) {
+            return Err(Error::Unsupported);
+        }
         let mut opened = self.reader.open_segments().map_err(|_| Error::Native)?;
         opened.open_points().map_err(|_| Error::Native)?;
         let segments = opened.as_open_segments();

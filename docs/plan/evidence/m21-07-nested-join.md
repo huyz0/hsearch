@@ -22,7 +22,7 @@ A schema with no nested path is untouched: no `_hs_kind` field, no root filter, 
 
 **This is not the pinned OpenSearch run.** The validation line asks for matching the pinned reference results; no OpenSearch is built here. The operators are the upstream-differential-tested ones and the oracle states the OpenSearch rule, but a rerun of this corpus against the M02.01 reference pin is open.
 
-Tests, all passing: 12 in `nested_join.rs` (oracle matches for nested over four author/star bounds, five score modes, nested in a bool, replace and delete take the objects with them, three segments with a replaced block then merge, commit, reopen and read-only open; has_child over five count bounds and has_parent over four topics, with and without score, across segments and on one; a join with a nested object in one schema; every refusal above; the schema declaration bounds). The existing engine and node suites still pass. Seen red: the first run of the join tests found nothing (the `SORTED_SET` finding above) and then failed with a native error across segments until the id field was written `SORTED`.
+Tests, all passing: 13 in `nested_join.rs` (oracle matches for nested over four author/star bounds, five score modes, nested in a bool, replace and delete take the objects with them, three segments with a replaced block then merge, commit, reopen and read-only open; has_child over five count bounds and has_parent over four topics, with and without score, across segments and on one; a join with a nested object in one schema; every refusal above; the schema declaration bounds). The existing engine and node suites still pass. Seen red: the first run of the join tests found nothing (the `SORTED_SET` finding above) and then failed with a native error across segments until the id field was written `SORTED`.
 
 ## Cost (bench, `crates/engine/examples/nested_bench.rs`, 20,000 roots of 5 objects, 5,000 questions and 20,000 answers in 8 segments)
 
@@ -36,6 +36,8 @@ Tests, all passing: 12 in `nested_join.rs` (oracle matches for nested over four 
 | `has_child`, 8 segments / 1 segment | p50 2,057 / 2,089 us, 2,453 hits |
 | `has_parent`, 8 segments / 1 segment | p50 2,984 / 3,037 us, 20,000 hits |
 | Plain term on the same join index | p50 619 us |
+
+Scores are **not** tested: the five score modes and the `score` flag are checked for the match set only, not for the values OpenSearch would give. Aggregations over a join query are refused (`Unsupported`), since a join is resolved against a searcher.
 
 ## Trade-offs and downsides
 
