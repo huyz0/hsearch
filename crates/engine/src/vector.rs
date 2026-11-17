@@ -95,9 +95,89 @@ impl Quantizer {
     }
 }
 
-/// A declared dense-vector field: dimension, similarity and HNSW parameters.
+/// Fewest and most vectors an IVF cluster is split down to
+/// (`KnnVectorsFormat::ivf_quantized`'s bounds).
+pub const IVF_CLUSTER_SIZE: std::ops::RangeInclusive<u32> = 16..=65_536;
+/// Cluster size an IVF field gets when the mapping gives none.
+pub const DEFAULT_IVF_CLUSTER_SIZE: u32 = 512;
+
+/// How an IVF field stores the full-precision vectors it reranks on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rerank {
+    /// 32-bit floats, exactly.
+    F32,
+    /// 16-bit floats: half the bytes per reranked candidate.
+    F16,
+    /// bfloat16: half the bytes, the float32 range.
+    Bf16,
+    /// 8-bit residuals from the cluster centroid: about a quarter of the bytes.
+    Int8,
+}
+
+/// The codes an IVF field keeps in each cluster's posting list. Every IVF
+/// field has codes; the full-precision vectors are what it reranks on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IvfQuantizer {
+    /// 1 bit per dimension plus 16 bytes, 4-bit queries.
+    Bbq,
+    /// The same quantizer at 2, 4 or 7 bits per dimension.
+    Osq(u8),
+    /// Extended RaBitQ at 2 to 8 bits per dimension.
+    Erq(u8),
+    /// BBQ after a random rotation.
+    RaBitQ,
+    /// Picked per segment from the field's own vectors.
+    Auto,
+}
+
+impl IvfQuantizer {
+    fn valid(self) -> bool {
+        match self {
+            Self::Osq(bits) => matches!(bits, 2 | 4 | 7),
+            Self::Erq(bits) => (2..=8).contains(&bits),
+            _ => true,
+        }
+    }
+
+    /// Its place in `IVF_QUANTIZERS`, the wire number the format records.
+    fn wire(self) -> u8 {
+        match self {
+            Self::Bbq => 0,
+            Self::Osq(2) => 1,
+            Self::Osq(4) => 2,
+            Self::Osq(_) => 3,
+            Self::Erq(bits) => 4 + (bits - 2),
+            Self::RaBitQ => 11,
+            Self::Auto => 12,
+        }
+    }
+}
+
+/// How a vector field is indexed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Index {
+    /// An HNSW graph, with `m` and `ef_construction` from the spec.
+    Hnsw,
+    /// Clusters of about `target_cluster_size` vectors with coded posting
+    /// lists, written once per segment (`lucene-ivf`).
+    Ivf {
+        /// Vectors a cluster is split down to.
+        target_cluster_size: u32,
+        /// Clusters a query probes when it names none; 0 leaves it to the
+        /// field's automatic depth (a share of its clusters).
+        nprobe: u32,
+        /// Encoding of the vectors reranked on.
+        rerank: Rerank,
+        /// Codes of the posting lists.
+        quantizer: IvfQuantizer,
+    },
+}
+
+/// A declared dense-vector field: dimension, similarity and index parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VectorSpec {
+    /// HNSW graph or IVF clusters.
+    pub index: Index,
     /// Components of every vector in the field.
     pub dimension: u16,
     /// Comparison.
@@ -119,7 +199,28 @@ impl VectorSpec {
             m: 16,
             ef_construction: 100,
             quantizer: Quantizer::None,
+            index: Index::Hnsw,
         }
+    }
+
+    /// An IVF field: clusters of `target_cluster_size`, `quantizer` codes and
+    /// `rerank` full-precision vectors. `m`, `ef_construction` and the
+    /// HNSW quantizer do not apply to it.
+    pub const fn ivf(
+        dimension: u16,
+        similarity: Similarity,
+        target_cluster_size: u32,
+        quantizer: IvfQuantizer,
+        rerank: Rerank,
+    ) -> Self {
+        let mut spec = Self::hnsw(dimension, similarity);
+        spec.index = Index::Ivf {
+            target_cluster_size,
+            nprobe: 0,
+            rerank,
+            quantizer,
+        };
+        spec
     }
 
     /// This spec keeping `quantizer`'s codes.
@@ -127,6 +228,36 @@ impl VectorSpec {
     pub const fn with_quantizer(mut self, quantizer: Quantizer) -> Self {
         self.quantizer = quantizer;
         self
+    }
+
+    /// An IVF spec probing `nprobe` clusters by default (0: the automatic
+    /// depth); an HNSW spec is returned unchanged.
+    #[must_use]
+    pub const fn with_nprobe(mut self, nprobe: u32) -> Self {
+        if let Index::Ivf {
+            target_cluster_size,
+            rerank,
+            quantizer,
+            ..
+        } = self.index
+        {
+            self.index = Index::Ivf {
+                target_cluster_size,
+                nprobe,
+                rerank,
+                quantizer,
+            };
+        }
+        self
+    }
+
+    /// Clusters a query that names none probes: the field's default, 0 for
+    /// the automatic depth or for an HNSW field.
+    pub const fn default_nprobe(&self) -> usize {
+        match self.index {
+            Index::Ivf { nprobe, .. } => nprobe as usize,
+            Index::Hnsw => 0,
+        }
     }
 
     /// This spec with graph parameters `m` and `ef_construction`.
@@ -142,6 +273,20 @@ impl VectorSpec {
             && (1..=MAX_M).contains(&self.m)
             && (1..=MAX_EF_CONSTRUCTION).contains(&self.ef_construction)
             && self.quantizer.valid()
+            && match self.index {
+                Index::Hnsw => true,
+                Index::Ivf {
+                    target_cluster_size,
+                    nprobe,
+                    quantizer,
+                    ..
+                } => {
+                    IVF_CLUSTER_SIZE.contains(&target_cluster_size)
+                        && nprobe as usize <= MAX_NPROBE
+                        && quantizer.valid()
+                        && self.quantizer == Quantizer::None
+                }
+            }
     }
 
     pub(crate) fn native_similarity(&self) -> VectorSimilarityFunction {
@@ -150,6 +295,24 @@ impl VectorSpec {
 
     /// The writer format this spec routes its field to.
     pub(crate) fn format(&self) -> KnnVectorsFormat {
+        if let Index::Ivf {
+            target_cluster_size,
+            rerank,
+            quantizer,
+            ..
+        } = self.index
+        {
+            return KnnVectorsFormat::Ivf {
+                target_cluster_size,
+                rerank_encoding: match rerank {
+                    Rerank::F32 => 0,
+                    Rerank::F16 => 1,
+                    Rerank::Bf16 => 2,
+                    Rerank::Int8 => 3,
+                },
+                quantizer: quantizer.wire(),
+            };
+        }
         let (max_conn, beam_width) = (i32::from(self.m), i32::from(self.ef_construction));
         let scalar = |encoding| KnnVectorsFormat::HnswScalarQuantized {
             encoding,
@@ -318,6 +481,52 @@ mod tests {
         assert_eq!(numbered(Quantizer::Erq(2)), 4);
         assert_eq!(numbered(Quantizer::Erq(8)), 10);
         assert_eq!(numbered(Quantizer::RaBitQ), 11);
+    }
+
+    #[test]
+    fn ivf_specs_route_to_the_ivf_format_and_keep_their_bounds() {
+        let ivf = |size, q, r| VectorSpec::ivf(8, Similarity::L2, size, q, r);
+        assert!(matches!(
+            ivf(512, IvfQuantizer::Erq(4), Rerank::F16).format(),
+            KnnVectorsFormat::Ivf {
+                target_cluster_size: 512,
+                rerank_encoding: 1,
+                quantizer: 6
+            }
+        ));
+        let wire = |q| match ivf(512, q, Rerank::F32).format() {
+            KnnVectorsFormat::Ivf { quantizer, .. } => quantizer,
+            other => panic!("not ivf: {other:?}"),
+        };
+        assert_eq!(wire(IvfQuantizer::Bbq), 0);
+        assert_eq!(wire(IvfQuantizer::Osq(2)), 1);
+        assert_eq!(wire(IvfQuantizer::Osq(4)), 2);
+        assert_eq!(wire(IvfQuantizer::Osq(7)), 3);
+        assert_eq!(wire(IvfQuantizer::RaBitQ), 11);
+        assert_eq!(wire(IvfQuantizer::Auto), 12);
+        assert!(ivf(16, IvfQuantizer::Bbq, Rerank::Int8).valid());
+        assert!(!ivf(15, IvfQuantizer::Bbq, Rerank::F32).valid());
+        assert!(!ivf(65_537, IvfQuantizer::Bbq, Rerank::F32).valid());
+        assert!(!ivf(512, IvfQuantizer::Osq(3), Rerank::F32).valid());
+        let probing = ivf(512, IvfQuantizer::Bbq, Rerank::F32).with_nprobe(16);
+        assert!(probing.valid());
+        assert_eq!(probing.default_nprobe(), 16);
+        assert!(!probing.with_nprobe(MAX_NPROBE as u32 + 1).valid());
+        // The default does not change which files an ivf field writes.
+        assert_eq!(
+            probing.format(),
+            ivf(512, IvfQuantizer::Bbq, Rerank::F32).format()
+        );
+        assert_eq!(
+            VectorSpec::hnsw(8, Similarity::L2)
+                .with_nprobe(9)
+                .default_nprobe(),
+            0
+        );
+        assert!(!ivf(512, IvfQuantizer::Erq(9), Rerank::F32).valid());
+        let with_hnsw_codes =
+            ivf(512, IvfQuantizer::Bbq, Rerank::F32).with_quantizer(Quantizer::Bbq);
+        assert!(!with_hnsw_codes.valid());
     }
 
     #[test]
