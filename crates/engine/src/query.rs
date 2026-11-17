@@ -73,8 +73,11 @@ pub enum Query<'a> {
         /// most [`crate::MAX_KNN_CANDIDATES`]; a wider beam trades latency for
         /// recall.
         candidates: usize,
-        /// Clusters probed per segment on an IVF field; 0 uses the depth the
-        /// segment calibrated for its own vectors. Ignored by HNSW fields.
+        /// Clusters probed per segment on an IVF field; 0 uses the field's
+        /// own default (`VectorSpec::with_nprobe`) and, when that is 0 too,
+        /// the share of its clusters the segment calibrates (5% when it did
+        /// not), which measured far too shallow at 50,000 vectors. Ignored by
+        /// HNSW fields.
         nprobe: usize,
         /// Documents the neighbours must also match.
         filter: Option<&'a Query<'a>>,
@@ -229,7 +232,15 @@ fn clause(
                 context,
                 field,
                 vector,
-                (*k, *candidates, *nprobe),
+                (
+                    *k,
+                    *candidates,
+                    if *nprobe == 0 {
+                        spec.default_nprobe()
+                    } else {
+                        *nprobe
+                    },
+                ),
                 filter.as_ref(),
             )
         }
