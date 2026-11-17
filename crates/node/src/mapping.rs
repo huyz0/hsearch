@@ -4,6 +4,7 @@ use hsearch_engine::{Kind, Limits, Schema};
 use hsearch_format::{Digest, MappingObject};
 use hsearch_index::Field;
 use serde_json::Value;
+use std::sync::Arc;
 
 use crate::ApiError;
 use crate::date::parse_date;
@@ -271,7 +272,7 @@ pub(crate) fn typed(kind: Kind, value: &Value) -> Result<Field, String> {
 /// copying it: the ingest path, where a value can be large. No coercion between kinds.
 pub(crate) fn typed_owned(kind: Kind, value: Value) -> Result<Field, String> {
     match (kind, value) {
-        (Kind::Keyword | Kind::Text, Value::String(s)) => Ok(Field::Str(s.into())),
+        (Kind::Keyword | Kind::Text, Value::String(s)) => Ok(Field::Str(Arc::new(s))),
         (Kind::Integer, Value::Number(n)) => n
             .as_i64()
             .filter(|n| i32::try_from(*n).is_ok())
@@ -431,10 +432,7 @@ mod tests {
 
     #[test]
     fn values_are_typed_without_coercion() {
-        assert_eq!(
-            typed(Kind::Keyword, &json!("a")),
-            Ok(Field::Str("a".into()))
-        );
+        assert_eq!(typed(Kind::Keyword, &json!("a")), Ok(Field::text("a")));
         assert_eq!(typed(Kind::Integer, &json!(5)), Ok(Field::Int(5)));
         assert!(typed(Kind::Integer, &json!(5_000_000_000_i64)).is_err());
         assert!(typed(Kind::Integer, &json!("5")).is_err());

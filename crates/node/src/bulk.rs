@@ -1,15 +1,17 @@
 //! `_bulk` NDJSON, streamed: one action and its source at a time, under fixed
 //! byte, item and buffer bounds, with a per-item verdict.
 //!
-//! Nothing here holds the body. A line is read into one reused buffer of at
-//! most the configured buffer size; a longer line is counted and discarded as it
-//! streams past, so a 200 MiB document costs the same memory as a 1 KiB one.
+//! Nothing here holds the body. An action line is read into one reused buffer;
+//! a source line is parsed as it streams in, so a large text field is held once,
+//! as the `String` that becomes the field. A longer line than allowed is counted
+//! and discarded as it streams past.
 use std::io::{BufRead, BufReader, Read};
 
 use serde_json::Value;
 
 use crate::ApiError;
 use crate::limits::Limits;
+use crate::source_line::{self, Source};
 
 /// Largest bulk body by default, bytes (M02.05).
 pub const MAX_BULK_BYTES: u64 = 64 * 1024 * 1024;
@@ -50,8 +52,8 @@ enum Line {
     End,
     /// The text is in the stream's buffer, newline stripped.
     Text,
-    /// The line was longer than allowed: its length, nothing kept.
-    Oversized(u64),
+    /// The line was longer than allowed: nothing kept.
+    Oversized,
 }
 
 /// A bulk body read as a stream of items.
@@ -60,6 +62,7 @@ pub(crate) struct Stream<R: Read> {
     limits: Limits,
     consumed: u64,
     items: usize,
+    /// Action lines only: a source line is never buffered.
     line: Vec<u8>,
 }
 
@@ -80,8 +83,6 @@ impl<R: Read> Stream<R> {
         self.line.clear();
         let mut total: u64 = 0;
         let mut kept = true;
-        let mut ending: u64 = 0;
-        let mut previous: u8 = 0;
         loop {
             let available = self
                 .reader
@@ -91,11 +92,7 @@ impl<R: Read> Stream<R> {
                 break;
             }
             let (take, found) = match available.iter().position(|b| *b == b'\n') {
-                Some(at) => {
-                    let before = if at > 0 { available[at - 1] } else { previous };
-                    ending = 1 + u64::from(before == b'\r');
-                    (at + 1, true)
-                }
+                Some(at) => (at + 1, true),
                 None => (available.len(), false),
             };
             self.consumed += take as u64;
@@ -110,7 +107,6 @@ impl<R: Read> Stream<R> {
                 kept = false;
                 self.line.clear();
             }
-            previous = available[take - 1];
             self.reader.consume(take);
             if found {
                 break;
@@ -128,7 +124,7 @@ impl<R: Read> Stream<R> {
             }
         }
         self.line.clear();
-        Ok(Line::Oversized(total - ending))
+        Ok(Line::Oversized)
     }
 
     /// The next item, or `None` at the end of the body. A malformed action line
@@ -139,7 +135,7 @@ impl<R: Read> Stream<R> {
         let action: Value = loop {
             match self.read_line(cap)? {
                 Line::End => return Ok(None),
-                Line::Oversized(_) => {
+                Line::Oversized => {
                     return Err(ApiError::parse("an action line is too long"));
                 }
                 Line::Text if self.line.is_empty() => {}
@@ -208,96 +204,44 @@ impl<R: Read> Stream<R> {
     }
 
     /// Read and parse a source line: the document, bounded by the smaller of the
-    /// document limit and the buffer.
+    /// document limit and the buffer. The line is parsed as it streams in and
+    /// never held whole, so a large text field is in memory once.
     fn source(&mut self, bytes: &mut usize) -> Result<Result<Value, ApiError>, ApiError> {
         let configured = self.limits.max_document_bytes;
         let indexable = INDEXABLE_SOURCE_BYTES as u64;
         let cap = configured
             .min(self.limits.buffer_bytes as u64)
-            .min(indexable) as usize;
-        match self.read_line(cap)? {
-            Line::End => Err(ApiError::parse("an action is missing its source line")),
-            Line::Oversized(n) => Ok(Err(too_large(
+            .min(indexable);
+        let read = source_line::read(
+            &mut self.reader,
+            &mut self.consumed,
+            self.limits.max_bulk_bytes,
+            cap,
+        )?;
+        match read {
+            Source::End => Err(ApiError::parse("an action is missing its source line")),
+            Source::Oversized(n) => Ok(Err(too_large(
                 n,
                 configured,
                 self.limits.buffer_bytes,
                 indexable,
             ))),
-            Line::Text => {
-                *bytes = self.line.len();
-                let parsed = match shape(&self.line) {
-                    Some(reason) => Err(ApiError::new(400, "mapper_parsing_exception", reason)),
-                    None => serde_json::from_slice::<Value>(&self.line).map_err(|_| {
-                        ApiError::new(400, "mapper_parsing_exception", "malformed source line")
-                    }),
-                };
-                self.line.clear();
-                // A large line's buffer is as big as the document and nothing
-                // reads it again: keep a small buffer for the next line, free a
-                // large one now rather than when the stream is dropped (after the
-                // batch has been written), so it is not held beside the parsed
-                // document while the chunks are written.
-                if self.line.capacity() > LINE_KEEP_BYTES {
-                    self.line = Vec::new();
-                }
-                Ok(parsed)
+            Source::Refused(reason) => {
+                Ok(Err(ApiError::new(400, "mapper_parsing_exception", reason)))
+            }
+            Source::Document(value, len) => {
+                *bytes = len;
+                Ok(Ok(value))
             }
         }
     }
 }
-
-/// Capacity of the line buffer kept between lines. A larger one is released as
-/// soon as its line is parsed.
-const LINE_KEEP_BYTES: usize = 1 << 20;
 
 /// Largest source line the write path can index: the index's document ceiling
 /// less what the engine charges to a document but the source line does not carry:
 /// the identity (at most 256 bytes) and 8 bytes for each non-string value where
 /// the JSON may spend one (at most 7 more for each of 14 fields).
 const INDEXABLE_SOURCE_BYTES: usize = hsearch_index::MAX_INDEXED_DOCUMENT_BYTES - 512;
-
-/// Most top-level members a source may carry: the mapping allows 14 fields, so a
-/// document with more than this can only be refused, and parsing it first would
-/// cost many times its raw size.
-const MAX_MEMBERS: usize = 256;
-
-/// A cheap pass over a source line, before any value is built, that refuses what
-/// the parsed form would amplify: nesting (the mapping holds scalars only) and
-/// very many members. `None` means the shape is acceptable; the parser still
-/// decides whether it is valid JSON.
-fn shape(line: &[u8]) -> Option<&'static str> {
-    let (mut depth, mut members) = (0usize, 0usize);
-    let (mut in_string, mut escaped) = (false, false);
-    for &b in line {
-        if in_string {
-            match (escaped, b) {
-                (true, _) => escaped = false,
-                (false, b'\\') => escaped = true,
-                (false, b'"') => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match b {
-            b'"' => in_string = true,
-            b'{' | b'[' => {
-                depth += 1;
-                if depth > 1 {
-                    return Some("nested objects and arrays are not supported by this mapping");
-                }
-            }
-            b'}' | b']' => depth = depth.saturating_sub(1),
-            b',' if depth == 1 => {
-                members += 1;
-                if members >= MAX_MEMBERS {
-                    return Some("the source has more members than any mapping allows");
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
 
 /// The structured refusal of a document over a limit, naming that limit.
 fn too_large(size: u64, configured: u64, buffer: usize, indexable: u64) -> ApiError {
@@ -401,24 +345,210 @@ mod tests {
     }
 
     #[test]
-    fn a_large_lines_buffer_is_released_once_it_is_parsed_and_a_small_ones_is_kept() {
+    fn a_large_source_line_is_never_buffered() {
         let big = format!(
             "{{\"index\":{{\"_id\":\"1\"}}}}\n{}\n{{\"index\":{{\"_id\":\"2\"}}}}\n{}\n",
             doc_of(3 << 20),
             doc_of(100)
         );
         let mut stream = Stream::new(big.as_bytes(), limits(8 << 20, 8 << 20));
-        assert!(stream.next(Some("d")).unwrap().is_some());
+        let first = stream.next(Some("d")).unwrap().unwrap();
+        assert_eq!(first.bytes, 3 << 20);
         assert!(
-            stream.line.capacity() <= LINE_KEEP_BYTES,
-            "the 3 MiB line's buffer is still held: {}",
+            stream.line.capacity() <= 64,
+            "the line buffer held the document: {}",
             stream.line.capacity()
         );
         assert!(stream.next(Some("d")).unwrap().is_some());
+    }
+
+    /// The source line `line`, after an action, as the item's verdict.
+    fn source_of(line: &str) -> Result<serde_json::Value, ApiError> {
+        let body =
+            format!("{{\"index\":{{\"_id\":\"1\"}}}}\n{line}\n{{\"delete\":{{\"_id\":\"2\"}}}}\n");
+        let items = all(&body, Limits::default());
+        assert_eq!(items.len(), 2, "the stream resynchronises after {line:?}");
+        assert!(matches!(items[1].work, Ok((Action::Delete, None))));
+        match items.into_iter().next().unwrap().work {
+            Ok((_, Some(v))) => Ok(v),
+            Ok(_) => unreachable!(),
+            Err(e) => Err(e),
+        }
+    }
+
+    #[test]
+    fn a_source_parses_to_what_serde_json_parses() {
+        for line in [
+            r#"{}"#,
+            r#"  { "a" : "x" , "b":1,"c":-2.5e3,"d":true,"e":false,"f":null }  "#,
+            r#"{"a":"\" \\ \/ \b \f \n \r \t \u00e9 \ud83d\ude00 é 世界 😀"}"#,
+            r#"{"a":"x","a":"y"}"#,
+            r#"{"":""}"#,
+        ] {
+            let want: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_eq!(source_of(line).unwrap(), want, "{line}");
+        }
+    }
+
+    #[test]
+    fn a_source_serde_json_refuses_is_refused_and_the_next_line_still_parses() {
+        for line in [
+            "",
+            "   ",
+            "not json",
+            r#"{"a":1,}"#,
+            r#"{"a" 1}"#,
+            r#"{a:1}"#,
+            r#"{"a":01}"#,
+            r#"{"a":tru}"#,
+            r#"{"a":1 "b":2}"#,
+            r#"{"a":"x"} trailing"#,
+            r#"{"a":"x""#,
+            r#"{"a":"unterminated}"#,
+            r#"{"a":"\x"}"#,
+            r#"{"a":"\u12"}"#,
+            r#"{"a":"\ud83d"}"#,
+            r#"{"a":"\ud83d\u0041"}"#,
+            r#"{"a":"\ude00"}"#,
+            "{\"a\":\"tab\there\"}",
+            r#"{"a":1e999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(line).is_err()
+                    || line.contains("e999"),
+                "{line:?} is a valid object to serde_json"
+            );
+            let refusal = source_of(line).unwrap_err();
+            assert_eq!(refusal.kind, "mapper_parsing_exception", "{line:?}");
+        }
+    }
+
+    #[test]
+    fn the_member_and_nesting_bounds_are_exact_and_name_their_reason() {
+        let members = |n: usize| {
+            format!(
+                "{{{}}}",
+                (0..n)
+                    .map(|i| format!("\"k{i}\":1"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        };
+        // 256 members is 255 commas: kept; 257 members is 256 commas: refused.
+        assert!(source_of(&members(256)).is_ok());
+        let refusal = source_of(&members(257)).unwrap_err();
         assert!(
-            stream.line.capacity() >= 100,
-            "a small line's buffer is reused"
+            refusal.reason.contains("more members"),
+            "{}",
+            refusal.reason
         );
+        for nested in [r#"{"a":[1]}"#, r#"{"a":{}}"#, r#"{"a":[]}"#] {
+            let refusal = source_of(nested).unwrap_err();
+            assert!(
+                refusal.reason.contains("nested"),
+                "{nested}: {}",
+                refusal.reason
+            );
+        }
+    }
+
+    #[test]
+    fn a_line_over_the_cap_is_refused_by_its_size_whatever_stopped_the_parse_first() {
+        let limit = 4096;
+        for head in ["{\"a\":[", "[1,", "not json", "{\"a\":1x", "{\"a\":\"\\x"] {
+            for ending in ["\n", "\r\n"] {
+                let line = format!("{head}{}", "z".repeat(limit + 10 - head.len()));
+                let body = format!(
+                    "{{\"index\":{{\"_id\":\"1\"}}}}\n{line}{ending}{{\"delete\":{{\"_id\":\"2\"}}}}\n"
+                );
+                let items = all(&body, limits(limit as u64, 1 << 20));
+                assert_eq!(items.len(), 2, "{head:?} resynchronises");
+                let refusal = items[0].work.as_ref().unwrap_err();
+                assert_eq!(refusal.kind, "document_too_large_exception", "{head:?}");
+                assert!(
+                    refusal.reason.contains("4106 bytes"),
+                    "{head:?}: {}",
+                    refusal.reason
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_long_number_is_whatever_serde_json_says_of_it() {
+        let long = format!("{{\"a\":0.{}1}}", "0".repeat(300));
+        let want: serde_json::Value = serde_json::from_str(&long).unwrap();
+        assert_eq!(source_of(&long).unwrap(), want);
+        let huge = format!("{{\"a\":1e{}}}", "9".repeat(300));
+        assert!(serde_json::from_str::<serde_json::Value>(&huge).is_err());
+        assert_eq!(
+            source_of(&huge).unwrap_err().kind,
+            "mapper_parsing_exception"
+        );
+    }
+
+    #[test]
+    fn a_source_that_is_not_an_object_says_so() {
+        for line in ["[1]", "\"s\"", "5", "true", "null", "-1"] {
+            let refusal = source_of(line).unwrap_err();
+            assert_eq!(refusal.kind, "mapper_parsing_exception", "{line}");
+            assert!(refusal.reason.contains("must be a JSON object"), "{line}");
+        }
+    }
+
+    #[test]
+    fn invalid_utf8_in_a_source_is_refused_whole_or_split_across_reads() {
+        struct Drip<'a>(&'a [u8]);
+        impl Read for Drip<'_> {
+            fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.0.len().min(1).min(out.len());
+                out[..n].copy_from_slice(&self.0[..n]);
+                self.0 = &self.0[n..];
+                Ok(n)
+            }
+        }
+        for (bytes, ok) in [
+            (&b"{\"a\":\"\xff\"}\n"[..], false),
+            (&b"{\"a\":\"\xc3\"}\n"[..], false),
+            (&b"{\"a\":\"\xe4\xb8\"}\n"[..], false),
+            (&b"{\"a\":\"\xe4\xb8\x96\"}\n"[..], true),
+            (&b"{\"a\":\"\xf0\x9f\x98\x80\"}\n"[..], true),
+        ] {
+            let mut body = b"{\"index\":{\"_id\":\"1\"}}\n".to_vec();
+            body.extend_from_slice(bytes);
+            body.extend_from_slice(b"{\"delete\":{\"_id\":\"2\"}}\n");
+            for drip in [false, true] {
+                let mut stream = if drip {
+                    let mut s = Stream::new(Drip(&body), Limits::default());
+                    s.line.reserve(0);
+                    let mut out = Vec::new();
+                    while let Some(i) = s.next(Some("d")).unwrap() {
+                        out.push(i);
+                    }
+                    out
+                } else {
+                    let mut s = Stream::new(body.as_slice(), Limits::default());
+                    let mut out = Vec::new();
+                    while let Some(i) = s.next(Some("d")).unwrap() {
+                        out.push(i);
+                    }
+                    out
+                };
+                assert_eq!(stream.len(), 2, "{bytes:?} drip {drip}");
+                assert_eq!(stream.remove(0).work.is_ok(), ok, "{bytes:?} drip {drip}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_multibyte_character_split_by_the_reader_buffer_is_kept_whole() {
+        // 3-byte characters straddle the 64 KiB buffer's end at every offset.
+        for pad in 0..4 {
+            let text = format!("{}{}", "x".repeat(READ_CHUNK - 40 + pad), "世".repeat(30));
+            let line = format!("{{\"a\":\"{text}\"}}");
+            let want: serde_json::Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(source_of(&line).unwrap(), want, "pad {pad}");
+        }
     }
 
     fn limits(document: u64, buffer: usize) -> Limits {

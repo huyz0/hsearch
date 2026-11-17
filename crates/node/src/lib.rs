@@ -20,6 +20,7 @@ mod mapping;
 mod node;
 mod policy;
 mod search;
+mod source_line;
 
 pub use bulk::{MAX_BULK_BYTES, MAX_BULK_ITEMS};
 pub use cli::{Options, parse_args};

@@ -392,7 +392,7 @@ fn sort_key(mapping: &Mapping, item: &Value) -> Result<(Option<String>, bool), A
 
 fn engine_value(field: &Field) -> Typed<'_> {
     match field {
-        Field::Str(s) => Typed::String(s),
+        Field::Str(s) => Typed::String(s.as_str()),
         Field::Int(n) => Typed::Integer(*n),
         Field::Bool(b) => Typed::Boolean(*b),
         Field::Date(n) => Typed::Date(*n),

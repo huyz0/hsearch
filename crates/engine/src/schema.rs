@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 use lucene_analysis::{Analyzer, StandardAnalyzer};
-use lucene_index::document::{Document, KeywordField, LongField, Store, TextField};
+use lucene_index::document::{Document, KeywordField, LongField, SharedText, Store, TextField};
 
 use crate::{Error, Result};
 
@@ -132,7 +132,7 @@ pub enum Value<'a> {
     String(&'a str),
     /// The same, held in a shared allocation the document keeps: an analyzed text field
     /// indexes and stores these bytes without copying them, so a very large text is held once.
-    Shared(&'a Arc<str>),
+    Shared(&'a Arc<String>),
     /// Integer, checked against the declared numeric domain.
     Integer(i64),
     /// Boolean.
@@ -146,7 +146,7 @@ impl Value<'_> {
     pub fn text(&self) -> Option<&str> {
         match self {
             Value::String(s) => Some(s),
-            Value::Shared(s) => Some(s),
+            Value::Shared(s) => Some(s.as_str()),
             _ => None,
         }
     }
@@ -279,7 +279,7 @@ impl Schema {
                     document.add(KeywordField::new(*name, *s, Store::Yes))
                 }
                 (Kind::Keyword, Value::Shared(s)) => {
-                    document.add(KeywordField::new(*name, &***s, Store::Yes))
+                    document.add(KeywordField::new(*name, s.as_str(), Store::Yes))
                 }
                 (Kind::Text, Value::String(_) | Value::Shared(_)) => {
                     let text = value.text().ok_or(Error::Document)?;
@@ -292,8 +292,8 @@ impl Schema {
                     // One copy of the text, shared by the analyzer and the stored value: a
                     // caller's `Arc` is used as it is, a borrowed `str` is copied once.
                     let shared = match value {
-                        Value::Shared(s) => Arc::clone(s),
-                        _ => Arc::<str>::from(text),
+                        Value::Shared(s) => SharedText::from(Arc::clone(s)),
+                        _ => SharedText::from(text),
                     };
                     document.add(TextField::new_shared(*name, shared, Store::Yes));
                 }
