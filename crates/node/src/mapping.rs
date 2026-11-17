@@ -26,16 +26,16 @@ const INLINE_HEADER: &str = "hsearch-mapping-v0\n";
 const DYNAMIC_LINE: &str = "#dynamic\t";
 const REFERENCE_HEADER: &str = "hsearch-mapping-ref-v0\n";
 
-fn kind_name(kind: Kind) -> &'static str {
+fn kind_name(kind: Kind) -> String {
     match kind {
-        Kind::Keyword => "keyword",
-        Kind::Text => "text",
-        Kind::Integer => "integer",
-        Kind::Boolean => "boolean",
-        Kind::Date => "date",
-        Kind::Vector(_) => "knn_vector",
-        Kind::Nested => "nested",
-        Kind::Join => "join",
+        Kind::Keyword => "keyword".into(),
+        Kind::Text => "text".into(),
+        Kind::Integer => "integer".into(),
+        Kind::Boolean => "boolean".into(),
+        Kind::Date => "date".into(),
+        Kind::Vector(spec) => crate::vector_mapping::spelling(&spec),
+        Kind::Nested => "nested".into(),
+        Kind::Join => "join".into(),
     }
 }
 
@@ -46,7 +46,7 @@ fn kind_of(name: &str) -> Option<Kind> {
         "integer" => Kind::Integer,
         "boolean" => Kind::Boolean,
         "date" => Kind::Date,
-        _ => return None,
+        _ => return crate::vector_mapping::from_spelling(name),
     })
 }
 
@@ -92,6 +92,13 @@ impl Mapping {
             let definition = definition
                 .as_object()
                 .ok_or_else(|| ApiError::parse(format!("field [{name}] must be an object")))?;
+            if definition.get("type").and_then(Value::as_str) == Some("knn_vector") {
+                fields.push((
+                    name.clone(),
+                    crate::vector_mapping::parse(name, definition)?,
+                ));
+                continue;
+            }
             if let Some(extra) = definition.keys().find(|k| *k != "type") {
                 return Err(ApiError::new(
                     400,
@@ -130,7 +137,7 @@ impl Mapping {
         for (name, kind) in &self.fields {
             out.push_str(name);
             out.push('\t');
-            out.push_str(kind_name(*kind));
+            out.push_str(&kind_name(*kind));
             out.push('\n');
         }
         out.into_bytes()
@@ -262,7 +269,12 @@ impl Mapping {
 
     /// Declared field names in schema order.
     pub(crate) fn names(&self) -> Vec<&str> {
-        self.fields.iter().map(|(n, _)| n.as_str()).collect()
+        // A vector is indexed, not stored: it is not part of a hit's source.
+        self.fields
+            .iter()
+            .filter(|(_, k)| !matches!(k, Kind::Vector(_)))
+            .map(|(n, _)| n.as_str())
+            .collect()
     }
 }
 
@@ -289,6 +301,25 @@ pub(crate) fn typed_owned(kind: Kind, value: Value) -> Result<Field, String> {
         (Kind::Date, Value::String(s)) => parse_date(&s)
             .map(Field::Date)
             .ok_or_else(|| "unparseable date".to_string()),
+        (Kind::Vector(spec), Value::Array(items)) => {
+            let mut vector = Vec::with_capacity(items.len());
+            for item in &items {
+                let c = item
+                    .as_f64()
+                    .map(|c| c as f32)
+                    .filter(|c| c.is_finite())
+                    .ok_or_else(|| "a vector holds only finite numbers".to_string())?;
+                vector.push(c);
+            }
+            if vector.len() != usize::from(spec.dimension) {
+                return Err(format!(
+                    "the vector has {} components, the field declares {}",
+                    vector.len(),
+                    spec.dimension
+                ));
+            }
+            Ok(Field::Vector(vector.into()))
+        }
         _ => Err("value does not match the field type".to_string()),
     }
 }

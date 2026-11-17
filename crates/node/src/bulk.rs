@@ -64,6 +64,8 @@ pub(crate) struct Stream<R: Read> {
     items: usize,
     /// Action lines only: a source line is never buffered.
     line: Vec<u8>,
+    /// Whether a source may hold a flat array of numbers (a vector).
+    arrays: bool,
 }
 
 impl<R: Read> Stream<R> {
@@ -74,7 +76,15 @@ impl<R: Read> Stream<R> {
             consumed: 0,
             items: 0,
             line: Vec::new(),
+            arrays: false,
         }
+    }
+
+    /// This stream reading a flat array of numbers in a source as a value.
+    #[must_use]
+    pub(crate) fn with_arrays(mut self, arrays: bool) -> Self {
+        self.arrays = arrays;
+        self
     }
 
     /// Read one line of at most `cap` content bytes into `self.line`. A longer
@@ -217,6 +227,7 @@ impl<R: Read> Stream<R> {
             &mut self.consumed,
             self.limits.max_bulk_bytes,
             cap,
+            self.arrays,
         )?;
         match read {
             Source::End => Err(ApiError::parse("an action is missing its source line")),
@@ -701,5 +712,52 @@ mod tests {
         let item = stream.next(Some("d")).unwrap().unwrap();
         let refusal = item.work.unwrap_err();
         assert!(refusal.reason.contains("5000 bytes"), "{}", refusal.reason);
+    }
+
+    fn arrays(body: &str) -> Vec<Item> {
+        let mut stream = Stream::new(body.as_bytes(), Limits::default()).with_arrays(true);
+        let mut out = Vec::new();
+        while let Some(item) = stream.next(Some("d")).unwrap() {
+            out.push(item);
+        }
+        out
+    }
+
+    #[test]
+    fn an_array_source_is_charged_for_what_its_elements_hold() {
+        let zeros = vec!["0"; 4096].join(",");
+        let body = format!("{{\"index\":{{\"_id\":\"1\"}}}}\n{{\"v\":[{zeros}]}}\n");
+        let items = arrays(&body);
+        assert!(items[0].work.is_ok());
+        // Two text bytes an element, 32 resident: the charge is the larger.
+        assert!(items[0].bytes >= 4096 * 32, "{}", items[0].bytes);
+    }
+
+    #[test]
+    fn an_array_over_the_bound_or_with_a_bad_element_is_refused_and_the_stream_resyncs() {
+        let over = vec!["0"; 4097].join(",");
+        for source in [
+            format!("{{\"v\":[{over}]}}"),
+            r#"{"v":[1,"x"]}"#.to_string(),
+            r#"{"v":[1,null]}"#.to_string(),
+            r#"{"v":[1,[2]]}"#.to_string(),
+        ] {
+            let body = format!(
+                "{{\"index\":{{\"_id\":\"1\"}}}}\n{source}\n{{\"index\":{{\"_id\":\"2\"}}}}\n{{\"v\":[1,2]}}\n"
+            );
+            let items = arrays(&body);
+            assert_eq!(items.len(), 2, "{source}");
+            assert!(items[0].work.is_err(), "{source}");
+            assert!(
+                items[1].work.is_ok(),
+                "the next item must parse after {source}"
+            );
+        }
+        let reason = |s: &str| {
+            let body = format!("{{\"index\":{{\"_id\":\"1\"}}}}\n{s}\n");
+            arrays(&body)[0].work.as_ref().unwrap_err().reason.clone()
+        };
+        assert!(reason(r#"{"v":[1,"x"]}"#).contains("only numbers"));
+        assert!(reason(r#"{"v":[1,[2]]}"#).contains("nested"));
     }
 }
