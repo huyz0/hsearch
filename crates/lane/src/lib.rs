@@ -12,14 +12,19 @@
 //! [`head`] and [`catalog`] are M03.05: the structural head (authority, epoch inventory, cover and
 //! tail locators, changed only by conditional transition) and the paged name catalog.
 //!
+//! [`admission`], [`rendezvous`], [`quota`], [`feedback`] and [`subscribe`] are M13.02: tenant
+//! fairness and hot placement for a node's compute, none of which touches who is authoritative.
+//!
 //! Not here, by design: engine apply and
 //! checkpoints that move the cover (M06), AEAD (M05). A caller supplies the cover it replays from.
 pub mod activation;
+pub mod admission;
 pub mod batch;
 pub mod catalog;
 pub mod counting;
 mod cover;
 mod error;
+pub mod feedback;
 pub mod head;
 pub mod headcas;
 pub mod hot;
@@ -29,6 +34,9 @@ pub mod members;
 pub mod partition;
 pub mod place;
 pub mod promote;
+pub mod quota;
+pub mod rendezvous;
+pub mod subscribe;
 
 pub use catalog::{
     Catalog, CatalogCursor, RepairClaim, Repaired, Resolution, VerifyReport, create_catalog,

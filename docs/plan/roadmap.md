@@ -33,7 +33,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | [M10: Snapshot, export and change-stream contracts](milestones/M10.md) | planned | 0/5 | M07, M09 |
 | [M11: Independent cross-cluster copy module](milestones/M11.md) | planned | 0/6 | M10 |
 | [M12: Cross-cluster replication module](milestones/M12.md) | planned | 0/7 | M10 |
-| [M13: Catalog foundation, elasticity and fleet scaling](milestones/M13.md) | planned | 1/5 | M07, M09, M10 |
+| [M13: Catalog foundation, elasticity and fleet scaling](milestones/M13.md) | planned | 2/5 | M07, M09, M10 |
 | [M14: Performance kernels and native hardware](milestones/M14.md) | planned | 0/6 | M04, M05, M07, M09 |
 | [M15: Cloud storage and KMS provider qualification](milestones/M15.md) | planned | 0/7 | M11, M12, M14 |
 | [M16: Migration, compatibility and harness hardening](milestones/M16.md) | planned | 0/8 | M08, M12, M13, M15 |
