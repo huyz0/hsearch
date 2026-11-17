@@ -2,3 +2,4 @@
 //! base: the files of one native commit, the manifest pages and root that name them, and the
 //! structural-head transition that makes the root the recovery start.
 pub mod publish;
+pub mod recover;

@@ -2641,20 +2641,25 @@
           "title": "Implement bounded recovery and replay",
           "goal": "Recover without relying on local state.",
           "deliverables": [
-            "Streaming replay/spill, base selection, idempotency/version reconstruction and readiness barrier"
+            "Streaming replay, base selection and a readiness barrier over the object store alone; gap, conflict, corrupt, oversized, unsupported-payload and missing-history logs each block readiness with a named reason"
           ],
           "validation": [
-            "Delete compute caches/scratch; restart with duplicate/gap/corrupt/oversized histories."
+            "Recover through a fresh publisher over the store with duplicate/gap/corrupt/oversized/external-payload histories; a checkpoint that reclaims slots during the scan is not read as the end of the log."
           ],
           "definition_of_done": [
-            "Recovered documents/versions match independent receipt ledger; missing committed history blocks readiness."
+            "Recovered (sequence, operation, body) records match an independent receipt ledger; missing committed history blocks readiness. Engine state, version and idempotency reconstruction, spill and external payloads are M06.10."
           ],
           "depends_on": [
             "M06.02"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-03-recovery.md",
+              "result": "Recovery from the head, a verified base and the committed log (cover to first absent slot) using the object store only; gap, conflict, corrupt, over-bound, external-payload and missing-history cases (including a head that moved during the scan) each block readiness with a named reason; delete and put are told apart; replay matches the committer's receipt ledger. 12 tests, mutations seen red. Provisional (in-memory store, no RustFS); a slot lost mid-log is detected only against a caller-supplied expected position; engine state, versions, idempotency, spill and external payloads are M06.10."
+            }
+          ]
         },
         {
           "id": "M06.04",
@@ -2699,7 +2704,8 @@
             "M06.03",
             "M06.04",
             "M19",
-            "M13.01"
+            "M13.01",
+            "M06.10"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -2793,6 +2799,28 @@
           ],
           "depends_on": [
             "M06.01"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.10",
+          "title": "Rebuild engine state and spill on recovery",
+          "goal": "A recovered index serves with the documents, versions and idempotency state its committed history implies, for tails and payloads past memory.",
+          "deliverables": [
+            "Reconstruct engine documents, versions and idempotency receipts from the recovery stream into a reopened writer, and open a reader on the base",
+            "Spill a tail over the in-memory bounds to scratch instead of refusing it, and apply external (large) payloads by fetching their objects with digest verification",
+            "Follow a sealed index to its successor lane"
+          ],
+          "validation": [
+            "Delete every cache and scratch directory, restart, and compare documents, versions and idempotency answers with an independent receipt ledger; oversized and external-payload histories recover."
+          ],
+          "definition_of_done": [
+            "Recovered documents, versions and idempotency state match the independent ledger; nothing local is consulted."
+          ],
+          "depends_on": [
+            "M06.03"
           ],
           "owner": "storage/runtime",
           "status": "planned",

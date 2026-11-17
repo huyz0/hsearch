@@ -185,6 +185,18 @@ fn request_id(key: &str) -> Result<RequestId, StoreError> {
 }
 
 impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
+    /// The store this publisher writes through.
+    #[must_use]
+    pub fn store(&self) -> &S {
+        &self.store
+    }
+
+    /// The deployment layout.
+    #[must_use]
+    pub fn layout(&self) -> &Layout {
+        &self.layout
+    }
+
     /// A publisher writing through `store`. `part_size` bounds upload memory (at least 5 MiB).
     #[must_use]
     pub fn new(store: Arc<S>, layout: Layout, part_size: usize, deadline: Duration) -> Self {
