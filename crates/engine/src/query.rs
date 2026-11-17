@@ -1,4 +1,5 @@
 //! Typed query lowering with a shared node, byte, depth and token budget.
+use crate::vector::KnnContext;
 use crate::{Error, Kind, MAX_TERMS, Result, Schema, Value};
 use lucene_search::query::{
     BooleanQuery, Clause, MatchAllDocsQuery, MatchNoDocsQuery, PhraseQuery, PointsRangeQuery,
@@ -57,14 +58,42 @@ pub enum Query<'a> {
         /// Explicit integer threshold.
         minimum_should_match: usize,
     },
+    /// The `k` documents whose vector in `field` is nearest `vector`, optionally
+    /// among only those matching `filter`. The filter applies while the graph
+    /// is walked, so `k` hits come back whenever `k` documents match it. It
+    /// composes in a bool like any clause, scored by similarity.
+    Knn {
+        /// Declared vector field.
+        field: &'a str,
+        /// Query vector: the field's dimension, every component finite.
+        vector: &'a [f32],
+        /// Hits to keep, at most [`crate::MAX_KNN_K`].
+        k: usize,
+        /// Candidates the graph walk keeps (`ef_search`), at least `k` and at
+        /// most [`crate::MAX_KNN_CANDIDATES`]; a wider beam trades latency for
+        /// recall.
+        candidates: usize,
+        /// Clusters probed per segment on an IVF field; 0 uses the depth the
+        /// segment calibrated for its own vectors. Ignored by HNSW fields.
+        nprobe: usize,
+        /// Documents the neighbours must also match.
+        filter: Option<&'a Query<'a>>,
+    },
     /// Explicit refusal for an unadvertised operator.
     Unsupported,
 }
+
+/// Most kNN searches one query may run, each a graph walk per segment.
+const MAX_KNN_CLAUSES: usize = 4;
 
 struct Budget {
     nodes: usize,
     bytes: usize,
     terms: usize,
+    /// kNN clauses seen so far.
+    knn: usize,
+    /// Validate only: a kNN clause is checked but not run.
+    dry: bool,
 }
 impl Budget {
     fn charge(&mut self, nodes: usize, bytes: usize, terms: usize) -> Result<()> {
@@ -79,6 +108,33 @@ impl Budget {
     }
 }
 pub(crate) fn lower(schema: &Schema, query: &Query<'_>) -> Result<BooleanQuery> {
+    lower_with(schema, query, None)
+}
+/// Check a query against the schema and its budgets without running any kNN
+/// search, so a refusable query is refused before any segment is opened.
+pub(crate) fn validate(schema: &Schema, query: &Query<'_>) -> Result<()> {
+    clause(
+        schema,
+        query,
+        0,
+        &mut Budget {
+            nodes: 0,
+            bytes: 0,
+            terms: 0,
+            knn: 0,
+            dry: true,
+        },
+        None,
+    )
+    .map(|_| ())
+}
+/// [`lower`] for a query that may carry a kNN search, which needs the segments
+/// it runs over: each is resolved to its fixed hits here.
+pub(crate) fn lower_with(
+    schema: &Schema,
+    query: &Query<'_>,
+    knn: Option<&KnnContext<'_, '_>>,
+) -> Result<BooleanQuery> {
     Ok(BooleanQuery {
         must: vec![clause(
             schema,
@@ -88,7 +144,10 @@ pub(crate) fn lower(schema: &Schema, query: &Query<'_>) -> Result<BooleanQuery> 
                 nodes: 0,
                 bytes: 0,
                 terms: 0,
+                knn: 0,
+                dry: false,
             },
+            knn,
         )?],
         ..Default::default()
     })
@@ -120,9 +179,16 @@ fn exact(schema: &Schema, field: &str, value: Value<'_>, budget: &mut Budget) ->
         Value::Integer(n) | Value::Date(n) => {
             Ok(Clause::PointsRange(PointsRangeQuery::new(field, n, n)))
         }
+        Value::Vector(_) => Err(Error::Unsupported),
     }
 }
-fn clause(schema: &Schema, query: &Query<'_>, depth: usize, budget: &mut Budget) -> Result<Clause> {
+fn clause(
+    schema: &Schema,
+    query: &Query<'_>,
+    depth: usize,
+    budget: &mut Budget,
+    knn: Option<&KnnContext<'_, '_>>,
+) -> Result<Clause> {
     if depth > 8 {
         return Err(Error::Limit);
     }
@@ -132,6 +198,41 @@ fn clause(schema: &Schema, query: &Query<'_>, depth: usize, budget: &mut Budget)
             schema.limits.documents as i32,
         ))),
         Query::Unsupported => Err(Error::Unsupported),
+        Query::Knn {
+            field,
+            vector,
+            k,
+            candidates,
+            nprobe,
+            filter,
+        } => {
+            let Kind::Vector(spec) = schema.kind(field)? else {
+                return Err(Error::Unsupported);
+            };
+            spec.check(vector)?;
+            budget.charge(0, field.len(), 0)?;
+            budget.knn += 1;
+            if budget.knn > MAX_KNN_CLAUSES || *k == 0 || *k > crate::MAX_KNN_K {
+                return Err(Error::Limit);
+            }
+            if *candidates > crate::MAX_KNN_CANDIDATES || *nprobe > crate::MAX_NPROBE {
+                return Err(Error::Limit);
+            }
+            let filter = filter
+                .map(|f| clause(schema, f, depth + 1, budget, knn))
+                .transpose()?;
+            if budget.dry {
+                return Ok(Clause::MatchNoDocs(MatchNoDocsQuery::new()));
+            }
+            let context = knn.ok_or(Error::Unsupported)?;
+            crate::vector::resolve(
+                context,
+                field,
+                vector,
+                (*k, *candidates, *nprobe),
+                filter.as_ref(),
+            )
+        }
         Query::Id(id) => {
             if id.is_empty() || id.len() > 256 {
                 return Err(Error::Document);
@@ -220,7 +321,7 @@ fn clause(schema: &Schema, query: &Query<'_>, depth: usize, budget: &mut Budget)
             }
             let mut convert = |qs: &[Query<'_>]| {
                 qs.iter()
-                    .map(|q| clause(schema, q, depth + 1, budget))
+                    .map(|q| clause(schema, q, depth + 1, budget, knn))
                     .collect::<Result<Vec<_>>>()
             };
             let mut must = convert(must)?;
