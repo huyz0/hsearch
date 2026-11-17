@@ -29,12 +29,17 @@ pub use factory::{
 };
 mod query;
 mod reader;
+mod vector;
 pub use adapter::{Checkpoint, Engine, Mutation, Outcome, PreparedBatch, Receipt};
 pub use query::Query;
 pub use reader::{Hit, SearchResult, Snapshot, Sort, StoredValue};
 pub use schema::{
     Kind, Limits, MAX_AUTO_MERGE_MB, MAX_DOCUMENT_BYTES, MAX_DOCUMENTS, MAX_FIELDS, MAX_OPERATIONS,
     MAX_TERMS, Schema, Token, Value, analyze_text,
+};
+pub use vector::{
+    MAX_DIMENSION, MAX_EF_CONSTRUCTION, MAX_KNN_CANDIDATES, MAX_KNN_K, MAX_M, MAX_NPROBE,
+    MAX_VECTOR_FIELDS, Quantizer, ScalarBits, Similarity, VectorSpec,
 };
 
 /// Exact upstream engine revision.

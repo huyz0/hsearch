@@ -33,6 +33,7 @@ fn kind_name(kind: Kind) -> &'static str {
         Kind::Integer => "integer",
         Kind::Boolean => "boolean",
         Kind::Date => "date",
+        Kind::Vector(_) => "knn_vector",
     }
 }
 
