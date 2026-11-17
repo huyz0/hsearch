@@ -185,6 +185,18 @@ fn request_id(key: &str) -> Result<RequestId, StoreError> {
 }
 
 impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
+    /// The store this publisher writes through.
+    #[must_use]
+    pub fn store(&self) -> &S {
+        &self.store
+    }
+
+    /// The deployment layout.
+    #[must_use]
+    pub fn layout(&self) -> &Layout {
+        &self.layout
+    }
+
     /// A publisher writing through `store`. `part_size` bounds upload memory (at least 5 MiB).
     #[must_use]
     pub fn new(store: Arc<S>, layout: Layout, part_size: usize, deadline: Duration) -> Self {
@@ -418,6 +430,40 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
         lane_cover: u64,
         dependencies: &dyn Dependencies,
     ) -> Result<(StructuralHead, VersionToken), Error> {
+        self.transition(at, published, spec, dependencies, |root| {
+            Change::Checkpoint {
+                cover: lane_cover,
+                root,
+            }
+        })
+    }
+
+    /// Replace the checkpoint the head names by `published`, a rewritten base of the same history
+    /// (compaction): the cover stays and the publication generation rises. Verified and
+    /// compare-and-swapped exactly like [`Publisher::activate`].
+    pub fn replace(
+        &self,
+        at: &HeadRead<'_>,
+        published: &Published,
+        spec: &BaseSpec<'_>,
+        dependencies: &dyn Dependencies,
+    ) -> Result<(StructuralHead, VersionToken), Error> {
+        let source = spec.previous.ok_or(Error::Mismatch)?;
+        let from = manifest_id(&spec.index, &spec.shard, &source.token);
+        self.transition(at, published, spec, dependencies, |root| Change::Replace {
+            from,
+            root,
+        })
+    }
+
+    fn transition(
+        &self,
+        at: &HeadRead<'_>,
+        published: &Published,
+        spec: &BaseSpec<'_>,
+        dependencies: &dyn Dependencies,
+        change: impl FnOnce(Id) -> Change,
+    ) -> Result<(StructuralHead, VersionToken), Error> {
         if spec.index != published.root.index
             || spec.cut.covers() != published.root.covered
             || published.root.covered > spec.committed
@@ -440,10 +486,7 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
             at.lane,
             at.head,
             at.version,
-            Change::Checkpoint {
-                cover: lane_cover,
-                root: published.manifest,
-            },
+            change(published.manifest),
         )) {
             Ok(Advance::Done(next, version)) => Ok((next, version)),
             Ok(Advance::Lost) => Err(Error::Lost),

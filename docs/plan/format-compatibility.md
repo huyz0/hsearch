@@ -32,6 +32,14 @@ cannot ship without a row.
 - Truncation and corruption never decode: the header and body each carry a checksum. The
   every-byte sweeps per kind are in `formats.rs`, not in the matrix test.
 
+## Successor rules are not layouts
+
+M06.04 added a head successor rule, not a layout: the encoding of `StructuralHead` (kind 9, version 1) is
+unchanged, so no version rises and the golden fixture stands. A same-cover **replacement** of the checkpoint
+root (compaction) now validates when the publication generation rises. Every node that validates head
+successors must have this rule before any writer issues `Replace`; an older node refuses such a head
+transition as "a new checkpoint root needs a higher cover" and cannot compact or advance past it.
+
 ## Changing a layout
 
 Raising a kind's version is a fleet-gated change (`FleetRecord`): the new version is written

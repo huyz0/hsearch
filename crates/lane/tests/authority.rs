@@ -93,6 +93,54 @@ fn establishing_checkpointing_and_bumping_walk_the_head_forward() {
         .unwrap(),
     );
     assert_eq!((h.cover, h.checkpoint), (3, Some([9; 16])));
+    // A replacement root keeps the cover and raises the publication generation.
+    let publication = h.publication_generation;
+    let (h, v) = done(
+        block_on(advance_head(
+            &*store,
+            &layout(),
+            &lane(),
+            &h,
+            &v,
+            Change::Replace {
+                from: [9; 16],
+                root: [8; 16],
+            },
+        ))
+        .unwrap(),
+    );
+    assert_eq!((h.cover, h.checkpoint), (3, Some([8; 16])));
+    assert_eq!(h.publication_generation, publication + 1);
+    assert!(
+        block_on(advance_head(
+            &*store,
+            &layout(),
+            &lane(),
+            &h,
+            &v,
+            Change::Replace {
+                from: [7; 16],
+                root: [6; 16],
+            },
+        ))
+        .is_err(),
+        "a replacement must name the current checkpoint"
+    );
+    assert!(
+        block_on(advance_head(
+            &*store,
+            &layout(),
+            &lane(),
+            &h,
+            &v,
+            Change::Replace {
+                from: [8; 16],
+                root: [0; 16],
+            },
+        ))
+        .is_err(),
+        "the zero id is not a root"
+    );
     let (h, v) = done(
         block_on(advance_head(
             &*store,
@@ -133,7 +181,7 @@ fn establishing_checkpointing_and_bumping_walk_the_head_forward() {
             h.publication_generation,
             h.membership_epoch
         ),
-        (6, 2, 2, 1)
+        (7, 2, 3, 1)
     );
     let (read, _) = block_on(read_head(&*store, &layout(), &lane())).unwrap();
     assert_eq!(read, h);
