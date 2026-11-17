@@ -21,6 +21,7 @@ mod node;
 mod policy;
 mod search;
 mod source_line;
+mod vector_mapping;
 
 pub use bulk::{MAX_BULK_BYTES, MAX_BULK_ITEMS};
 pub use cli::{Options, parse_args};

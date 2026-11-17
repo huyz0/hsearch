@@ -64,6 +64,8 @@ pub(crate) struct Stream<R: Read> {
     items: usize,
     /// Action lines only: a source line is never buffered.
     line: Vec<u8>,
+    /// Whether a source may hold a flat array of numbers (a vector).
+    arrays: bool,
 }
 
 impl<R: Read> Stream<R> {
@@ -74,7 +76,15 @@ impl<R: Read> Stream<R> {
             consumed: 0,
             items: 0,
             line: Vec::new(),
+            arrays: false,
         }
+    }
+
+    /// This stream reading a flat array of numbers in a source as a value.
+    #[must_use]
+    pub(crate) fn with_arrays(mut self, arrays: bool) -> Self {
+        self.arrays = arrays;
+        self
     }
 
     /// Read one line of at most `cap` content bytes into `self.line`. A longer
@@ -217,6 +227,7 @@ impl<R: Read> Stream<R> {
             &mut self.consumed,
             self.limits.max_bulk_bytes,
             cap,
+            self.arrays,
         )?;
         match read {
             Source::End => Err(ApiError::parse("an action is missing its source line")),

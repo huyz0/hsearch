@@ -31,7 +31,7 @@ pub const MAX_ID_BYTES: usize = 256;
 use std::collections::{HashMap, VecDeque};
 
 /// A committed document: where it sits in the log and what it holds.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Committed {
     /// Log version the committing operation was assigned.
     pub seq_no: u64,
@@ -90,7 +90,7 @@ enum CondState {
 }
 
 /// A client request that needs resolving.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Request {
     /// Create or replace a whole document.
     Index {
@@ -235,7 +235,11 @@ type Live = Option<(u64, u64, Vec<Field>)>;
 fn bytes(fields: &[Field]) -> usize {
     fields
         .iter()
-        .map(|f| if let Field::Str(s) = f { s.len() } else { 8 })
+        .map(|f| match f {
+            Field::Str(s) => s.len(),
+            Field::Vector(v) => v.len() * 4,
+            _ => 8,
+        })
         .sum()
 }
 
@@ -259,7 +263,8 @@ impl Resolver {
                 | (Kind::Integer, Field::Int(_))
                 | (Kind::Boolean, Field::Bool(_))
                 | (Kind::Date, Field::Date(_))
-        )
+        ) || matches!((self.kinds[i], field), (Kind::Vector(spec), Field::Vector(v))
+            if v.len() == usize::from(spec.dimension) && v.iter().all(|c| c.is_finite()))
     }
 
     /// Resolve `requests` against `state`. Item `i` that logs an operation takes

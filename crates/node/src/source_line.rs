@@ -18,6 +18,8 @@ use crate::ApiError;
 const MAX_MEMBERS: usize = 256;
 /// Longest bare token (a number or `true`/`false`/`null`) read for a value.
 const MAX_TOKEN: usize = 4096;
+/// Most numbers in one array value: a vector field's own bound.
+const MAX_ARRAY: usize = 4096;
 const NESTED: &str = "nested objects and arrays are not supported by this mapping";
 const NOT_OBJECT: &str = "the source must be a JSON object";
 const TOO_MANY: &str = "the source has more members than any mapping allows";
@@ -54,6 +56,8 @@ struct Line<'a, R: Read> {
     previous: u8,
     /// The byte before the last newline read, to tell `\r\n` from `\n`.
     before_newline: u8,
+    /// Whether a flat array of numbers is a value (a vector); off, any array is nested.
+    arrays: bool,
 }
 
 impl<'a, R: Read> Line<'a, R> {
@@ -202,6 +206,37 @@ impl<'a, R: Read> Line<'a, R> {
         }
     }
 
+    /// A flat array of numbers, read one token at a time and bounded by
+    /// [`MAX_ARRAY`]; anything else inside it is nested.
+    fn numbers(&mut self) -> Result<Value, Stop> {
+        self.expect(b'[')?;
+        let mut items = Vec::new();
+        self.skip_space()?;
+        if self.peek()? == Some(b']') {
+            self.bump(1, b']')?;
+            return Ok(Value::Array(items));
+        }
+        loop {
+            self.skip_space()?;
+            match self.peek()?.ok_or(Stop::Malformed)? {
+                b'[' | b'{' | b'"' => return Err(Stop::Refused(NESTED)),
+                _ => match self.token()? {
+                    v @ Value::Number(_) => items.push(v),
+                    _ => return Err(Stop::Refused(NESTED)),
+                },
+            }
+            if items.len() > MAX_ARRAY {
+                return Err(Stop::Refused(TOO_MANY));
+            }
+            self.skip_space()?;
+            match self.byte()?.ok_or(Stop::Malformed)? {
+                b',' => {}
+                b']' => return Ok(Value::Array(items)),
+                _ => return Err(Stop::Malformed),
+            }
+        }
+    }
+
     fn object(&mut self) -> Result<Value, Stop> {
         self.skip_space()?;
         match self.peek()? {
@@ -234,6 +269,7 @@ impl<'a, R: Read> Line<'a, R> {
                     self.string(&mut text)?;
                     Value::String(text)
                 }
+                b'[' if self.arrays => self.numbers()?,
                 b'{' | b'[' => return Err(Stop::Refused(NESTED)),
                 _ => self.token()?,
             };
@@ -355,6 +391,7 @@ pub(crate) fn read<R: Read>(
     consumed: &mut u64,
     max_bulk: u64,
     cap: u64,
+    arrays: bool,
 ) -> Result<Source, ApiError> {
     let mut line = Line {
         reader,
@@ -364,6 +401,7 @@ pub(crate) fn read<R: Read>(
         line: 0,
         previous: 0,
         before_newline: 0,
+        arrays,
     };
     if line.peek().map_err(request)?.is_none() {
         return Ok(Source::End);
