@@ -147,6 +147,16 @@ pub struct RangeCacheSettings {
     pub max_request: usize,
     /// Requests in flight for one read.
     pub concurrency: usize,
+    /// Read every vector file (`.vec`, `.vex`, `.ivv`, `.dhn` and the codes) whole
+    /// when a snapshot opens, so the first queries ask the store for nothing.
+    /// Off by default: a snapshot opens by reading about 0.3 MiB of a 52 MiB
+    /// index and each query then reads the pages it touches, where on it reads
+    /// the whole index once at open (measured in `m23-03-disk-vectors.md`).
+    /// lucene-rust keeps this switch process-wide
+    /// (`lucene_store::read_advice::set_warm_random`): [`Snapshot::open_blob_settings`]
+    /// sets it, so every range snapshot in a process shares the last value opened,
+    /// and a node should use one value.
+    pub warm_on_open: bool,
 }
 
 impl Default for RangeCacheSettings {
@@ -164,6 +174,7 @@ impl Default for RangeCacheSettings {
             download_window: None,
             max_request: lucene.max_request,
             concurrency: lucene.concurrency,
+            warm_on_open: false,
         }
     }
 }
@@ -395,7 +406,9 @@ impl Snapshot {
         settings: &RangeCacheSettings,
         schema: Schema,
     ) -> Result<Self> {
-        Self::open_blob_with(store, settings.config()?, schema)
+        let config = settings.config()?;
+        lucene_store::read_advice::set_warm_random(settings.warm_on_open);
+        Self::open_blob_with(store, config, schema)
     }
 
     /// [`Snapshot::open_blob`] with a private cache built from `config`.

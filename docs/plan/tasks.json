@@ -3196,9 +3196,9 @@
       "title": "Vector search: HNSW and IVF with quantization and disk variants",
       "goal": "Expose lucene-rust's vector indexes through the mapping and query surface, with recall floors per variant.",
       "owner": "engine/search",
-      "status": "planned",
+      "status": "done",
       "depends_on": [
-        "M06"
+        "M04"
       ],
       "definition_of_done": [
         "HNSW and IVF each work with quantization and with a disk-based variant, with recall@10 floors at a stated corpus.",
@@ -3285,8 +3285,13 @@
             "M04.02"
           ],
           "owner": "engine/search",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m23-03-disk-vectors.md",
+              "result": "Disk-based HNSW (lucene-disk-hnsw, page-aligned node records, codes in memory) and IVF read by range through the demand-paged M04.02 input. Mapping `mode: on_disk` plus quantizer, with refusals by name. Cold, warm and steady range counts per query measured on a corpus 1.3x to 3x the cache with a file-backed counting backend; recall@10 stays above 0.90 in every pass. IVF needs 7.5 requests and 2.3 round trips a cold query against 52 and 18 for HNSW; disk HNSW needs more requests than HNSW (72, 38 round trips) and is chosen for memory, not requests. Open reads 0.1 MiB by default; upstream's warm-on-open read the whole 52 MiB, so it is the setting `warm_on_open` (default off). Provisional: one shared x86 VM, synthetic corpus, counting file backend, no ARM; SIFT1M/GIST1M unrun."
+            }
+          ]
         }
       ]
     },
