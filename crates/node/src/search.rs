@@ -40,6 +40,7 @@ pub(crate) enum Q {
         vector: std::sync::Arc<[f32]>,
         k: usize,
         candidates: usize,
+        nprobe: usize,
         filter: Option<Box<Q>>,
     },
     Bool {
@@ -181,13 +182,14 @@ pub(crate) fn query(mapping: &Mapping, value: &Value, depth: usize) -> Result<Q,
         }
         "knn" => {
             let (field, spec) = single(body, "knn")?;
-            if !matches!(kind_of(mapping, field)?, Kind::Vector(_)) {
+            let Kind::Vector(vector_spec) = kind_of(mapping, field)? else {
                 return Err(ApiError::new(
                     400,
                     "query_shard_exception",
                     format!("field [{field}] is not a knn_vector"),
                 ));
-            }
+            };
+            let ivf = matches!(vector_spec.index, hsearch_engine::Index::Ivf { .. });
             let spec = spec
                 .as_object()
                 .ok_or_else(|| ApiError::parse("[knn] needs an object"))?;
@@ -219,15 +221,30 @@ pub(crate) fn query(mapping: &Mapping, value: &Value, depth: usize) -> Result<Q,
                 hsearch_engine::MAX_KNN_K,
             )?;
             let mut candidates = 100;
+            let mut nprobe = vector_spec.default_nprobe();
             if let Some(parameters) = spec.get("method_parameters") {
                 let parameters = parameters
                     .as_object()
                     .ok_or_else(|| ApiError::parse("[method_parameters] must be an object"))?;
-                if let Some(extra) = parameters.keys().find(|k| *k != "ef_search") {
+                if let Some(extra) = parameters
+                    .keys()
+                    .find(|k| !["ef_search", "nprobes"].contains(&k.as_str()))
+                {
                     return Err(unsupported(&format!("method parameter [{extra}]")));
                 }
+                // `ef_search` is the graph beam of an hnsw field and the
+                // number of candidates an ivf field reranks; `nprobes` is the
+                // clusters an ivf field probes and is refused on hnsw by name.
                 if let Some(v) = parameters.get("ef_search") {
                     candidates = count("ef_search", v, hsearch_engine::MAX_KNN_CANDIDATES)?;
+                }
+                if let Some(v) = parameters.get("nprobes") {
+                    if !ivf {
+                        return Err(unsupported(&format!(
+                            "method parameter [nprobes] on hnsw field [{field}]; nprobes applies to an ivf field"
+                        )));
+                    }
+                    nprobe = count("nprobes", v, hsearch_engine::MAX_NPROBE)?;
                 }
             }
             let filter = spec
@@ -239,6 +256,7 @@ pub(crate) fn query(mapping: &Mapping, value: &Value, depth: usize) -> Result<Q,
                 vector,
                 k,
                 candidates: candidates.max(k),
+                nprobe,
                 filter,
             })
         }
@@ -522,13 +540,14 @@ pub(crate) fn lower<'a>(
             vector,
             k,
             candidates,
+            nprobe,
             filter,
         } => Query::Knn {
             field,
             vector,
             k: *k,
             candidates: *candidates,
-            nprobe: 0,
+            nprobe: *nprobe,
             filter: filter
                 .as_deref()
                 .map(|f| &*queries.alloc(lower(f, queries, values))),

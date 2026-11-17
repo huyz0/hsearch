@@ -1,6 +1,9 @@
 //! The `knn_vector` mapping type: parsing its OpenSearch-shaped parameters and
 //! the one-line stored spelling that round-trips them.
-use hsearch_engine::{Kind, Quantizer, ScalarBits, Similarity, VectorSpec};
+use hsearch_engine::{
+    DEFAULT_IVF_CLUSTER_SIZE, Index, IvfQuantizer, Kind, Quantizer, Rerank, ScalarBits, Similarity,
+    VectorSpec,
+};
 use serde_json::{Map, Value};
 
 use crate::ApiError;
@@ -38,6 +41,42 @@ const QUANTIZERS: [(&str, Quantizer); 15] = [
     ("erq8", Quantizer::Erq(8)),
 ];
 
+const IVF_QUANTIZERS: [(&str, IvfQuantizer); 13] = [
+    ("bbq", IvfQuantizer::Bbq),
+    ("osq2", IvfQuantizer::Osq(2)),
+    ("osq4", IvfQuantizer::Osq(4)),
+    ("osq7", IvfQuantizer::Osq(7)),
+    ("erq2", IvfQuantizer::Erq(2)),
+    ("erq3", IvfQuantizer::Erq(3)),
+    ("erq4", IvfQuantizer::Erq(4)),
+    ("erq5", IvfQuantizer::Erq(5)),
+    ("erq6", IvfQuantizer::Erq(6)),
+    ("erq7", IvfQuantizer::Erq(7)),
+    ("erq8", IvfQuantizer::Erq(8)),
+    ("rabitq", IvfQuantizer::RaBitQ),
+    ("auto", IvfQuantizer::Auto),
+];
+
+const RERANKS: [(&str, Rerank); 4] = [
+    ("f32", Rerank::F32),
+    ("f16", Rerank::F16),
+    ("bf16", Rerank::Bf16),
+    ("int8", Rerank::Int8),
+];
+
+/// The reason an OpenSearch ivf parameter has no counterpart here.
+fn ivf_refusal(parameter: &str) -> &'static str {
+    match parameter {
+        "nlist" => {
+            "the cluster count follows each segment's size; set [target_cluster_size], the vectors a cluster is split down to"
+        }
+        "encoder" => {
+            "codes are chosen by [quantizer] (bbq, osq2/4/7, erq2-8, rabitq, auto) and the stored vectors by [rerank_encoding]; there is no flat or pq encoder"
+        }
+        _ => "it has no counterpart",
+    }
+}
+
 fn number(name: &str, what: &str, value: &Value) -> Result<u16, ApiError> {
     value
         .as_u64()
@@ -58,7 +97,8 @@ fn only(
 }
 
 /// A `knn_vector` definition: `dimension` (required), `space_type` (default
-/// `l2`), `method` (`hnsw`, with `m` and `ef_construction`) and `quantizer`.
+/// `l2`), `method` (`hnsw` with `m` and `ef_construction`, or `ivf` with
+/// `target_cluster_size` and `rerank_encoding`) and `quantizer`.
 pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind, ApiError> {
     only(
         name,
@@ -72,6 +112,9 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
         .and_then(|v| number(name, "dimension", v))?;
     let mut space = definition.get("space_type");
     let (mut m, mut efc) = (16, 100);
+    let (mut cluster, mut rerank) = (DEFAULT_IVF_CLUSTER_SIZE, Rerank::F32);
+    let mut nprobe = 0u32;
+    let mut ivf = false;
     if let Some(method) = definition.get("method") {
         let method = method
             .as_object()
@@ -82,19 +125,25 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
             &["name", "engine", "space_type", "parameters"],
             "method",
         )?;
-        match method.get("name").and_then(Value::as_str) {
-            Some("hnsw") => {}
-            _ => {
-                return Err(bad(
-                    name,
-                    "[method.name] must be [hnsw]; ivf is not supported yet",
-                ));
-            }
-        }
+        ivf = match method.get("name").and_then(Value::as_str) {
+            Some("hnsw") => false,
+            Some("ivf") => true,
+            _ => return Err(bad(name, "[method.name] must be [hnsw] or [ivf]")),
+        };
+        // OpenSearch offers ivf only on faiss, so a faiss ivf mapping means
+        // this engine's ivf; hnsw stays lucene-only.
+        let engines: &[&str] = if ivf {
+            &["lucene", "faiss"]
+        } else {
+            &["lucene"]
+        };
         if let Some(engine) = method.get("engine")
-            && engine.as_str() != Some("lucene")
+            && !engine.as_str().is_some_and(|e| engines.contains(&e))
         {
-            return Err(bad(name, "[method.engine] must be [lucene]"));
+            return Err(bad(
+                name,
+                format!("[method.engine] must be one of {engines:?}"),
+            ));
         }
         if let Some(inner) = method.get("space_type") {
             if space.is_some() {
@@ -106,12 +155,53 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
             let parameters = parameters
                 .as_object()
                 .ok_or_else(|| bad(name, "[method.parameters] must be an object"))?;
-            only(name, parameters, &["m", "ef_construction"], "method")?;
-            if let Some(v) = parameters.get("m") {
-                m = number(name, "m", v)?;
-            }
-            if let Some(v) = parameters.get("ef_construction") {
-                efc = number(name, "ef_construction", v)?;
+            if ivf {
+                if let Some(extra) = parameters.keys().find(|k| {
+                    !["target_cluster_size", "nprobes", "rerank_encoding"].contains(&k.as_str())
+                }) {
+                    return Err(bad(
+                        name,
+                        format!(
+                            "unsupported method parameter [{extra}]: {}",
+                            ivf_refusal(extra)
+                        ),
+                    ));
+                }
+                if let Some(v) = parameters.get("target_cluster_size") {
+                    cluster = v
+                        .as_u64()
+                        .and_then(|n| u32::try_from(n).ok())
+                        .ok_or_else(|| bad(name, "[target_cluster_size] must be a whole number"))?;
+                }
+                if let Some(v) = parameters.get("nprobes") {
+                    nprobe = v
+                        .as_u64()
+                        .and_then(|n| u32::try_from(n).ok())
+                        .filter(|n| *n >= 1)
+                        .ok_or_else(|| {
+                            bad(name, "[nprobes] must be a whole number of at least 1")
+                        })?;
+                }
+                if let Some(v) = parameters.get("rerank_encoding") {
+                    let text = v
+                        .as_str()
+                        .ok_or_else(|| bad(name, "[rerank_encoding] must be a string"))?;
+                    rerank = RERANKS
+                        .iter()
+                        .find(|(n, _)| *n == text)
+                        .map(|(_, v)| *v)
+                        .ok_or_else(|| {
+                            bad(name, format!("unsupported rerank_encoding [{text}]"))
+                        })?;
+                }
+            } else {
+                only(name, parameters, &["m", "ef_construction"], "method")?;
+                if let Some(v) = parameters.get("m") {
+                    m = number(name, "m", v)?;
+                }
+                if let Some(v) = parameters.get("ef_construction") {
+                    efc = number(name, "ef_construction", v)?;
+                }
             }
         }
     }
@@ -124,34 +214,77 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
             .ok_or_else(|| bad(name, format!("unsupported space_type [{s}]")))?,
         Some(None) => return Err(bad(name, "[space_type] must be a string")),
     };
-    let quantizer = match definition.get("quantizer").map(Value::as_str) {
-        None => Quantizer::None,
-        Some(Some(s)) => QUANTIZERS
-            .iter()
-            .find(|(n, _)| *n == s)
-            .map(|(_, v)| *v)
-            .ok_or_else(|| bad(name, format!("unsupported quantizer [{s}]")))?,
-        Some(None) => return Err(bad(name, "[quantizer] must be a string")),
+    let quantizer = definition.get("quantizer").map(Value::as_str);
+    let spec = if ivf {
+        let quantizer = match quantizer {
+            None => IvfQuantizer::Bbq,
+            Some(Some(s)) => IVF_QUANTIZERS
+                .iter()
+                .find(|(n, _)| *n == s)
+                .map(|(_, v)| *v)
+                .ok_or_else(|| {
+                    bad(
+                        name,
+                        format!(
+                            "unsupported ivf quantizer [{s}]; an ivf field always keeps codes: bbq, osq2, osq4, osq7, erq2-erq8, rabitq or auto"
+                        ),
+                    )
+                })?,
+            Some(None) => return Err(bad(name, "[quantizer] must be a string")),
+        };
+        VectorSpec::ivf(dimension, similarity, cluster, quantizer, rerank).with_nprobe(nprobe)
+    } else {
+        let quantizer = match quantizer {
+            None => Quantizer::None,
+            Some(Some(s)) => QUANTIZERS
+                .iter()
+                .find(|(n, _)| *n == s)
+                .map(|(_, v)| *v)
+                .ok_or_else(|| bad(name, format!("unsupported quantizer [{s}]")))?,
+            Some(None) => return Err(bad(name, "[quantizer] must be a string")),
+        };
+        VectorSpec::hnsw(dimension, similarity)
+            .with_graph(m, efc)
+            .with_quantizer(quantizer)
     };
-    let spec = VectorSpec::hnsw(dimension, similarity)
-        .with_graph(m, efc)
-        .with_quantizer(quantizer);
     // The engine's own bounds decide: a schema is refused whole when they fail.
     hsearch_engine::Schema::new(1, &[("v", Kind::Vector(spec))]).map_err(|_| {
         bad(
             name,
-            "dimension, m, ef_construction or quantizer is out of range",
+            "dimension, m, ef_construction, target_cluster_size or quantizer is out of range",
         )
     })?;
     Ok(Kind::Vector(spec))
 }
 
-/// The stored spelling of a vector kind, after `knn_vector:`.
+/// The stored spelling of a vector kind, after `knn_vector:`. An hnsw field
+/// keeps the spelling it always had, so a mapping without an ivf field keeps
+/// its bytes and its hash.
 pub(crate) fn spelling(spec: &VectorSpec) -> String {
     let space = SPACES
         .iter()
         .find(|(_, v)| *v == spec.similarity)
         .map_or("l2", |(n, _)| n);
+    if let Index::Ivf {
+        target_cluster_size,
+        nprobe,
+        rerank,
+        quantizer,
+    } = spec.index
+    {
+        let quantizer = IVF_QUANTIZERS
+            .iter()
+            .find(|(_, v)| *v == quantizer)
+            .map_or("bbq", |(n, _)| n);
+        let rerank = RERANKS
+            .iter()
+            .find(|(_, v)| *v == rerank)
+            .map_or("f32", |(n, _)| n);
+        return format!(
+            "knn_vector:dim={},space={space},ivf,cs={target_cluster_size},np={nprobe},rr={rerank},q={quantizer}",
+            spec.dimension
+        );
+    }
     let quantizer = QUANTIZERS
         .iter()
         .find(|(_, v)| *v == spec.quantizer)
@@ -168,17 +301,28 @@ pub(crate) fn from_spelling(text: &str) -> Option<Kind> {
     let mut parts = rest.split(',');
     let dim = parts.next()?.strip_prefix("dim=")?.parse().ok()?;
     let space = parts.next()?.strip_prefix("space=")?;
-    let m = parts.next()?.strip_prefix("m=")?.parse().ok()?;
-    let efc = parts.next()?.strip_prefix("efc=")?.parse().ok()?;
-    let q = parts.next()?.strip_prefix("q=")?;
+    let similarity = SPACES.iter().find(|(n, _)| *n == space)?.1;
+    let third = parts.next()?;
+    let spec = if third == "ivf" {
+        let cs = parts.next()?.strip_prefix("cs=")?.parse().ok()?;
+        let np = parts.next()?.strip_prefix("np=")?.parse().ok()?;
+        let rr = parts.next()?.strip_prefix("rr=")?;
+        let q = parts.next()?.strip_prefix("q=")?;
+        let rerank = RERANKS.iter().find(|(n, _)| *n == rr)?.1;
+        let quantizer = IVF_QUANTIZERS.iter().find(|(n, _)| *n == q)?.1;
+        VectorSpec::ivf(dim, similarity, cs, quantizer, rerank).with_nprobe(np)
+    } else {
+        let m = third.strip_prefix("m=")?.parse().ok()?;
+        let efc = parts.next()?.strip_prefix("efc=")?.parse().ok()?;
+        let q = parts.next()?.strip_prefix("q=")?;
+        let quantizer = QUANTIZERS.iter().find(|(n, _)| *n == q)?.1;
+        VectorSpec::hnsw(dim, similarity)
+            .with_graph(m, efc)
+            .with_quantizer(quantizer)
+    };
     if parts.next().is_some() {
         return None;
     }
-    let similarity = SPACES.iter().find(|(n, _)| *n == space)?.1;
-    let quantizer = QUANTIZERS.iter().find(|(n, _)| *n == q)?.1;
-    let spec = VectorSpec::hnsw(dim, similarity)
-        .with_graph(m, efc)
-        .with_quantizer(quantizer);
     let kind = Kind::Vector(spec);
     (spelling(&spec) == text).then_some(kind)
 }
@@ -197,6 +341,34 @@ mod tests {
                 let text = spelling(&spec);
                 assert_eq!(from_spelling(&text), Some(Kind::Vector(spec)), "{text}");
             }
+        }
+    }
+
+    #[test]
+    fn every_ivf_variant_round_trips_through_its_spelling() {
+        for (_, similarity) in SPACES {
+            for (_, quantizer) in IVF_QUANTIZERS {
+                for (_, rerank) in RERANKS {
+                    let spec =
+                        VectorSpec::ivf(24, similarity, 256, quantizer, rerank).with_nprobe(7);
+                    let text = spelling(&spec);
+                    assert_eq!(from_spelling(&text), Some(Kind::Vector(spec)), "{text}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_stored_ivf_spelling_that_is_not_exact_is_refused() {
+        for text in [
+            "knn_vector:dim=4,space=l2,ivf,cs=256,np=0,rr=f32",
+            "knn_vector:dim=4,space=l2,ivf,cs=256,np=0,rr=f32,q=bbq,x=1",
+            "knn_vector:dim=4,space=l2,ivf,cs=256,rr=f32,q=bbq",
+            "knn_vector:dim=4,space=l2,ivf,cs=256,np=0,rr=f64,q=bbq",
+            "knn_vector:dim=4,space=l2,ivf,cs=256,np=0,rr=f32,q=none",
+            "knn_vector:dim=4,space=l2,ivf,cs=0256,np=0,rr=f32,q=bbq",
+        ] {
+            assert_eq!(from_spelling(text), None, "{text}");
         }
     }
 

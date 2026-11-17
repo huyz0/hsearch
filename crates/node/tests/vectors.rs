@@ -130,8 +130,44 @@ fn bad_vectors_mappings_and_queries_are_refused_by_name() {
             "unsupported quantizer",
         ),
         (
-            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf"}}),
-            "must be [hnsw]",
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "pq"}}),
+            "must be [hnsw] or [ivf]",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "hnsw", "engine": "faiss"}}),
+            "[method.engine] must be one of",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"nlist": 128}}}),
+            "unsupported method parameter [nlist]: the cluster count follows",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"nprobes": 0}}}),
+            "[nprobes] must be a whole number of at least 1",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"encoder": {"name": "pq"}}}}),
+            "there is no flat or pq encoder",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"m": 8}}}),
+            "unsupported method parameter [m]: it has no counterpart",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"target_cluster_size": 8}}}),
+            "out of range",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"rerank_encoding": "f64"}}}),
+            "unsupported rerank_encoding",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf"}, "quantizer": "scalar8"}),
+            "an ivf field always keeps codes",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf"}, "quantizer": "none"}),
+            "an ivf field always keeps codes",
         ),
     ] {
         let error = node
@@ -182,4 +218,83 @@ fn bad_vectors_mappings_and_queries_are_refused_by_name() {
         let error = node.search("v", &json!({"query": query})).unwrap_err();
         assert!(error.reason.contains(why), "{why}: {}", error.reason);
     }
+}
+
+fn ivf_mapping() -> Value {
+    json!({"mappings": {"properties": {
+        "tag": {"type": "keyword"},
+        "emb": {"type": "knn_vector", "dimension": 4, "space_type": "l2",
+                "method": {"name": "ivf", "engine": "faiss",
+                           "parameters": {"target_cluster_size": 16, "nprobes": 1000,
+                                          "rerank_encoding": "f16"}},
+                "quantizer": "osq4"}
+    }}})
+}
+
+fn ivf_knn(node: &Node<MemoryStore>, parameters: Value, filter: Option<Value>) -> Vec<String> {
+    let mut spec =
+        json!({"vector": [10.2, 0.0, 0.5, 1.0], "k": 3, "method_parameters": parameters});
+    if let Some(filter) = filter {
+        spec["filter"] = filter;
+    }
+    ids(&node
+        .search(
+            "v",
+            &json!({"query": {"knn": {"emb": spec}}, "size": 3, "_source": false}),
+        )
+        .unwrap())
+}
+
+#[test]
+fn an_ivf_field_is_mapped_searched_with_nprobes_and_survives_a_restart() {
+    let scratch = Scratch::new("vectors-ivf");
+    let store = store();
+    let node = Node::with_limits(Arc::clone(&store), scratch.0.clone(), Limits::default()).unwrap();
+    node.create("v", &ivf_mapping()).unwrap();
+    load(&node);
+
+    // The mapping's default probes every cluster, so a query naming none gets
+    // the exact answer whatever the codes; one naming 1 probes one cluster.
+    let all = json!({"nprobes": 1000});
+    assert_eq!(ivf_knn(&node, json!({}), None), vec!["d10", "d11", "d9"]);
+    assert_ne!(ivf_knn(&node, json!({"nprobes": 1}), None).len(), 0);
+    assert_eq!(ivf_knn(&node, all.clone(), None), vec!["d10", "d11", "d9"]);
+    let even = json!({"term": {"tag": "even"}});
+    assert_eq!(
+        ivf_knn(&node, all.clone(), Some(even.clone())),
+        vec!["d10", "d12", "d8"]
+    );
+    // The automatic depth and an explicit rerank count both answer.
+    assert_eq!(ivf_knn(&node, json!({}), None).len(), 3);
+    assert_eq!(
+        ivf_knn(&node, json!({"nprobes": 4, "ef_search": 10}), None).len(),
+        3
+    );
+
+    // The mapping reads back as it was given and survives a restart.
+    drop(node);
+    let node = Node::with_limits(store, scratch.0.clone(), Limits::default()).unwrap();
+    assert_eq!(ivf_knn(&node, all.clone(), None), vec!["d10", "d11", "d9"]);
+    assert_eq!(ivf_knn(&node, all, Some(even)), vec!["d10", "d12", "d8"]);
+}
+
+#[test]
+fn nprobes_on_an_hnsw_field_and_a_bad_nprobes_are_refused_by_name() {
+    let scratch = Scratch::new("vectors-nprobes");
+    let node = Node::with_limits(store(), scratch.0.clone(), Limits::default()).unwrap();
+    node.create("v", &mapping()).unwrap();
+    node.create("w", &ivf_mapping()).unwrap();
+    let refused = |index: &str, parameters: Value| {
+        node.search(
+            index,
+            &json!({"query": {"knn": {"emb": {"vector": [1,2,3,4], "k": 1,
+                "method_parameters": parameters}}}}),
+        )
+        .unwrap_err()
+        .reason
+    };
+    assert!(refused("v", json!({"nprobes": 3})).contains("nprobes applies to an ivf field"));
+    assert!(refused("w", json!({"nprobes": 0})).contains("[nprobes] must be"));
+    assert!(refused("w", json!({"nprobes": 70000})).contains("[nprobes] must be"));
+    assert!(refused("w", json!({"nprobe": 3})).contains("unsupported method parameter [nprobe]"));
 }
