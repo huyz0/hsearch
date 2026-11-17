@@ -17,7 +17,9 @@ Added `verify_files` and `verify_directory` (`integrity.rs`): recompute the CRC-
 ## Downsides and limits
 
 - `verify_files` reads each file whole: one GET per file on a remote directory, plus a CRC pass (multi-core above a size threshold in lucene-rust). It is therefore **not on the open or query path**. Run it where a file enters the store (publish, ingest), after any repair, and in a scrub; wiring it into publish is M06's. Until then open-time integrity of a remote file rests on the object store's version token and, with encryption, the M05.03 block authentication.
-- Same-length damage in a file the CRC does not cover (none known: every native file carries a footer) would not be found.
+- `verify_files` holds each file whole in memory while it checks it (no bound beyond the file), maps every open failure to `Error::Native` (a missing file, an unavailable store and a corrupt file are not told apart), and through a cache-backed directory it evicts other cached files. It was run only against a local directory; the remote one-GET-per-file cost is by construction, not measured.
+- Every refusal in the corpus is by construction a CRC refusal once verification is in front, so the corpus proves that verification catches any one-file change and that open alone does not; it does not test open correctness. No over-refusal: a second test builds an index with three rounds of updates, deletes (so `.liv` files) and a merge, and every file verifies, before and after the merge.
+- Files with no footer would be refused; none was found, the check is the corpus passing over every file the engine writes (not over `.liv`/multi-segment before this second test).
 
 ## Local against remote benchmark
 
@@ -30,11 +32,13 @@ Added `verify_files` and `verify_directory` (`integrity.rs`): recompute the CRC-
 | remote, 3 ms request | 13.6 ms | 0.57 ms | 33 / 387,159 | 365 µs / 471 µs |
 | remote, 20 ms request | 65.8 ms | 0.81 ms | 33 / 387,159 | 420 µs / 816 µs |
 
-Cold open plus first query is **3 sequential round trips** at 3 ms and 20 ms (the 0 ms row's 31 is only requests that did not overlap in time, since nothing sleeps). Open time is about 3 round trips plus 1 to 5 ms of work. A warm remote query is within about 0 to 27% of local at p50 (noise-level at 0 ms). **Not shown by this corpus**: range behaviour at size (each file is a few pages, so everything is fetched); the 333 MiB, 200k-document RustFS numbers are in [m04-02](m04-02-remote-range-input.md). The remote path never materializes whole files beyond the request count above (`heap_budget` bounds it), and a store without demand paging reads small files whole by design.
+Cold open plus first query is **3 sequential round trips** at 3 ms and 20 ms (that count is gated by `a_cold_open_and_first_query_take_few_sequential_round_trips`; the 0 ms row's 27 to 31 only counts requests that did not overlap in time and varies run to run, so it means nothing). Open time is about 3 round trips plus 1 to 5 ms of work. **Warm queries make no requests** (open already fetched the 387 KB), so the warm rows measure the same path as local and differ by noise only (a rerun had local at 402 µs and remote at 370 to 402 µs); p99 had remote up to 816 µs against 532 µs for local, which is noise or cache effects, not a measured remote cost. Nothing in this benchmark is gated except the answers.
+
+**Not shown by this corpus**: range behaviour at size (each file is a few pages, so everything is fetched, exactly 33 requests and the whole 387,159 bytes) and therefore "the remote path is not silently materialized" is **not demonstrated here**. That claim rests on M04.02's heap-budget tests and its 333 MiB RustFS run ([m04-02](m04-02-remote-range-input.md)), which this task did not re-run (no RustFS here).
 
 ## Adapter review
 
-Frozen supported contract: the 17-row feature inventory and capability gates of M04.01 are unchanged and tested; unsupported capabilities stay refused with typed errors. No runtime crate bypasses the adapter (M04.01 gate). Independent diff review for this task is recorded on the PR.
+Frozen supported contract: the 17-row feature inventory and capability gates of M04.01 are unchanged and tested; unsupported capabilities stay refused with typed errors. No runtime crate bypasses the adapter (M04.01 gate). Two independent reviews of this task's diff and of the M04 milestone were run; their findings are fixed above or carried below. The release-profile run covered every target of `cargo test -p hsearch-engine --release` (all `test result: ok`, none failed; 1 test ignored: the benchmark).
 
 ## Milestone review (independent) and where its findings are carried
 

@@ -125,3 +125,63 @@ fn damaged_files_are_refused_or_answer_exactly_never_wrongly() {
         "damage changed an answer without an error: {wrong:?}"
     );
 }
+
+/// No over-refusal: every file of an index that has had updates, deletes (so `.liv`
+/// files), several commits and a merge passes verification, and the verified
+/// index answers as the live documents say.
+#[test]
+fn an_index_with_updates_deletes_and_a_merge_verifies_and_answers() {
+    use hsearch_engine::{Engine, Mutation};
+    let scratch = Scratch::new("verify-ok");
+    std::fs::create_dir_all(&scratch.0).unwrap();
+    let directory = EngineDirectory::new(FsDirectory::open(&scratch.0));
+    let schema = schema()
+        .with_limits(hsearch_engine::Limits::scale())
+        .unwrap();
+    let engine = Engine::open(&directory, schema.clone(), None).unwrap();
+    let fields: Vec<[(&str, Value<'_>); 2]> = (0..30)
+        .map(|n| [("tag", Value::String("t")), ("n", Value::Integer(n))])
+        .collect();
+    let ids: Vec<String> = (0..30).map(|n| format!("d{n}")).collect();
+    for round in 0..3i64 {
+        for (chunk, start) in (0..30usize).step_by(10).enumerate() {
+            let puts: Vec<Mutation<'_>> = (start..start + 10)
+                .map(|n| Mutation::Put {
+                    id: &ids[n],
+                    version: round + 1,
+                    fields: &fields[n],
+                })
+                .collect();
+            engine
+                .apply(
+                    schema
+                        .prepare(&format!("put-{round}-{chunk}"), &puts)
+                        .unwrap(),
+                )
+                .unwrap();
+        }
+        engine.commit().unwrap();
+    }
+    let deletes: Vec<Mutation<'_>> = (0..10)
+        .map(|n| Mutation::Delete {
+            id: &ids[n],
+            version: 9,
+        })
+        .collect();
+    engine
+        .apply(schema.prepare("del", &deletes).unwrap())
+        .unwrap();
+    engine.commit().unwrap();
+    let before = lucene_store::Directory::list_all(&FsDirectory::open(&scratch.0)).unwrap();
+    assert!(before.iter().any(|n| n.ends_with(".liv")), "{before:?}");
+    hsearch_engine::verify_directory(&FsDirectory::open(&scratch.0)).unwrap();
+    engine.merge().unwrap();
+    engine.commit().unwrap();
+    engine.close().unwrap();
+    hsearch_engine::verify_directory(&FsDirectory::open(&scratch.0)).unwrap();
+    let snapshot =
+        Snapshot::open_committed(&EngineDirectory::new(FsDirectory::open(&scratch.0)), schema)
+            .unwrap();
+    let all = snapshot.search(&Query::All, &[], 100, &[]).unwrap();
+    assert_eq!(all.total, 20);
+}

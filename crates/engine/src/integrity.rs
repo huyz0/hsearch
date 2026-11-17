@@ -5,7 +5,8 @@
 //! flipped byte inside a points or doc-values file can open and answer wrongly.
 //! [`verify_files`] recomputes the CRC of every named file against its footer. It
 //! reads each file once, whole, so on a remote directory it costs one GET per
-//! file; run it where a file enters the store or leaves a repair, never per query.
+//! file, holds that file whole in memory while it checks it, and reports any failure,
+//! missing file included, as `Error::Native`; run it where a file enters the store or leaves a repair, never per query.
 use lucene_store::{Directory, codec_util};
 
 use crate::{Error, Result};
