@@ -260,3 +260,19 @@ Behaviour kept: the same refusals for a source that is oversized, malformed, nes
 ## What remains to the ~1.4x target
 
 Token occurrences (lucene-rust#447): about 0.65x over the text while the field is inverted; delta-coded positions would shrink it.
+
+# M21.09 (increment 12): a big flush streams its postings files, 200 MiB peak 349-357 to 278 MiB
+
+Provisional: RustFS 1.0.4 (pinned image), shared cloud container, release build, `rustfs_profile large 200`, one run.
+
+lucene-rust#463 (pin df02d69) writes `.doc/.pos/.pay` straight to the directory when a flush has 4 MiB or more of buffered postings, instead of building them in memory first. The format is unchanged. Standalone in lucene-rust the same 200 MiB field went 338 to 281 MiB; here:
+
+| | increment 11 (pin 18d250b) | this change (pin df02d69) |
+|---|---|---|
+| peak over baseline | 348.6, 356.5 MiB (1.7x, 1.8x) | 277.9 MiB (1.4x) |
+| durable ack | 2.34 s, 2.39 s | 2.29 s |
+| searchable | 7.50 s, 7.50 s | 7.46 s |
+| PUT count | 27 | 27 |
+| replay on an empty directory | | 1 doc, term hit 1 |
+
+The target of about 1.4x is met. What is left is the in-memory term pool (about 0.38x of the text), which is the same Java-style structure Lucene itself holds; shrinking it would diverge from Java, so it is left.

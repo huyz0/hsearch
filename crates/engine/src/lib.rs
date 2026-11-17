@@ -34,7 +34,7 @@ pub use schema::{
 };
 
 /// Exact upstream engine revision.
-pub const ENGINE_REVISION: &str = "18d250b806206e25fbb191d1fc16156fe48fa9e6";
+pub const ENGINE_REVISION: &str = "df02d694c4ffb96b2b765084b07728fa6a523a33";
 pub use lucene_store::{Directory, Input};
 
 /// Native consuming cleanup outcome, without backend error text.
