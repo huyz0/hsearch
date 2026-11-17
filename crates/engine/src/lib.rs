@@ -1,17 +1,21 @@
 //! Bounded materialized Lucene adapter. Native visibility and native commit do
 //! not establish hsearch authority, quorum durability, or archival state.
 mod aggregations;
+mod budget;
+pub use budget::{DiskBudget, DiskReservation};
+mod maintenance;
+pub use maintenance::{MergeScheduler, MergeTicket};
 mod checkpoint;
 mod directory;
 pub use directory::EngineDirectory;
 mod local;
 mod remote;
 pub use local::{LocalFiles, with_local_engine};
-pub use remote::{CachedDirectory, RemoteError, RemoteFiles};
+pub use remote::{CachePin, CachedDirectory, RemoteError, RemoteFiles};
 mod range;
 pub use range::{
     DEFAULT_DISK_BUDGET, DEFAULT_HEAP_BUDGET, DEFAULT_SPILL_BUDGET, ManifestEntry, ObjectBlobStore,
-    RangeCacheMetrics, RangeCacheSettings,
+    RangeCacheMetrics, RangeCacheSettings, cache_namespace,
 };
 mod upload;
 pub use upload::ObjectUploadSink;
@@ -25,12 +29,17 @@ pub use factory::{
 };
 mod query;
 mod reader;
+mod vector;
 pub use adapter::{Checkpoint, Engine, Mutation, Outcome, PreparedBatch, Receipt};
 pub use query::Query;
 pub use reader::{Hit, SearchResult, Snapshot, Sort, StoredValue};
 pub use schema::{
     Kind, Limits, MAX_AUTO_MERGE_MB, MAX_DOCUMENT_BYTES, MAX_DOCUMENTS, MAX_FIELDS, MAX_OPERATIONS,
     MAX_TERMS, Schema, Token, Value, analyze_text,
+};
+pub use vector::{
+    MAX_DIMENSION, MAX_EF_CONSTRUCTION, MAX_KNN_CANDIDATES, MAX_KNN_K, MAX_M, MAX_NPROBE,
+    MAX_VECTOR_FIELDS, Quantizer, ScalarBits, Similarity, VectorSpec,
 };
 
 /// Exact upstream engine revision.

@@ -154,9 +154,12 @@ impl Snapshot {
         for s in sort {
             factory.require(crate::capability_of_sort(s))?;
         }
-        let query = crate::query::lower(&self.schema, query)?;
+        // Refuse what can be refused before any segment is opened.
+        crate::query::validate(&self.schema, query)?;
         for (i, name) in projection.iter().enumerate() {
-            self.schema.kind(name)?;
+            if matches!(self.schema.kind(name)?, Kind::Vector(_)) {
+                return Err(Error::Unsupported);
+            }
             if projection[..i].contains(name) {
                 return Err(Error::Document);
             }
@@ -169,7 +172,7 @@ impl Snapshot {
                     let kind = match self.schema.kind(name)? {
                         Kind::Keyword | Kind::Boolean => SortType::String,
                         Kind::Integer | Kind::Date => SortType::Long,
-                        Kind::Text => return Err(Error::Unsupported),
+                        Kind::Text | Kind::Vector(_) => return Err(Error::Unsupported),
                     };
                     SortField::numeric(name, kind, *descending)
                 }
@@ -179,6 +182,14 @@ impl Snapshot {
         let mut opened = self.reader.open_segments().map_err(|_| Error::Native)?;
         opened.open_points().map_err(|_| Error::Native)?;
         let segments = opened.as_open_segments();
+        // A kNN search runs over these segments, so the query is lowered only now.
+        let query = crate::query::lower_with(
+            &self.schema,
+            query,
+            Some(&crate::vector::KnnContext {
+                segments: &segments,
+            }),
+        )?;
         let text_fields: Vec<_> = self
             .schema
             .fields
@@ -282,6 +293,12 @@ fn stored(reader: &DirectoryReader, mut doc: i32, name: &str) -> Result<FieldVal
     }
     Err(Error::Native)
 }
+/// A field value read back from the index while a checkpoint is verified.
+enum Recovered {
+    Text(String),
+    Long(i64),
+    Floats(Vec<f32>),
+}
 pub(crate) fn verify(
     reader: &DirectoryReader,
     schema: &Schema,
@@ -305,6 +322,16 @@ pub(crate) fn verify(
         .map_err(|_| Error::Native)?
         .search(&query, schema.limits.documents)
         .map_err(|_| Error::Native)?;
+    // Each vector field's segments are opened once, not once per document.
+    let mut vectors = Vec::new();
+    for (name, kind) in &schema.fields {
+        if let Kind::Vector(spec) = kind {
+            vectors.push((
+                name.as_str(),
+                crate::vector::StoredVectors::open(reader, name, usize::from(spec.dimension))?,
+            ));
+        }
+    }
     let mut seen = std::collections::BTreeSet::new();
     if result.score_docs.len()
         != expected
@@ -327,17 +354,30 @@ pub(crate) fn verify(
             return Err(Error::Checkpoint);
         }
         let wanted = op.digest.ok_or(Error::Checkpoint)?;
-        let mut texts = Vec::with_capacity(fields.len());
+        let mut values = Vec::with_capacity(fields.len());
         for (name, kind) in schema.fields.iter().map(|(n, k)| (n.as_str(), *k)) {
-            texts.push(match (kind, stored(reader, hit.doc, name)?) {
-                (Kind::Keyword | Kind::Text | Kind::Boolean, FieldValue::String(s)) => Err(s),
-                (Kind::Integer | Kind::Date, FieldValue::Long(n)) => Ok(n),
-                _ => return Err(Error::Checkpoint),
+            values.push(match kind {
+                Kind::Vector(_) => Recovered::Floats(
+                    vectors
+                        .iter()
+                        .find(|(n, _)| *n == name)
+                        .ok_or(Error::Checkpoint)?
+                        .1
+                        .get(hit.doc)?,
+                ),
+                _ => match (kind, stored(reader, hit.doc, name)?) {
+                    (Kind::Keyword | Kind::Text | Kind::Boolean, FieldValue::String(s)) => {
+                        Recovered::Text(s)
+                    }
+                    (Kind::Integer | Kind::Date, FieldValue::Long(n)) => Recovered::Long(n),
+                    _ => return Err(Error::Checkpoint),
+                },
             });
         }
-        let got = crate::adapter::digest(texts.iter().map(|v| match v {
-            Err(s) => crate::adapter::Stored::Text(s),
-            Ok(n) => crate::adapter::Stored::Long(*n),
+        let got = crate::adapter::digest(values.iter().map(|v| match v {
+            Recovered::Text(s) => crate::adapter::Stored::Text(s),
+            Recovered::Long(n) => crate::adapter::Stored::Long(*n),
+            Recovered::Floats(v) => crate::adapter::Stored::Floats(v),
         }));
         if got != wanted {
             return Err(Error::Checkpoint);

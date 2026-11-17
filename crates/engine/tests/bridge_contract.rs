@@ -188,6 +188,17 @@ fn every_query_and_sort_variant_maps_to_its_own_capability() {
             },
             Capability::QueryBool,
         ),
+        (
+            Query::Knn {
+                field: "embedding",
+                vector: &[0.0],
+                k: 1,
+                candidates: 1,
+                nprobe: 0,
+                filter: None,
+            },
+            Capability::QueryKnn,
+        ),
         (Query::Unsupported, Capability::UnsupportedQuery),
     ];
     for (query, expected) in &cases {

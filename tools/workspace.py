@@ -47,7 +47,7 @@ PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-obj
 # `unsafe_code = "deny"` lint leaves exactly one `#[allow]`, on `mod sys` (the compiler enforces that).
 UNSAFE_CRATES = {"hsearch-module-native"}
 EXTERNAL = {name: set() for name in LAYERS}
-EXTERNAL["hsearch-engine"] = {"lucene-aggs", "lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store"}
+EXTERNAL["hsearch-engine"] = {"lucene-aggs", "lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store", "lucene-util"}
 # Signing and a blocking HTTP client, exact-pinned in crates/s3/Cargo.toml. No TLS stack yet.
 EXTERNAL["hsearch-s3"] = {"hmac", "md-5", "sha2", "ureq"}
 # Content hashes of mapping objects and manifest page digests (SHA-256), exact-pinned in crates/format/Cargo.toml.

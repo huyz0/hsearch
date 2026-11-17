@@ -25,6 +25,7 @@ lucene-codecs = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c
 lucene-index = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
 lucene-search = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
 lucene-store = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
+lucene-util = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
 lucene-aggs = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
 
 [workspace.lints.rust]
