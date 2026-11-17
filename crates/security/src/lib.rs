@@ -13,6 +13,7 @@ pub mod audit;
 pub mod backend;
 pub mod block;
 pub mod clock;
+pub mod conformance;
 #[cfg(feature = "dev-ca")]
 pub mod dev_ca;
 pub mod identity;

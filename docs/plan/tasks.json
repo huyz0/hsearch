@@ -2539,8 +2539,13 @@
             "M05.06"
           ],
           "owner": "security/crypto",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m05-07-security-format-review.md",
+              "result": "Threat table mapped to tests; adversarial corpus (every truncation and extension, header bytes at boundary values, length-field extremes, 20,000 seeded garbage inputs and 20,000 seeded mutations, block swaps and duplicates) all refused with header allocation bounded; provider conformance suite (13 checks) passes for the test provider and fails two deliberately broken ones, real providers NOT-RUN pending M15; findings fixed: failing provider was called per attempt (added bounded per-key failure backoff, off by default) and the cache lifetime was not tied to the 60 s revocation target (production profile now refuses above 60 s); recorded limits: non-committing AES-GCM, no server-name or revocation check on TLS, one non-zeroized key copy, no fuzzer campaign. security crate 95.18% line coverage (floor 90). Cloud provider claims pending M15."
+            }
+          ]
         }
       ]
     },

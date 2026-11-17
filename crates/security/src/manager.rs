@@ -135,6 +135,8 @@ pub struct CacheStats {
     pub evictions: u64,
     /// Keys dropped by invalidation.
     pub invalidated: u64,
+    /// Reads answered with a remembered provider failure instead of a provider call.
+    pub backed_off: u64,
 }
 
 #[derive(Default)]
@@ -144,6 +146,7 @@ struct Counters {
     coalesced: AtomicU64,
     evictions: AtomicU64,
     invalidated: AtomicU64,
+    backed_off: AtomicU64,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -199,7 +202,20 @@ pub struct KeyManager {
     /// Bumped by every invalidation, before it drops anything.
     epoch: AtomicU64,
     counters: Counters,
+    /// How long a retryable provider failure is remembered per customer key; zero is off (the default).
+    failure_backoff: Duration,
+    backoff: Mutex<HashMap<KeyRef, (Duration, ProviderError)>>,
 }
+
+/// The longest a data key may be cached under the production profile: the revocation target (security.md,
+/// 60 s) bounds how long a revoked key keeps working on a reader that does not consult the policy gate, and
+/// nothing else enforced that relation.
+pub const MAX_PRODUCTION_TTL: Duration = Duration::from_secs(60);
+
+/// The longest a failure backoff may be set to, and the most customer keys remembered at once. A full table
+/// stops remembering (calls go to the provider) rather than growing.
+pub const MAX_FAILURE_BACKOFF: Duration = Duration::from_secs(30);
+const MAX_BACKOFF_KEYS: usize = 10_000;
 
 impl KeyManager {
     /// A manager over `provider`. A production profile refuses a test provider, and the default key must be
@@ -215,6 +231,9 @@ impl KeyManager {
     ) -> Result<Self, KeyError> {
         if profile == Profile::Production && provider.is_test() {
             return Err(KeyError::TestProviderInProduction);
+        }
+        if profile == Profile::Production && policy.ttl > MAX_PRODUCTION_TTL {
+            return Err(KeyError::BadCachePolicy);
         }
         if policy.max_entries == 0
             || policy.ttl.is_zero()
@@ -240,9 +259,58 @@ impl KeyManager {
             inflight: Mutex::new(HashMap::new()),
             epoch: AtomicU64::new(0),
             counters: Counters::default(),
+            failure_backoff: Duration::ZERO,
+            backoff: Mutex::new(HashMap::new()),
         };
         manager.admit(&manager.default_key)?;
         Ok(manager)
+    }
+
+    /// Remembers a retryable provider failure (throttled, timeout, unavailable) for `backoff` (at most
+    /// [`MAX_FAILURE_BACKOFF`]) per customer key, and answers reads that would miss the cache with that same
+    /// failure instead of calling the provider again. Without it every read of a cold object is a provider
+    /// call during an outage, which is a retry storm at read rate against a service that is already failing
+    /// or rate-limiting. The cost is that a recovered provider is not asked for up to `backoff`; a denial or
+    /// revocation is never remembered. Off by default (zero); keys already cached are unaffected.
+    pub fn with_failure_backoff(mut self, backoff: Duration) -> Self {
+        self.failure_backoff = backoff.min(MAX_FAILURE_BACKOFF);
+        self
+    }
+
+    fn backed_off(&self, key: &KeyRef) -> Option<ProviderError> {
+        if self.failure_backoff.is_zero() {
+            return None;
+        }
+        let now = self.clock.monotonic();
+        let mut table = self.backoff.lock().unwrap_or_else(|p| p.into_inner());
+        match table.get(key) {
+            Some((until, error)) if now < *until => Some(error.clone()),
+            Some(_) => {
+                table.remove(key);
+                None
+            }
+            None => None,
+        }
+    }
+
+    fn note_failure(&self, key: &KeyRef, error: &ProviderError) {
+        if self.failure_backoff.is_zero() || !error.is_retryable() {
+            return;
+        }
+        let hold = match error {
+            ProviderError::Throttled { retry_after } => {
+                (*retry_after).clamp(self.failure_backoff, MAX_FAILURE_BACKOFF)
+            }
+            _ => self.failure_backoff,
+        };
+        let now = self.clock.monotonic();
+        let mut table = self.backoff.lock().unwrap_or_else(|p| p.into_inner());
+        if table.len() >= MAX_BACKOFF_KEYS {
+            table.retain(|_, (until, _)| now < *until);
+        }
+        if table.len() < MAX_BACKOFF_KEYS {
+            table.insert(key.clone(), (now + hold, error.clone()));
+        }
     }
 
     fn admit(&self, key: &KeyRef) -> Result<(), KeyError> {
@@ -423,6 +491,10 @@ impl KeyManager {
                 self.counters.hits.fetch_add(1, Ordering::Relaxed);
                 return Ok(dek);
             }
+            if let Some(error) = self.backed_off(wrapped.key()) {
+                self.counters.backed_off.fetch_add(1, Ordering::Relaxed);
+                return Err(error.into());
+            }
             match self.fetch(&cache_key, wrapped, ctx, generation, opts) {
                 Err(ProviderError::Cancelled) if !opts.cancel.is_cancelled() => continue,
                 other => return other.map_err(KeyError::from),
@@ -506,6 +578,7 @@ impl KeyManager {
                 self.insert(cache_key.clone(), dek, wrapped.key(), epoch);
             }
             Err(e) => {
+                self.note_failure(wrapped.key(), e);
                 self.record(
                     AuditOp::Unwrap,
                     &ctx.index,
@@ -758,6 +831,7 @@ impl KeyManager {
             coalesced: c.coalesced.load(Ordering::Relaxed),
             evictions: c.evictions.load(Ordering::Relaxed),
             invalidated: c.invalidated.load(Ordering::Relaxed),
+            backed_off: c.backed_off.load(Ordering::Relaxed),
         }
     }
 }
