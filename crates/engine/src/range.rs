@@ -346,6 +346,22 @@ impl<B: ObjectBackend> BlobStore for ObjectBlobStore<B> {
     }
 }
 
+/// The page-cache namespace of one index's committed state: `domain` (the tenant
+/// or index) and `version` (the manifest's root version), length-prefixed so no
+/// two pairs encode alike (`("a|b","c")` and `("a","b|c")` differ). Pages cached
+/// for one domain or one version are never served for another; both must be
+/// nonempty.
+pub fn cache_namespace(domain: &str, version: &str) -> Result<String> {
+    if domain.is_empty() || version.is_empty() {
+        return Err(Error::Limit);
+    }
+    Ok(format!(
+        "{}:{domain}/{}:{version}",
+        domain.len(),
+        version.len()
+    ))
+}
+
 impl Snapshot {
     /// Open the committed segments in `store` read-only, served by range through
     /// `cache`: a page is fetched when a query first touches it (or ahead of it by
@@ -390,5 +406,23 @@ impl Snapshot {
     ) -> Result<Self> {
         let cache = PageCache::new(config).map_err(|_| Error::Native)?;
         Self::open_blob(store, Arc::new(cache), "snapshot", schema)
+    }
+}
+
+#[cfg(test)]
+mod namespace_tests {
+    use super::*;
+
+    #[test]
+    fn domain_and_version_are_both_in_the_key_without_ambiguity() {
+        let a = cache_namespace("t1", "v1").unwrap();
+        assert_ne!(a, cache_namespace("t2", "v1").unwrap());
+        assert_ne!(a, cache_namespace("t1", "v2").unwrap());
+        assert_ne!(
+            cache_namespace("a/1:b", "c").unwrap(),
+            cache_namespace("a", "1:b/1:c").unwrap()
+        );
+        assert_eq!(cache_namespace("", "v").unwrap_err(), Error::Limit);
+        assert_eq!(cache_namespace("d", "").unwrap_err(), Error::Limit);
     }
 }

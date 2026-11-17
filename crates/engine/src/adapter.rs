@@ -706,6 +706,23 @@ impl<'d> Engine<'d> {
         Ok(())
     }
 
+    /// [`Engine::merge`] after the scheduler admits it: a free slot, and disk
+    /// reserved for as many bytes as the directory holds now (a merge writes its
+    /// output before it frees its inputs). Refused with `Busy`, `Limit` or
+    /// `Unsupported` (shut down) before any native work starts.
+    pub fn merge_scheduled(&self, scheduler: &crate::MergeScheduler) -> Result<()> {
+        let mut bytes = 0u64;
+        for name in self.directory.list_all().map_err(|_| Error::Native)? {
+            bytes = bytes.saturating_add(
+                self.directory
+                    .file_length(&name)
+                    .map_err(|_| Error::Native)?,
+            );
+        }
+        let _ticket = scheduler.admit(bytes)?;
+        self.merge()
+    }
+
     /// Close without committing pending work. Previously returned snapshots
     /// remain usable. Close consumes the adapter, including on native failure.
     pub fn close(self) -> Result<()> {
