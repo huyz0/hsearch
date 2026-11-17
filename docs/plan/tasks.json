@@ -2288,8 +2288,13 @@
             "M04.04"
           ],
           "owner": "engine",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m04-05-cache-and-merges.md",
+              "result": "DiskBudget with RAII reservations, CachedDirectory budget, pins, damage repair and disk-full fallback to uncached serving, cache_namespace, MergeScheduler and Engine::merge_scheduled; 5 integration and 8 unit tests, four mutations seen red, clippy clean. Provisional (one host, in-memory source). Merge still runs under the engine lock (M21.10); PageCache budget not shared."
+            }
+          ]
         },
         {
           "id": "M04.06",
