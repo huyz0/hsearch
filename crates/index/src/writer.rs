@@ -103,6 +103,7 @@ fn value(field: &Field) -> Value<'_> {
         Field::Int(n) => Value::Integer(*n),
         Field::Bool(b) => Value::Boolean(*b),
         Field::Date(n) => Value::Date(*n),
+        Field::Vector(v) => Value::Vector(v),
     }
 }
 
@@ -162,6 +163,7 @@ fn cost(schema: &Schema, ops: &[Op]) -> usize {
                             .iter()
                             .map(|f| match f {
                                 Field::Str(s) => s.len(),
+                                Field::Vector(v) => v.len() * 4,
                                 _ => 8,
                             })
                             .sum::<usize>()

@@ -47,6 +47,8 @@ pub const INLINE_FIELD_MAX: usize = 1 << 20;
 /// document of any size is a run of ordinary create-only objects.
 pub const BLOB_CHUNK_BYTES: usize = 8 << 20;
 const BLOB_TAG: u8 = 5;
+/// The tag of a vector field.
+const VECTOR_TAG: u8 = 6;
 /// Wire size of a reference: tag, epoch, attempt, chunk count, byte length.
 const BLOB_REF_BYTES: usize = 1 + 8 + 8 + 4 + 8;
 
@@ -75,11 +77,13 @@ pub struct BlobAt {
     /// Field index within the operation.
     pub field: usize,
 }
+/// Most components a logged vector may have (the engine's own bound).
+pub const MAX_VECTOR_DIMENSION: usize = hsearch_engine::MAX_DIMENSION;
 /// Most segment files a root may name.
 pub const MAX_FILES: usize = 4096;
 
 /// One typed field value, in the schema's canonical order.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Field {
     /// Keyword or text. Shared: an op's text is held once, by the op, the engine's document
     /// and its stored value, which matters for a very large text field.
@@ -90,6 +94,8 @@ pub enum Field {
     Bool(bool),
     /// UTC epoch milliseconds.
     Date(i64),
+    /// A dense vector, held once and shared with the engine's document.
+    Vector(Arc<[f32]>),
 }
 
 impl Field {
@@ -100,7 +106,7 @@ impl Field {
 }
 
 /// One mutation of a bulk.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Op {
     /// Create or replace a document with exactly the schema's fields.
     Put {
@@ -127,7 +133,7 @@ impl Op {
 }
 
 /// A committed group of operations at a position in the log.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Slot {
     /// Position in the log, from zero.
     pub seq: u64,
@@ -255,6 +261,15 @@ pub fn encode_slot_with(slot: &Slot, externalise: &mut Externalise<'_>) -> Resul
                             out.push(4);
                             out.extend_from_slice(&n.to_le_bytes());
                         }
+                        Field::Vector(v) => {
+                            out.push(VECTOR_TAG);
+                            out.extend_from_slice(
+                                &u32::try_from(v.len()).unwrap_or(u32::MAX).to_le_bytes(),
+                            );
+                            for c in v.iter() {
+                                out.extend_from_slice(&c.to_le_bytes());
+                            }
+                        }
                     }
                 }
             }
@@ -353,6 +368,7 @@ pub fn encoded_len(ops: &[Op]) -> usize {
                                 Field::Str(s) => 1 + 4 + s.len(),
                                 Field::Int(_) | Field::Date(_) => 1 + 8,
                                 Field::Bool(_) => 1 + 1,
+                                Field::Vector(v) => 1 + 4 + 4 * v.len(),
                             })
                             .sum::<usize>()
                 }
@@ -455,6 +471,18 @@ pub fn decode_slot_with(
                             _ => return Err(Error::Corrupt),
                         },
                         4 => Field::Date(r.i64()?),
+                        VECTOR_TAG => {
+                            let len = r.u32()? as usize;
+                            if len == 0 || len > MAX_VECTOR_DIMENSION {
+                                return Err(Error::Corrupt);
+                            }
+                            let raw = r.take(len * 4)?;
+                            Field::Vector(
+                                raw.chunks_exact(4)
+                                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                                    .collect(),
+                            )
+                        }
                         _ => return Err(Error::Corrupt),
                     });
                 }
@@ -630,6 +658,7 @@ mod tests {
                         Field::Int(-3),
                         Field::Bool(true),
                         Field::Date(9),
+                        Field::Vector(vec![0.5, -1.0, 3.25].into()),
                     ],
                 },
                 Op::Delete { id: "b".into() },
@@ -665,6 +694,42 @@ mod tests {
         let mut wrong = bytes;
         wrong[0] ^= 1;
         assert_eq!(decode_slot(&wrong), Err(Error::Corrupt));
+    }
+
+    #[test]
+    fn a_vector_field_refuses_a_bad_length_and_a_slot_without_one_is_unchanged() {
+        let put = |fields: Vec<Field>| Slot {
+            seq: 1,
+            first_version: 1,
+            ops: vec![Op::Put {
+                id: "a".into(),
+                fields,
+            }],
+        };
+        let bytes = encode_slot(&put(vec![Field::Vector(vec![1.0, 2.0].into())])).unwrap();
+        // Tag, then the length: zero and over the bound are corrupt.
+        let at = bytes.iter().rposition(|b| *b == VECTOR_TAG).unwrap();
+        for len in [0u32, MAX_VECTOR_DIMENSION as u32 + 1] {
+            let mut bad = bytes.clone();
+            bad[at + 1..at + 5].copy_from_slice(&len.to_le_bytes());
+            assert_eq!(decode_slot(&bad), Err(Error::Corrupt), "length {len}");
+        }
+        // A slot with no vector encodes exactly as it did: the tags 1 to 5 are unchanged.
+        let plain = put(vec![
+            Field::text("x"),
+            Field::Int(1),
+            Field::Bool(true),
+            Field::Date(2),
+        ]);
+        let encoded = encode_slot(&plain).unwrap();
+        assert_eq!(decode_slot(&encoded).unwrap(), plain);
+        assert_eq!(encoded.len(), encoded_len(&plain.ops));
+        assert_eq!(
+            encoded_len(&put(vec![Field::Vector(vec![1.0; 7].into())]).ops),
+            encode_slot(&put(vec![Field::Vector(vec![1.0; 7].into())]))
+                .unwrap()
+                .len()
+        );
     }
 
     #[test]
