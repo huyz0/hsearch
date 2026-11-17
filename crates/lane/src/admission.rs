@@ -6,6 +6,10 @@
 //! tenant therefore cannot take the last of the capacity from many small ones: it is refused
 //! ([`Refusal::Share`]) while they are still admitted.
 //!
+//! Shares are weights over the tenants running: if the weights add up to more than the capacity a
+//! light tenant's share rounds to zero and it competes for the reserve like a borrower, so weights
+//! should be small integers against a capacity of hundreds or more.
+//!
 //! A tenant has an entry only while it has work in flight, so the table holds at most `capacity`
 //! entries and an idle tenant costs nothing: no entry, no timer, no counter. Every operation is a
 //! hash lookup and a few integer operations. Sans-I/O: the caller runs the work and releases the
@@ -133,7 +137,9 @@ impl Admission {
             .map_or((0, None), |e| (e.inflight, Some(u64::from(e.weight))));
         // The weight the share is computed against: everyone running, this tenant at its new weight.
         let total_weight = self.active_weight - old_weight.unwrap_or(0) + u64::from(weight);
-        let reserve = capacity * u64::from(self.config.reserve_permille) / 1000;
+        let reserve =
+            u64::try_from(u128::from(capacity) * u128::from(self.config.reserve_permille) / 1000)
+                .unwrap_or(u64::MAX);
         // A tenant alone would be owed the whole node; the reserve is never part of a share, so a
         // newcomer always finds it free.
         let share = (u128::from(capacity) * u128::from(weight) / u128::from(total_weight))

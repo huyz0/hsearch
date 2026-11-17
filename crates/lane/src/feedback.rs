@@ -89,10 +89,10 @@ impl LoadFeedback {
             (reading.smoothed * 3 + utilization) / 4
         };
         let mapped = map(config, reading.smoothed);
-        if mapped.abs_diff(reading.factor) >= config.deadband || stale {
+        if mapped.abs_diff(reading.factor) >= config.deadband || stale || mapped == NEUTRAL {
             reading.factor = mapped;
         }
-        reading.tick = tick;
+        reading.tick = reading.tick.max(tick);
         Ok(())
     }
 

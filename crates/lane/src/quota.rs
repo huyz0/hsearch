@@ -8,10 +8,14 @@
 //! protected byte.
 //!
 //! Sans-I/O: this does the accounting and names who gives up how many bytes; the cache evicts them
-//! (its own recency order within a tenant) and calls [`CacheQuota::release`] as bytes leave. Only
+//! (its own recency order within a tenant). The accounting already counts evicted bytes gone;
+//! [`CacheQuota::release`] is for bytes that leave any other way (the cache's own eviction,
+//! invalidation, expiry). Only
 //! tenants with bytes resident have a slot, bounded by `max_tenants`, so an idle tenant costs
-//! nothing. Victims are chosen from a bounded sample of [`SAMPLE`] slots taken round-robin plus the
-//! requester itself, so the work of a reservation does not grow with the number of tenants.
+//! nothing. Victims are chosen from the next [`SAMPLE`] slots round-robin (surplus or not) plus the
+//! requester itself, so the work of a reservation does not grow with the number of tenants; the
+//! cost is that a reservation can bypass although a tenant outside the window holds surplus. A
+//! reservation allocates a few small vectors when it must evict.
 use std::collections::HashMap;
 
 use hsearch_format::Id;
@@ -151,7 +155,7 @@ impl CacheQuota {
             }
         }
         // Commit.
-        let mut evictions = Vec::with_capacity(taken.len() + 1);
+        let mut evictions = Vec::new();
         if self_evict > 0 {
             evictions.push(Eviction {
                 tenant,
@@ -202,7 +206,7 @@ impl CacheQuota {
         let n = self.slots.len();
         let mut out = Vec::with_capacity(SAMPLE.min(n));
         let mut visited = 0;
-        while visited < n && out.len() < SAMPLE {
+        while visited < n && visited < SAMPLE {
             let i = (self.hand + visited) % n;
             visited += 1;
             if Some(i) == skip {

@@ -665,3 +665,91 @@ fn leaving_frees_every_subscription_and_idle_indexes_hold_none() {
         Some(subscribe::Refusal::Invalid)
     );
 }
+
+// ---- review follow-ups -----------------------------------------------------------------------
+
+#[test]
+fn the_order_a_fleet_is_listed_in_never_changes_a_placement_even_at_10000_nodes() {
+    let nodes_a = nodes(10_000, 5, |_| 10);
+    let mut nodes_b = nodes_a.clone();
+    // A deterministic shuffle.
+    let mut x = 12345u64;
+    for i in (1..nodes_b.len()).rev() {
+        x = x.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        nodes_b.swap(i, (x >> 33) as usize % (i + 1));
+    }
+    let (a, b) = (Fleet::new(&nodes_a).unwrap(), Fleet::new(&nodes_b).unwrap());
+    for t in 0..400 {
+        for k in [1, 3] {
+            let ask = Ask {
+                tenant: id(t),
+                replicas: k,
+            };
+            let (mut pa, mut pb) = (
+                a.place(ask, |_| NEUTRAL).unwrap(),
+                b.place(ask, |_| NEUTRAL).unwrap(),
+            );
+            if k == 1 {
+                assert_eq!(pa, pb, "tenant {t}");
+            }
+            pa.sort_unstable();
+            pb.sort_unstable();
+            assert_eq!(pa, pb, "tenant {t} k {k}");
+        }
+    }
+}
+
+#[test]
+fn placement_stays_proportional_at_a_large_fleet() {
+    // 2,000 nodes, weights 1 and 3 alternating: the heavy half should hold about 75%.
+    let all = nodes(2000, 4, |i| if i % 2 == 0 { 1 } else { 3 });
+    let fleet = Fleet::new(&all).unwrap();
+    let heavy: std::collections::HashSet<Id> =
+        all.iter().filter(|n| n.weight == 3).map(|n| n.id).collect();
+    let on_heavy = (0..40_000)
+        .filter(|&t| heavy.contains(&one(&fleet, id(t))))
+        .count();
+    let share = on_heavy as f64 / 40_000.0;
+    assert!((0.73..0.77).contains(&share), "{share}");
+}
+
+#[test]
+fn a_node_that_goes_idle_returns_to_neutral_and_an_old_report_does_not_age_it() {
+    let mut f = fb(4);
+    let n = id(1);
+    for tick in 0..8 {
+        f.report(n, 1000, tick).unwrap();
+    }
+    assert!(f.factor(&n, 7) < NEUTRAL);
+    for tick in 8..60 {
+        f.report(n, 0, tick).unwrap();
+    }
+    assert_eq!(f.factor(&n, 59), NEUTRAL, "idle means full weight again");
+    // An out-of-order report does not move the clock backwards.
+    f.report(n, 0, 3).unwrap();
+    assert_eq!(f.factor(&n, 62), NEUTRAL);
+    f.report(n, 1000, 3).unwrap();
+}
+
+#[test]
+fn a_huge_capacity_and_a_boosting_factor_do_not_overflow() {
+    let mut a = admission(u64::MAX / 2, 999);
+    let p = a.admit(id(1), 1, 1).unwrap();
+    a.release(p);
+    let all = vec![Node {
+        id: id(1),
+        zone: 0,
+        weight: u32::MAX,
+    }];
+    let fleet = Fleet::new(&all).unwrap();
+    let got = fleet
+        .place(
+            Ask {
+                tenant: id(2),
+                replicas: 1,
+            },
+            |_| u32::MAX,
+        )
+        .unwrap();
+    assert_eq!(got, vec![id(1)]);
+}
