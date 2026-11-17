@@ -95,6 +95,7 @@ impl From<hsearch_engine::Error> for ApiError {
             E::Unsupported => Self::new(400, "unsupported_exception", "unsupported by this node"),
             E::Document | E::Schema | E::Conflict => Self::bad("invalid document or field"),
             E::Busy => Self::new(503, "unavailable_exception", "busy, retry"),
+            E::Refused(refusal) => Self::new(400, "illegal_argument_exception", refusal.reason()),
             _ => Self::new(500, "engine_exception", "internal engine failure"),
         }
     }
@@ -141,6 +142,7 @@ mod tests {
             (E::Schema, 400),
             (E::Conflict, 400),
             (E::Busy, 503),
+            (E::Refused(hsearch_engine::Refusal::ChildWithoutParent), 400),
             (E::Native, 500),
             (E::Poisoned, 500),
         ] {
