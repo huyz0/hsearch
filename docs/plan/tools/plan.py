@@ -377,10 +377,11 @@ def selftest(data: dict) -> int:
     case("cross-task cycle", "Dependency cycle", lambda d: task(d, "M00.01")["depends_on"].append("M00.02"))
     def unfinished(d):
         # Bind by stable ID: roadmap priority may change independently of IDs.
-        task(d, "M02.01").update(depends_on=[], status="planned")
-        task(d, "M00.01")["depends_on"].append("M02.01")
+        # Two tasks of a milestone nothing depends on, so no finished milestone is disturbed.
+        task(d, "M22.03").update(status="planned")
+        task(d, "M22.04").update(status="in_progress")
     case("unfinished dependency", "Active/done task has unfinished dependency", unfinished)
-    case("milestone completion cycle", "Milestone prerequisite cycle", lambda d: milestone(d, "M04").update(depends_on=["M05"]) or milestone(d, "M05").update(depends_on=["M04"]))
+    case("milestone completion cycle", "Milestone prerequisite cycle", lambda d: milestone(d, "M21").update(depends_on=["M22"]) or milestone(d, "M22").update(depends_on=["M21"]))
     case("evidence traversal", "Path escapes", lambda d: task(d, "M00.01")["evidence"][0].update(path="../outside.txt"))
     candidate = copy.deepcopy(data)
     milestone(candidate, "M00")["title"] += " stale control"
