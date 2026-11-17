@@ -37,6 +37,13 @@ pub enum Change {
         /// The checkpoint root's identity, never all zero.
         root: Id,
     },
+    /// A rewritten base that covers exactly what the current checkpoint covers (a compaction)
+    /// replaces the checkpoint root: the cover stays and the publication generation rises by one,
+    /// which is what tells a validator the root changed on purpose. Needs a checkpoint to replace.
+    Replace {
+        /// The replacement root's identity, never all zero.
+        root: Id,
+    },
     /// The schema generation rises by one.
     Schema,
     /// The publication generation rises by one.
@@ -157,6 +164,15 @@ fn successor(current: &StructuralHead, change: Change) -> Result<StructuralHead>
             next.cover = cover;
             next.checkpoint = Some(root);
             next.tail.ordinal = current.tail.ordinal.max(cover);
+        }
+        Change::Replace { root } => {
+            if root == [0; 16] || current.checkpoint.is_none() {
+                return Err(Error::Invalid(
+                    "a replacement needs a checkpoint and a real root",
+                ));
+            }
+            next.checkpoint = Some(root);
+            next.publication_generation = bump(current.publication_generation)?;
         }
         Change::Schema => next.schema_generation = bump(current.schema_generation)?,
         Change::Publication => next.publication_generation = bump(current.publication_generation)?,

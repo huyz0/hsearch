@@ -495,6 +495,25 @@ fn a_checkpoint_root_cannot_be_swapped_without_raising_the_cover_and_fences_must
         a.validate_successor(&swap).is_err(),
         "same cover, different root"
     );
+    // A replacement of the same history (compaction) keeps the cover and raises the publication
+    // generation; it needs a checkpoint to replace and may not lower the cover.
+    let mut replace = swap.clone();
+    replace.publication_generation += 1;
+    assert_eq!(a.validate_successor(&replace), Ok(()));
+    let mut lower = replace.clone();
+    lower.cover = 3;
+    assert!(a.validate_successor(&lower).is_err());
+    let mut first = established(1, 1);
+    first.generation = 1;
+    let mut from_nothing = first.clone();
+    from_nothing.generation = 2;
+    from_nothing.token = tok(7);
+    from_nothing.publication_generation += 1;
+    from_nothing.checkpoint = Some([6; 16]);
+    assert!(
+        first.validate_successor(&from_nothing).is_err(),
+        "no checkpoint to replace, and a checkpoint needs a cover"
+    );
     swap.cover = 5;
     assert_eq!(a.validate_successor(&swap), Ok(()));
     // A new epoch in the same activation and lane needs a higher fence, and not below the cover.

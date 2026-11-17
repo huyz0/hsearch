@@ -246,7 +246,12 @@ impl StructuralHead {
         if next.inventory.get(..self.inventory.len()) != Some(&self.inventory[..]) {
             return bad("the epoch inventory is append-only");
         }
-        if next.checkpoint != self.checkpoint && next.cover <= self.cover {
+        // A new checkpoint root needs a higher cover, except a replacement of the same history by
+        // a rewritten base (compaction), which keeps the cover and raises the publication generation.
+        let replacement = self.checkpoint.is_some()
+            && next.cover == self.cover
+            && next.publication_generation > self.publication_generation;
+        if next.checkpoint != self.checkpoint && next.cover <= self.cover && !replacement {
             return bad("a new checkpoint root needs a higher cover");
         }
         if let Some(new) = next.inventory.get(self.inventory.len()) {
