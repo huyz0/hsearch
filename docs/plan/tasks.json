@@ -2581,7 +2581,7 @@
           "title": "Implement object-WAL commit protocol",
           "goal": "Acknowledge only authoritative object-durable operations.",
           "deliverables": [
-            "Dirty-only group committer, conditional-create ordered WAL slots, inline wrapped-DEK envelope, explicit committed receipts and unknown-outcome resolution",
+            "Dirty-only group committer, conditional-create ordered WAL slots, explicit committed receipts and unknown-outcome resolution (the inline wrapped-DEK envelope is M06.09)",
             "Structural authority/checkpoint publication separate from append; resolved operation/crypto/schema dependencies validated before the commit PUT",
             "The unique per-commit token inside every fenced commit payload (sequence number or nonce), because content-hash ETags do not fence A-B-A (M03.11 evidence)",
             "Note: until M15.01 runs the fencing probe on S3, this commit protocol is qualified on RustFS only and is not claimed for any other provider"
@@ -2602,8 +2602,13 @@
             "M20.05"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-01-commit-protocol.md",
+              "result": "Committer over the fenced lane: dependency, body, duplicate and admission checks before any write; dirty-only batches; ordered receipts; nothing after a failed slot; unknown outcome settled by reopen (Committed/NotCommitted); old owner fenced. 15 tests, 2 mutations seen red. Provisional (in-memory store, no RustFS). Payload envelope and batching measurements moved to M06.09."
+            }
+          ]
         },
         {
           "id": "M06.02",
@@ -2764,6 +2769,27 @@
             "M02.07"
           ],
           "owner": "storage/consistency",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.09",
+          "title": "Seal commit payloads under a wrapped DEK",
+          "goal": "No commit slot carries plaintext under a managed key, and recovery never reuses a nonce.",
+          "deliverables": [
+            "A slot-level sealer: a fresh DEK per slot, wrapped by the index key, inline in the slot; the committer takes sealed payloads",
+            "Dirty-only batching measured under sparse and hot tenants, payload attempts counted per commit, and the one-data-PUT path compared with payload-plus-head-CAS under the same recovery oracle"
+          ],
+          "validation": [
+            "Reopen and replay decrypt every acknowledged slot; a tampered or wrongly keyed slot is refused; no DEK or nonce repeats across slots."
+          ],
+          "definition_of_done": [
+            "Every committed slot of a keyed index is encrypted; measured batching numbers are recorded as provisional"
+          ],
+          "depends_on": [
+            "M06.01"
+          ],
+          "owner": "storage/runtime",
           "status": "planned",
           "evidence": []
         }
