@@ -2483,8 +2483,13 @@
             "M05.03"
           ],
           "owner": "security/crypto",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m05-06-hardware-crypto-and-tls-rotation.md",
+              "result": "backend::report() states whether AES and GHASH run in hardware or software and whether the build forces software; AES-256-GCM matches an independent implementation (Python cryptography) at 14 lengths and rejects all 448 single-bit flips on both paths, and the whole security crate (including the independent block-format vector) passes on the forced-software build, run in CI; software is about 10x slower (1.09 vs 0.11 GB/s on a shared 4-vCPU VM, provisional). TLS 1.3 mutual TLS with certificates and trust bundle rotated at handshake time over real TCP: open streams survive server and client leaf rotation, 20 rotations under 6 concurrent streams lose no bytes, a bundle rotation ends old sessions only through PeerSession::check, refused rotations (untrusted, expired, wrong key, wrong role) change nothing, no TLS 1.2 and no anonymous client; session resumption is disabled because a resumed session skipped verification after a rotation (found by the tests). Stalled unwrap: 8 readers return within 4x the budget with one provider call. Not done: aarch64 run, VAES measurement, wiring into the node's peer port, scheduling of session re-checks."
+            }
+          ]
         },
         {
           "id": "M05.08",
@@ -2506,8 +2511,15 @@
             "M05.02"
           ],
           "owner": "security/crypto",
-          "status": "planned",
-          "evidence": []
+          "status": "blocked",
+          "evidence": [
+            {
+              "path": "evidence/m05-08-kms-path-accounting.md",
+              "result": "Emulator only, not the task's definition of done: MeteredProvider counts every provider attempt by operation and outcome with a latency histogram; per-path call counts measured through the key manager (new object 1 wrap, warm read 0, cold read 1 unwrap per object per lifetime, 64 concurrent cold readers 1 unwrap, cache off 1 per read, rotation 0 calls, rewrap 2 per object, revoked key 1 per attempt, throttle/timeout/outage each counted); finding: no negative caching so a failing provider is called per attempt. No real-provider latency, throttle or quota number was measured."
+            }
+          ],
+          "blocker": "No real KMS provider or account is available (no AWS, GCP or Azure) and the M15 adapters do not exist; no emulator number may stand in for a real-provider number.",
+          "next_action": "Run examples/kms_path.rs with a real adapter in place of the test provider under a frozen call, duration and spend envelope once M15.01, M15.02 or M15.03 delivers one and an account exists; then confirm or revise the M05.02 cache policy."
         },
         {
           "id": "M05.07",

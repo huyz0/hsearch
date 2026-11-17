@@ -10,6 +10,7 @@
 //! (M05.03) and rotation state machines (M05.05) build on it.
 
 pub mod audit;
+pub mod backend;
 pub mod block;
 pub mod clock;
 #[cfg(feature = "dev-ca")]
@@ -18,10 +19,13 @@ pub mod identity;
 pub mod ids;
 pub mod keys;
 pub mod manager;
+pub mod metered;
 pub mod policy;
 pub mod readiness;
 pub mod rotation;
 #[cfg(feature = "test-kms")]
 #[cfg(feature = "test-kms")]
 pub mod test_kms;
+#[cfg(feature = "tls")]
+pub mod tls;
 pub mod x509;
