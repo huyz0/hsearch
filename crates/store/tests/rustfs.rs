@@ -20,7 +20,7 @@ use hsearch_object::{
 };
 use hsearch_s3::{S3Config, S3Store};
 use hsearch_store::compact::Compactor;
-use hsearch_store::pins::Pins;
+use hsearch_store::pins::{Error as PinError, Pins};
 use hsearch_store::publish::{AnyDependencies, Publisher};
 use hsearch_store::recover::{Expect, Record, ReplayLimits, Target, recover};
 use hsearch_store::sweep::{Config, Mode, ShardRef, Sweeper};
@@ -370,11 +370,11 @@ fn a_pin_holds_a_base_on_a_real_store_until_it_expires() {
             token: token(41),
             ..record
         };
+        let refused = pins.register(&late, &SHARD, 1, now);
         assert!(
-            pins.register(&late, &SHARD, 1, now).is_ok(),
-            "b1 is still readable and pinned"
+            matches!(refused, Err(PinError::Swept { boundary: 2 })),
+            "{refused:?}"
         );
-        pins.release(&INDEX, &late.pin).unwrap();
         // Two hours on, the pin has expired: the base goes, the pin object with it.
         let freed = sweeper(&store)
             .run(&INDEX, &[shard], &config(Mode::Sweep, now + 7_200_000))
@@ -395,7 +395,6 @@ fn a_pin_holds_a_base_on_a_real_store_until_it_expires() {
 #[test]
 fn listing_returns_the_exact_versions_in_order_and_follows_pages() {
     let Some(store) = store() else { return };
-    let ctx = ctx();
     let prefix = format!("listing/{}/", now_ms());
     let mut made = Vec::new();
     for i in 0..7u8 {
@@ -407,7 +406,7 @@ fn listing_returns_the_exact_versions_in_order_and_follows_pages() {
             metadata: Metadata::new(b"").unwrap(),
             precondition: Precondition::Absent,
         };
-        let receipt = block_on(store.create(&ctx, &put)).unwrap();
+        let receipt = block_on(store.create(&ctx(), &put)).unwrap();
         made.push((key, receipt.object.version));
     }
     // Something that merely shares the start of the prefix is not listed.
@@ -419,13 +418,13 @@ fn listing_returns_the_exact_versions_in_order_and_follows_pages() {
         metadata: Metadata::new(b"").unwrap(),
         precondition: Precondition::Absent,
     };
-    block_on(store.create(&ctx, &put)).unwrap();
+    block_on(store.create(&ctx(), &put)).unwrap();
     let before = store.counts();
     let mut listed = Vec::new();
     let mut after: Option<String> = None;
     let mut pages = 0;
     loop {
-        let page = block_on(store.list(&ctx, &prefix, after.as_deref(), 3)).unwrap();
+        let page = block_on(store.list(&ctx(), &prefix, after.as_deref(), 3)).unwrap();
         pages += 1;
         assert!(page.objects.len() <= 3);
         if let Some(last) = page.objects.last() {
@@ -455,8 +454,8 @@ fn listing_returns_the_exact_versions_in_order_and_follows_pages() {
         assert!(skew < 3_600_000, "last-modified is {skew} ms from now");
     }
     for got in &listed {
-        block_on(store.remove_version(&ctx, &got.key, &got.version)).unwrap();
+        block_on(store.remove_version(&ctx(), &got.key, &got.version)).unwrap();
     }
-    let empty = block_on(store.list(&ctx, &prefix, None, 1000)).unwrap();
+    let empty = block_on(store.list(&ctx(), &prefix, None, 1000)).unwrap();
     assert!(empty.objects.is_empty() && !empty.more);
 }
