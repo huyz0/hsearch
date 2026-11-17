@@ -16,6 +16,8 @@ pub struct Options {
     pub limits: Limits,
     /// Field, depth and nested-object limits (PR-42).
     pub mapping_limits: MappingLimits,
+    /// Run automatic merges on a background thread per index (`--background-merge`).
+    pub background_merge: bool,
 }
 
 /// Parse the arguments after the program name.
@@ -26,6 +28,7 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, Str
         insecure: false,
         limits: Limits::default(),
         mapping_limits: MappingLimits::default(),
+        background_merge: false,
     };
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -40,6 +43,7 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, Str
             "--memory-budget-bytes" => {
                 options.limits.memory_budget_bytes = number(&mut args, &arg)?;
             }
+            "--background-merge" => options.background_merge = true,
             "--auto-merge-mb" => options.limits.auto_merge_mb = number(&mut args, &arg)?,
             "--max-fields" => options.mapping_limits.max_fields = number(&mut args, &arg)?,
             "--max-field-depth" => options.mapping_limits.max_depth = number(&mut args, &arg)?,

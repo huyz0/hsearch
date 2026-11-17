@@ -12,7 +12,7 @@ mod directory;
 pub use directory::EngineDirectory;
 mod local;
 mod remote;
-pub use local::{LocalFiles, with_local_engine};
+pub use local::{LocalFiles, with_local_engine, with_local_engine_merging};
 pub use remote::{CachePin, CachedDirectory, RemoteError, RemoteFiles};
 mod range;
 pub use range::{
@@ -24,6 +24,7 @@ pub use upload::ObjectUploadSink;
 mod schema;
 pub use aggregations::{Bucket, Metrics};
 mod adapter;
+mod background;
 mod factory;
 pub use factory::{
     Capability, EngineFactory, Feature, ShardEngine, Support, WriterMode, capability_of_mode,
@@ -32,12 +33,13 @@ pub use factory::{
 mod query;
 mod reader;
 mod vector;
-pub use adapter::{Checkpoint, Engine, Mutation, Outcome, PreparedBatch, Receipt};
-pub use query::Query;
+pub use adapter::{Checkpoint, Engine, MergeMode, Mutation, Outcome, PreparedBatch, Receipt};
+pub use query::{JoinScore, Query};
 pub use reader::{Hit, SearchResult, Snapshot, Sort, StoredValue};
 pub use schema::{
-    Kind, Limits, MAX_AUTO_MERGE_MB, MAX_DOCUMENT_BYTES, MAX_DOCUMENTS, MAX_FIELDS, MAX_OPERATIONS,
-    MAX_TERMS, Schema, Token, Value, analyze_text,
+    Kind, Limits, MAX_AUTO_MERGE_MB, MAX_CHILD_RELATIONS, MAX_DOCUMENT_BYTES, MAX_DOCUMENTS,
+    MAX_FIELDS, MAX_NESTED_DEPTH, MAX_NESTED_OBJECTS, MAX_NESTED_PATHS, MAX_OPERATIONS, MAX_TERMS,
+    Schema, Token, Value, analyze_text,
 };
 pub use vector::{
     DEFAULT_IVF_CLUSTER_SIZE, IVF_CLUSTER_SIZE, Index, IvfQuantizer, MAX_DIMENSION,
@@ -46,7 +48,7 @@ pub use vector::{
 };
 
 /// Exact upstream engine revision.
-pub const ENGINE_REVISION: &str = "df02d694c4ffb96b2b765084b07728fa6a523a33";
+pub const ENGINE_REVISION: &str = "3979974b4bdd3a8442f747d62914ce92dca56618";
 pub use lucene_store::{Directory, Input};
 
 /// Native consuming cleanup outcome, without backend error text.
@@ -98,6 +100,49 @@ pub enum Error {
     Busy,
     /// Continuation after a possibly partial native mutation is refused.
     Poisoned,
+    /// A nested or join request refused for a named reason. Nothing is approximated.
+    Refused(Refusal),
+}
+
+/// Why a nested or join request was refused (PR-41): the reason is part of the contract, so
+/// a caller can tell a missing parent from a join it may not run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refusal {
+    /// A child names no parent, so it has no routing key and no shard it could join on.
+    ChildWithoutParent,
+    /// A parent document names a parent of its own.
+    ParentNamesParent,
+    /// The relation is neither the join's parent type nor one of its child relations.
+    UnknownRelation,
+    /// A document placed by anything but its routing key would sit on a different shard
+    /// from its parent or children, which is a join across shards.
+    CrossShardJoin,
+    /// A nested query names a path the schema does not map as nested.
+    NotNested,
+    /// `has_child` or `has_parent` on a schema or relation the join field does not declare.
+    NotJoin,
+    /// A nested field is queried outside a nested query, or a root field inside one.
+    WrongScope,
+    /// A nested query inside a nested query: nesting is one level deep.
+    NestedTooDeep,
+}
+
+impl Refusal {
+    /// The reason in words, stable enough for a response body.
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::ChildWithoutParent => "a child document must name its parent, its routing key",
+            Self::ParentNamesParent => "a parent document cannot name a parent",
+            Self::UnknownRelation => "the relation is not declared by the join field",
+            Self::CrossShardJoin => {
+                "parent and children must share a shard; a join across shards is not offered"
+            }
+            Self::NotNested => "the field is not mapped as nested",
+            Self::NotJoin => "the join field does not declare this relation",
+            Self::WrongScope => "a nested field is queried only inside a nested query",
+            Self::NestedTooDeep => "nested objects are one level deep",
+        }
+    }
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

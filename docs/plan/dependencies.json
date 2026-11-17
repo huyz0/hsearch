@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "scope": "Resolved bootstrap dependencies, not a binary distribution notice bundle",
-  "engine_revision": "df02d694c4ffb96b2b765084b07728fa6a523a33",
+  "engine_revision": "3979974b4bdd3a8442f747d62914ce92dca56618",
   "packages": [
     {
       "name": "addr2line",
@@ -795,6 +795,13 @@
       "checksum": "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
     },
     {
+      "name": "hsearch-commit",
+      "version": "0.1.0",
+      "source": "workspace",
+      "license": "not selected",
+      "checksum": null
+    },
+    {
       "name": "hsearch-engine",
       "version": "0.1.0",
       "source": "workspace",
@@ -1147,91 +1154,91 @@
     {
       "name": "lucene-aggs",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-analysis",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-codecs",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-disk-hnsw",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-index",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-ivf",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-search",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-spatial3d",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-spatial4j",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-store",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-util",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-vector-quant",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-zstd",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618",
       "license": "Apache-2.0",
       "checksum": null
     },
@@ -1769,24 +1776,10 @@
     },
     {
       "name": "thiserror",
-      "version": "1.0.69",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "license": "MIT OR Apache-2.0",
-      "checksum": "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-    },
-    {
-      "name": "thiserror",
       "version": "2.0.21",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "license": "MIT OR Apache-2.0",
       "checksum": "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
-    },
-    {
-      "name": "thiserror-impl",
-      "version": "1.0.69",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "license": "MIT OR Apache-2.0",
-      "checksum": "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
     },
     {
       "name": "thiserror-impl",

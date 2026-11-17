@@ -108,7 +108,7 @@ dependencies = [
  "nom",
  "num-traits",
  "rusticata-macros",
- "thiserror 2.0.21",
+ "thiserror",
  "time",
 ]
 
@@ -592,7 +592,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
- "thiserror 2.0.21",
+ "thiserror",
 ]
 
 [[package]]
@@ -1183,6 +1183,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hsearch-commit"
+version = "0.1.0"
+dependencies = [
+ "hsearch-format",
+ "hsearch-lane",
+ "hsearch-object",
+ "sha2 0.11.1",
+]
+
+[[package]]
 name = "hsearch-engine"
 version = "0.1.0"
 dependencies = [
@@ -1677,7 +1687,7 @@ dependencies = [
 [[package]]
 name = "lucene-aggs"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "lucene-analysis",
  "lucene-codecs",
@@ -1691,32 +1701,32 @@ dependencies = [
 [[package]]
 name = "lucene-analysis"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "lucene-util",
  "miniz_oxide",
  "regex",
  "regex-syntax",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-codecs"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "crc32fast",
  "lucene-store",
  "lucene-util",
  "lucene-zstd",
  "memchr",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-disk-hnsw"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "lucene-codecs",
  "lucene-ivf",
@@ -1724,13 +1734,13 @@ dependencies = [
  "lucene-util",
  "lucene-vector-quant",
  "rayon",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-index"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "lucene-analysis",
  "lucene-codecs",
@@ -1741,25 +1751,25 @@ dependencies = [
  "lucene-util",
  "lucene-vector-quant",
  "rayon",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-ivf"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "lucene-store",
  "lucene-util",
  "lucene-vector-quant",
  "rayon",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-search"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "lucene-analysis",
  "lucene-codecs",
@@ -1772,63 +1782,63 @@ dependencies = [
  "lucene-util",
  "miniz_oxide",
  "rayon",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-spatial3d"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "lucene-util",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-spatial4j"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "lucene-spatial3d",
  "lucene-util",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-store"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "crc32fast",
  "libc",
  "lucene-util",
  "memmap2",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-util"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-vector-quant"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
  "lucene-util",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "lucene-zstd"
 version = "0.1.0"
-source = "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33"
+source = "git+https://github.com/huyz0/lucene-rust?rev=3979974b4bdd3a8442f747d62914ce92dca56618#3979974b4bdd3a8442f747d62914ce92dca56618"
 dependencies = [
- "thiserror 1.0.69",
+ "thiserror",
  "zstd-safe",
 ]
 
@@ -2528,31 +2538,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
 dependencies = [
- "thiserror-impl 2.0.21",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
+ "thiserror-impl",
 ]
 
 [[package]]
@@ -3041,7 +3031,7 @@ dependencies = [
  "pulley-interpreter",
  "smallvec",
  "target-lexicon",
- "thiserror 2.0.21",
+ "thiserror",
  "wasmparser 0.261.0",
  "wasmtime-environ",
  "wasmtime-internal-core",
@@ -3246,7 +3236,7 @@ dependencies = [
  "oid-registry",
  "ring",
  "rusticata-macros",
- "thiserror 2.0.21",
+ "thiserror",
  "time",
 ]
 
