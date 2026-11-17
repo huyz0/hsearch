@@ -2628,8 +2628,13 @@
             "M06.01"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-02-publish-base.md",
+              "result": "Verified streaming upload (verify_files before any byte, SHA-256 of bytes sent), manifest pages and root written last, head named only after verify_root, coordinates from a replay Cut capped at the acknowledged prefix. 11 tests incl. a crash and a lost reply at every write boundary, 7 mutations seen red. Provisional (in-memory store, no RustFS); stored bytes are not read back, multipart files have no replay."
+            }
+          ]
         },
         {
           "id": "M06.03",
