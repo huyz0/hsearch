@@ -12,6 +12,7 @@
 //! nothing pending and no frame started for `idle_ms` is closed. [`Inbound::tick`] reports a
 //! violation whether or not bytes are arriving, so a peer that stops sending is caught as surely as
 //! one that trickles.
+use hsearch_security::identity::Role;
 use hsearch_security::policy::PeerRpc;
 
 use crate::budget::{Budget, FramePermit};
@@ -135,6 +136,9 @@ pub struct Inbound {
     /// Declared length of the body in progress or being skipped.
     body_len: u32,
     pending: usize,
+    /// The caller's verified role, once known: a request its role may not make is refused at the
+    /// header, before its body is charged or stored.
+    caller: Option<Role>,
 }
 
 impl Inbound {
@@ -149,7 +153,20 @@ impl Inbound {
             body_ms: now_ms,
             body_len: 0,
             pending: 0,
+            caller: None,
         }
+    }
+
+    /// Records the caller's verified role.
+    pub fn set_caller(&mut self, role: Role) {
+        self.caller = Some(role);
+    }
+
+    /// Restarts the clock on whatever frame is in progress at `now_ms`. The server calls it after
+    /// serving a batch: the time spent in a handler is not the peer's slowness.
+    pub fn resume(&mut self, now_ms: u64) {
+        self.since_ms = now_ms;
+        self.body_ms = now_ms;
     }
 
     /// A request finished (answered, shed or cancelled): its queue place is free.
@@ -246,6 +263,24 @@ impl Inbound {
                 self.reset(now);
             }
             Kind::Request => {
+                let forbidden = self
+                    .caller
+                    .zip(header.rpc)
+                    .is_some_and(|(role, rpc)| !rpc.allowed_callers().contains(&role));
+                if forbidden {
+                    events.push(Event::Refused {
+                        stream: header.stream,
+                        status: Status::WrongRole,
+                    });
+                    if header.len == 0 {
+                        self.reset(now);
+                    } else {
+                        self.state = State::Skip {
+                            remaining: header.len,
+                        };
+                    }
+                    return Ok(());
+                }
                 let over_queue = self.pending >= self.cfg.max_pending;
                 let permit = if over_queue {
                     None

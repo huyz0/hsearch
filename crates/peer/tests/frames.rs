@@ -20,6 +20,7 @@ fn cfg(side: Side) -> Config {
 fn budget(frames: u64, bytes: u64) -> Budget {
     Budget::new(BudgetLimits {
         connections: 2,
+        handshaking: 2,
         frames,
         bytes,
     })
@@ -340,4 +341,67 @@ fn a_client_decodes_responses_and_refuses_requests() {
         c.feed(&req(1, PeerRpc::Heartbeat, &[]), 0).unwrap_err(),
         Fatal::Wire(WireError::Kind)
     );
+}
+
+#[test]
+fn a_refused_frame_claim_leaves_no_trace_in_the_peaks_even_under_contention() {
+    // Frames are plentiful, bytes allow exactly one 60-byte body at a time.
+    let b = Budget::new(BudgetLimits {
+        connections: 1,
+        handshaking: 1,
+        frames: 1000,
+        bytes: 100,
+    });
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            let b = b.clone();
+            std::thread::spawn(move || {
+                for _ in 0..5000 {
+                    drop(b.frame(60));
+                }
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().unwrap();
+    }
+    let r = b.report();
+    assert_eq!((r.peak_frames, r.peak_bytes), (1, 60));
+    assert_eq!((r.frames, r.bytes), (0, 0));
+    assert!(r.refused_frames > 0);
+}
+
+#[test]
+fn a_forbidden_rpc_is_refused_at_its_header_with_nothing_charged() {
+    use hsearch_security::identity::Role;
+    let b = budget(4, 1 << 30);
+    let mut inbound = Inbound::new(cfg(Side::Server), Some(b.clone()), 0);
+    inbound.set_caller(Role::SearchNode);
+    let stream: Vec<u8> = [
+        req(1, PeerRpc::ShardWrite, &[1; 4000]),
+        req(3, PeerRpc::Heartbeat, &[]),
+    ]
+    .concat();
+    let events = inbound.feed(&stream, 0).unwrap();
+    assert!(matches!(
+        events[0],
+        Event::Refused {
+            stream: 1,
+            status: Status::WrongRole
+        }
+    ));
+    assert_eq!(requests(events).len(), 1);
+    assert_eq!(b.report().peak_bytes, 0);
+    assert_eq!(inbound.pending(), 1, "a refusal takes no queue place");
+}
+
+#[test]
+fn resuming_restarts_the_clock_of_a_frame_in_progress() {
+    let b = budget(4, 1 << 20);
+    let mut i = Inbound::new(cfg(Side::Server), Some(b), 0);
+    i.feed(&[b'H'; 5], 10).unwrap();
+    assert_eq!(i.tick(500), Err(Fatal::TooSlow));
+    i.resume(500);
+    assert_eq!(i.tick(550), Ok(()));
+    assert_eq!(i.tick(601), Err(Fatal::TooSlow));
 }

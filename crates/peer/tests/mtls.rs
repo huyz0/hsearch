@@ -93,6 +93,7 @@ fn cfg() -> Config {
 fn budget() -> Budget {
     Budget::new(BudgetLimits {
         connections: 8,
+        handshaking: 8,
         frames: 32,
         bytes: 1 << 20,
     })
@@ -321,6 +322,7 @@ fn a_body_that_stops_arriving_holds_a_permit_not_memory_and_is_cut_off() {
         cfg(),
         Budget::new(BudgetLimits {
             connections: 8,
+            handshaking: 8,
             frames: 32,
             bytes: 16 << 20,
         }),
@@ -570,6 +572,7 @@ fn a_queued_request_that_is_cancelled_is_not_served() {
 fn a_body_over_the_shared_budget_is_shed_and_the_next_request_is_served() {
     let tight = Budget::new(BudgetLimits {
         connections: 8,
+        handshaking: 8,
         frames: 32,
         bytes: 64 << 10,
     });
@@ -601,6 +604,7 @@ fn a_body_over_the_shared_budget_is_shed_and_the_next_request_is_served() {
 fn the_connection_cap_refuses_before_any_tls_work_and_frees_slots_on_close() {
     let capped = Budget::new(BudgetLimits {
         connections: 2,
+        handshaking: 2,
         frames: 32,
         bytes: 1 << 20,
     });
@@ -649,5 +653,149 @@ fn many_callers_at_once_stay_inside_the_budget() {
     wait_until("all released", || {
         let b = r.server.budget().report();
         b.connections == 0 && b.frames == 0 && b.bytes == 0
+    });
+}
+
+// ---- review follow-ups -----------------------------------------------------------------------
+
+fn read_statuses(tls: &mut Raw, count: usize) -> Vec<u8> {
+    let mut got = Vec::new();
+    let mut buf = [0u8; 512];
+    let start = Instant::now();
+    while got.len() < count * HEADER_LEN && start.elapsed() < Duration::from_secs(8) {
+        match tls.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => got.extend_from_slice(&buf[..n]),
+            Err(_) => {}
+        }
+    }
+    (0..count)
+        .filter_map(|i| got.get(i * HEADER_LEN + 5).copied())
+        .collect()
+}
+
+#[test]
+fn a_wrong_role_body_is_refused_at_its_header_and_never_charged() {
+    let r = rig();
+    // A search node may not write a shard. It declares and sends 16 MiB anyway.
+    let mut tls = raw(r.server.addr(), &r.search);
+    let body = vec![3u8; 16 << 20];
+    tls.write_all(&Header::request(1, PeerRpc::ShardWrite, 20_000, body.len() as u32).encode())
+        .unwrap();
+    tls.write_all(&body).unwrap();
+    tls.write_all(&Header::request(3, PeerRpc::Heartbeat, 5000, 0).encode())
+        .unwrap();
+    tls.flush().unwrap();
+    assert_eq!(
+        read_statuses(&mut tls, 2),
+        vec![Status::WrongRole.code(), Status::Ok.code()]
+    );
+    assert_eq!(r.server.budget().report().peak_bytes, 0, "never charged");
+}
+
+#[test]
+fn a_peer_that_does_not_read_its_response_is_cut_off_at_the_write_deadline() {
+    let r = rig_with(
+        Config {
+            write_ms: 400,
+            ..cfg()
+        },
+        Budget::new(BudgetLimits {
+            connections: 8,
+            handshaking: 8,
+            frames: 8,
+            bytes: 64 << 20,
+        }),
+    );
+    let mut tls = raw(r.server.addr(), &r.coordinator);
+    // Ask for 16 MiB echoed back, then never read it.
+    let body = vec![1u8; 16 << 20];
+    tls.write_all(&Header::request(1, PeerRpc::ShardWrite, 30_000, body.len() as u32).encode())
+        .unwrap();
+    tls.write_all(&body).unwrap();
+    tls.flush().unwrap();
+    wait_until("the server gave up on the reader", || {
+        r.server.budget().report().connections == 0
+    });
+}
+
+#[test]
+fn unauthenticated_sockets_cannot_take_more_than_the_handshake_cap() {
+    let r = rig_with(
+        cfg(),
+        Budget::new(BudgetLimits {
+            connections: 8,
+            handshaking: 2,
+            frames: 32,
+            bytes: 1 << 20,
+        }),
+    );
+    let mut a = open(&r, &r.coordinator);
+    let mut b = open(&r, &r.coordinator);
+    let stalled: Vec<TcpStream> = (0..6)
+        .map(|_| {
+            let mut t = TcpStream::connect(r.server.addr()).unwrap();
+            let _ = t.write_all(&[0x16, 0x03]);
+            t
+        })
+        .collect();
+    std::thread::sleep(Duration::from_millis(100));
+    let report = r.server.budget().report();
+    assert_eq!(report.peak_handshaking, 2);
+    assert!(report.connections <= 4, "{report:?}");
+    assert!(report.refused_connections >= 4, "{report:?}");
+    // The peers that authenticated before the flood are untouched.
+    assert!(a.call(PeerRpc::Heartbeat, b"", T).is_ok());
+    assert!(b.call(PeerRpc::Heartbeat, b"", T).is_ok());
+    drop(stalled);
+}
+
+#[test]
+fn a_slow_handler_does_not_count_against_a_pipelined_frame_in_progress() {
+    let r = rig();
+    let mut tls = raw(r.server.addr(), &r.coordinator);
+    // A request the handler holds for about 450 ms (longer than header_ms of 300), followed in
+    // the same write by the first five bytes of the next request's header.
+    let slow = Header::request(1, PeerRpc::ShardSearch, 450, 5).encode();
+    let next = Header::request(3, PeerRpc::Heartbeat, 5000, 0).encode();
+    let mut batch = slow.to_vec();
+    batch.extend_from_slice(b"sleep");
+    batch.extend_from_slice(&next[..5]);
+    tls.write_all(&batch).unwrap();
+    tls.flush().unwrap();
+    std::thread::sleep(Duration::from_millis(600));
+    tls.write_all(&next[5..]).unwrap();
+    tls.flush().unwrap();
+    assert_eq!(
+        read_statuses(&mut tls, 2),
+        vec![Status::DeadlineExceeded.code(), Status::Ok.code()]
+    );
+}
+
+#[test]
+fn a_body_that_stalls_part_way_is_cut_off_over_a_real_socket() {
+    let r = rig_with(
+        Config {
+            body_base_ms: 150,
+            min_rate: 1_000_000,
+            ..cfg()
+        },
+        budget(),
+    );
+    let mut tls = raw(r.server.addr(), &r.coordinator);
+    tls.write_all(&Header::request(1, PeerRpc::Membership, 5000, 1000).encode())
+        .unwrap();
+    tls.write_all(&[0u8; 10]).unwrap();
+    tls.flush().unwrap();
+    let start = Instant::now();
+    assert!(closed(&mut tls, Duration::from_secs(3)));
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        start.elapsed()
+    );
+    wait_until("permit released", || {
+        let b = r.server.budget().report();
+        b.bytes == 0 && b.connections == 0
     });
 }

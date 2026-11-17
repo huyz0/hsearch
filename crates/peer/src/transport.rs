@@ -28,14 +28,12 @@ use hsearch_security::tls::{PeerSession, PeerTls};
 use rustls::pki_types::ServerName;
 use rustls::{ClientConnection, ServerConnection, StreamOwned};
 
-use crate::budget::{Budget, ConnectionPermit};
+use crate::budget::{Budget, ConnectionPermit, HandshakePermit};
 use crate::inbound::{self, Event, Fatal, Inbound, Side};
 use crate::wire::{HEADER_LEN, Header, Limits, Status};
 
 /// Largest read.
 const CHUNK: usize = 16 << 10;
-/// Smallest stack a connection thread needs: it holds a TLS session and a 16 KiB read buffer.
-const STACK: usize = 256 << 10;
 
 /// Timing and size rules for a connection, either end.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,8 +50,12 @@ pub struct Config {
     pub min_rate: u64,
     /// Longest a connection may sit idle with nothing pending.
     pub idle_ms: u64,
-    /// A blocked write ends the connection after this long.
+    /// A frame must be fully written within this long, however slowly the peer reads, or the
+    /// connection ends. A total, not a per-call timeout.
     pub write_ms: u64,
+    /// Stack of each connection thread. Handlers run on it, so a handler that recurses deeply needs
+    /// more; virtual memory only, untouched pages cost no RSS.
+    pub stack_bytes: usize,
     /// How often the read loop wakes to check time.
     pub tick_ms: u64,
     /// Requests queued on one connection.
@@ -72,6 +74,7 @@ impl Default for Config {
             min_rate: 64 << 10,
             idle_ms: 60_000,
             write_ms: 10_000,
+            stack_bytes: 1 << 20,
             tick_ms: 20,
             max_pending: 16,
             max_channel_age: hsearch_security::tls::DEFAULT_MAX_CHANNEL_AGE,
@@ -128,10 +131,55 @@ fn is_timeout(kind: ErrorKind) -> bool {
     matches!(kind, ErrorKind::WouldBlock | ErrorKind::TimedOut)
 }
 
-fn write_frame<W: Write>(w: &mut W, header: &Header, body: &[u8]) -> std::io::Result<()> {
-    w.write_all(&header.encode())?;
-    w.write_all(body)?;
-    w.flush()
+/// Writes one frame, header and body, within `deadline` in total. The body goes through rustls in
+/// 16 KiB pieces, each drained to the socket before the next is taken, so a slow reader costs one
+/// piece of buffer, not a copy of the body, and a stalled one costs until the deadline and no more.
+/// The header and the first piece share a record.
+fn send<C, D>(
+    conn: &mut C,
+    sock: &mut TcpStream,
+    header: &Header,
+    body: &[u8],
+    deadline: Instant,
+) -> std::io::Result<()>
+where
+    C: std::ops::DerefMut<Target = rustls::ConnectionCommon<D>>,
+    D: rustls::SideData,
+{
+    let first_len = body.len().min(CHUNK);
+    let mut first = Vec::with_capacity(HEADER_LEN + first_len);
+    first.extend_from_slice(&header.encode());
+    first.extend_from_slice(&body[..first_len]);
+    push(conn, sock, &first, deadline)?;
+    for piece in body[first_len..].chunks(CHUNK) {
+        push(conn, sock, piece, deadline)?;
+    }
+    Ok(())
+}
+
+fn push<C, D>(
+    conn: &mut C,
+    sock: &mut TcpStream,
+    data: &[u8],
+    deadline: Instant,
+) -> std::io::Result<()>
+where
+    C: std::ops::DerefMut<Target = rustls::ConnectionCommon<D>>,
+    D: rustls::SideData,
+{
+    conn.writer().write_all(data)?;
+    while conn.wants_write() {
+        match conn.write_tls(sock) {
+            Ok(0) => return Err(ErrorKind::WriteZero.into()),
+            Ok(_) => {}
+            Err(e) if is_timeout(e.kind()) => {}
+            Err(e) => return Err(e),
+        }
+        if Instant::now() >= deadline {
+            return Err(ErrorKind::TimedOut.into());
+        }
+    }
+    Ok(())
 }
 
 /// A running server. Dropping it stops the accept loop; open connections end at their next tick.
@@ -207,16 +255,24 @@ fn accept_loop(
         match listener.accept() {
             Ok((tcp, _)) => {
                 // Over the cap the socket is dropped before any TLS work is done for it.
-                let Some(permit) = budget.connection() else {
+                let Some((permit, handshake)) = budget.connection() else {
                     continue;
                 };
                 let (tls, handler, budget, stop) =
                     (tls.clone(), handler.clone(), budget.clone(), stop.clone());
                 let spawned = std::thread::Builder::new()
                     .name("peer-conn".into())
-                    .stack_size(STACK)
+                    .stack_size(cfg.stack_bytes.max(64 << 10))
                     .spawn(move || {
-                        let _ = serve(tcp, &tls, &*handler, &budget, cfg, &stop, permit);
+                        let _ = serve(
+                            tcp,
+                            &tls,
+                            &*handler,
+                            &budget,
+                            cfg,
+                            &stop,
+                            (permit, handshake),
+                        );
                     });
                 if spawned.is_err() {
                     continue;
@@ -252,16 +308,15 @@ fn serve(
     budget: &Budget,
     cfg: Config,
     stop: &AtomicBool,
-    _permit: ConnectionPermit,
+    permits: (ConnectionPermit, HandshakePermit),
 ) -> Closed {
+    let (_permit, handshake) = permits;
     let t0 = Instant::now();
     let ms = || u64::try_from(t0.elapsed().as_millis()).unwrap_or(u64::MAX);
     let tick = Duration::from_millis(cfg.tick_ms.max(1));
     if tcp.set_nodelay(true).is_err()
         || tcp.set_read_timeout(Some(tick)).is_err()
-        || tcp
-            .set_write_timeout(Some(Duration::from_millis(cfg.write_ms.max(1))))
-            .is_err()
+        || tcp.set_write_timeout(Some(tick)).is_err()
     {
         return Closed::Io;
     }
@@ -290,8 +345,11 @@ fn serve(
     ) else {
         return Closed::Identity;
     };
+    // Authenticated: this connection no longer counts against the pre-authentication cap.
+    drop(handshake);
     let mut stream = StreamOwned::new(conn, tcp);
     let mut inbound = Inbound::new(cfg.inbound(Side::Server), Some(budget.clone()), ms());
+    inbound.set_caller(session.principal().role());
     let mut chunk = vec![0u8; CHUNK];
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -385,10 +443,14 @@ fn serve_batch(
             }
         };
         let header = Header::response(stream_id, status, u32::try_from(body.len()).unwrap_or(0));
-        if write_frame(stream, &header, &body).is_err() {
+        let deadline = Instant::now() + Duration::from_millis(cfg.write_ms.max(1));
+        if send(&mut stream.conn, &mut stream.sock, &header, &body, deadline).is_err() {
             return Some(Closed::Io);
         }
     }
+    // Time spent serving is the server's, not the peer's: a pipelined frame that was part way in
+    // when the handler started gets its allowance from now.
+    inbound.resume(ms());
     None
 }
 
@@ -433,6 +495,7 @@ pub struct Channel {
     next_stream: u32,
     cfg: Config,
     broken: bool,
+    chunk: Vec<u8>,
 }
 
 impl Channel {
@@ -449,7 +512,7 @@ impl Channel {
         let tick = Duration::from_millis(cfg.tick_ms.max(1));
         tcp.set_nodelay(true)
             .and_then(|()| tcp.set_read_timeout(Some(tick)))
-            .and_then(|()| tcp.set_write_timeout(Some(Duration::from_millis(cfg.write_ms.max(1)))))
+            .and_then(|()| tcp.set_write_timeout(Some(tick)))
             .map_err(|e| ChannelError::Connect(e.kind()))?;
         let name = ServerName::try_from("peer.invalid").map_err(|_| ChannelError::Handshake)?;
         let mut conn = ClientConnection::new(tls.client_config(), name)
@@ -486,6 +549,7 @@ impl Channel {
             next_stream: 1,
             cfg,
             broken: false,
+            chunk: Vec::new(),
         })
     }
 
@@ -529,17 +593,43 @@ impl Channel {
             deadline_ms,
             u32::try_from(body.len()).map_err(|_| CallError::TooLarge)?,
         );
-        if let Err(e) = write_frame(&mut self.stream, &header, body) {
+        let deadline = started + Duration::from_millis(u64::from(deadline_ms));
+        if let Err(e) = send(
+            &mut self.stream.conn,
+            &mut self.stream.sock,
+            &header,
+            body,
+            deadline,
+        ) {
             self.broken = true;
-            return Err(CallError::Io(e.kind()));
+            return Err(if e.kind() == ErrorKind::TimedOut {
+                CallError::Timeout
+            } else {
+                CallError::Io(e.kind())
+            });
         }
-        let mut chunk = vec![0u8; CHUNK];
+        let mut chunk = std::mem::take(&mut self.chunk);
+        if chunk.len() != CHUNK {
+            chunk = vec![0u8; CHUNK];
+        }
+        let out = self.read_response(stream, deadline_ms, started, &mut chunk);
+        self.chunk = chunk;
+        out
+    }
+
+    fn read_response(
+        &mut self,
+        stream: u32,
+        deadline_ms: u32,
+        started: Instant,
+        chunk: &mut [u8],
+    ) -> Result<Vec<u8>, CallError> {
         loop {
             if started.elapsed() >= Duration::from_millis(u64::from(deadline_ms)) {
                 self.give_up(stream);
                 return Err(CallError::Timeout);
             }
-            let events = match self.stream.read(&mut chunk) {
+            let events = match self.stream.read(chunk) {
                 Ok(0) => {
                     self.broken = true;
                     return Err(CallError::Io(ErrorKind::UnexpectedEof));
@@ -593,7 +683,14 @@ impl Channel {
     /// Tells the server the answer is no longer wanted and closes the channel: the late answer
     /// would otherwise arrive in the middle of the next call.
     fn give_up(&mut self, stream: u32) {
-        let _ = write_frame(&mut self.stream, &Header::cancel(stream), &[]);
+        let deadline = Instant::now() + Duration::from_millis(200);
+        let _ = send(
+            &mut self.stream.conn,
+            &mut self.stream.sock,
+            &Header::cancel(stream),
+            &[],
+            deadline,
+        );
         self.broken = true;
     }
 

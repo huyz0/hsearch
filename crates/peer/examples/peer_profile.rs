@@ -90,6 +90,7 @@ fn latency() {
     let (server, who) = start(
         Budget::new(BudgetLimits {
             connections: 64,
+            handshaking: 64,
             frames: 256,
             bytes: 256 << 20,
         }),
@@ -133,6 +134,7 @@ fn connections() {
         let (server, who) = start(
             Budget::new(BudgetLimits {
                 connections: 2000,
+                handshaking: 2000,
                 frames: 4096,
                 bytes: 256 << 20,
             }),
@@ -178,6 +180,7 @@ fn slow_bodies() {
     let (server, who) = start(
         Budget::new(BudgetLimits {
             connections: 400,
+            handshaking: 400,
             frames: 400,
             bytes: 300 << 20,
         }),
