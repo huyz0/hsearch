@@ -29,6 +29,8 @@ LAYERS = {
     "hsearch-lane": {"hsearch-object", "hsearch-format"},
     # M06.01: the group committer sits on the lane, the object contracts and the byte formats.
     "hsearch-commit": {"hsearch-object", "hsearch-format", "hsearch-lane"},
+    # M06.02: the object-durable store publishes native commits through the engine and names them in the lane head.
+    "hsearch-store": {"hsearch-object", "hsearch-format", "hsearch-lane", "hsearch-engine", "hsearch-index"},
     "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3", "hsearch-format"},
     # M05: identity, authorization and the key-provider contract. Independent of every other crate for now:
     # the peer listener and the object-format encryption that use it come later and depend on it, not the reverse.
@@ -43,13 +45,13 @@ LAYERS = {
     "hsearch-example-provider": {"hsearch-object"},
     "xtask": set(),
 }
-PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-lane", "hsearch-commit", "hsearch-node",
+PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-lane", "hsearch-commit", "hsearch-store", "hsearch-node",
               "hsearch-security", "hsearch-seal", "hsearch-module-abi", "hsearch-module-native", "hsearch-module-wasm"}
 # D18: the one crate whose manifest may relax the workspace `unsafe_code = "forbid"`. Inside it the
 # `unsafe_code = "deny"` lint leaves exactly one `#[allow]`, on `mod sys` (the compiler enforces that).
 UNSAFE_CRATES = {"hsearch-module-native"}
 EXTERNAL = {name: set() for name in LAYERS}
-EXTERNAL["hsearch-engine"] = {"lucene-aggs", "lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store", "lucene-util"}
+EXTERNAL["hsearch-engine"] = {"lucene-aggs", "lucene-analysis", "lucene-codecs", "lucene-index", "lucene-search", "lucene-store", "lucene-util", "sha2"}
 # Signing and a blocking HTTP client, exact-pinned in crates/s3/Cargo.toml. No TLS stack yet.
 EXTERNAL["hsearch-s3"] = {"hmac", "md-5", "sha2", "ureq"}
 # Content hashes of mapping objects and manifest page digests (SHA-256), exact-pinned in crates/format/Cargo.toml.
@@ -58,6 +60,8 @@ EXTERNAL["hsearch-format"] = {"sha2"}
 EXTERNAL["hsearch-lane"] = {"sha2"}
 # Request digests (SHA-256), exact-pinned in crates/commit/Cargo.toml.
 EXTERNAL["hsearch-commit"] = {"sha2"}
+# Manifest page digests and derived object identities (SHA-256), exact-pinned in crates/store/Cargo.toml.
+EXTERNAL["hsearch-store"] = {"sha2"}
 # JSON bodies, a blocking HTTP/1.1 server (plain HTTP, no TLS) and a safe arena for query lowering, exact-pinned in crates/node/Cargo.toml.
 EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 # Identity and key provider: X.509 chain verification (rustls-webpki over ring) and SAN parsing (x509-parser),

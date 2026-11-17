@@ -1206,6 +1206,7 @@ dependencies = [
  "lucene-search",
  "lucene-store",
  "lucene-util",
+ "sha2 0.11.1",
 ]
 
 [[package]]
@@ -1335,6 +1336,18 @@ dependencies = [
  "time",
  "x509-parser",
  "zeroize",
+]
+
+[[package]]
+name = "hsearch-store"
+version = "0.1.0"
+dependencies = [
+ "hsearch-engine",
+ "hsearch-format",
+ "hsearch-index",
+ "hsearch-lane",
+ "hsearch-object",
+ "sha2 0.11.1",
 ]
 
 [[package]]
