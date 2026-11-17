@@ -149,13 +149,18 @@ pub struct RangeCacheSettings {
     pub concurrency: usize,
     /// Read every vector file (`.vec`, `.vex`, `.ivv`, `.dhn` and the codes) whole
     /// when a snapshot opens, so the first queries ask the store for nothing.
-    /// Off by default: a snapshot opens by reading about 0.3 MiB of a 52 MiB
-    /// index and each query then reads the pages it touches, where on it reads
-    /// the whole index once at open (measured in `m23-03-disk-vectors.md`).
-    /// lucene-rust keeps this switch process-wide
-    /// (`lucene_store::read_advice::set_warm_random`): [`Snapshot::open_blob_settings`]
-    /// sets it, so every range snapshot in a process shares the last value opened,
-    /// and a node should use one value.
+    /// Off by default: a snapshot opens by reading about 0.1 MiB and each query
+    /// then reads the pages it touches, where on it reads every vector file once
+    /// at open (19.8 MiB for a 20.6 MiB index in `m23-03-disk-vectors.md`). Off
+    /// loses on the first queries' latency and on the worst first query, so a
+    /// reader that opens once and serves for long may turn it on. Before this
+    /// setting [`Snapshot::open_blob_settings`] warmed, so it changes that path.
+    /// lucene-rust keeps the switch process-wide
+    /// (`lucene_store::read_advice::set_warm_random`): only
+    /// [`Snapshot::open_blob_settings`] sets it (serialized with its own open), and
+    /// [`Snapshot::open_blob`] and [`Snapshot::open_blob_with`] use whatever value
+    /// the process holds, upstream's default being on. A node should open every
+    /// range snapshot through `open_blob_settings` with one value.
     pub warm_on_open: bool,
 }
 
@@ -406,7 +411,13 @@ impl Snapshot {
         settings: &RangeCacheSettings,
         schema: Schema,
     ) -> Result<Self> {
+        static OPEN: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let config = settings.config()?;
+        // Setting the switch and opening are one step, so two settings opened
+        // at once cannot swap each other's value.
+        let _guard = OPEN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         lucene_store::read_advice::set_warm_random(settings.warm_on_open);
         Self::open_blob_with(store, config, schema)
     }

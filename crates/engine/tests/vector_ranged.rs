@@ -436,7 +436,7 @@ fn vector_indexes_are_served_by_range_cold_and_warm() {
         // Re-running the same queries over a cache that holds their pages
         // costs no round trip, and other queries cost under one on average.
         assert!(r.warm.requests == 0, "{}: {}", r.name, r.warm.requests);
-        assert!(r.steady.requests <= 50, "{}: {}", r.name, r.steady.requests);
+        assert!(r.steady.requests <= 25, "{}: {}", r.name, r.steady.requests);
         // Open issues a bounded number of reads, whatever the index size.
         assert!(r.open_requests <= 200, "{}: {}", r.name, r.open_requests);
         if r.name.ends_with("warm-on-open") {
