@@ -41,8 +41,9 @@ pub use schema::{
     Schema, Token, Value, analyze_text,
 };
 pub use vector::{
-    MAX_DIMENSION, MAX_EF_CONSTRUCTION, MAX_KNN_CANDIDATES, MAX_KNN_K, MAX_M, MAX_NPROBE,
-    MAX_VECTOR_FIELDS, Quantizer, ScalarBits, Similarity, VectorSpec,
+    DEFAULT_IVF_CLUSTER_SIZE, IVF_CLUSTER_SIZE, Index, IvfQuantizer, MAX_DIMENSION,
+    MAX_EF_CONSTRUCTION, MAX_KNN_CANDIDATES, MAX_KNN_K, MAX_M, MAX_NPROBE, MAX_VECTOR_FIELDS,
+    Quantizer, Rerank, ScalarBits, Similarity, VectorSpec,
 };
 
 /// Exact upstream engine revision.

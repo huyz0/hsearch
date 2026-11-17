@@ -1206,3 +1206,78 @@ fn the_audit_sink_is_bounded() {
     let kept: Vec<_> = sink.events().iter().map(|e| e.generation).collect();
     assert_eq!((kept, sink.dropped()), (vec![7, 8, 9], 7));
 }
+
+// ---- stalled provider (M05.06) -----------------------------------------------------------------------
+
+#[test]
+fn a_stalled_unwrap_is_bounded_by_the_call_budget_and_does_not_block_warm_keys() {
+    let rig = rig();
+    let cold = ctx("orders", 1);
+    let warm = ctx("orders", 2);
+    let (_d, cold_wrapped) = rig
+        .manager
+        .create_object_key(None, &cold, 1, &opts())
+        .unwrap();
+    let (_d, warm_wrapped) = rig
+        .manager
+        .create_object_key(None, &warm, 1, &opts())
+        .unwrap();
+    // Make `cold` miss, keep `warm` cached, then stall the provider for far longer than the budget.
+    rig.manager.invalidate_index(&idx("orders"), 1);
+    rig.manager
+        .open_object_key(&warm_wrapped, &warm, 1, &opts())
+        .unwrap();
+    let unwraps_before = rig.kms.unwrap_calls();
+    rig.kms.set_latency(Duration::from_secs(30));
+    let budget = Duration::from_millis(600);
+    let stalled = CallOptions {
+        timeout: budget,
+        ..opts()
+    };
+
+    // Eight concurrent readers of one cold object: one provider call between them, every reader returns
+    // within the budget (plus scheduling slack), with a timeout rather than a hang or a key.
+    let started = std::time::Instant::now();
+    let readers: Vec<_> = (0..8)
+        .map(|_| {
+            let manager = rig.manager.clone();
+            let wrapped = cold_wrapped.clone();
+            let cold = cold.clone();
+            let stalled = stalled.clone();
+            thread::spawn(move || manager.open_object_key(&wrapped, &cold, 1, &stalled))
+        })
+        .collect();
+    // While they stall, a warm key is served at once and needs no provider call.
+    let warm_started = std::time::Instant::now();
+    assert!(
+        rig.manager
+            .open_object_key(&warm_wrapped, &warm, 1, &stalled)
+            .is_ok()
+    );
+    assert!(warm_started.elapsed() < Duration::from_millis(300));
+    for reader in readers {
+        assert_eq!(
+            reader.join().unwrap().unwrap_err(),
+            KeyError::Provider(ProviderError::Timeout)
+        );
+    }
+    let elapsed = started.elapsed();
+    assert!(elapsed >= budget, "returned before the budget: {elapsed:?}");
+    assert!(
+        elapsed < budget * 6,
+        "a stalled provider held readers for {elapsed:?}"
+    );
+    assert_eq!(
+        rig.kms.unwrap_calls() - unwraps_before,
+        1,
+        "eight readers of one object made more than one provider call"
+    );
+
+    // Nothing was cached from the failure and nothing is stuck: when the provider recovers the next read works.
+    rig.kms.set_latency(Duration::ZERO);
+    assert!(
+        rig.manager
+            .open_object_key(&cold_wrapped, &cold, 1, &opts())
+            .is_ok()
+    );
+}

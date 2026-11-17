@@ -4,6 +4,7 @@
 //! Recall is measured against an exact scan of the same corpus. The corpus is
 //! synthetic and clustered (see `corpus`); the floors are the ones M02.12
 //! froze, and a real-dataset number is reported by the `vector_recall` example.
+use hsearch_engine::{Directory, IvfQuantizer, Rerank};
 use hsearch_engine::{
     Engine, EngineDirectory, Error, Kind, Limits, Mutation, Quantizer, Query, ScalarBits, Schema,
     Similarity, Snapshot, Sort, StoredValue, Value, VectorSpec,
@@ -132,12 +133,22 @@ fn knn_beam<'a>(
     candidates: usize,
     filter: Option<&'a Query<'a>>,
 ) -> Query<'a> {
+    knn_probe(vector, k, candidates, 0, filter)
+}
+
+fn knn_probe<'a>(
+    vector: &'a [f32],
+    k: usize,
+    candidates: usize,
+    nprobe: usize,
+    filter: Option<&'a Query<'a>>,
+) -> Query<'a> {
     Query::Knn {
         field: "embedding",
         vector,
         k,
         candidates,
-        nprobe: 0,
+        nprobe,
         filter,
     }
 }
@@ -707,4 +718,252 @@ fn a_query_may_run_only_a_few_knn_searches() {
     ));
     drop(snapshot);
     engine.close().unwrap();
+}
+
+/// An IVF field with clusters small enough that 3,000 vectors make dozens.
+fn ivf_spec(quantizer: IvfQuantizer, rerank: Rerank) -> VectorSpec {
+    VectorSpec::ivf(DIM as u16, Similarity::L2, 64, quantizer, rerank)
+}
+
+fn ivf_recall(
+    snapshot: &Snapshot,
+    corpus: &[Vec<f32>],
+    queries: &[Vec<f32>],
+    nprobe: usize,
+    live: impl Fn(usize) -> bool + Copy,
+) -> f64 {
+    let mut found = 0;
+    for q in queries {
+        let want = exact(corpus, live, q, 10);
+        let got = search(snapshot, &knn_probe(q, 10, 100, nprobe, None), 10);
+        found += want.iter().filter(|id| got.contains(id)).count();
+    }
+    found as f64 / (10 * queries.len()) as f64
+}
+
+#[test]
+fn every_ivf_variant_meets_its_recall_floor() {
+    let vectors = corpus(3000, DIM, 7);
+    let queries = corpus(40, DIM, 99);
+    // About 47 clusters of 64. The floor M02.12 froze for quantized variants
+    // is 0.90; it is held at 8 probed clusters (about a sixth of the index) and
+    // at the automatic depth the field calibrated when it was written. Fewer
+    // probes cost recall (4 clusters reach 0.79, measured), which is the
+    // per-query knob `nprobe` exists for.
+    let variants = [
+        ("bbq", IvfQuantizer::Bbq, Rerank::F32),
+        ("osq2", IvfQuantizer::Osq(2), Rerank::F32),
+        ("osq4", IvfQuantizer::Osq(4), Rerank::F32),
+        ("osq7", IvfQuantizer::Osq(7), Rerank::F32),
+        ("erq4", IvfQuantizer::Erq(4), Rerank::F32),
+        ("rabitq", IvfQuantizer::RaBitQ, Rerank::F32),
+        ("auto", IvfQuantizer::Auto, Rerank::F32),
+        ("bbq+f16", IvfQuantizer::Bbq, Rerank::F16),
+        ("bbq+bf16", IvfQuantizer::Bbq, Rerank::Bf16),
+        ("bbq+int8", IvfQuantizer::Bbq, Rerank::Int8),
+    ];
+    for (name, quantizer, rerank) in variants {
+        let schema = schema(ivf_spec(quantizer, rerank));
+        let directory = ByteBuffersDirectory::new();
+        let observed = EngineDirectory::new(&directory);
+        let engine = open(&observed, &schema);
+        load(&engine, &schema, &vectors, 0, 1);
+        let snapshot = engine.refresh().unwrap();
+        let files = directory.list_all().unwrap();
+        for extension in [".ivm", ".ivp", ".ivv"] {
+            assert!(
+                files.iter().any(|f| f.ends_with(extension)),
+                "{name}: no {extension} file in {files:?}"
+            );
+        }
+        for nprobe in [8, 0] {
+            let r = ivf_recall(&snapshot, &vectors, &queries, nprobe, |_| true);
+            eprintln!("recall@10 ivf {name} nprobe {nprobe}: {r:.4}");
+            assert!(r >= 0.90, "{name} at nprobe {nprobe}: {r}");
+        }
+        drop(snapshot);
+        engine.close().unwrap();
+    }
+}
+
+#[test]
+fn probing_fewer_clusters_costs_recall_and_more_buys_it_back() {
+    let vectors = corpus(3000, DIM, 7);
+    let queries = corpus(40, DIM, 99);
+    let schema = schema(ivf_spec(IvfQuantizer::Bbq, Rerank::F32));
+    let directory = ByteBuffersDirectory::new();
+    let observed = EngineDirectory::new(&directory);
+    let engine = open(&observed, &schema);
+    load(&engine, &schema, &vectors, 0, 1);
+    let snapshot = engine.refresh().unwrap();
+    let at = |nprobe| ivf_recall(&snapshot, &vectors, &queries, nprobe, |_| true);
+    let (few, some, many) = (at(2), at(8), at(32));
+    eprintln!("recall@10 by nprobe: 2 {few:.4}, 8 {some:.4}, 32 {many:.4}");
+    assert!(
+        few < 0.90 && some >= 0.90 && some <= many,
+        "{few} {some} {many}"
+    );
+    assert!(many >= 0.98, "{many}");
+    drop(snapshot);
+    engine.close().unwrap();
+}
+
+#[test]
+fn a_filtered_ivf_search_returns_k_and_only_matches() {
+    let vectors = corpus(3000, DIM, 11);
+    let queries = corpus(20, DIM, 5);
+    let schema = schema(ivf_spec(IvfQuantizer::Osq(4), Rerank::F32));
+    let directory = ByteBuffersDirectory::new();
+    let observed = EngineDirectory::new(&directory);
+    let engine = open(&observed, &schema);
+    load(&engine, &schema, &vectors, 0, 1);
+    let snapshot = engine.refresh().unwrap();
+    let in_c3 = |i: usize| i % CATEGORIES == 3;
+    let filter = Query::Term {
+        field: "category",
+        value: Value::String("c3"),
+    };
+    let mut found = 0;
+    for q in &queries {
+        let got = search(&snapshot, &knn_probe(q, 10, 100, 16, Some(&filter)), 10);
+        assert_eq!(got.len(), 10, "a filtered search must still return k");
+        assert!(got.iter().all(|id| in_c3(id[1..].parse().unwrap())));
+        let want = exact(&vectors, in_c3, q, 10);
+        found += want.iter().filter(|id| got.contains(id)).count();
+    }
+    let r = found as f64 / (10 * queries.len()) as f64;
+    eprintln!("filtered ivf recall@10 at 5% selectivity: {r:.4}");
+    assert!(r >= 0.90, "{r}");
+    drop(snapshot);
+    engine.close().unwrap();
+}
+
+#[test]
+fn deleted_and_replaced_vectors_leave_ivf_results_before_and_after_a_merge() {
+    // An IVF segment is written once: a delete is an accept filter over the
+    // clusters, a replaced document is a delete plus a new row in a later
+    // segment, and a merge reclusters the survivors into one new segment.
+    let vectors = corpus(2000, DIM, 17);
+    let queries = corpus(20, DIM, 2);
+    let schema = schema(ivf_spec(IvfQuantizer::Bbq, Rerank::F32));
+    let directory = ByteBuffersDirectory::new();
+    let observed = EngineDirectory::new(&directory);
+    let engine = open(&observed, &schema);
+    for (n, part) in vectors.chunks(700).enumerate() {
+        load(&engine, &schema, part, n * 700, 1);
+        drop(engine.refresh().unwrap());
+    }
+    let dead = |i: usize| i.is_multiple_of(3);
+    let ids: Vec<String> = (0..vectors.len())
+        .filter(|i| dead(*i))
+        .map(|i| format!("d{i}"))
+        .collect();
+    delete(&engine, &schema, &ids, 2);
+    let moved: Vec<f32> = vec![1000.0; DIM];
+    let fields = [
+        ("category", Value::String("c1")),
+        ("embedding", Value::Vector(&moved)),
+    ];
+    engine
+        .apply(
+            schema
+                .prepare(
+                    "move",
+                    &[Mutation::Put {
+                        id: "d1",
+                        version: 2,
+                        fields: &fields,
+                    }],
+                )
+                .unwrap(),
+        )
+        .unwrap();
+    let mut live_vectors = vectors.clone();
+    live_vectors[1] = moved.clone();
+    let live = |i: usize| !dead(i);
+
+    let before = engine.refresh().unwrap();
+    for q in &queries {
+        let got = search(&before, &knn_probe(q, 10, 100, 8, None), 10);
+        assert!(got.iter().all(|id| !dead(id[1..].parse().unwrap())));
+    }
+    let r = ivf_recall(&before, &live_vectors, &queries, 8, live);
+    eprintln!("ivf recall@10 with a third deleted: {r:.4}");
+    assert!(r >= 0.90, "{r}");
+    drop(before);
+
+    engine.merge().unwrap();
+    let after = engine.refresh().unwrap();
+    let r = ivf_recall(&after, &live_vectors, &queries, 8, live);
+    eprintln!("ivf recall@10 after merge: {r:.4}");
+    assert!(r >= 0.90, "{r}");
+    for q in &queries {
+        let got = search(&after, &knn_probe(q, 10, 100, 8, None), 10);
+        assert!(got.iter().all(|id| !dead(id[1..].parse().unwrap())));
+    }
+    assert_eq!(
+        search(&after, &knn_probe(&moved, 1, 100, 8, None), 1),
+        vec!["d1"]
+    );
+    drop(after);
+    engine.close().unwrap();
+}
+
+#[test]
+fn an_ivf_checkpoint_reopens_with_the_same_top_k() {
+    let vectors = corpus(1500, DIM, 29);
+    let queries = corpus(10, DIM, 31);
+    for quantizer in [IvfQuantizer::Bbq, IvfQuantizer::Osq(4), IvfQuantizer::Auto] {
+        let schema = schema(ivf_spec(quantizer, Rerank::F32));
+        let directory = ByteBuffersDirectory::new();
+        let observed = EngineDirectory::new(&directory);
+        let engine = open(&observed, &schema);
+        load(&engine, &schema, &vectors, 0, 1);
+        let snapshot = engine.refresh().unwrap();
+        let ask = |s: &Snapshot| -> Vec<Vec<String>> {
+            queries
+                .iter()
+                .map(|q| search(s, &knn_probe(q, 10, 100, 8, None), 10))
+                .collect()
+        };
+        let first = ask(&snapshot);
+        drop(snapshot);
+        let checkpoint = engine.commit().unwrap();
+        engine.close().unwrap();
+
+        let engine = Engine::open(&observed, schema.clone(), Some(checkpoint)).unwrap();
+        let snapshot = engine.refresh().unwrap();
+        assert_eq!(first, ask(&snapshot), "{quantizer:?}");
+        drop(snapshot);
+        engine.close().unwrap();
+        let committed = Snapshot::open_committed(&observed, schema.clone()).unwrap();
+        assert_eq!(first, ask(&committed), "{quantizer:?}");
+    }
+}
+
+#[test]
+fn an_ivf_field_default_nprobe_applies_when_a_query_names_none() {
+    let vectors = corpus(3000, DIM, 7);
+    let queries = corpus(40, DIM, 99);
+    let probes = |default: u32| {
+        let schema = schema(ivf_spec(IvfQuantizer::Bbq, Rerank::F32).with_nprobe(default));
+        let directory = ByteBuffersDirectory::new();
+        let observed = EngineDirectory::new(&directory);
+        let engine = open(&observed, &schema);
+        load(&engine, &schema, &vectors, 0, 1);
+        let snapshot = engine.refresh().unwrap();
+        // Queries name no probe count (0): the field's default decides.
+        let r = ivf_recall(&snapshot, &vectors, &queries, 0, |_| true);
+        // A query naming one overrides the field's default.
+        let named = ivf_recall(&snapshot, &vectors, &queries, 32, |_| true);
+        drop(snapshot);
+        engine.close().unwrap();
+        (r, named)
+    };
+    let (shallow, named_over_shallow) = probes(2);
+    let (deep, named_over_deep) = probes(32);
+    eprintln!("default 2: {shallow:.4}; default 32: {deep:.4}");
+    assert!(shallow < 0.90, "{shallow}");
+    assert!(deep >= 0.98, "{deep}");
+    assert!(named_over_shallow >= 0.98 && named_over_deep >= 0.98);
 }
