@@ -81,7 +81,7 @@ impl<S: MetadataStore> Io<S> {
         }
     }
 
-    fn context(&self, body: usize) -> Result<RequestContext, StoreError> {
+    pub(crate) fn context(&self, body: usize) -> Result<RequestContext, StoreError> {
         RequestContext::new(
             self.deadline,
             Cancellation::default(),

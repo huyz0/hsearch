@@ -24,6 +24,9 @@ use hsearch_object::{
 };
 use sha2::{Digest as _, Sha256};
 
+use crate::boundary::{self, Boundary};
+use crate::io::Io;
+
 /// Largest manifest root or page read back (the format bounds both well below this).
 const READ_BOUND: u64 = 1 << 20;
 
@@ -59,6 +62,13 @@ pub enum Error {
     Mismatch,
     /// More files than a root can name.
     TooManyFiles,
+    /// The root's generation is below the collection boundary: it may name swept objects.
+    Swept {
+        /// The boundary that refused it.
+        boundary: u64,
+    },
+    /// The collection boundary object is not valid.
+    Boundary,
 }
 
 impl From<StoreError> for Error {
@@ -469,6 +479,17 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
             || published.root.covered > spec.committed
         {
             return Err(Error::Mismatch);
+        }
+        // A base below the collection boundary may name objects a sweep has deleted or is deleting.
+        let io = Io::new(Arc::clone(&self.store), self.deadline);
+        let (boundary, _) = Boundary::new(&self.layout, &spec.index, &spec.shard, spec.incarnation)
+            .read(&io)
+            .map_err(|e| match e {
+                boundary::Error::Corrupt => Error::Boundary,
+                boundary::Error::Store(e) => Error::Store(e),
+            })?;
+        if published.root.generation < boundary {
+            return Err(Error::Swept { boundary });
         }
         let stored = self.verify_root(
             &spec.index,

@@ -15,8 +15,6 @@ use hsearch_engine::LocalFiles;
 use hsearch_format::{Layout, ManifestRoot, StructuralHead};
 use hsearch_object::{MetadataStore, VersionToken};
 
-use crate::boundary::{self, Boundary};
-use crate::io::Io;
 use crate::publish::{
     BaseSpec, Dependencies, Error as PublishError, HeadRead, Published, Publisher, manifest_id,
 };
@@ -50,8 +48,6 @@ impl From<PublishError> for Error {
 /// Compacts shards of one deployment.
 pub struct Compactor<S> {
     publisher: Publisher<S>,
-    io: Io<S>,
-    layout: Layout,
 }
 
 impl<S: MetadataStore + hsearch_object::LargeObjectWriter + 'static> Compactor<S> {
@@ -59,9 +55,7 @@ impl<S: MetadataStore + hsearch_object::LargeObjectWriter + 'static> Compactor<S
     #[must_use]
     pub fn new(store: Arc<S>, layout: Layout, part_size: usize, deadline: Duration) -> Self {
         Self {
-            publisher: Publisher::new(Arc::clone(&store), layout.clone(), part_size, deadline),
-            io: Io::new(store, deadline),
-            layout,
+            publisher: Publisher::new(store, layout, part_size, deadline),
         }
     }
 
@@ -92,19 +86,6 @@ impl<S: MetadataStore + hsearch_object::LargeObjectWriter + 'static> Compactor<S
             &named,
             dependencies,
         )?;
-        Ok(())
-    }
-
-    fn above_boundary(&self, spec: &BaseSpec<'_>, generation: u64) -> Result<(), Error> {
-        let (boundary, _) = Boundary::new(&self.layout, &spec.index, &spec.shard, spec.incarnation)
-            .read(&self.io)
-            .map_err(|e| match e {
-                boundary::Error::Corrupt => Error::Boundary,
-                boundary::Error::Store(e) => Error::Publish(PublishError::Store(e)),
-            })?;
-        if generation < boundary {
-            return Err(Error::Swept { boundary });
-        }
         Ok(())
     }
 
@@ -140,7 +121,9 @@ impl<S: MetadataStore + hsearch_object::LargeObjectWriter + 'static> Compactor<S
         if at.head.checkpoint != Some(named) || published.root.generation != source.generation + 1 {
             return Err(Error::SourceMoved);
         }
-        self.above_boundary(spec, published.root.generation)?;
-        Ok(self.publisher.replace(at, published, spec, dependencies)?)
+        match self.publisher.replace(at, published, spec, dependencies) {
+            Err(PublishError::Swept { boundary }) => Err(Error::Swept { boundary }),
+            other => Ok(other?),
+        }
     }
 }

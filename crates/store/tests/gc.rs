@@ -2,7 +2,7 @@
 //! live, pinned or in-flight one is not; stale publishers cannot name swept generations; a stopped
 //! sweep resumes; pin registration races collection.
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,18 +14,16 @@ use hsearch_index::barrier::{Cut, Replay};
 use hsearch_lane::{LaneId, block_on, create_head, read_head};
 use hsearch_object::memory::{MemoryLimits, MemoryStore};
 use hsearch_object::{
-    ByteRange, Error as StoreError, LargeObjectWriter, MetadataStore, Mutation as Put,
-    ObjectBackend, ObjectInfo, ObjectKey, Operation, Payload, RequestContext, VersionToken,
-    WriteReceipt,
+    ByteRange, Error as StoreError, Inventory, LargeObjectWriter, ListPage, ListedObject,
+    MetadataStore, Mutation as Put, ObjectBackend, ObjectInfo, ObjectKey, Operation, Payload,
+    RequestContext, VersionToken, WriteReceipt,
 };
 use hsearch_store::compact::{Compactor, Error as CompactError};
 use hsearch_store::pins::{Error as PinError, Pins};
 use hsearch_store::publish::{
     AnyDependencies, BaseSpec, Error as PublishError, HeadRead, Published, Publisher,
 };
-use hsearch_store::sweep::{
-    Config, Error as SweepError, Inventory, Listed, Mode, ShardRef, Sweeper,
-};
+use hsearch_store::sweep::{Config, Error as SweepError, Mode, ShardRef, Sweeper};
 
 const INDEX: Id = [7; 16];
 const SHARD: Id = [8; 16];
@@ -39,6 +37,8 @@ struct Tracked {
     /// Removals allowed before every removal fails; negative for no limit.
     removals: AtomicI64,
     pending_upload: Mutex<Option<String>>,
+    /// Most objects a listing page returns, whatever the limit asked; 0 for no cap.
+    page_cap: AtomicUsize,
 }
 
 impl Tracked {
@@ -56,6 +56,7 @@ impl Tracked {
             clock: AtomicU64::new(1_000),
             removals: AtomicI64::new(-1),
             pending_upload: Mutex::new(None),
+            page_cap: AtomicUsize::new(0),
         })
     }
     fn note(&self, key: &ObjectKey, version: &VersionToken) {
@@ -188,26 +189,36 @@ impl LargeObjectWriter for Tracked {
     }
 }
 
-struct Inv(Arc<Tracked>);
-
-impl Inventory for Inv {
-    fn list(
-        &self,
-        prefix: &str,
-        after: Option<&str>,
+impl Inventory for Tracked {
+    fn list<'a>(
+        &'a self,
+        _: &'a RequestContext,
+        prefix: &'a str,
+        after: Option<&'a str>,
         limit: usize,
-    ) -> Result<Vec<Listed>, StoreError> {
-        let map = self.0.listing.lock().unwrap();
-        Ok(map
-            .iter()
-            .filter(|(k, _)| k.starts_with(prefix) && after.is_none_or(|a| k.as_str() > a))
-            .take(limit)
-            .map(|(k, (v, t))| Listed {
-                key: k.clone(),
-                version: v.clone(),
-                modified_unix_ms: *t,
+    ) -> Operation<'a, ListPage> {
+        Box::pin(async move {
+            // A provider may answer with fewer than asked and still have more: `cap` models that.
+            let cap = self.page_cap.load(Ordering::SeqCst);
+            let take = if cap == 0 { limit } else { limit.min(cap) };
+            let map = self.listing.lock().unwrap();
+            let mut rest = map
+                .iter()
+                .filter(|(k, _)| k.starts_with(prefix) && after.is_none_or(|a| k.as_str() > a));
+            let objects: Vec<ListedObject> = rest
+                .by_ref()
+                .take(take)
+                .map(|(k, (v, t))| ListedObject {
+                    key: ObjectKey::new(k.as_bytes()).unwrap(),
+                    version: v.clone(),
+                    modified_unix_ms: *t,
+                })
+                .collect();
+            Ok(ListPage {
+                objects,
+                more: rest.next().is_some(),
             })
-            .collect())
+        })
     }
 }
 
@@ -306,13 +317,8 @@ impl World {
     fn pins(&self) -> Pins<Tracked> {
         Pins::new(Arc::clone(&self.store), layout(), Duration::from_secs(30))
     }
-    fn sweeper(&self) -> Sweeper<Tracked, Inv> {
-        Sweeper::new(
-            Arc::clone(&self.store),
-            layout(),
-            Inv(Arc::clone(&self.store)),
-            Duration::from_secs(30),
-        )
+    fn sweeper(&self) -> Sweeper<Tracked> {
+        Sweeper::new(Arc::clone(&self.store), layout(), Duration::from_secs(30))
     }
     /// Publish and name a writer's base (the cover rises with it).
     fn write(
@@ -574,12 +580,42 @@ fn a_publisher_suspended_across_a_sweep_cannot_name_a_swept_generation() {
             &AnyDependencies,
         );
         assert!(
-            matches!(
-                direct,
-                Err(PublishError::Store(_) | PublishError::Broken(_))
-            ),
+            matches!(direct, Err(PublishError::Swept { boundary: 3 })),
             "{direct:?}"
         );
+        // So does the writer's own activation of a stale base.
+        let activate = w.publisher.activate(
+            &HeadRead {
+                lane: &lane(),
+                head: &stale_head,
+                version: &stale_version,
+            },
+            &stalled,
+            &stale_spec,
+            3,
+            &AnyDependencies,
+        );
+        assert!(
+            matches!(activate, Err(PublishError::Swept { boundary: 3 })),
+            "{activate:?}"
+        );
+    });
+}
+
+#[test]
+fn listing_pages_that_end_early_are_followed_to_the_end() {
+    with_commit("short-pages", |f, names| {
+        let w = World::new();
+        let b1 = w.write(f, names, 3, 1, None);
+        let b2 = w.compact(f, names, &b1.root, 2).unwrap();
+        // The provider returns 3 objects a page whatever the sweep asks for.
+        w.store.page_cap.store(3, Ordering::SeqCst);
+        let done = w.sweep(Mode::Sweep, 2_000).unwrap();
+        assert!(done.complete);
+        assert_eq!(done.files_swept, names.len());
+        assert!(w.readable(&b2).is_ok());
+        assert!(w.readable(&b1).is_err());
+        assert_eq!(w.store.count(&layout().payload_prefix(&INDEX)), names.len());
     });
 }
 
@@ -908,7 +944,7 @@ fn requests_scale_with_objects_not_with_time() {
         cfg.page = 1;
         let r = w.sweeper().run(&INDEX, &[shard_ref()], &cfg).unwrap();
         let payloads = w.store.count(&layout().payload_prefix(&INDEX));
-        let expected = 1 /* pins: none */ + 3 /* roots: 2 listed, 1 empty tail */ + (payloads + 1) + 3 /* pages */;
+        let expected = 1 /* pins: none, one empty page */ + 2 /* roots */ + payloads + 2 /* pages */;
         assert_eq!(r.requests.lists as usize, expected);
         assert_eq!(r.requests.writes, 0);
         assert_eq!(r.requests.deletes, 0);

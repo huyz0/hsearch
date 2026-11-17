@@ -17,31 +17,17 @@ use std::time::Duration;
 
 use hsearch_format::{FormatError, Id, Layout, ManifestRoot, PinRecord};
 use hsearch_lane::{LaneId, block_on, read_head};
-use hsearch_object::{Error as StoreError, MetadataStore, VersionToken};
+use hsearch_object::{Error as StoreError, Inventory, MetadataStore, VersionToken};
 
 use crate::boundary::{self, Boundary};
 use crate::io::{Io, Requests};
 
-/// One listed object.
+/// One listed object, with its key as text.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Listed {
-    /// The full key.
-    pub key: String,
-    /// The version to name when removing it.
-    pub version: VersionToken,
-    /// When the provider last modified it, in Unix milliseconds.
-    pub modified_unix_ms: u64,
-}
-
-/// Paginated listing of keys under a prefix, in key order. Only collection uses it.
-pub trait Inventory {
-    /// At most `limit` objects whose key starts with `prefix` and sorts after `after`.
-    fn list(
-        &self,
-        prefix: &str,
-        after: Option<&str>,
-        limit: usize,
-    ) -> Result<Vec<Listed>, StoreError>;
+pub(crate) struct Listed {
+    pub(crate) key: String,
+    pub(crate) version: VersionToken,
+    pub(crate) modified_unix_ms: u64,
 }
 
 /// One shard incarnation of the index being collected.
@@ -148,10 +134,9 @@ impl From<boundary::Error> for Error {
 }
 
 /// Collects one index's unreachable objects.
-pub struct Sweeper<S, I> {
+pub struct Sweeper<S> {
     io: Io<S>,
     layout: Layout,
-    inventory: I,
 }
 
 struct Candidate {
@@ -181,14 +166,13 @@ fn track(set: &mut HashSet<Id>, id: Id, max: usize) -> Result<(), Error> {
     Ok(())
 }
 
-impl<S: MetadataStore, I: Inventory> Sweeper<S, I> {
-    /// A sweeper reading and deleting through `store` and listing through `inventory`.
+impl<S: MetadataStore + Inventory> Sweeper<S> {
+    /// A sweeper reading, listing and deleting through `store`.
     #[must_use]
-    pub fn new(store: Arc<S>, layout: Layout, inventory: I, deadline: Duration) -> Self {
+    pub fn new(store: Arc<S>, layout: Layout, deadline: Duration) -> Self {
         Self {
             io: Io::new(store, deadline),
             layout,
-            inventory,
         }
     }
 
@@ -198,19 +182,30 @@ impl<S: MetadataStore, I: Inventory> Sweeper<S, I> {
         page: usize,
         mut each: impl FnMut(&Listed) -> Result<(), Error>,
     ) -> Result<(), Error> {
-        // An inventory returns fewer than `limit` only at the end of the prefix, and no provider
-        // returns more than 1,000: a larger request would read a truncated page as the last one.
         let page = page.clamp(1, 1000);
         let mut after: Option<String> = None;
         loop {
             self.io.counters.list();
-            let got = self.inventory.list(prefix, after.as_deref(), page)?;
-            for l in &got {
-                each(l)?;
+            let ctx = self
+                .io
+                .context(prefix.len() + after.as_ref().map_or(0, String::len))?;
+            let got = block_on(self.io.store.list(&ctx, prefix, after.as_deref(), page))?;
+            let mut last = None;
+            for o in &got.objects {
+                let key = String::from_utf8(o.key.as_bytes().to_vec())
+                    .map_err(|_| Error::Corrupt("listed key"))?;
+                each(&Listed {
+                    key: key.clone(),
+                    version: o.version.clone(),
+                    modified_unix_ms: o.modified_unix_ms,
+                })?;
+                last = Some(key);
             }
-            match got.last() {
-                Some(last) if got.len() >= page => after = Some(last.key.clone()),
-                _ => return Ok(()),
+            match (got.more, last) {
+                (false, _) => return Ok(()),
+                (true, Some(key)) => after = Some(key),
+                // A page that says more follows but names nothing would loop forever.
+                (true, None) => return Err(Error::Corrupt("a listing page made no progress")),
             }
         }
     }
