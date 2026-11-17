@@ -42,21 +42,44 @@ pub fn with_local_engine<R>(
     schema: Schema,
     run: impl FnOnce(&Engine<'_>, &LocalFiles) -> R,
 ) -> Result<R> {
+    with_local_engine_merging(root, schema, crate::MergeMode::Inline, run)
+}
+
+/// [`with_local_engine`] with the automatic merges run as `mode` says. In
+/// [`crate::MergeMode::Background`] one merge thread runs beside `run` and is
+/// joined, with any merge it is running, before the engine closes.
+pub fn with_local_engine_merging<R>(
+    root: &Path,
+    schema: Schema,
+    mode: crate::MergeMode,
+    run: impl FnOnce(&Engine<'_>, &LocalFiles) -> R,
+) -> Result<R> {
     if root.exists() {
         std::fs::remove_dir_all(root).map_err(|_| Error::Native)?;
     }
     std::fs::create_dir_all(root).map_err(|_| Error::Native)?;
     let directory = EngineDirectory::new(FsDirectory::open(root));
-    let engine = crate::EngineFactory::new().open(
+    let engine = crate::EngineFactory::new().open_merging(
         &directory,
         schema,
         None,
         crate::WriterMode::Materialized,
+        mode,
     )?;
     let files = LocalFiles {
         root: root.to_path_buf(),
     };
-    let result = run(&engine, &files);
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let result = std::thread::scope(|scope| {
+        let merger = (mode == crate::MergeMode::Background)
+            .then(|| scope.spawn(|| engine.run_background_merges(&stop)));
+        let result = run(&engine, &files);
+        stop.store(true, std::sync::atomic::Ordering::Release);
+        if let Some(merger) = merger {
+            let _ = merger.join();
+        }
+        result
+    });
     engine.close()?;
     Ok(result)
 }

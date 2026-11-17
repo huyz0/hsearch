@@ -251,8 +251,26 @@ impl EngineFactory {
         checkpoint: Option<Checkpoint>,
         mode: WriterMode,
     ) -> Result<Engine<'d>> {
+        self.open_merging(
+            directory,
+            schema,
+            checkpoint,
+            mode,
+            crate::MergeMode::Inline,
+        )
+    }
+
+    /// [`EngineFactory::open`] with the automatic merges run as `merging` says.
+    pub fn open_merging<'d, D: Directory>(
+        &self,
+        directory: &'d EngineDirectory<D>,
+        schema: Schema,
+        checkpoint: Option<Checkpoint>,
+        mode: WriterMode,
+        merging: crate::MergeMode,
+    ) -> Result<Engine<'d>> {
         self.require(capability_of_mode(mode))?;
-        Engine::open(directory, schema, checkpoint)
+        Engine::open_merging(directory, schema, checkpoint, merging)
     }
 }
 

@@ -837,22 +837,28 @@ pub(crate) fn run<S: MetadataStore + 'static>(
     schema: Schema,
     scratch: std::path::PathBuf,
     hooks: Arc<dyn Hooks>,
+    mode: hsearch_engine::MergeMode,
     shared: Shared,
     init: Sender<Result<()>>,
     commands: Receiver<Command>,
 ) {
     let failure = init.clone();
-    let result = hsearch_engine::with_local_engine(&scratch, schema.clone(), |engine, files| {
-        let mut core = match start(store, name, schema, engine, files, hooks, shared) {
-            Ok(core) => core,
-            Err(error) => {
-                let _ = init.send(Err(error));
-                return;
-            }
-        };
-        let _ = init.send(Ok(()));
-        serve(&mut core, &commands);
-    });
+    let result = hsearch_engine::with_local_engine_merging(
+        &scratch,
+        schema.clone(),
+        mode,
+        |engine, files| {
+            let mut core = match start(store, name, schema, engine, files, hooks, shared) {
+                Ok(core) => core,
+                Err(error) => {
+                    let _ = init.send(Err(error));
+                    return;
+                }
+            };
+            let _ = init.send(Ok(()));
+            serve(&mut core, &commands);
+        },
+    );
     if let Err(error) = result {
         let _ = failure.send(Err(Error::Engine(error)));
     }

@@ -12,7 +12,7 @@ mod directory;
 pub use directory::EngineDirectory;
 mod local;
 mod remote;
-pub use local::{LocalFiles, with_local_engine};
+pub use local::{LocalFiles, with_local_engine, with_local_engine_merging};
 pub use remote::{CachePin, CachedDirectory, RemoteError, RemoteFiles};
 mod range;
 pub use range::{
@@ -24,6 +24,7 @@ pub use upload::ObjectUploadSink;
 mod schema;
 pub use aggregations::{Bucket, Metrics};
 mod adapter;
+mod background;
 mod factory;
 pub use factory::{
     Capability, EngineFactory, Feature, ShardEngine, Support, WriterMode, capability_of_mode,
@@ -32,7 +33,7 @@ pub use factory::{
 mod query;
 mod reader;
 mod vector;
-pub use adapter::{Checkpoint, Engine, Mutation, Outcome, PreparedBatch, Receipt};
+pub use adapter::{Checkpoint, Engine, MergeMode, Mutation, Outcome, PreparedBatch, Receipt};
 pub use query::Query;
 pub use reader::{Hit, SearchResult, Snapshot, Sort, StoredValue};
 pub use schema::{
@@ -45,7 +46,7 @@ pub use vector::{
 };
 
 /// Exact upstream engine revision.
-pub const ENGINE_REVISION: &str = "df02d694c4ffb96b2b765084b07728fa6a523a33";
+pub const ENGINE_REVISION: &str = "3979974b4bdd3a8442f747d62914ce92dca56618";
 pub use lucene_store::{Directory, Input};
 
 /// Native consuming cleanup outcome, without backend error text.

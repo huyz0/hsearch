@@ -1,8 +1,12 @@
 //! Serialized admission around a caller-owned directory and native writer.
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, Mutex, MutexGuard, TryLockError, atomic::AtomicUsize};
+use std::sync::{
+    Arc, Mutex, MutexGuard, TryLockError,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 
 use lucene_index::buffered_updates::Term;
+use lucene_index::concurrent_writer::ConcurrentIndexWriter;
 use lucene_index::document::Document;
 use lucene_index::index_writer::IndexWriter;
 use lucene_index::merge_policy::MergePolicyConfig;
@@ -338,11 +342,119 @@ pub struct Checkpoint {
     native: NativeCommit,
 }
 
+/// Where an engine's automatic merges run. A cluster default, chosen per index
+/// when its engine is opened.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MergeMode {
+    /// Inside the refresh that triggers them, under the writer lock.
+    #[default]
+    Inline,
+    /// On a thread calling [`Engine::run_background_merges`]: a refresh never
+    /// waits for a merge. Needs `auto_merge_mb > 0`.
+    Background,
+}
+
+/// The native writer: the single-threaded one behind its lock, or the
+/// concurrent one whose merges a background thread runs.
+enum Writer<'d> {
+    Inline(Box<Mutex<IndexWriter<'d>>>),
+    /// The flag is set when a native call panicked, as a poisoned lock would.
+    Background(Box<ConcurrentIndexWriter<'d>>, AtomicBool),
+}
+
+#[cfg(test)]
+impl<'d> Writer<'d> {
+    fn lock(&self) -> std::sync::LockResult<MutexGuard<'_, IndexWriter<'d>>> {
+        match self {
+            Writer::Inline(m) => m.lock(),
+            Writer::Background(..) => panic!("background writer has no lock"),
+        }
+    }
+}
+
+/// The writer as held for one admitted call.
+enum Held<'a, 'd> {
+    Inline(MutexGuard<'a, IndexWriter<'d>>),
+    Background(&'a ConcurrentIndexWriter<'d>, &'a AtomicBool),
+}
+
+impl Held<'_, '_> {
+    fn segment_count(&mut self) -> usize {
+        match self {
+            Held::Inline(w) => w.segment_count(),
+            Held::Background(w, _) => w.with_writer(|w| w.segment_count()),
+        }
+    }
+
+    fn update(&mut self, term: Term, document: &Document) -> bool {
+        match self {
+            Held::Inline(w) => w
+                .update_fields_documents(term, std::slice::from_ref(document))
+                .is_ok(),
+            Held::Background(w, panicked) => guarded(panicked, || {
+                w.update_fields_documents(term, std::slice::from_ref(document))
+                    .is_ok()
+            }),
+        }
+    }
+
+    fn delete(&mut self, term: Term) -> bool {
+        match self {
+            Held::Inline(w) => w.delete_documents_by_term(&[term]).is_ok(),
+            Held::Background(w, panicked) => {
+                guarded(panicked, || w.delete_documents_by_term(&[term]).is_ok())
+            }
+        }
+    }
+
+    fn commit(&mut self) -> bool {
+        match self {
+            Held::Inline(w) => w.commit().is_ok(),
+            Held::Background(w, panicked) => guarded(panicked, || w.commit().is_ok()),
+        }
+    }
+
+    fn force_merge(&mut self) -> bool {
+        match self {
+            Held::Inline(w) => w.force_merge(1).is_ok(),
+            Held::Background(w, panicked) => guarded(panicked, || {
+                w.with_writer_merges_aborted(|w| w.force_merge(1)).is_ok()
+            }),
+        }
+    }
+}
+
+/// Runs a native call, recording a panic in `panicked` before it continues.
+fn guarded<T>(panicked: &AtomicBool, call: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)) {
+        Ok(value) => value,
+        Err(payload) => {
+            panicked.store(true, Ordering::Release);
+            std::panic::resume_unwind(payload)
+        }
+    }
+}
+
+impl<'d> Writer<'d> {
+    fn hold(&self) -> Result<Held<'_, 'd>> {
+        match self {
+            Writer::Inline(m) => Ok(Held::Inline(gate(m)?)),
+            Writer::Background(w, panicked) => {
+                if panicked.load(Ordering::Acquire) {
+                    Err(Error::Poisoned)
+                } else {
+                    Ok(Held::Background(w, panicked))
+                }
+            }
+        }
+    }
+}
+
 /// Caller-owned-directory adapter with one writer and bounded nonblocking admission.
 /// Only methods on this adapter may mutate its directory while it is open.
 pub struct Engine<'d> {
     // Declaration order is part of WriterLease's implicit-drop invariant.
-    writer: Mutex<IndexWriter<'d>>,
+    writer: Writer<'d>,
     lease: WriterLease,
     attempt: DirectoryAttempt<'d>,
     directory: &'d dyn Directory,
@@ -414,6 +526,17 @@ impl<'d> Engine<'d> {
         schema: Schema,
         checkpoint: Option<Checkpoint>,
     ) -> Result<Self> {
+        Self::open_merging(directory, schema, checkpoint, MergeMode::Inline)
+    }
+
+    /// [`Engine::open`] with the automatic merges run as `mode` says.
+    pub fn open_merging<D: Directory>(
+        directory: &'d EngineDirectory<D>,
+        schema: Schema,
+        checkpoint: Option<Checkpoint>,
+        mode: MergeMode,
+    ) -> Result<Self> {
+        let background = mode == MergeMode::Background && schema.limits.auto_merge_mb > 0;
         let buffered = schema.limits.buffered_documents;
         let auto_merge_mb = schema.limits.auto_merge_mb;
         let vectors: Vec<(String, crate::VectorSpec)> = schema
@@ -426,8 +549,12 @@ impl<'d> Engine<'d> {
             .collect();
         // Room for a full buffer of worst-case documents, never below 8 MiB.
         let ram_mb = (buffered as f64 * MAX_DOCUMENT_BYTES as f64 / 1_048_576.0).clamp(8.0, 256.0);
-        Self::open_configured(directory, schema, checkpoint, move |writer| {
+        Self::open_configured_as(directory, schema, checkpoint, background, move |writer| {
             writer.set_analyzer(Some(Arc::new(analyzer())));
+            if background {
+                // No merge on a refresh's full flush: the merge thread owns merging.
+                writer.set_max_full_flush_merge_wait_millis(0);
+            }
             for (name, spec) in &vectors {
                 writer.set_knn_vectors_format_for_field(name, spec.format());
             }
@@ -446,10 +573,21 @@ impl<'d> Engine<'d> {
         })
     }
 
+    #[cfg(test)]
     fn open_configured<D: Directory>(
         directory: &'d EngineDirectory<D>,
         schema: Schema,
         checkpoint: Option<Checkpoint>,
+        configure: impl FnOnce(&mut IndexWriter<'d>) -> Result<()>,
+    ) -> Result<Self> {
+        Self::open_configured_as(directory, schema, checkpoint, false, configure)
+    }
+
+    fn open_configured_as<D: Directory>(
+        directory: &'d EngineDirectory<D>,
+        schema: Schema,
+        checkpoint: Option<Checkpoint>,
+        background: bool,
         configure: impl FnOnce(&mut IndexWriter<'d>) -> Result<()>,
     ) -> Result<Self> {
         let attempt = directory.begin()?;
@@ -523,8 +661,18 @@ impl<'d> Engine<'d> {
         opening.complete = true;
         drop(opening);
         drop(head);
+        let writer = if background {
+            // Merges run on the thread that calls `run_background_merges`;
+            // the writer registers none of its own.
+            match ConcurrentIndexWriter::new(writer, 1) {
+                Ok(w) => Writer::Background(Box::new(w), AtomicBool::new(false)),
+                Err(_) => return Err(open_failure(&attempt, Error::Native)),
+            }
+        } else {
+            Writer::Inline(Box::new(Mutex::new(writer)))
+        };
         Ok(Self {
-            writer: Mutex::new(writer),
+            writer,
             directory,
             snapshots: Arc::clone(&lineage.readers),
             lease: WriterLease::new(lineage),
@@ -606,21 +754,18 @@ impl<'d> Engine<'d> {
                         .is_some_and(|old| old.digest.is_some()),
             })
             .collect();
-        let mut writer = gate(&self.writer)?;
+        let mut writer = self.writer.hold()?;
         if writer.segment_count() + additions / limits.buffered_documents + 2 > limits.segments {
             return Err(Error::Limit);
         }
         for (op, document) in batch.operations.iter().zip(batch.documents) {
-            let result = if let Some(document) = document {
-                writer
-                    .update_fields_documents(Term::new("_hs_id", op.id.as_bytes()), &[document])
-                    .map(|_| ())
+            let term = Term::new("_hs_id", op.id.as_bytes());
+            let done = if let Some(document) = document {
+                writer.update(term, &document)
             } else {
-                writer
-                    .delete_documents_by_term(&[Term::new("_hs_id", op.id.as_bytes())])
-                    .map(|_| ())
+                writer.delete(term)
             };
-            if result.is_err() {
+            if !done {
                 state.poisoned = true;
                 self.lease.invalidate();
                 return Err(Error::Native);
@@ -655,7 +800,10 @@ impl<'d> Engine<'d> {
         let mut state = gate(&self.state)?;
         live(&state)?;
         let reservation = crate::reader::Reservation::new(&self.snapshots)?;
-        let reader = match DirectoryReader::open_from_writer(&self.writer) {
+        let reader = match match &self.writer {
+            Writer::Inline(m) => DirectoryReader::open_from_writer(&**m),
+            Writer::Background(w, _) => DirectoryReader::open_from_writer(&**w),
+        } {
             Ok(r) => r,
             Err(_) => {
                 state.poisoned = true;
@@ -676,7 +824,7 @@ impl<'d> Engine<'d> {
             return Err(Error::Poisoned);
         }
         let epoch = head.epoch.checked_add(1).ok_or(Error::Limit)?;
-        if gate(&self.writer)?.commit().is_err() {
+        if !self.writer.hold()?.commit() {
             state.poisoned = true;
             head.uncertain = true;
             return Err(Error::Native);
@@ -717,7 +865,7 @@ impl<'d> Engine<'d> {
     pub fn merge(&self) -> Result<()> {
         let mut state = gate(&self.state)?;
         live(&state)?;
-        if gate(&self.writer)?.force_merge(1).is_err() {
+        if !self.writer.hold()?.force_merge() {
             state.poisoned = true;
             self.lease.invalidate();
             return Err(Error::Native);
@@ -747,6 +895,50 @@ impl<'d> Engine<'d> {
         self.merge()
     }
 
+    /// The merge thread of a [`MergeMode::Background`] engine: runs the policy's
+    /// merges as segments appear, at most [`crate::background::MAX_CONCURRENT_MERGES`]
+    /// at once across the process, until `stop` is set; returns how many ran.
+    /// Returns at once for an inline engine. A failed or panicking merge poisons
+    /// the engine, as a failed inline merge does.
+    pub fn run_background_merges(&self, stop: &AtomicBool) -> usize {
+        let Writer::Background(writer, panicked) = &self.writer else {
+            return 0;
+        };
+        let mut merged = 0;
+        let mut idle = std::time::Duration::from_millis(10);
+        while !stop.load(Ordering::Acquire) {
+            let Some(slot) = crate::background::SLOTS.acquire(std::time::Duration::from_millis(50))
+            else {
+                continue;
+            };
+            let outcome =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| writer.maybe_merge()));
+            drop(slot);
+            match outcome {
+                Ok(Ok(n)) => {
+                    merged += n;
+                    idle = if n > 0 {
+                        std::time::Duration::from_millis(10)
+                    } else {
+                        (idle * 2).min(std::time::Duration::from_millis(250))
+                    };
+                }
+                failed => {
+                    if failed.is_err() {
+                        panicked.store(true, Ordering::Release);
+                    }
+                    let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+                    state.poisoned = true;
+                    drop(state);
+                    self.lease.invalidate();
+                    return merged;
+                }
+            }
+            std::thread::sleep(idle);
+        }
+        merged
+    }
+
     /// Close without committing pending work. Previously returned snapshots
     /// remain usable. Close consumes the adapter, including on native failure.
     pub fn close(self) -> Result<()> {
@@ -757,12 +949,25 @@ impl<'d> Engine<'d> {
             ..
         } = self;
         let mut closing = Closing { lease, attempt };
-        let cleanup = match writer.into_inner() {
-            Ok(writer) => writer.close().map_err(|_| Error::Native),
-            Err(poisoned) => {
-                // Consume the poisoned owner before inspecting release too.
-                drop(poisoned.into_inner());
-                Err(Error::Poisoned)
+        let cleanup = match writer {
+            Writer::Inline(m) => match m.into_inner() {
+                Ok(writer) => writer.close().map_err(|_| Error::Native),
+                Err(poisoned) => {
+                    // Consume the poisoned owner before inspecting release too.
+                    drop(poisoned.into_inner());
+                    Err(Error::Poisoned)
+                }
+            },
+            Writer::Background(w, panicked) => {
+                if panicked.load(Ordering::Acquire) {
+                    drop(w);
+                    Err(Error::Poisoned)
+                } else {
+                    w.stop_merges();
+                    w.into_writer()
+                        .and_then(IndexWriter::close)
+                        .map_err(|_| Error::Native)
+                }
             }
         };
         let result = close_result(cleanup, closing.attempt.status());
@@ -777,3 +982,7 @@ impl<'d> Engine<'d> {
 #[cfg(test)]
 #[path = "adapter_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "background_merge_tests.rs"]
+mod background_merge_tests;

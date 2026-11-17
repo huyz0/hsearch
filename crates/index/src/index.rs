@@ -5,7 +5,7 @@ use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use hsearch_engine::{Schema, Snapshot};
+use hsearch_engine::{MergeMode, Schema, Snapshot};
 use hsearch_object::MetadataStore;
 
 use crate::store::{StoreFiles, valid_name};
@@ -30,11 +30,22 @@ impl Index {
         schema: Schema,
         scratch: &Path,
     ) -> Result<Self> {
+        Self::create_merging(store, name, schema, scratch, MergeMode::Inline)
+    }
+
+    /// [`Index::create`] with the engine's automatic merges run as `mode` says.
+    pub fn create_merging<S: MetadataStore + 'static>(
+        store: Arc<S>,
+        name: &str,
+        schema: Schema,
+        scratch: &Path,
+        mode: MergeMode,
+    ) -> Result<Self> {
         if !valid_name(name) {
             return Err(Error::Invalid);
         }
         create_root(&*store, name)?;
-        Self::open(store, name, schema, scratch)
+        Self::open_merging(store, name, schema, scratch, mode)
     }
 
     /// Open an existing index by replaying its log from the store.
@@ -47,6 +58,18 @@ impl Index {
         Self::open_with(store, name, schema, scratch, Arc::new(NoHooks))
     }
 
+    /// [`Index::open`] with the engine's automatic merges run as `mode` says:
+    /// [`MergeMode::Background`] keeps them off the writer's refresh.
+    pub fn open_merging<S: MetadataStore + 'static>(
+        store: Arc<S>,
+        name: &str,
+        schema: Schema,
+        scratch: &Path,
+        mode: MergeMode,
+    ) -> Result<Self> {
+        Self::open_hooked(store, name, schema, scratch, Arc::new(NoHooks), mode)
+    }
+
     /// [`Index::open`] with observers at the crash points, for fault tests.
     pub fn open_with<S: MetadataStore + 'static>(
         store: Arc<S>,
@@ -54,6 +77,17 @@ impl Index {
         schema: Schema,
         scratch: &Path,
         hooks: Arc<dyn Hooks>,
+    ) -> Result<Self> {
+        Self::open_hooked(store, name, schema, scratch, hooks, MergeMode::Inline)
+    }
+
+    fn open_hooked<S: MetadataStore + 'static>(
+        store: Arc<S>,
+        name: &str,
+        schema: Schema,
+        scratch: &Path,
+        hooks: Arc<dyn Hooks>,
+        mode: MergeMode,
     ) -> Result<Self> {
         if !valid_name(name) {
             return Err(Error::Invalid);
@@ -66,7 +100,11 @@ impl Index {
             let shared = Arc::clone(&shared);
             std::thread::Builder::new()
                 .name("hsearch-writer".into())
-                .spawn(move || run(store, name, schema, scratch, hooks, shared, init, receiver))
+                .spawn(move || {
+                    run(
+                        store, name, schema, scratch, hooks, mode, shared, init, receiver,
+                    )
+                })
                 .map_err(|_| Error::Closed)?
         };
         match ready.recv() {

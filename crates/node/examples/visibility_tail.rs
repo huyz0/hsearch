@@ -3,7 +3,7 @@
 //! index and the documents already written, so a recurring tail can be located.
 //! Provisional: one shared host.
 //!
-//!     cargo run --release -p hsearch-node --example visibility_tail -- [batches] [batch] [slow_ms] [auto_merge_mb]
+//!     cargo run --release -p hsearch-node --example visibility_tail -- [batches] [batch] [slow_ms] [auto_merge_mb] [background: 0|1]
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -29,6 +29,7 @@ fn main() {
     let batch: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(100);
     let slow: f64 = args.next().and_then(|v| v.parse().ok()).unwrap_or(100.0);
     let auto_merge: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(4);
+    let background = args.next().is_some_and(|v| v == "1");
     let dir = std::env::temp_dir().join(format!("hsearch-tail-{}", std::process::id()));
     let store = Arc::new(
         MemoryStore::new(MemoryLimits {
@@ -48,7 +49,8 @@ fn main() {
             ..Limits::default()
         },
     )
-    .expect("node");
+    .expect("node")
+    .with_background_merge(background);
     let mapping = json!({"mappings":{"properties":{"title":{"type":"text"},"tag":{"type":"keyword"},
         "n":{"type":"integer"},"ok":{"type":"boolean"},"at":{"type":"date"}}}});
     node.create("orders", &mapping).expect("create");

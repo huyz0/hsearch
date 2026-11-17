@@ -12,7 +12,7 @@ import sys
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE_REV = "df02d694c4ffb96b2b765084b07728fa6a523a33"
+ENGINE_REV = "3979974b4bdd3a8442f747d62914ce92dca56618"
 ENGINE_SOURCE = f"git+https://github.com/huyz0/lucene-rust?rev={ENGINE_REV}#{ENGINE_REV}"
 LAYERS = {
     "hsearch-types": set(),
