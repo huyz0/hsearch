@@ -2945,8 +2945,13 @@
             "M04.01"
           ],
           "owner": "engine/search",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m21-07-nested-join.md",
+              "result": "Provisional (one host, in-memory store, no RustFS here). Engine nested paths (one level, 4 paths, 64 objects a document, each object a native document counted against the document ceiling) and a join field (one parent type, 4 child relations) with Nested, HasChild and HasParent queries on lucene-rust's block join and LateJoin at the pinned rev (no upstream change needed); named refusals for a child without a parent id, a parent naming a parent, an unknown relation, a document routed away from its parent (the cross-shard join), unmapped paths and relations, wrong scope and nesting too deep. 12 tests against an in-test oracle of OpenSearch's documented semantics, across segments, merge, commit and reopen with every object and join value verified; seen red on the first join run (the join id field must be SORTED). Measured: writes 3.8x the time for 6x the documents; top-level term +15% in a schema with a nested path (nothing without one); has_child 2.1 ms and has_parent 3.0 ms p50 at 25,000 documents, 3 to 5x a plain term because the ordinal map is built per query. Not done: the pinned OpenSearch reference run of the corpus (an oracle stands in), RustFS and ARM runs, per-snapshot ordinal caching, REST mapping and bulk routing wiring."
+            }
+          ]
         },
         {
           "id": "M21.08",

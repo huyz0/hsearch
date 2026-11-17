@@ -34,6 +34,8 @@ fn kind_name(kind: Kind) -> &'static str {
         Kind::Boolean => "boolean",
         Kind::Date => "date",
         Kind::Vector(_) => "knn_vector",
+        Kind::Nested => "nested",
+        Kind::Join => "join",
     }
 }
 

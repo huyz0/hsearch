@@ -1,10 +1,40 @@
 //! Typed query lowering with a shared node, byte, depth and token budget.
+use crate::schema::{KIND_FIELD, ROOT_KIND};
 use crate::vector::KnnContext;
-use crate::{Error, Kind, MAX_TERMS, Result, Schema, Value};
+use crate::{Error, Kind, MAX_TERMS, Refusal, Result, Schema, Value};
+use lucene_search::extended_query::ExtendedQuery;
+use lucene_search::join::{LateJoinQuery, QueryBitSetProducer, ScoreMode, ToParentBlockJoinQuery};
 use lucene_search::query::{
     BooleanQuery, Clause, MatchAllDocsQuery, MatchNoDocsQuery, PhraseQuery, PointsRangeQuery,
     TermQuery,
 };
+
+/// How the scores of the matching children (or objects) of one parent combine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JoinScore {
+    /// The parent scores 0 (a filter): the children are not scored.
+    None,
+    /// The mean of the children's scores.
+    Avg,
+    /// The highest.
+    Max,
+    /// The sum.
+    Sum,
+    /// The lowest.
+    Min,
+}
+
+impl JoinScore {
+    fn native(self) -> ScoreMode {
+        match self {
+            Self::None => ScoreMode::None,
+            Self::Avg => ScoreMode::Avg,
+            Self::Max => ScoreMode::Max,
+            Self::Sum => ScoreMode::Total,
+            Self::Min => ScoreMode::Min,
+        }
+    }
+}
 
 /// Selected core-v1 query IR. No JSON DSL or unknown-option fallback.
 pub enum Query<'a> {
@@ -79,9 +109,49 @@ pub enum Query<'a> {
         /// Documents the neighbours must also match.
         filter: Option<&'a Query<'a>>,
     },
+    /// Root documents with at least one object of the nested field `path` that matches
+    /// `query`. The inner query names its fields `path.field` and all of them must match
+    /// inside the same object, never across two.
+    Nested {
+        /// A path declared by [`Schema::with_nested`].
+        path: &'a str,
+        /// Matched against each object, not the root.
+        query: &'a Query<'a>,
+        /// How the matching objects' scores combine into the root's.
+        score_mode: JoinScore,
+    },
+    /// Parents with children of the relation `relation` that match `query`, within the
+    /// shard: parent and children share one, by their routing key.
+    HasChild {
+        /// A child relation of the join field.
+        relation: &'a str,
+        /// Matched against the children, in terms of root fields.
+        query: &'a Query<'a>,
+        /// How the matching children's scores combine into the parent's.
+        score_mode: JoinScore,
+        /// Fewest matching children a parent needs.
+        min_children: usize,
+        /// Most matching children it may have; 0 is no limit.
+        max_children: usize,
+    },
+    /// Children whose parent, of the parent type `relation`, matches `query`.
+    HasParent {
+        /// The parent type of the join field.
+        relation: &'a str,
+        /// Matched against the parent.
+        query: &'a Query<'a>,
+        /// Whether a child takes its parent's score (otherwise it scores 0).
+        score: bool,
+    },
     /// Explicit refusal for an unadvertised operator.
     Unsupported,
 }
+
+/// Most nested queries one query may run.
+const MAX_NESTED_CLAUSES: usize = 4;
+/// Most has_child / has_parent queries one query may run, each searching its from side
+/// once before the query itself runs.
+const MAX_JOIN_CLAUSES: usize = 2;
 
 /// Most kNN searches one query may run, each a graph walk per segment.
 const MAX_KNN_CLAUSES: usize = 4;
@@ -94,6 +164,12 @@ struct Budget {
     knn: usize,
     /// Validate only: a kNN clause is checked but not run.
     dry: bool,
+    /// Nested queries seen so far.
+    nested: usize,
+    /// Join queries seen so far.
+    joins: usize,
+    /// The nested path whose objects the clause being lowered is matched against.
+    scope: Option<usize>,
 }
 impl Budget {
     fn charge(&mut self, nodes: usize, bytes: usize, terms: usize) -> Result<()> {
@@ -123,6 +199,9 @@ pub(crate) fn validate(schema: &Schema, query: &Query<'_>) -> Result<()> {
             terms: 0,
             knn: 0,
             dry: true,
+            nested: 0,
+            joins: 0,
+            scope: None,
         },
         None,
     )
@@ -135,7 +214,17 @@ pub(crate) fn lower_with(
     query: &Query<'_>,
     knn: Option<&KnnContext<'_, '_>>,
 ) -> Result<BooleanQuery> {
+    let root = if schema.has_nested() && may_match_object(query) {
+        // Nested objects are documents of their own; a top-level query sees only roots.
+        vec![Clause::Term(TermQuery::new(
+            KIND_FIELD,
+            ROOT_KIND.as_bytes(),
+        ))]
+    } else {
+        Vec::new()
+    };
     Ok(BooleanQuery {
+        filter: root,
         must: vec![clause(
             schema,
             query,
@@ -146,14 +235,65 @@ pub(crate) fn lower_with(
                 terms: 0,
                 knn: 0,
                 dry: false,
+                nested: 0,
+                joins: 0,
+                scope: None,
             },
             knn,
         )?],
         ..Default::default()
     })
 }
+/// The kind of `field` where the clause being lowered stands: inside a nested query only
+/// that path's `path.field` names resolve, outside it only root fields do, and a nested
+/// path itself is never a field to match on.
+fn field_kind(schema: &Schema, budget: &Budget, field: &str) -> Result<Kind> {
+    match budget.scope {
+        Some(at) => match schema.nested_field(field) {
+            Some((found, kind)) if found == at => Ok(kind),
+            _ => Err(Error::Refused(Refusal::WrongScope)),
+        },
+        None => {
+            if schema.nested_field(field).is_some() {
+                return Err(Error::Refused(Refusal::WrongScope));
+            }
+            match schema.kind(field)? {
+                Kind::Nested => Err(Error::Refused(Refusal::WrongScope)),
+                kind => Ok(kind),
+            }
+        }
+    }
+}
+
+/// Whether `query` could match a nested object, not only a root. Objects hold only their own
+/// `path.field` values, the root's id and their kind, so a clause on a root field never
+/// matches one, and a conjunction with such a clause cannot either. Everything else
+/// (`All`, an id, a bool with nothing positive to restrict it) is held to roots by a filter.
+fn may_match_object(query: &Query<'_>) -> bool {
+    match query {
+        Query::Term { .. }
+        | Query::Terms { .. }
+        | Query::Range { .. }
+        | Query::Match { .. }
+        | Query::Knn { .. }
+        | Query::Nested { .. }
+        | Query::HasChild { .. }
+        | Query::HasParent { .. } => false,
+        Query::Bool { must, filter, .. } => must.iter().chain(filter.iter()).all(may_match_object),
+        Query::All | Query::Id(_) | Query::Unsupported => true,
+    }
+}
+
 fn exact(schema: &Schema, field: &str, value: Value<'_>, budget: &mut Budget) -> Result<Clause> {
-    let kind = schema.kind(field)?;
+    let kind = field_kind(schema, budget, field)?;
+    if kind == Kind::Join {
+        // A term on the join field names a relation.
+        let Value::String(relation) = value else {
+            return Err(Error::Document);
+        };
+        budget.charge(0, field.len() + relation.len(), 1)?;
+        return Ok(Clause::Term(TermQuery::new(field, relation.as_bytes())));
+    }
     crate::schema::validate(kind, value)?;
     budget.charge(
         0,
@@ -179,8 +319,26 @@ fn exact(schema: &Schema, field: &str, value: Value<'_>, budget: &mut Budget) ->
         Value::Integer(n) | Value::Date(n) => {
             Ok(Clause::PointsRange(PointsRangeQuery::new(field, n, n)))
         }
-        Value::Vector(_) => Err(Error::Unsupported),
+        Value::Vector(_) | Value::Nested(_) | Value::Join { .. } => Err(Error::Unsupported),
     }
+}
+
+/// A term on the kind field: the documents of one nested path, or the roots.
+fn kind_term(kind: &str) -> Clause {
+    Clause::Term(TermQuery::new(KIND_FIELD, kind.as_bytes()))
+}
+
+/// `inner` restricted to the children of one nested path.
+fn within(inner: Clause, kind: &str) -> Clause {
+    Clause::Boolean(Box::new(BooleanQuery {
+        must: vec![inner],
+        filter: vec![kind_term(kind)],
+        ..Default::default()
+    }))
+}
+
+fn join_spec(schema: &Schema) -> Result<&crate::schema::JoinSpec> {
+    schema.join.as_ref().ok_or(Error::Refused(Refusal::NotJoin))
 }
 fn clause(
     schema: &Schema,
@@ -206,7 +364,10 @@ fn clause(
             nprobe,
             filter,
         } => {
-            let Kind::Vector(spec) = schema.kind(field)? else {
+            if budget.scope.is_some() {
+                return Err(Error::Refused(Refusal::WrongScope));
+            }
+            let Kind::Vector(spec) = field_kind(schema, budget, field)? else {
                 return Err(Error::Unsupported);
             };
             spec.check(vector)?;
@@ -234,6 +395,9 @@ fn clause(
             )
         }
         Query::Id(id) => {
+            if budget.scope.is_some() {
+                return Err(Error::Refused(Refusal::WrongScope));
+            }
             if id.is_empty() || id.len() > 256 {
                 return Err(Error::Document);
             }
@@ -242,7 +406,7 @@ fn clause(
         }
         Query::Term { field, value } => exact(schema, field, *value, budget),
         Query::Terms { field, values } => {
-            schema.kind(field)?;
+            field_kind(schema, budget, field)?;
             if values.is_empty() {
                 budget.charge(0, field.len(), 0)?;
             }
@@ -264,7 +428,7 @@ fn clause(
             lower,
             upper,
         } => {
-            let kind = schema.kind(field)?;
+            let kind = field_kind(schema, budget, field)?;
             crate::schema::validate(kind, *lower)?;
             crate::schema::validate(kind, *upper)?;
             budget.charge(0, field.len() + 16, 0)?;
@@ -284,7 +448,7 @@ fn clause(
             text,
             phrase,
         } => {
-            if schema.kind(field)? != Kind::Text {
+            if field_kind(schema, budget, field)? != Kind::Text {
                 return Err(Error::Unsupported);
             }
             budget.charge(0, field.len() + text.len(), 0)?;
@@ -302,6 +466,132 @@ fn clause(
                     ..Default::default()
                 })))
             }
+        }
+        Query::Nested {
+            path,
+            query,
+            score_mode,
+        } => {
+            if budget.scope.is_some() {
+                return Err(Error::Refused(Refusal::NestedTooDeep));
+            }
+            let at = schema
+                .nested_index(path)
+                .ok_or(Error::Refused(Refusal::NotNested))?;
+            budget.nested += 1;
+            if budget.nested > MAX_NESTED_CLAUSES {
+                return Err(Error::Limit);
+            }
+            budget.charge(0, path.len(), 0)?;
+            budget.scope = Some(at);
+            let inner = clause(schema, query, depth + 1, budget, knn);
+            budget.scope = None;
+            let parents = QueryBitSetProducer::new(BooleanQuery {
+                must: vec![kind_term(ROOT_KIND)],
+                ..Default::default()
+            });
+            Ok(Clause::Extended(Box::new(
+                ExtendedQuery::ToParentBlockJoin(ToParentBlockJoinQuery::new(
+                    within(inner?, path),
+                    std::sync::Arc::new(parents),
+                    score_mode.native(),
+                )),
+            )))
+        }
+        Query::HasChild {
+            relation,
+            query,
+            score_mode,
+            min_children,
+            max_children,
+        } => {
+            let join = join_spec(schema)?;
+            if budget.scope.is_some() {
+                return Err(Error::Refused(Refusal::WrongScope));
+            }
+            if !join.children.iter().any(|c| c == relation) {
+                return Err(Error::Refused(Refusal::NotJoin));
+            }
+            budget.joins += 1;
+            if budget.joins > MAX_JOIN_CLAUSES {
+                return Err(Error::Limit);
+            }
+            budget.charge(0, relation.len(), 1)?;
+            let from = clause(schema, query, depth + 1, budget, knn)?;
+            let (min, max) = match (i32::try_from(*min_children), i32::try_from(*max_children)) {
+                (Ok(min), Ok(max)) if max == 0 || min <= max => {
+                    (min, if max == 0 { i32::MAX } else { max })
+                }
+                _ => return Err(Error::Limit),
+            };
+            Ok(Clause::Extended(Box::new(ExtendedQuery::LateJoin(
+                LateJoinQuery {
+                    join_field: join.id_field(),
+                    from_query: Box::new(Clause::Boolean(Box::new(BooleanQuery {
+                        must: vec![from],
+                        filter: vec![Clause::Term(TermQuery::new(
+                            &join.name,
+                            relation.as_bytes(),
+                        ))],
+                        ..Default::default()
+                    }))),
+                    to_query: Box::new(Clause::Term(TermQuery::new(
+                        &join.name,
+                        join.parent.as_bytes(),
+                    ))),
+                    score_mode: score_mode.native(),
+                    min,
+                    max,
+                },
+            ))))
+        }
+        Query::HasParent {
+            relation,
+            query,
+            score,
+        } => {
+            let join = join_spec(schema)?;
+            if budget.scope.is_some() {
+                return Err(Error::Refused(Refusal::WrongScope));
+            }
+            if *relation != join.parent {
+                return Err(Error::Refused(Refusal::NotJoin));
+            }
+            budget.joins += 1;
+            if budget.joins > MAX_JOIN_CLAUSES {
+                return Err(Error::Limit);
+            }
+            budget.charge(0, relation.len(), 1)?;
+            let from = clause(schema, query, depth + 1, budget, knn)?;
+            Ok(Clause::Extended(Box::new(ExtendedQuery::LateJoin(
+                LateJoinQuery {
+                    join_field: join.id_field(),
+                    from_query: Box::new(Clause::Boolean(Box::new(BooleanQuery {
+                        must: vec![from],
+                        filter: vec![Clause::Term(TermQuery::new(
+                            &join.name,
+                            relation.as_bytes(),
+                        ))],
+                        ..Default::default()
+                    }))),
+                    to_query: Box::new(Clause::Boolean(Box::new(BooleanQuery {
+                        should: join
+                            .children
+                            .iter()
+                            .map(|c| Clause::Term(TermQuery::new(&join.name, c.as_bytes())))
+                            .collect(),
+                        minimum_should_match: 1,
+                        ..Default::default()
+                    }))),
+                    score_mode: if *score {
+                        ScoreMode::Max
+                    } else {
+                        ScoreMode::None
+                    },
+                    min: 0,
+                    max: i32::MAX,
+                },
+            ))))
         }
         Query::Bool {
             must,
