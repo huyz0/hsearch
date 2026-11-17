@@ -20,12 +20,12 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | [M20: First runnable slice: RustFS, engine and a minimal endpoint](milestones/M20.md) | done | 6/6 | M01 |
 | [M02: API-scoped engine, catalog and cost feasibility](milestones/M02.md) | done | 12/12 | M01 |
 | [M03: Storage semantics, cost-aware formats and metadata](milestones/M03.md) | done | 14/14 | M01 |
-| [M04: Lucene Rust bridge and committed readers](milestones/M04.md) | planned | 4/6 | M02, M03 |
-| [M05: mTLS, tenant policy and BYOK](milestones/M05.md) | planned | 7/8 | M03 |
+| [M04: Lucene Rust bridge and committed readers](milestones/M04.md) | done | 6/6 | M02, M03 |
+| [M05: mTLS, tenant policy and BYOK](milestones/M05.md) | done | 8/8 | M03 |
 | [M06: Object-durable search store on RustFS](milestones/M06.md) | planned | 0/8 | M04, M05 |
 | [M21: Document and mapping semantics](milestones/M21.md) | planned | 5/10 | M06 |
 | [M22: Pinned views, index management and background jobs](milestones/M22.md) | planned | 0/5 | M21 |
-| [M23: Vector search: HNSW and IVF with quantization and disk variants](milestones/M23.md) | planned | 0/3 | M06 |
+| [M23: Vector search: HNSW and IVF with quantization and disk variants](milestones/M23.md) | planned | 1/3 | M06 |
 | [M07: Distributed routing and query serving](milestones/M07.md) | planned | 0/15 | M06 |
 | [M08: Telemetry and AI-readable diagnostics](milestones/M08.md) | in_progress | 1/7 | M07 |
 | [M24: Extension modules: native C ABI and WebAssembly](milestones/M24.md) | planned | 3/5 | M07 |
@@ -33,9 +33,9 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | [M10: Snapshot, export and change-stream contracts](milestones/M10.md) | planned | 0/5 | M07, M09 |
 | [M11: Independent cross-cluster copy module](milestones/M11.md) | planned | 0/6 | M10 |
 | [M12: Cross-cluster replication module](milestones/M12.md) | planned | 0/7 | M10 |
-| [M13: Catalog foundation, elasticity and fleet scaling](milestones/M13.md) | planned | 1/5 | M07, M09, M10 |
+| [M13: Catalog foundation, elasticity and fleet scaling](milestones/M13.md) | planned | 2/5 | M07, M09, M10 |
 | [M14: Performance kernels and native hardware](milestones/M14.md) | planned | 0/6 | M04, M05, M07, M09 |
-| [M15: Cloud storage and KMS provider qualification](milestones/M15.md) | planned | 0/7 | M11, M12, M14 |
+| [M15: Cloud storage and KMS provider qualification](milestones/M15.md) | planned | 0/8 | M11, M12, M14 |
 | [M16: Migration, compatibility and harness hardening](milestones/M16.md) | planned | 0/8 | M08, M12, M13, M15 |
 | [M17: Failure, scale and release qualification](milestones/M17.md) | planned | 0/6 | M06, M08, M09, M11, M12, M13, M14, M15, M16 |
 

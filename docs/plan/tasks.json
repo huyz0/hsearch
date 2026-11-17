@@ -2328,7 +2328,7 @@
       "title": "mTLS, tenant policy and BYOK",
       "goal": "Deliver identity/authorization and portable envelope encryption before production data formats are activated.",
       "owner": "security/crypto",
-      "status": "planned",
+      "status": "done",
       "depends_on": [
         "M03"
       ],
