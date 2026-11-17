@@ -15,5 +15,8 @@ hsearch-engine = { path = "../engine" }
 hsearch-index = { path = "../index" }
 sha2 = "=0.11.1"
 
+[dev-dependencies]
+hsearch-commit = { path = "../commit" }
+
 [lints]
 workspace = true
