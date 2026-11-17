@@ -35,6 +35,13 @@ pub(crate) enum Q {
         text: String,
         phrase: bool,
     },
+    Knn {
+        field: String,
+        vector: std::sync::Arc<[f32]>,
+        k: usize,
+        candidates: usize,
+        filter: Option<Box<Q>>,
+    },
     Bool {
         must: Vec<Q>,
         filter: Vec<Q>,
@@ -170,6 +177,69 @@ pub(crate) fn query(mapping: &Mapping, value: &Value, depth: usize) -> Result<Q,
             Ok(Q::Term {
                 field: field.clone(),
                 value: value_for(mapping, field, spec)?,
+            })
+        }
+        "knn" => {
+            let (field, spec) = single(body, "knn")?;
+            if !matches!(kind_of(mapping, field)?, Kind::Vector(_)) {
+                return Err(ApiError::new(
+                    400,
+                    "query_shard_exception",
+                    format!("field [{field}] is not a knn_vector"),
+                ));
+            }
+            let spec = spec
+                .as_object()
+                .ok_or_else(|| ApiError::parse("[knn] needs an object"))?;
+            if let Some(extra) = spec
+                .keys()
+                .find(|k| !["vector", "k", "filter", "method_parameters"].contains(&k.as_str()))
+            {
+                return Err(unsupported(&format!("knn parameter [{extra}]")));
+            }
+            let vector = match value_for(
+                mapping,
+                field,
+                spec.get("vector")
+                    .ok_or_else(|| ApiError::parse("[knn] needs a vector"))?,
+            )? {
+                Field::Vector(v) => v,
+                _ => return Err(ApiError::parse("[knn] needs a vector")),
+            };
+            let count = |what: &str, v: &Value, max: usize| {
+                v.as_u64()
+                    .and_then(|n| usize::try_from(n).ok())
+                    .filter(|n| (1..=max).contains(n))
+                    .ok_or_else(|| ApiError::parse(format!("[{what}] must be 1 to {max}")))
+            };
+            let k = count(
+                "k",
+                spec.get("k")
+                    .ok_or_else(|| ApiError::parse("[knn] needs k"))?,
+                hsearch_engine::MAX_KNN_K,
+            )?;
+            let mut candidates = 100;
+            if let Some(parameters) = spec.get("method_parameters") {
+                let parameters = parameters
+                    .as_object()
+                    .ok_or_else(|| ApiError::parse("[method_parameters] must be an object"))?;
+                if let Some(extra) = parameters.keys().find(|k| *k != "ef_search") {
+                    return Err(unsupported(&format!("method parameter [{extra}]")));
+                }
+                if let Some(v) = parameters.get("ef_search") {
+                    candidates = count("ef_search", v, hsearch_engine::MAX_KNN_CANDIDATES)?;
+                }
+            }
+            let filter = spec
+                .get("filter")
+                .map(|f| query(mapping, f, depth + 1).map(Box::new))
+                .transpose()?;
+            Ok(Q::Knn {
+                field: field.clone(),
+                vector,
+                k,
+                candidates: candidates.max(k),
+                filter,
             })
         }
         "terms" => {
@@ -396,6 +466,7 @@ fn engine_value(field: &Field) -> Typed<'_> {
         Field::Int(n) => Typed::Integer(*n),
         Field::Bool(b) => Typed::Boolean(*b),
         Field::Date(n) => Typed::Date(*n),
+        Field::Vector(v) => Typed::Vector(v),
     }
 }
 
@@ -445,6 +516,22 @@ pub(crate) fn lower<'a>(
             field,
             text,
             phrase: *phrase,
+        },
+        Q::Knn {
+            field,
+            vector,
+            k,
+            candidates,
+            filter,
+        } => Query::Knn {
+            field,
+            vector,
+            k: *k,
+            candidates: *candidates,
+            nprobe: 0,
+            filter: filter
+                .as_deref()
+                .map(|f| &*queries.alloc(lower(f, queries, values))),
         },
         Q::Bool {
             must,

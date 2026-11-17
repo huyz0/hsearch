@@ -3215,8 +3215,13 @@
             "M21.03"
           ],
           "owner": "engine/search",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m23-01-hnsw-vectors.md",
+              "result": "HNSW plain and quantized (scalar 8/7/4/2/1 bit, BBQ, RaBitQ, extended RaBitQ) through the engine, the durable op log, the knn_vector mapping, bulk ingest and the knn query with a filter inside bool. Recall@10 floors met per variant on a synthetic clustered corpus (1-bit codes only at a wider beam, stated); merge, delete and checkpoint reopen tested; upstream vector tests rerun at df02d694 with no failure. Provisional: one shared x86 VM, synthetic corpus, no ARM; SIFT1M/GIST1M unrun. Independent review found 4 medium items, all fixed before merge of PR 121."
+            }
+          ]
         },
         {
           "id": "M23.02",

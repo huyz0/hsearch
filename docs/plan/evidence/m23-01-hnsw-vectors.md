@@ -73,8 +73,24 @@ Run in a clone of lucene-rust at `df02d694` (the revision hsearch builds), relea
 | `-p lucene-disk-hnsw` | 13 + 13 |
 | `-p lucene-ivf` | 41, 3, 11, 3, 2, 26, 5 |
 
+- Compatibility: slots written before this change decode unchanged (tags 1 to 5 are untouched); a slot that holds a vector (tag 6) is `Corrupt` to an older binary, so a node that has served a vector-mapped index cannot be rolled back across this change.
+- Bulk memory: a parsed array element is 32 resident bytes for as little as 2 bytes of text, so the stream charges 32 bytes per element on top of the line's text before it decides when to flush.
+
 ## Not done here
 
 - Concurrent-segment search versus sequential at hsearch segment sizes: unrun (M02.12 saw concurrent slower at 4,000 documents).
 - Real-dataset recall (SIFT1M, GIST1M), ARM, and concurrent-merge timing at 100k to 1M vectors per segment: unrun.
-- REST `knn_vector` mapping parameters, the `knn` query DSL, and the vector field in the durable op log are not wired: the log's `Field` carries no vector, so the engine feature is not yet reachable from the HTTP node.
+
+## REST and durable path (second PR)
+
+- `Field::Vector` in the op log (tag 6, `u32` length then little-endian `f32`), at most 4,096 components; resolve checks the dimension and finiteness against the mapping; the writer hands the shared array to the engine without copying it again.
+- Mapping: `{"type": "knn_vector", "dimension": N, "space_type": "l2|cosinesimil|dot_product|innerproduct", "method": {"name": "hnsw", "parameters": {"m": .., "ef_construction": ..}}, "quantizer": "none|scalar8|scalar7|scalar4|scalar2|scalar1|bbq|rabitq|erq2..erq8"}`. `engine` must be `lucene` if given; `ivf` and unknown parameters are refused by name. `quantizer` is an hsearch extension. The stored mapping line is `knn_vector:dim=..,space=..,m=..,efc=..,q=..`; mappings with no vector keep their old bytes and hash.
+- Documents: a vector is a flat JSON array of finite numbers of exactly the declared length. The streaming bulk parser reads such an array as a value (bounded at 4,096 numbers, anything nested or non-numeric is refused); `Stream::new` alone still refuses every array, so the earlier parser tests are unchanged.
+- Query: `{"knn": {"<field>": {"vector": [..], "k": n, "filter": {..}, "method_parameters": {"ef_search": n}}}}`; `ef_search` defaults to 100, `nprobes` is refused (IVF is M23.02). It composes in `bool`.
+- A vector is not part of `_source` or of a projection; `GET` and search hits omit it. Node tests: `crates/node/tests/vectors.rs` (ingest, kNN, filtered kNN, `_source`, restart from the object store, refusals by name).
+
+## Not done here
+
+- Concurrent-segment search versus sequential at hsearch segment sizes: unrun (M02.12 saw concurrent slower at 4,000 documents).
+- Real-dataset recall (SIFT1M, GIST1M), ARM, and merge timing at 100k to 1M vectors per segment: unrun.
+- Aggregations over a kNN-scoped set: `Unsupported`.

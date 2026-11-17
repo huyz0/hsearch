@@ -373,7 +373,7 @@ impl<S: MetadataStore + 'static> Node<S> {
         let _permit = self
             .gate
             .reserve(self.limits.request_cost(body_bytes.unwrap_or(u64::MAX)))?;
-        let mut stream = bulk::Stream::new(body, self.limits);
+        let mut stream = bulk::Stream::new(body, self.limits).with_arrays(true);
         let flush_bytes = self.limits.buffer_bytes / 2;
         let mut batch: Vec<Item> = Vec::new();
         let mut pending = 0;
