@@ -1286,6 +1286,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hsearch-peer"
+version = "0.1.0"
+dependencies = [
+ "hsearch-security",
+ "rustls",
+ "zeroize",
+]
+
+[[package]]
 name = "hsearch-s3"
 version = "0.1.0"
 dependencies = [

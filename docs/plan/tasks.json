@@ -3346,8 +3346,13 @@
             "M01"
           ],
           "owner": "query/cluster",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m07-02-peer-rpc.md",
+              "result": "Provisional (loopback, one host, no object store). New crate hsearch-peer: 20-byte framed protocol (not HTTP/2, recorded as a design call) over the security crate's mutual TLS 1.3 with per-RPC length caps checked before any allocation, mandatory deadlines, cancel, a shared connection/frame/byte budget with high-water marks, a sans-I/O receive machine with slowloris clocks, and a blocking transport that checks the caller's role per request against PeerRpc::allowed_callers and the server's role before sending. 28 tests (12 sans-I/O, 16 over real mTLS sockets: oversized prefix, wrong role for every RPC and role, header dribble, stalled TLS handshake, plaintext and no-certificate clients, other-CA certificate, rotation on both ends with an open channel, channel age, deadline, queued cancel, budget shed, connection cap, concurrency). Measured: heartbeat p50 221 us, 1 MiB p50 2.3 ms, handshake 2.2 ms, 36 to 57 KiB per connection with both ends in one process, and 200 declared-but-unsent 1 MiB bodies holding 200 MiB of budget but only 12 KiB of RSS each. Not done: a running handler is not interrupted by a cancel (deadline only), requests are served in order per connection, one thread per connection, real network and ARM unmeasured, nothing uses it yet."
+            }
+          ]
         },
         {
           "id": "M07.03",

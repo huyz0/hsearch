@@ -33,6 +33,8 @@ LAYERS = {
     "hsearch-security": set(),
     # M05.04: the encrypting decorator joins the object contracts to the key provider; nothing depends on it yet.
     "hsearch-seal": {"hsearch-object", "hsearch-security"},
+    # M07.02: bounded authenticated peer RPC over the security crate's mutual TLS; nothing else depends on it yet.
+    "hsearch-peer": {"hsearch-security"},
     "hsearch-module-abi": set(),
     "hsearch-module-native": {"hsearch-module-abi"},
     "hsearch-module-wasm": {"hsearch-module-abi"},
@@ -42,7 +44,7 @@ LAYERS = {
     "xtask": set(),
 }
 PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-lane", "hsearch-node",
-              "hsearch-security", "hsearch-seal", "hsearch-module-abi", "hsearch-module-native", "hsearch-module-wasm"}
+              "hsearch-security", "hsearch-seal", "hsearch-peer", "hsearch-module-abi", "hsearch-module-native", "hsearch-module-wasm"}
 # D18: the one crate whose manifest may relax the workspace `unsafe_code = "forbid"`. Inside it the
 # `unsafe_code = "deny"` lint leaves exactly one `#[allow]`, on `mod sys` (the compiler enforces that).
 UNSAFE_CRATES = {"hsearch-module-native"}
@@ -62,6 +64,8 @@ EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 # rustls (TLS 1.3 transport with rotating certificates) is the optional `tls` feature only, and `aes` is the AES
 # block cipher aes-gcm already uses, named directly so the backend in use can be reported.
 EXTERNAL["hsearch-security"] = {"aes", "aes-gcm", "rustls", "getrandom", "rcgen", "rustls-pki-types", "rustls-webpki", "sha2", "time", "x509-parser", "zeroize"}
+# Peer RPC transport: the TLS 1.3 stack the security crate already pins, exact-pinned in crates/peer/Cargo.toml.
+EXTERNAL["hsearch-peer"] = {"rustls"}
 # Request-retry fingerprints (SHA-256), exact-pinned in crates/seal/Cargo.toml.
 EXTERNAL["hsearch-seal"] = {"sha2"}
 # Extension module contract (JSON descriptor) and the native loader: dynamic library open, SHA-256 pin and a sealed memfd copy.
