@@ -301,6 +301,58 @@ fn an_ivf_field_is_mapped_searched_with_nprobes_and_survives_a_restart() {
 }
 
 #[test]
+fn an_on_disk_hnsw_field_is_mapped_searched_and_survives_a_restart() {
+    let scratch = Scratch::new("vectors-disk");
+    let store = store();
+    let node = Node::with_limits(Arc::clone(&store), scratch.0.clone(), Limits::default()).unwrap();
+    node.create(
+        "v",
+        &json!({"mappings": {"properties": {
+            "tag": {"type": "keyword"},
+            "emb": {"type": "knn_vector", "dimension": 4, "space_type": "l2",
+                    "mode": "on_disk", "quantizer": "osq4"}
+        }}}),
+    )
+    .unwrap();
+    load(&node);
+    let search = |node: &Node<MemoryStore>, parameters: Value, filter: Option<Value>| {
+        let mut spec =
+            json!({"vector": [10.2, 0.0, 0.5, 1.0], "k": 3, "method_parameters": parameters});
+        if let Some(filter) = filter {
+            spec["filter"] = filter;
+        }
+        ids(&node
+            .search(
+                "v",
+                &json!({"query": {"knn": {"emb": spec}}, "size": 3, "_source": false}),
+            )
+            .unwrap())
+    };
+    let even = json!({"term": {"tag": "even"}});
+    assert_eq!(search(&node, json!({}), None), vec!["d10", "d11", "d9"]);
+    assert_eq!(
+        search(&node, json!({"ef_search": 40}), Some(even.clone())),
+        vec!["d10", "d12", "d8"]
+    );
+    // A disk field is an hnsw graph: it takes ef_search and refuses nprobes.
+    let error = node
+        .search(
+            "v",
+            &json!({"query": {"knn": {"emb": {"vector": [1,2,3,4], "k": 1,
+                "method_parameters": {"nprobes": 3}}}}}),
+        )
+        .unwrap_err();
+    assert!(error.reason.contains("nprobes applies to an ivf field"));
+    drop(node);
+    let node = Node::with_limits(store, scratch.0.clone(), Limits::default()).unwrap();
+    assert_eq!(search(&node, json!({}), None), vec!["d10", "d11", "d9"]);
+    assert_eq!(
+        search(&node, json!({}), Some(even)),
+        vec!["d10", "d12", "d8"]
+    );
+}
+
+#[test]
 fn nprobes_on_an_hnsw_field_and_a_bad_nprobes_are_refused_by_name() {
     let scratch = Scratch::new("vectors-nprobes");
     let node = Node::with_limits(store(), scratch.0.clone(), Limits::default()).unwrap();

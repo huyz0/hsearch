@@ -1351,6 +1351,7 @@ dependencies = [
 name = "hsearch-store"
 version = "0.1.0"
 dependencies = [
+ "hsearch-commit",
  "hsearch-engine",
  "hsearch-format",
  "hsearch-index",

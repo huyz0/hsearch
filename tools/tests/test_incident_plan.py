@@ -57,6 +57,7 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M06.01"]["status"] = "planned"  # Depends on M04 and M05 above; keep the model pre-acceptance.
         self.tasks["M06.02"]["status"] = "planned"  # Depends on M06.01 above; keep the model pre-acceptance.
         self.tasks["M06.04"]["status"] = "planned"  # Depends on M06.02 above; keep the model pre-acceptance.
+        self.tasks["M06.03"]["status"] = "planned"  # Depends on M06.02 above; keep the model pre-acceptance.
         self.tasks["M05.01"]["status"] = "planned"  # Depends on M03.01 and M03.09 above; keep the model pre-acceptance.
         self.tasks["M05.02"]["status"] = "planned"  # Depends on M03.01 and M03.09 above; keep the model pre-acceptance.
         self.tasks["M05.03"]["status"] = "planned"  # Depends on M05.02 above; keep the model pre-acceptance.
@@ -74,6 +75,8 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M07.02"]["status"] = "planned"  # Done later; keep this model pre-acceptance.
         self.tasks["M23.01"]["status"] = "planned"  # Depends on M02.12 above; keep this model pre-acceptance.
         self.tasks["M23.02"]["status"] = "planned"  # Depends on M23.01 above; keep this model pre-acceptance.
+        self.tasks["M23.03"]["status"] = "planned"  # Depends on M23.02 above; keep this model pre-acceptance.
+        milestones["M23"]["status"] = "planned"  # Its tasks are reset above; M23 is done in the live plan.
         self.tasks["M21.09"]["status"] = "planned"  # Done later; keep this model pre-acceptance.
         self.tasks["M01.16"]["status"] = "planned"  # Isolate this pre-disposition fixture from later factual status.
         milestones["M01"]["status"] = "in_progress"
