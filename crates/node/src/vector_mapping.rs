@@ -276,12 +276,6 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
                 })?,
             Some(None) => return Err(bad(name, "[quantizer] must be a string")),
         };
-        if nprobe == 0 {
-            return Err(bad(
-                name,
-                "[method.parameters.nprobes] is required for ivf: the automatic depth probes 5% of the clusters, which measured 0.325 recall@10 at 50,000 vectors; about a sixth of a segment's clusters reached 0.97",
-            ));
-        }
         VectorSpec::ivf(dimension, similarity, cluster, quantizer, rerank).with_nprobe(nprobe)
     } else {
         let quantizer = match quantizer {

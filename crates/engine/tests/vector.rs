@@ -43,6 +43,19 @@ fn corpus(n: usize, dim: usize, seed: u64) -> Vec<Vec<f32>> {
         .collect()
 }
 
+/// `n` vectors around the same 16 centres `corpus(_, dim, seed)` uses, with
+/// other noise: queries that look like the data.
+fn corpus_like(n: usize, dim: usize, seed: u64, noise_seed: u64) -> Vec<Vec<f32>> {
+    let mut rng = Rng(seed);
+    let centres: Vec<Vec<f32>> = (0..16)
+        .map(|_| (0..dim).map(|_| rng.normal() * 3.0).collect())
+        .collect();
+    let mut rng = Rng(noise_seed);
+    (0..n)
+        .map(|i| centres[i % 16].iter().map(|c| c + rng.normal()).collect())
+        .collect()
+}
+
 fn schema(spec: VectorSpec) -> Schema {
     Schema::new(
         1,
@@ -749,6 +762,32 @@ fn ivf_recall_at(
         found += want.iter().filter(|id| got.contains(id)).count();
     }
     found as f64 / (10 * queries.len()) as f64
+}
+
+#[test]
+fn the_calibrated_depth_holds_recall_at_hundreds_of_clusters_for_queries_like_the_data() {
+    // 30,000 vectors in clusters of 64 make about 470 clusters, where a fixed
+    // share of 5% would be 24 probes. The segment calibrates its own depth
+    // when it is written, so a field with no `nprobes` reaches the floor for
+    // queries drawn like its vectors.
+    let vectors = corpus(30_000, DIM, 7);
+    let queries = corpus_like(40, DIM, 7, 99);
+    let schema = schema(ivf_spec(CodeQuantizer::Bbq, Rerank::F32));
+    let directory = ByteBuffersDirectory::new();
+    let observed = EngineDirectory::new(&directory);
+    let engine = open(&observed, &schema);
+    for (n, part) in vectors.chunks(10_000).enumerate() {
+        load(&engine, &schema, part, n * 10_000, 1);
+    }
+    engine.merge().unwrap();
+    let snapshot = engine.refresh().unwrap();
+    let auto = ivf_recall(&snapshot, &vectors, &queries, 0, |_| true);
+    let one = ivf_recall(&snapshot, &vectors, &queries, 1, |_| true);
+    eprintln!("ivf recall@10 at the calibrated depth {auto:.4}, at 1 probe {one:.4}");
+    assert!(auto >= 0.95, "{auto}");
+    assert!(auto > one, "{auto} vs {one}");
+    drop(snapshot);
+    engine.close().unwrap();
 }
 
 /// A disk-HNSW field over the same corpus shape as the HNSW tests.

@@ -105,9 +105,10 @@ pub enum Query<'a> {
         candidates: usize,
         /// Clusters probed per segment on an IVF field; 0 uses the field's
         /// own default (`VectorSpec::with_nprobe`) and, when that is 0 too,
-        /// the share of its clusters the segment calibrates (5% when it did
-        /// not), which measured far too shallow at 50,000 vectors. Ignored by
-        /// HNSW fields.
+        /// the share of its clusters the segment calibrated when it was written,
+        /// for 0.95 recall@10 on queries like its own vectors (5% when it did
+        /// not). Queries far from every cluster need a deeper `nprobe`.
+        /// Ignored by HNSW fields.
         nprobe: usize,
         /// Documents the neighbours must also match.
         filter: Option<&'a Query<'a>>,
