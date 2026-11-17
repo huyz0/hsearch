@@ -143,7 +143,15 @@ fn bad_vectors_mappings_and_queries_are_refused_by_name() {
         ),
         (
             json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"nprobes": 0}}}),
-            "[nprobes] must be a whole number of at least 1",
+            "[nprobes] must be 1 to 65536",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"nprobes": 70000}}}),
+            "[nprobes] must be 1 to 65536",
+        ),
+        (
+            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf"}}),
+            "[method.parameters.nprobes] is required for ivf",
         ),
         (
             json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"encoder": {"name": "pq"}}}}),
@@ -155,7 +163,7 @@ fn bad_vectors_mappings_and_queries_are_refused_by_name() {
         ),
         (
             json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"target_cluster_size": 8}}}),
-            "out of range",
+            "[target_cluster_size] must be 16 to 65536",
         ),
         (
             json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"rerank_encoding": "f64"}}}),
@@ -225,7 +233,7 @@ fn ivf_mapping() -> Value {
         "tag": {"type": "keyword"},
         "emb": {"type": "knn_vector", "dimension": 4, "space_type": "l2",
                 "method": {"name": "ivf", "engine": "faiss",
-                           "parameters": {"target_cluster_size": 16, "nprobes": 1000,
+                           "parameters": {"target_cluster_size": 16, "nprobes": 1,
                                           "rerank_encoding": "f16"}},
                 "quantizer": "osq4"}
     }}})
@@ -253,25 +261,39 @@ fn an_ivf_field_is_mapped_searched_with_nprobes_and_survives_a_restart() {
     node.create("v", &ivf_mapping()).unwrap();
     load(&node);
 
-    // The mapping's default probes every cluster, so a query naming none gets
-    // the exact answer whatever the codes; one naming 1 probes one cluster.
+    // The forty documents lie on a line in a few clusters, and 14.5 sits at a
+    // cluster boundary: the mapping's default of one probed cluster misses a
+    // true neighbour that probing every cluster finds, so the default and the
+    // per-query override are each shown to be honoured.
+    let at_boundary = |parameters: Value| {
+        let spec = json!({"vector": [14.5, 0.0, 0.5, 0.0], "k": 3,
+            "method_parameters": parameters});
+        ids(&node
+            .search(
+                "v",
+                &json!({"query": {"knn": {"emb": spec}}, "size": 3, "_source": false}),
+            )
+            .unwrap())
+    };
+    assert_eq!(at_boundary(json!({})), vec!["d15", "d16", "d17"]);
+    assert_eq!(
+        at_boundary(json!({"nprobes": 1000})),
+        vec!["d15", "d13", "d16"]
+    );
+
     let all = json!({"nprobes": 1000});
-    assert_eq!(ivf_knn(&node, json!({}), None), vec!["d10", "d11", "d9"]);
-    assert_ne!(ivf_knn(&node, json!({"nprobes": 1}), None).len(), 0);
     assert_eq!(ivf_knn(&node, all.clone(), None), vec!["d10", "d11", "d9"]);
     let even = json!({"term": {"tag": "even"}});
     assert_eq!(
         ivf_knn(&node, all.clone(), Some(even.clone())),
         vec!["d10", "d12", "d8"]
     );
-    // The automatic depth and an explicit rerank count both answer.
-    assert_eq!(ivf_knn(&node, json!({}), None).len(), 3);
     assert_eq!(
         ivf_knn(&node, json!({"nprobes": 4, "ef_search": 10}), None).len(),
         3
     );
 
-    // The mapping reads back as it was given and survives a restart.
+    // The index and its mapping survive a restart.
     drop(node);
     let node = Node::with_limits(store, scratch.0.clone(), Limits::default()).unwrap();
     assert_eq!(ivf_knn(&node, all.clone(), None), vec!["d10", "d11", "d9"]);

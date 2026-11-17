@@ -1,8 +1,8 @@
 //! The `knn_vector` mapping type: parsing its OpenSearch-shaped parameters and
 //! the one-line stored spelling that round-trips them.
 use hsearch_engine::{
-    DEFAULT_IVF_CLUSTER_SIZE, Index, IvfQuantizer, Kind, Quantizer, Rerank, ScalarBits, Similarity,
-    VectorSpec,
+    DEFAULT_IVF_CLUSTER_SIZE, IVF_CLUSTER_SIZE, Index, IvfQuantizer, Kind, MAX_NPROBE, Quantizer,
+    Rerank, ScalarBits, Similarity, VectorSpec,
 };
 use serde_json::{Map, Value};
 
@@ -171,16 +171,24 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
                     cluster = v
                         .as_u64()
                         .and_then(|n| u32::try_from(n).ok())
-                        .ok_or_else(|| bad(name, "[target_cluster_size] must be a whole number"))?;
+                        .filter(|n| IVF_CLUSTER_SIZE.contains(n))
+                        .ok_or_else(|| {
+                            bad(
+                                name,
+                                format!(
+                                    "[target_cluster_size] must be {} to {}",
+                                    IVF_CLUSTER_SIZE.start(),
+                                    IVF_CLUSTER_SIZE.end()
+                                ),
+                            )
+                        })?;
                 }
                 if let Some(v) = parameters.get("nprobes") {
                     nprobe = v
                         .as_u64()
                         .and_then(|n| u32::try_from(n).ok())
-                        .filter(|n| *n >= 1)
-                        .ok_or_else(|| {
-                            bad(name, "[nprobes] must be a whole number of at least 1")
-                        })?;
+                        .filter(|n| (1..=MAX_NPROBE as u32).contains(n))
+                        .ok_or_else(|| bad(name, format!("[nprobes] must be 1 to {MAX_NPROBE}")))?;
                 }
                 if let Some(v) = parameters.get("rerank_encoding") {
                     let text = v
@@ -232,6 +240,12 @@ pub(crate) fn parse(name: &str, definition: &Map<String, Value>) -> Result<Kind,
                 })?,
             Some(None) => return Err(bad(name, "[quantizer] must be a string")),
         };
+        if nprobe == 0 {
+            return Err(bad(
+                name,
+                "[method.parameters.nprobes] is required for ivf: the automatic depth probes 5% of the clusters, which measured 0.325 recall@10 at 50,000 vectors; about a sixth of a segment's clusters reached 0.97",
+            ));
+        }
         VectorSpec::ivf(dimension, similarity, cluster, quantizer, rerank).with_nprobe(nprobe)
     } else {
         let quantizer = match quantizer {
@@ -310,6 +324,9 @@ pub(crate) fn from_spelling(text: &str) -> Option<Kind> {
         let q = parts.next()?.strip_prefix("q=")?;
         let rerank = RERANKS.iter().find(|(n, _)| *n == rr)?.1;
         let quantizer = IVF_QUANTIZERS.iter().find(|(n, _)| *n == q)?.1;
+        if !IVF_CLUSTER_SIZE.contains(&cs) || np as usize > MAX_NPROBE {
+            return None;
+        }
         VectorSpec::ivf(dim, similarity, cs, quantizer, rerank).with_nprobe(np)
     } else {
         let m = third.strip_prefix("m=")?.parse().ok()?;

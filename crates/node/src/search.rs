@@ -221,7 +221,7 @@ pub(crate) fn query(mapping: &Mapping, value: &Value, depth: usize) -> Result<Q,
                 hsearch_engine::MAX_KNN_K,
             )?;
             let mut candidates = 100;
-            let mut nprobe = vector_spec.default_nprobe();
+            let mut nprobe = 0;
             if let Some(parameters) = spec.get("method_parameters") {
                 let parameters = parameters
                     .as_object()

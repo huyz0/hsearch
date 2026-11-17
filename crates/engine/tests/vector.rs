@@ -736,7 +736,6 @@ fn ivf_recall(
     for q in queries {
         let want = exact(corpus, live, q, 10);
         let got = search(snapshot, &knn_probe(q, 10, 100, nprobe, None), 10);
-        let _ = ();
         found += want.iter().filter(|id| got.contains(id)).count();
     }
     found as f64 / (10 * queries.len()) as f64
@@ -800,7 +799,10 @@ fn probing_fewer_clusters_costs_recall_and_more_buys_it_back() {
     let at = |nprobe| ivf_recall(&snapshot, &vectors, &queries, nprobe, |_| true);
     let (few, some, many) = (at(2), at(8), at(32));
     eprintln!("recall@10 by nprobe: 2 {few:.4}, 8 {some:.4}, 32 {many:.4}");
-    assert!(few < some && some <= many, "{few} {some} {many}");
+    assert!(
+        few < 0.90 && some >= 0.90 && some <= many,
+        "{few} {some} {many}"
+    );
     assert!(many >= 0.98, "{many}");
     drop(snapshot);
     engine.close().unwrap();
@@ -937,4 +939,31 @@ fn an_ivf_checkpoint_reopens_with_the_same_top_k() {
         let committed = Snapshot::open_committed(&observed, schema.clone()).unwrap();
         assert_eq!(first, ask(&committed), "{quantizer:?}");
     }
+}
+
+#[test]
+fn an_ivf_field_default_nprobe_applies_when_a_query_names_none() {
+    let vectors = corpus(3000, DIM, 7);
+    let queries = corpus(40, DIM, 99);
+    let probes = |default: u32| {
+        let schema = schema(ivf_spec(IvfQuantizer::Bbq, Rerank::F32).with_nprobe(default));
+        let directory = ByteBuffersDirectory::new();
+        let observed = EngineDirectory::new(&directory);
+        let engine = open(&observed, &schema);
+        load(&engine, &schema, &vectors, 0, 1);
+        let snapshot = engine.refresh().unwrap();
+        // Queries name no probe count (0): the field's default decides.
+        let r = ivf_recall(&snapshot, &vectors, &queries, 0, |_| true);
+        // A query naming one overrides the field's default.
+        let named = ivf_recall(&snapshot, &vectors, &queries, 32, |_| true);
+        drop(snapshot);
+        engine.close().unwrap();
+        (r, named)
+    };
+    let (shallow, named_over_shallow) = probes(2);
+    let (deep, named_over_deep) = probes(32);
+    eprintln!("default 2: {shallow:.4}; default 32: {deep:.4}");
+    assert!(shallow < 0.90, "{shallow}");
+    assert!(deep >= 0.98, "{deep}");
+    assert!(named_over_shallow >= 0.98 && named_over_deep >= 0.98);
 }
