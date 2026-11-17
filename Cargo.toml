@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/s3", "crates/index", "crates/format", "crates/lane", "crates/node", "crates/security", "crates/seal", "crates/module-abi", "crates/module-native", "crates/module-wasm", "crates/testkit", "crates/example-provider", "xtask"]
-default-members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/s3", "crates/index", "crates/format", "crates/lane", "crates/node", "crates/security", "crates/seal", "crates/module-abi", "crates/module-native", "crates/module-wasm"]
+members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/s3", "crates/index", "crates/format", "crates/lane", "crates/commit", "crates/node", "crates/security", "crates/seal", "crates/module-abi", "crates/module-native", "crates/module-wasm", "crates/testkit", "crates/example-provider", "xtask"]
+default-members = ["crates/types", "crates/observe", "crates/engine", "crates/object", "crates/s3", "crates/index", "crates/format", "crates/lane", "crates/commit", "crates/node", "crates/security", "crates/seal", "crates/module-abi", "crates/module-native", "crates/module-wasm"]
 
 # D18: `unsafe` is allowed in exactly one crate, and inside it in exactly one module (`mod sys`). That crate
 # restates the lint set in its own manifest; tools/workspace.py check refuses any other crate that does not
@@ -20,13 +20,13 @@ repository = "https://github.com/huyz0/hsearch"
 hsearch-types = { path = "crates/types" }
 hsearch-observe = { path = "crates/observe" }
 hsearch-testkit = { path = "crates/testkit" }
-lucene-analysis = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
-lucene-codecs = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
-lucene-index = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
-lucene-search = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
-lucene-store = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
-lucene-util = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
-lucene-aggs = { git = "https://github.com/huyz0/lucene-rust", rev = "df02d694c4ffb96b2b765084b07728fa6a523a33", default-features = false }
+lucene-analysis = { git = "https://github.com/huyz0/lucene-rust", rev = "3979974b4bdd3a8442f747d62914ce92dca56618", default-features = false }
+lucene-codecs = { git = "https://github.com/huyz0/lucene-rust", rev = "3979974b4bdd3a8442f747d62914ce92dca56618", default-features = false }
+lucene-index = { git = "https://github.com/huyz0/lucene-rust", rev = "3979974b4bdd3a8442f747d62914ce92dca56618", default-features = false }
+lucene-search = { git = "https://github.com/huyz0/lucene-rust", rev = "3979974b4bdd3a8442f747d62914ce92dca56618", default-features = false }
+lucene-store = { git = "https://github.com/huyz0/lucene-rust", rev = "3979974b4bdd3a8442f747d62914ce92dca56618", default-features = false }
+lucene-util = { git = "https://github.com/huyz0/lucene-rust", rev = "3979974b4bdd3a8442f747d62914ce92dca56618", default-features = false }
+lucene-aggs = { git = "https://github.com/huyz0/lucene-rust", rev = "3979974b4bdd3a8442f747d62914ce92dca56618", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

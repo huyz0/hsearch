@@ -157,7 +157,10 @@ impl Snapshot {
         // Refuse what can be refused before any segment is opened.
         crate::query::validate(&self.schema, query)?;
         for (i, name) in projection.iter().enumerate() {
-            if matches!(self.schema.kind(name)?, Kind::Vector(_)) {
+            if matches!(
+                self.schema.kind(name)?,
+                Kind::Vector(_) | Kind::Nested | Kind::Join
+            ) {
                 return Err(Error::Unsupported);
             }
             if projection[..i].contains(name) {
@@ -172,7 +175,9 @@ impl Snapshot {
                     let kind = match self.schema.kind(name)? {
                         Kind::Keyword | Kind::Boolean => SortType::String,
                         Kind::Integer | Kind::Date => SortType::Long,
-                        Kind::Text | Kind::Vector(_) => return Err(Error::Unsupported),
+                        Kind::Text | Kind::Vector(_) | Kind::Nested | Kind::Join => {
+                            return Err(Error::Unsupported);
+                        }
                     };
                     SortField::numeric(name, kind, *descending)
                 }
@@ -190,19 +195,23 @@ impl Snapshot {
                 segments: &segments,
             }),
         )?;
-        let text_fields: Vec<_> = self
-            .schema
-            .fields
-            .iter()
-            .filter(|(_, k)| *k == Kind::Text)
-            .map(|(n, _)| n.clone())
-            .collect();
+        let text_fields = self.schema.text_fields();
         let maps = self
             .reader
             .field_norms_by_field(&text_fields)
             .map_err(|_| Error::Native)?;
         let norms: Vec<_> = maps.iter().map(Some).collect();
         let searcher = IndexSearcher::new(&segments, &norms).map_err(|_| Error::Native)?;
+        // A has_child or has_parent searches its from side here, once, over this snapshot.
+        let query = if lucene_search::join::has_late_joins(&query) {
+            lucene_search::join::resolve_late_joins(&query, &searcher, &|field| {
+                lucene_search::join::ordinal_map(&searcher, field).map(Some)
+            })
+            .map_err(|_| Error::Native)?
+            .unwrap_or(query)
+        } else {
+            query
+        };
         let result = searcher
             .search_sorted(
                 self.reader.segment_readers(),
@@ -332,6 +341,21 @@ pub(crate) fn verify(
             ));
         }
     }
+    // Nested objects precede their root in doc order, so one pass pairs each root with them.
+    let mut objects: std::collections::HashMap<i32, Vec<(String, i32)>> = Default::default();
+    if schema.has_nested() {
+        let mut pending = Vec::new();
+        for doc in 0..reader.max_doc() {
+            let FieldValue::String(kind) = stored(reader, doc, crate::schema::KIND_FIELD)? else {
+                return Err(Error::Checkpoint);
+            };
+            if kind == crate::schema::ROOT_KIND {
+                objects.insert(doc, std::mem::take(&mut pending));
+            } else {
+                pending.push((kind, doc));
+            }
+        }
+    }
     let mut seen = std::collections::BTreeSet::new();
     if result.score_docs.len()
         != expected
@@ -355,24 +379,50 @@ pub(crate) fn verify(
         }
         let wanted = op.digest.ok_or(Error::Checkpoint)?;
         let mut values = Vec::with_capacity(fields.len());
+        let scalar = |doc: i32, name: &str, kind: Kind| -> Result<Recovered> {
+            match (kind, stored(reader, doc, name)?) {
+                (Kind::Keyword | Kind::Text | Kind::Boolean, FieldValue::String(s)) => {
+                    Ok(Recovered::Text(s))
+                }
+                (Kind::Integer | Kind::Date, FieldValue::Long(n)) => Ok(Recovered::Long(n)),
+                _ => Err(Error::Checkpoint),
+            }
+        };
         for (name, kind) in schema.fields.iter().map(|(n, k)| (n.as_str(), *k)) {
-            values.push(match kind {
-                Kind::Vector(_) => Recovered::Floats(
+            match kind {
+                Kind::Vector(_) => values.push(Recovered::Floats(
                     vectors
                         .iter()
                         .find(|(n, _)| *n == name)
                         .ok_or(Error::Checkpoint)?
                         .1
                         .get(hit.doc)?,
-                ),
-                _ => match (kind, stored(reader, hit.doc, name)?) {
-                    (Kind::Keyword | Kind::Text | Kind::Boolean, FieldValue::String(s)) => {
-                        Recovered::Text(s)
+                )),
+                Kind::Nested => {
+                    let at = schema.nested_index(name).ok_or(Error::Checkpoint)?;
+                    let mine: Vec<i32> = objects
+                        .get(&hit.doc)
+                        .map(|all| {
+                            all.iter()
+                                .filter(|(path, _)| path == name)
+                                .map(|(_, doc)| *doc)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    values.push(Recovered::Long(mine.len() as i64));
+                    for doc in mine {
+                        for (sub, sub_kind) in &schema.nested[at].fields {
+                            values.push(scalar(doc, &format!("{name}.{sub}"), *sub_kind)?);
+                        }
                     }
-                    (Kind::Integer | Kind::Date, FieldValue::Long(n)) => Recovered::Long(n),
-                    _ => return Err(Error::Checkpoint),
-                },
-            });
+                }
+                Kind::Join => {
+                    let join = schema.join.as_ref().ok_or(Error::Checkpoint)?;
+                    values.push(scalar(hit.doc, name, Kind::Keyword)?);
+                    values.push(scalar(hit.doc, &join.id_field(), Kind::Keyword)?);
+                }
+                _ => values.push(scalar(hit.doc, name, kind)?),
+            }
         }
         let got = crate::adapter::digest(values.iter().map(|v| match v {
             Recovered::Text(s) => crate::adapter::Stored::Text(s),
