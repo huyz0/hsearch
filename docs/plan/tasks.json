@@ -4669,8 +4669,13 @@
             "M13.01"
           ],
           "owner": "cluster/scale",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m13-02-fairness.md",
+              "result": "Provisional (deterministic model, one host, no store). Per-tenant weighted admission (hsearch-lane admission: guaranteed share, borrowing only above a reserve, refusal by reason, entries only while work is in flight), weighted rendezvous placement with integer-only logarithm (proportional to weight, 0 of 20,000 unaffected tenants moved when a node left, replicas append only, zones before repeats, load factor), load feedback with deadband, per-tenant cache floor and ceiling quotas, and bounded subscriptions (total, per subscriber, per index). 27 tests; 13 hand mutations, 12 killed and one equivalent; an independent review found and fixed tie-breaking by slice order, an O(tenants) quota scan and a deadband pin. Measured: one hot tenant among 999 small ones refused 76.3% of the small tenants' requests under one global cap and 0% under fair admission, at 91.7% node utilisation with a 10% reserve (7.9% hot served at a 50% reserve, 51.9% utilisation: the reserve is a setting); a cold storm took the small tenants' cache hit ratio to 82.5% under one shared LRU and held it at 100% under quotas; one placement costs 2.0 us at 100 nodes, 17.7 us at 1,000, 175 us at 10,000 (about 17 ns a node); placement makes 0 store requests and leaves a real structural head byte-identical. Not done: wiring to a node (M07.08), the engine cache's own tenant LRU (M04.05), real AZ latency and inter-AZ cost, per-tenant latency interference. Zone spread over unequal zones overloads the small zone (1.69x mean at 20/20/10)."
+            }
+          ]
         },
         {
           "id": "M13.03",
