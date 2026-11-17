@@ -70,15 +70,20 @@ pub fn with_local_engine_merging<R>(
         root: root.to_path_buf(),
     };
     let stop = std::sync::atomic::AtomicBool::new(false);
-    let result = std::thread::scope(|scope| {
-        let merger = (mode == crate::MergeMode::Background)
-            .then(|| scope.spawn(|| engine.run_background_merges(&stop)));
-        let result = run(&engine, &files);
-        stop.store(true, std::sync::atomic::Ordering::Release);
-        if let Some(merger) = merger {
-            let _ = merger.join();
+    // Stops the merge thread however `run` ends: the scope waits for it, so a
+    // panic in `run` would otherwise wait forever.
+    struct Stop<'a>(&'a std::sync::atomic::AtomicBool);
+    impl Drop for Stop<'_> {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::Release);
         }
-        result
+    }
+    let result = std::thread::scope(|scope| {
+        let _stop = Stop(&stop);
+        if mode == crate::MergeMode::Background {
+            scope.spawn(|| engine.run_background_merges(&stop));
+        }
+        run(&engine, &files)
     });
     engine.close()?;
     Ok(result)

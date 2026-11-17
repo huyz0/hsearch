@@ -660,7 +660,11 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             });
         }
         self.engine.commit()?;
-        let names = self.files.names()?;
+        // With merges on a background thread a listing could catch a merge's
+        // half-written output; list with none running or starting.
+        let names = self
+            .engine
+            .while_merges_are_paused(|| self.files.names())??;
         for name in &names {
             if self.uploaded.contains_key(name) {
                 continue;

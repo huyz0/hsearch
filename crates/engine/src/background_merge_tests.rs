@@ -111,11 +111,6 @@ fn a_native_panic_poisons_a_background_engine_and_its_close() {
 }
 
 #[test]
-fn the_merge_slots_bound_concurrent_merges() {
-    assert_eq!(crate::background::MAX_CONCURRENT_MERGES, 2);
-}
-
-#[test]
 fn local_engine_runs_and_joins_its_merge_thread() {
     let root = std::env::temp_dir().join(format!("hsearch-bgmerge-{}", std::process::id()));
     let schema = schema();

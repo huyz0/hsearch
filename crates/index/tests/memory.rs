@@ -1214,3 +1214,40 @@ fn a_fence_claiming_another_position_is_corrupt_not_skipped() {
         Some(Error::Corrupt)
     );
 }
+
+#[test]
+fn background_merging_publishes_whole_files_a_search_only_reader_can_open() {
+    use hsearch_engine::MergeMode;
+    let store = store();
+    let (one, cache) = (Scratch::new("bg-publish"), Scratch::new("bg-cache"));
+    let schema = schema()
+        .with_limits(Limits::scale())
+        .unwrap()
+        .with_auto_merge_mb(4);
+    let index = Index::create_merging(
+        Arc::clone(&store),
+        "orders",
+        schema.clone(),
+        &one.0,
+        MergeMode::Background,
+    )
+    .unwrap();
+    for round in 0..30 {
+        index
+            .bulk(
+                (0..5)
+                    .map(|i| put(&format!("d{round}-{i}"), "x", i))
+                    .collect(),
+                Wait::Searchable,
+            )
+            .unwrap();
+        if round % 10 == 9 {
+            index.publish().unwrap();
+        }
+    }
+    let live = all(&index.snapshot().unwrap());
+    assert_eq!(live.0, 150);
+    index.publish().unwrap();
+    let served = open_published(store, "orders", schema, &cache.0).unwrap();
+    assert_eq!(all(&served), live);
+}

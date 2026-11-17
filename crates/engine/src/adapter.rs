@@ -382,7 +382,9 @@ impl Held<'_, '_> {
     fn segment_count(&mut self) -> usize {
         match self {
             Held::Inline(w) => w.segment_count(),
-            Held::Background(w, _) => w.with_writer(|w| w.segment_count()),
+            Held::Background(w, panicked) => {
+                guarded(panicked, || w.with_writer(|w| w.segment_count()))
+            }
         }
     }
 
@@ -802,7 +804,9 @@ impl<'d> Engine<'d> {
         let reservation = crate::reader::Reservation::new(&self.snapshots)?;
         let reader = match match &self.writer {
             Writer::Inline(m) => DirectoryReader::open_from_writer(&**m),
-            Writer::Background(w, _) => DirectoryReader::open_from_writer(&**w),
+            Writer::Background(w, panicked) => {
+                guarded(panicked, || DirectoryReader::open_from_writer(&**w))
+            }
         } {
             Ok(r) => r,
             Err(_) => {
@@ -893,6 +897,25 @@ impl<'d> Engine<'d> {
         }
         let _ticket = scheduler.admit(bytes)?;
         self.merge()
+    }
+
+    /// Runs `read` with no merge running or starting, so the directory holds
+    /// only whole files: a merge's output is written without any lock the
+    /// caller shares, and a failed merge deletes it. Waits for a merge in
+    /// progress to finish. An inline engine merges only inside its own calls, so
+    /// `read` runs at once.
+    pub fn while_merges_are_paused<R>(&self, read: impl FnOnce() -> R) -> Result<R> {
+        match &self.writer {
+            Writer::Inline(_) => Ok(read()),
+            Writer::Background(w, panicked) => {
+                if panicked.load(Ordering::Acquire) {
+                    return Err(Error::Poisoned);
+                }
+                Ok(guarded(panicked, || {
+                    w.with_writer_merges_aborted(|_| read())
+                }))
+            }
+        }
     }
 
     /// The merge thread of a [`MergeMode::Background`] engine: runs the policy's
