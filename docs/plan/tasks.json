@@ -3257,8 +3257,13 @@
             "M23.01"
           ],
           "owner": "engine/search",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m23-02-ivf.md",
+              "result": "IVF with plain, scalar-style (osq2/4/7), BBQ, RaBitQ, extended RaBitQ and auto codes and f32/f16/bf16/int8 rerank through the engine, the durable mapping (method ivf, target_cluster_size, nprobes, rerank_encoding, quantizer) and the knn query (method_parameters.nprobes, filter inside bool). Recall@10 floor 0.90 met for every variant at 8 probed clusters and at the automatic depth on a 3,000-vector corpus; delete, replace, merge and checkpoint reopen of write-once segments tested; OpenSearch ivf parameters map or are refused with a reason. At 50,000 x 128 d IVF builds 4.5x faster than HNSW but is 1.95x larger and 1.9x slower in memory at equal recall, and the automatic probe depth reaches only 0.325 recall there, so nprobes must be set. Provisional: one shared x86 VM, synthetic corpus, no ARM; SIFT1M/GIST1M unrun."
+            }
+          ]
         },
         {
           "id": "M23.03",

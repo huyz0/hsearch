@@ -25,7 +25,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | [M06: Object-durable search store on RustFS](milestones/M06.md) | planned | 0/8 | M04, M05 |
 | [M21: Document and mapping semantics](milestones/M21.md) | planned | 5/10 | M06 |
 | [M22: Pinned views, index management and background jobs](milestones/M22.md) | planned | 0/5 | M21 |
-| [M23: Vector search: HNSW and IVF with quantization and disk variants](milestones/M23.md) | planned | 1/3 | M06 |
+| [M23: Vector search: HNSW and IVF with quantization and disk variants](milestones/M23.md) | planned | 2/3 | M06 |
 | [M07: Distributed routing and query serving](milestones/M07.md) | planned | 1/15 | M06 |
 | [M08: Telemetry and AI-readable diagnostics](milestones/M08.md) | in_progress | 1/7 | M07 |
 | [M24: Extension modules: native C ABI and WebAssembly](milestones/M24.md) | planned | 3/5 | M07 |
