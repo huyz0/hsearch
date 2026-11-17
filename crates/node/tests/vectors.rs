@@ -151,7 +151,8 @@ fn bad_vectors_mappings_and_queries_are_refused_by_name() {
             .to_string()
     };
     assert!(wrong(r#"{"tag":"a","emb":[1,2,3]}"#).contains("3 components"));
-    assert!(wrong(r#"{"tag":"a","emb":[1,2,3,"x"]}"#).contains("nested"));
+    assert!(wrong(r#"{"tag":"a","emb":[1,2,3,"x"]}"#).contains("only numbers"));
+    assert!(wrong(r#"{"tag":"a","emb":[1,2,3,1e39]}"#).contains("finite"));
     assert!(wrong(r#"{"tag":"a","emb":[1,2,[3],4]}"#).contains("nested"));
     assert!(wrong(r#"{"tag":"a","emb":"abcd"}"#).contains("does not match"));
 

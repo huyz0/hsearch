@@ -182,3 +182,36 @@ pub(crate) fn from_spelling(text: &str) -> Option<Kind> {
     let kind = Kind::Vector(spec);
     (spelling(&spec) == text).then_some(kind)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_space_and_quantizer_round_trips_through_its_spelling() {
+        for (_, similarity) in SPACES {
+            for (_, quantizer) in QUANTIZERS {
+                let spec = VectorSpec::hnsw(24, similarity)
+                    .with_graph(8, 77)
+                    .with_quantizer(quantizer);
+                let text = spelling(&spec);
+                assert_eq!(from_spelling(&text), Some(Kind::Vector(spec)), "{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_stored_spelling_that_is_not_exact_is_refused() {
+        for text in [
+            "knn_vector:dim=4,space=l2,m=16,efc=100",
+            "knn_vector:dim=4,space=l2,m=16,efc=100,q=none,x=1",
+            "knn_vector:dim=4,space=hamming,m=16,efc=100,q=none",
+            "knn_vector:dim=4,space=l2,m=16,efc=100,q=pq",
+            "knn_vector:dim=x,space=l2,m=16,efc=100,q=none",
+            "knn_vector:dim=04,space=l2,m=16,efc=100,q=none",
+            "knn_vector",
+        ] {
+            assert_eq!(from_spelling(text), None, "{text}");
+        }
+    }
+}

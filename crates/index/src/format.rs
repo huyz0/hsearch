@@ -78,7 +78,7 @@ pub struct BlobAt {
     pub field: usize,
 }
 /// Most components a logged vector may have (the engine's own bound).
-pub const MAX_VECTOR_DIMENSION: usize = 4096;
+pub const MAX_VECTOR_DIMENSION: usize = hsearch_engine::MAX_DIMENSION;
 /// Most segment files a root may name.
 pub const MAX_FILES: usize = 4096;
 
@@ -694,6 +694,42 @@ mod tests {
         let mut wrong = bytes;
         wrong[0] ^= 1;
         assert_eq!(decode_slot(&wrong), Err(Error::Corrupt));
+    }
+
+    #[test]
+    fn a_vector_field_refuses_a_bad_length_and_a_slot_without_one_is_unchanged() {
+        let put = |fields: Vec<Field>| Slot {
+            seq: 1,
+            first_version: 1,
+            ops: vec![Op::Put {
+                id: "a".into(),
+                fields,
+            }],
+        };
+        let bytes = encode_slot(&put(vec![Field::Vector(vec![1.0, 2.0].into())])).unwrap();
+        // Tag, then the length: zero and over the bound are corrupt.
+        let at = bytes.iter().rposition(|b| *b == VECTOR_TAG).unwrap();
+        for len in [0u32, MAX_VECTOR_DIMENSION as u32 + 1] {
+            let mut bad = bytes.clone();
+            bad[at + 1..at + 5].copy_from_slice(&len.to_le_bytes());
+            assert_eq!(decode_slot(&bad), Err(Error::Corrupt), "length {len}");
+        }
+        // A slot with no vector encodes exactly as it did: the tags 1 to 5 are unchanged.
+        let plain = put(vec![
+            Field::text("x"),
+            Field::Int(1),
+            Field::Bool(true),
+            Field::Date(2),
+        ]);
+        let encoded = encode_slot(&plain).unwrap();
+        assert_eq!(decode_slot(&encoded).unwrap(), plain);
+        assert_eq!(encoded.len(), encoded_len(&plain.ops));
+        assert_eq!(
+            encoded_len(&put(vec![Field::Vector(vec![1.0; 7].into())]).ops),
+            encode_slot(&put(vec![Field::Vector(vec![1.0; 7].into())]))
+                .unwrap()
+                .len()
+        );
     }
 
     #[test]

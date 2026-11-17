@@ -73,6 +73,9 @@ Run in a clone of lucene-rust at `df02d694` (the revision hsearch builds), relea
 | `-p lucene-disk-hnsw` | 13 + 13 |
 | `-p lucene-ivf` | 41, 3, 11, 3, 2, 26, 5 |
 
+- Compatibility: slots written before this change decode unchanged (tags 1 to 5 are untouched); a slot that holds a vector (tag 6) is `Corrupt` to an older binary, so a node that has served a vector-mapped index cannot be rolled back across this change.
+- Bulk memory: a parsed array element is 32 resident bytes for as little as 2 bytes of text, so the stream charges 32 bytes per element on top of the line's text before it decides when to flush.
+
 ## Not done here
 
 - Concurrent-segment search versus sequential at hsearch segment sizes: unrun (M02.12 saw concurrent slower at 4,000 documents).

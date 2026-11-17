@@ -713,4 +713,51 @@ mod tests {
         let refusal = item.work.unwrap_err();
         assert!(refusal.reason.contains("5000 bytes"), "{}", refusal.reason);
     }
+
+    fn arrays(body: &str) -> Vec<Item> {
+        let mut stream = Stream::new(body.as_bytes(), Limits::default()).with_arrays(true);
+        let mut out = Vec::new();
+        while let Some(item) = stream.next(Some("d")).unwrap() {
+            out.push(item);
+        }
+        out
+    }
+
+    #[test]
+    fn an_array_source_is_charged_for_what_its_elements_hold() {
+        let zeros = vec!["0"; 4096].join(",");
+        let body = format!("{{\"index\":{{\"_id\":\"1\"}}}}\n{{\"v\":[{zeros}]}}\n");
+        let items = arrays(&body);
+        assert!(items[0].work.is_ok());
+        // Two text bytes an element, 32 resident: the charge is the larger.
+        assert!(items[0].bytes >= 4096 * 32, "{}", items[0].bytes);
+    }
+
+    #[test]
+    fn an_array_over_the_bound_or_with_a_bad_element_is_refused_and_the_stream_resyncs() {
+        let over = vec!["0"; 4097].join(",");
+        for source in [
+            format!("{{\"v\":[{over}]}}"),
+            r#"{"v":[1,"x"]}"#.to_string(),
+            r#"{"v":[1,null]}"#.to_string(),
+            r#"{"v":[1,[2]]}"#.to_string(),
+        ] {
+            let body = format!(
+                "{{\"index\":{{\"_id\":\"1\"}}}}\n{source}\n{{\"index\":{{\"_id\":\"2\"}}}}\n{{\"v\":[1,2]}}\n"
+            );
+            let items = arrays(&body);
+            assert_eq!(items.len(), 2, "{source}");
+            assert!(items[0].work.is_err(), "{source}");
+            assert!(
+                items[1].work.is_ok(),
+                "the next item must parse after {source}"
+            );
+        }
+        let reason = |s: &str| {
+            let body = format!("{{\"index\":{{\"_id\":\"1\"}}}}\n{s}\n");
+            arrays(&body)[0].work.as_ref().unwrap_err().reason.clone()
+        };
+        assert!(reason(r#"{"v":[1,"x"]}"#).contains("only numbers"));
+        assert!(reason(r#"{"v":[1,[2]]}"#).contains("nested"));
+    }
 }

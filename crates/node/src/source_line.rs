@@ -19,7 +19,10 @@ const MAX_MEMBERS: usize = 256;
 /// Longest bare token (a number or `true`/`false`/`null`) read for a value.
 const MAX_TOKEN: usize = 4096;
 /// Most numbers in one array value: a vector field's own bound.
-const MAX_ARRAY: usize = 4096;
+const MAX_ARRAY: usize = hsearch_engine::MAX_DIMENSION;
+/// Resident bytes of one parsed array element (`serde_json::Value`).
+const ELEMENT_BYTES: u64 = 32;
+const NOT_NUMBER: &str = "a vector holds only numbers";
 const NESTED: &str = "nested objects and arrays are not supported by this mapping";
 const NOT_OBJECT: &str = "the source must be a JSON object";
 const TOO_MANY: &str = "the source has more members than any mapping allows";
@@ -58,6 +61,8 @@ struct Line<'a, R: Read> {
     before_newline: u8,
     /// Whether a flat array of numbers is a value (a vector); off, any array is nested.
     arrays: bool,
+    /// Resident bytes of parsed array elements, which the text length understates.
+    resident: u64,
 }
 
 impl<'a, R: Read> Line<'a, R> {
@@ -219,10 +224,14 @@ impl<'a, R: Read> Line<'a, R> {
         loop {
             self.skip_space()?;
             match self.peek()?.ok_or(Stop::Malformed)? {
-                b'[' | b'{' | b'"' => return Err(Stop::Refused(NESTED)),
+                b'[' | b'{' => return Err(Stop::Refused(NESTED)),
+                b'"' => return Err(Stop::Refused(NOT_NUMBER)),
                 _ => match self.token()? {
-                    v @ Value::Number(_) => items.push(v),
-                    _ => return Err(Stop::Refused(NESTED)),
+                    v @ Value::Number(_) => {
+                        items.push(v);
+                        self.resident += ELEMENT_BYTES;
+                    }
+                    _ => return Err(Stop::Refused(NOT_NUMBER)),
                 },
             }
             if items.len() > MAX_ARRAY {
@@ -402,6 +411,7 @@ pub(crate) fn read<R: Read>(
         previous: 0,
         before_newline: 0,
         arrays,
+        resident: 0,
     };
     if line.peek().map_err(request)?.is_none() {
         return Ok(Source::End);
@@ -411,7 +421,9 @@ pub(crate) fn read<R: Read>(
         Ok(value) => {
             let content = line.content();
             return Ok(if content <= cap {
-                Source::Document(value, content as usize)
+                // The line's text plus what its array elements hold: a number
+                // written as `0,` is two bytes of text and 32 resident.
+                Source::Document(value, content as usize + line.resident as usize)
             } else {
                 // Inside the two spare bytes, but over: refused by its size.
                 Source::Oversized(content)
