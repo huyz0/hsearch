@@ -35,3 +35,9 @@ Cold open plus first query is **3 sequential round trips** at 3 ms and 20 ms (th
 ## Adapter review
 
 Frozen supported contract: the 17-row feature inventory and capability gates of M04.01 are unchanged and tested; unsupported capabilities stay refused with typed errors. No runtime crate bypasses the adapter (M04.01 gate). Independent diff review for this task is recorded on the PR.
+
+## Milestone review (independent) and where its findings are carried
+
+An independent milestone review of M04 judged the third definition-of-done bullet (committed-only readers with pinned generations and deterministic replay on the **serving path**) not met: `hsearch_index::barrier` and `resolve` are proven by their own tests but the writer (`crates/index/src/writer.rs`) does not use them yet, and its `refresh` takes the published reader before the new one exists, so a failed refresh empties the slot. M04.03 and M04.04 recorded that wiring belongs to M06; it is now written into **M06.05**'s deliverables so it cannot be lost. Likewise `verify_files` is now in **M06.02**'s deliverables (publish-time integrity). M04 stays done because its tasks deliver the primitives, the contract and the qualification, and the plan assigns the integration to M06; this note is the visible record that the bullet is met at module level only.
+
+Also found, not fixed here: `crates/engine/CAPABILITIES.md` still carries pre-M04.02 "remain M02.03" text and the old Java-oracle revision (`46e280bc`), the Java differential fixture was not re-recorded at the current pin, no Java-written old-format index reopen is evidenced, `RangeCacheMetrics` is not connected to `hsearch-observe`, the `userfaultfd`-off memory test has no evidence line, and nothing has run at the 1M-document gate scale. These are open qualification gaps for M06.06 and the M14/M17 qualification tasks.
