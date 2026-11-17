@@ -56,6 +56,8 @@ impl NodeCert {
 pub struct Minted {
     /// DER certificate.
     pub der: Vec<u8>,
+    /// The leaf's private key, PKCS#8 DER.
+    pub key_pkcs8: Vec<u8>,
 }
 
 impl DevCa {
@@ -120,6 +122,7 @@ impl DevCa {
         let cert = params.signed_by(&key, &issuer)?;
         Ok(Minted {
             der: cert.der().to_vec(),
+            key_pkcs8: key.serialize_der(),
         })
     }
 }
