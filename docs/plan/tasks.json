@@ -2152,7 +2152,7 @@
       "title": "Lucene Rust bridge and committed readers",
       "goal": "Deliver a production-shaped engine adapter with remote I/O and exact commit/visibility boundaries.",
       "owner": "engine",
-      "status": "planned",
+      "status": "done",
       "depends_on": [
         "M02",
         "M03"
@@ -2313,8 +2313,13 @@
             "M04.05"
           ],
           "owner": "engine",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m04-06-bridge-qualification.md",
+              "result": "Release-profile engine suite green; 153-case corruption corpus found that open does not recompute CRCs (2 flips answered wrongly), fixed by opt-in verify_files/verify_directory, after which all 153 are refused, mutation seen red; local vs in-memory-remote benchmark (3 round trips cold, warm p50 within about 27 percent). Provisional (one host, in-memory store, no RustFS here, corpus 387 KB). verify is not yet wired into publish (M06)."
+            }
+          ]
         }
       ]
     },

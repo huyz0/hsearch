@@ -800,3 +800,63 @@ fn a_cold_open_and_first_query_take_few_sequential_round_trips() {
         total - open
     );
 }
+
+/// Remote against local, cold and warm: `cargo test -p hsearch-engine --release
+/// --test ranged_snapshot bench_local_vs_remote -- --ignored --nocapture`. Prints
+/// numbers; asserts only that every path gives the same answers. Provisional:
+/// in-memory objects, a fixed sleep for latency, one shared host.
+#[test]
+#[ignore = "benchmark: run explicitly in release"]
+fn bench_local_vs_remote() {
+    use std::sync::atomic::Ordering;
+    let f = fixture(2000);
+    let local = EngineDirectory::new(FsDirectory::open(&f._scratch.0));
+    let started = Instant::now();
+    let local_snapshot = Snapshot::open_committed(&local, schema()).unwrap();
+    let local_open = started.elapsed();
+    let warm = |snapshot: &Snapshot| {
+        let mut samples = Vec::new();
+        for _ in 0..200 {
+            let t = Instant::now();
+            assert_eq!(answers(snapshot), f.expected);
+            samples.push(t.elapsed());
+        }
+        samples.sort();
+        (
+            samples[samples.len() / 2],
+            samples[samples.len() * 99 / 100],
+        )
+    };
+    let (l50, l99) = warm(&local_snapshot);
+    eprintln!(
+        "BENCH local: {} bytes, open {local_open:?}, warm answers p50 {l50:?} p99 {l99:?}",
+        f.total
+    );
+    for ms in [0u64, 3, 20] {
+        *f.calls.delay.lock().unwrap() = Duration::from_millis(ms);
+        f.calls.ranges.lock().unwrap().clear();
+        f.calls.waves.store(0, Ordering::Relaxed);
+        let dir = Scratch::new("bench");
+        let settings = RangeCacheSettings {
+            disk_dir: Some(dir.0.clone()),
+            store_profile: Some(lucene_store::StoreProfile {
+                latency: Duration::from_millis(ms.max(1)),
+                bytes_per_sec: 100e6,
+            }),
+            ..RangeCacheSettings::default()
+        };
+        let t = Instant::now();
+        let snapshot = Snapshot::open_blob_settings(f.store(), &settings, schema()).unwrap();
+        let open = t.elapsed();
+        let opened_waves = f.calls.waves.load(Ordering::Relaxed);
+        let t = Instant::now();
+        assert_eq!(answers(&snapshot), f.expected);
+        let first = t.elapsed();
+        let (n, bytes) = requests(&f);
+        let (r50, r99) = warm(&snapshot);
+        eprintln!(
+            "BENCH remote {ms}ms/request: open {open:?} ({opened_waves} round trips), first answers {first:?} ({} round trips total), {n} requests {bytes} bytes; warm p50 {r50:?} p99 {r99:?}",
+            f.calls.waves.load(Ordering::Relaxed)
+        );
+    }
+}
