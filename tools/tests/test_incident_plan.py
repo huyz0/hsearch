@@ -32,6 +32,7 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M21.02"]["status"] = "planned"  # Depends on M20.04; keep this model pre-acceptance.
         self.tasks["M21.03"]["status"] = "planned"  # Depends on M21.02; keep this model pre-acceptance.
         self.tasks["M21.08"]["status"] = "planned"  # Depends on M21.01; keep this model pre-acceptance.
+        self.tasks["M21.07"]["status"] = "planned"  # Depends on M21.03; keep this model pre-acceptance.
         self.tasks["M24.02"]["status"] = "planned"  # Depends on M24.01; keep this model pre-acceptance.
         self.tasks["M24.03"]["status"] = "planned"  # Depends on M24.01; keep this model pre-acceptance.
         self.tasks["M03.10"]["status"] = "planned"  # Depends on M03.02; keep this model pre-acceptance.
@@ -53,6 +54,7 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M04.04"]["status"] = "planned"  # Depends on M04.03 above; keep the model pre-acceptance.
         self.tasks["M04.05"]["status"] = "planned"  # Depends on M04.04 above; keep the model pre-acceptance.
         self.tasks["M04.06"]["status"] = "planned"  # Depends on M04.05 above; keep the model pre-acceptance.
+        self.tasks["M06.01"]["status"] = "planned"  # Depends on M04 and M05 above; keep the model pre-acceptance.
         self.tasks["M05.01"]["status"] = "planned"  # Depends on M03.01 and M03.09 above; keep the model pre-acceptance.
         self.tasks["M05.02"]["status"] = "planned"  # Depends on M03.01 and M03.09 above; keep the model pre-acceptance.
         self.tasks["M05.03"]["status"] = "planned"  # Depends on M05.02 above; keep the model pre-acceptance.

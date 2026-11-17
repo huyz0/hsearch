@@ -29,6 +29,14 @@ pub enum Capability {
     QueryBool,
     /// k-nearest-neighbour search over a vector field, optionally filtered.
     QueryKnn,
+    /// Objects of a nested field matched as one: root documents with a matching object.
+    QueryNested,
+    /// Parents with a matching child, joined within one shard.
+    QueryHasChild,
+    /// Children with a matching parent, joined within one shard.
+    QueryHasParent,
+    /// A join between documents on different shards.
+    CrossShardJoin,
     /// A query shape outside the selected IR.
     UnsupportedQuery,
     /// Local BM25 score order.
@@ -74,6 +82,10 @@ impl Capability {
             Self::ScriptedUpdate => 15,
             Self::MultiWriter => 16,
             Self::QueryKnn => 17,
+            Self::QueryNested => 18,
+            Self::QueryHasChild => 19,
+            Self::QueryHasParent => 20,
+            Self::CrossShardJoin => 21,
         }
     }
     /// Every capability, so the inventory can be checked for completeness.
@@ -96,6 +108,10 @@ impl Capability {
         Self::ScriptedUpdate,
         Self::MultiWriter,
         Self::QueryKnn,
+        Self::QueryNested,
+        Self::QueryHasChild,
+        Self::QueryHasParent,
+        Self::CrossShardJoin,
     ];
 }
 
@@ -161,6 +177,13 @@ static INVENTORY: &[Feature] = &[
         "one writer per directory; authority is the commit lane's, not the engine's",
     ),
     yes(Capability::QueryKnn),
+    yes(Capability::QueryNested),
+    yes(Capability::QueryHasChild),
+    yes(Capability::QueryHasParent),
+    no(
+        Capability::CrossShardJoin,
+        "parent and children are routed to one shard by the parent's id, so every join is local; a join across shards is refused, not approximated (PR-41)",
+    ),
 ];
 
 /// How segment bytes reach the reader.
@@ -186,6 +209,9 @@ pub fn capability_of_query(query: &Query<'_>) -> Capability {
         Query::Match { .. } => Capability::QueryMatch,
         Query::Bool { .. } => Capability::QueryBool,
         Query::Knn { .. } => Capability::QueryKnn,
+        Query::Nested { .. } => Capability::QueryNested,
+        Query::HasChild { .. } => Capability::QueryHasChild,
+        Query::HasParent { .. } => Capability::QueryHasParent,
         Query::Unsupported => Capability::UnsupportedQuery,
     }
 }

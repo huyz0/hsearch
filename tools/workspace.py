@@ -27,6 +27,8 @@ LAYERS = {
     "hsearch-format": set(),
     # M03.08: fenced commit lanes sit on the object contracts and the byte formats only; they never see the engine.
     "hsearch-lane": {"hsearch-object", "hsearch-format"},
+    # M06.01: the group committer sits on the lane, the object contracts and the byte formats.
+    "hsearch-commit": {"hsearch-object", "hsearch-format", "hsearch-lane"},
     "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3", "hsearch-format"},
     # M05: identity, authorization and the key-provider contract. Independent of every other crate for now:
     # the peer listener and the object-format encryption that use it come later and depend on it, not the reverse.
@@ -41,7 +43,7 @@ LAYERS = {
     "hsearch-example-provider": {"hsearch-object"},
     "xtask": set(),
 }
-PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-lane", "hsearch-node",
+PRODUCTION = {"hsearch-types", "hsearch-observe", "hsearch-engine", "hsearch-object", "hsearch-s3", "hsearch-index", "hsearch-format", "hsearch-lane", "hsearch-commit", "hsearch-node",
               "hsearch-security", "hsearch-seal", "hsearch-module-abi", "hsearch-module-native", "hsearch-module-wasm"}
 # D18: the one crate whose manifest may relax the workspace `unsafe_code = "forbid"`. Inside it the
 # `unsafe_code = "deny"` lint leaves exactly one `#[allow]`, on `mod sys` (the compiler enforces that).
@@ -54,6 +56,8 @@ EXTERNAL["hsearch-s3"] = {"hmac", "md-5", "sha2", "ureq"}
 EXTERNAL["hsearch-format"] = {"sha2"}
 # Stable lane-domain derivation (SHA-256), exact-pinned in crates/lane/Cargo.toml.
 EXTERNAL["hsearch-lane"] = {"sha2"}
+# Request digests (SHA-256), exact-pinned in crates/commit/Cargo.toml.
+EXTERNAL["hsearch-commit"] = {"sha2"}
 # JSON bodies, a blocking HTTP/1.1 server (plain HTTP, no TLS) and a safe arena for query lowering, exact-pinned in crates/node/Cargo.toml.
 EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 # Identity and key provider: X.509 chain verification (rustls-webpki over ring) and SAN parsing (x509-parser),

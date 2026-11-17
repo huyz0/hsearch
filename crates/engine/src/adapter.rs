@@ -81,6 +81,41 @@ pub(crate) struct Operation {
     pub(crate) version: i64,
     /// `None` for a delete.
     pub(crate) digest: Option<u128>,
+    /// Native documents it adds: the root and each nested object. 0 for a delete.
+    docs: usize,
+}
+
+/// Nested objects a value carries.
+fn objects_in(value: &Value<'_>) -> usize {
+    match value {
+        Value::Nested(objects) => objects.len(),
+        _ => 0,
+    }
+}
+
+/// The stored forms of one value, in the order the digest reads them. A nested value is its
+/// object count, then each object's fields in declared order; a join value is its relation
+/// and the parent id it is stored under, which for a parent is its own id.
+pub(crate) fn stored_of<'a>(id: &'a str, value: &'a Value<'a>, out: &mut Vec<Stored<'a>>) {
+    match value {
+        Value::String(s) => out.push(Stored::Text(s)),
+        Value::Shared(s) => out.push(Stored::Text(s)),
+        Value::Boolean(b) => out.push(Stored::Text(if *b { "true" } else { "false" })),
+        Value::Integer(n) | Value::Date(n) => out.push(Stored::Long(*n)),
+        Value::Vector(v) => out.push(Stored::Floats(v)),
+        Value::Nested(objects) => {
+            out.push(Stored::Long(objects.len() as i64));
+            for object in *objects {
+                for (_, v) in *object {
+                    stored_of(id, v, out);
+                }
+            }
+        }
+        Value::Join { relation, parent } => {
+            out.push(Stored::Text(relation));
+            out.push(Stored::Text(parent.unwrap_or(id)));
+        }
+    }
 }
 
 impl Operation {
@@ -99,19 +134,21 @@ impl Operation {
                 id: id.to_string(),
                 create_only: matches!(mutation, Mutation::Create { .. }),
                 version: *version,
-                digest: Some(digest(fields.iter().map(|(_, v)| match v {
-                    Value::String(s) => Stored::Text(s),
-                    Value::Shared(s) => Stored::Text(s),
-                    Value::Boolean(b) => Stored::Text(if *b { "true" } else { "false" }),
-                    Value::Integer(n) | Value::Date(n) => Stored::Long(*n),
-                    Value::Vector(v) => Stored::Floats(v),
-                }))),
+                digest: Some(digest({
+                    let mut stored = Vec::with_capacity(fields.len());
+                    for (_, value) in fields.iter() {
+                        stored_of(id, value, &mut stored);
+                    }
+                    stored.into_iter()
+                })),
+                docs: 1 + fields.iter().map(|(_, v)| objects_in(v)).sum::<usize>(),
             },
             Mutation::Delete { id, version } => Self {
                 id: id.to_string(),
                 create_only: false,
                 version: *version,
                 digest: None,
+                docs: 0,
             },
         }
     }
@@ -120,6 +157,7 @@ impl Operation {
         Live {
             version: self.version,
             digest: self.digest,
+            docs: self.docs,
         }
     }
 }
@@ -129,7 +167,7 @@ pub struct PreparedBatch {
     schema: Schema,
     request: String,
     operations: Vec<Operation>,
-    documents: Vec<Option<Document>>,
+    documents: Vec<Option<Vec<Document>>>,
     bytes: usize,
 }
 
@@ -182,14 +220,7 @@ impl Schema {
                     crate::schema::validate(*kind, *value)?;
                     bytes = bytes
                         .checked_add(name.len())
-                        .and_then(|n| {
-                            n.checked_add(match value {
-                                Value::String(s) => s.len(),
-                                Value::Shared(s) => s.len(),
-                                Value::Vector(v) => v.len().saturating_mul(4),
-                                _ => 8,
-                            })
-                        })
+                        .and_then(|n| n.checked_add(crate::schema::value_bytes(value)))
                         .ok_or(Error::Limit)?;
                     if bytes > batch_bytes(self) {
                         return Err(Error::Limit);
@@ -213,7 +244,7 @@ impl Schema {
                     id,
                     version,
                     fields,
-                } => self.document(id, *version, fields).map(Some),
+                } => self.block(id, *version, fields).map(Some),
                 Mutation::Delete { .. } => Ok(None),
             })
             .collect::<Result<_>>()?;
@@ -262,6 +293,8 @@ pub(crate) struct Live {
     pub(crate) version: i64,
     /// `None` for a tombstone.
     pub(crate) digest: Option<u128>,
+    /// Native documents it holds: the root and each nested object.
+    pub(crate) docs: usize,
 }
 
 /// Digest of typed field values in schema order, over their stored forms (a
@@ -388,15 +421,12 @@ impl Held<'_, '_> {
         }
     }
 
-    fn update(&mut self, term: Term, document: &Document) -> bool {
+    fn update(&mut self, term: Term, block: &[Document]) -> bool {
         match self {
-            Held::Inline(w) => w
-                .update_fields_documents(term, std::slice::from_ref(document))
-                .is_ok(),
-            Held::Background(w, panicked) => guarded(panicked, || {
-                w.update_fields_documents(term, std::slice::from_ref(document))
-                    .is_ok()
-            }),
+            Held::Inline(w) => w.update_fields_documents(term, block).is_ok(),
+            Held::Background(w, panicked) => {
+                guarded(panicked, || w.update_fields_documents(term, block).is_ok())
+            }
         }
     }
 
@@ -700,7 +730,7 @@ impl<'d> Engine<'d> {
                 Err(Error::Conflict)
             };
         }
-        let additions = batch.documents.iter().filter(|d| d.is_some()).count();
+        let additions: usize = batch.documents.iter().flatten().map(Vec::len).sum();
         let new_ids = batch
             .operations
             .iter()
@@ -762,8 +792,8 @@ impl<'d> Engine<'d> {
         }
         for (op, document) in batch.operations.iter().zip(batch.documents) {
             let term = Term::new("_hs_id", op.id.as_bytes());
-            let done = if let Some(document) = document {
-                writer.update(term, &document)
+            let done = if let Some(block) = document {
+                writer.update(term, &block)
             } else {
                 writer.delete(term)
             };
@@ -878,7 +908,8 @@ impl<'d> Engine<'d> {
             .current
             .values()
             .filter(|live| live.digest.is_some())
-            .count();
+            .map(|live| live.docs)
+            .sum();
         Ok(())
     }
 

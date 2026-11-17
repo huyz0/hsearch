@@ -34,6 +34,8 @@ fn kind_name(kind: Kind) -> String {
         Kind::Boolean => "boolean".into(),
         Kind::Date => "date".into(),
         Kind::Vector(spec) => crate::vector_mapping::spelling(&spec),
+        Kind::Nested => "nested".into(),
+        Kind::Join => "join".into(),
     }
 }
 

@@ -1183,6 +1183,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hsearch-commit"
+version = "0.1.0"
+dependencies = [
+ "hsearch-format",
+ "hsearch-lane",
+ "hsearch-object",
+ "sha2 0.11.1",
+]
+
+[[package]]
 name = "hsearch-engine"
 version = "0.1.0"
 dependencies = [

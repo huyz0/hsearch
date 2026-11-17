@@ -795,6 +795,13 @@
       "checksum": "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
     },
     {
+      "name": "hsearch-commit",
+      "version": "0.1.0",
+      "source": "workspace",
+      "license": "not selected",
+      "checksum": null
+    },
+    {
       "name": "hsearch-engine",
       "version": "0.1.0",
       "source": "workspace",
