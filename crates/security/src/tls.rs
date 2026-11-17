@@ -154,9 +154,20 @@ fn build(
     if chain.is_empty() || chain.len() > MAX_CHAIN {
         return Err(RotateError::BadChain);
     }
-    identity
-        .verify(&Presented::Certificate { chain, usage }, now)
-        .map_err(RotateError::NotAcceptable)?;
+    // One certificate is both dialled with and accepted with, so it must pass for both uses; a server-only
+    // certificate would otherwise install and then fail every outbound dial at the peer.
+    let _ = usage;
+    for use_as in [CertUse::Server, CertUse::Client] {
+        identity
+            .verify(
+                &Presented::Certificate {
+                    chain,
+                    usage: use_as,
+                },
+                now,
+            )
+            .map_err(RotateError::NotAcceptable)?;
+    }
     let der = chain
         .iter()
         .map(|c| CertificateDer::from(c.clone()))

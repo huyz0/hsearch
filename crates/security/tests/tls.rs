@@ -376,6 +376,7 @@ fn rotation_under_load_loses_no_bytes_and_no_stream() {
             let done = done.clone();
             thread::spawn(move || {
                 let tcp = TcpStream::connect(addr).unwrap();
+                tcp.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
                 let conn = ClientConnection::new(cfg, name()).unwrap();
                 let mut c = StreamOwned::new(conn, tcp);
                 let mut rounds = 0u32;
@@ -453,7 +454,7 @@ fn there_is_no_downgrade_and_no_anonymous_client() {
 }
 
 #[test]
-fn the_wrong_role_is_refused_in_the_handshake() {
+fn a_certificate_of_a_role_the_deployment_does_not_accept_cannot_be_installed() {
     let ca = DevCa::new("root").unwrap();
     let verifier = Arc::new(ChainVerifier::new(vec![ca.der()], Duration::from_secs(5)).unwrap());
     // This deployment accepts only index nodes.
@@ -531,4 +532,84 @@ fn handshake(
             .map_err(|e| e.to_string())?;
     }
     Ok(tls)
+}
+
+fn node_trusting(cas: &[&DevCa], roles: &[Role], own: &DevCa, own_role: &str) -> Node {
+    let verifier = Arc::new(
+        ChainVerifier::new(
+            cas.iter().map(|c| c.der()).collect(),
+            Duration::from_secs(5),
+        )
+        .unwrap(),
+    );
+    let id = Arc::new(
+        SpiffeIdentityProvider::new(
+            verifier.clone(),
+            vec![AcceptedIdentity {
+                trust_domain: TrustDomain::new(DOMAIN).unwrap(),
+                cluster: ClusterId::new("prod").unwrap(),
+                roles: roles.iter().copied().collect(),
+            }],
+        )
+        .unwrap(),
+    );
+    let (chain, key) = mint(own, own_role, 3600);
+    let cert =
+        RotatingCert::new(chain, key, CertUse::Server, id.clone(), SystemTime::now()).unwrap();
+    Node {
+        tls: PeerTls::new(cert, id).unwrap(),
+        verifier,
+    }
+}
+
+/// Whether the server serves this client: the handshake and one round trip must both work.
+fn served(client: &Node, addr: std::net::SocketAddr) -> bool {
+    let Ok(mut c) = connect(client, addr) else {
+        return false;
+    };
+    let attempt = c
+        .write_all(&[0, 0, 0, 1, 9])
+        .and_then(|_| c.flush())
+        .and_then(|_| c.read_exact(&mut [0u8; 5]));
+    attempt.is_ok()
+}
+
+#[test]
+fn the_server_refuses_clients_it_must_not_serve_in_the_handshake() {
+    let ca = DevCa::new("root").unwrap();
+    let rogue = DevCa::new("rogue").unwrap();
+    let server = node_trusting(&[&ca], &[Role::IndexNode, Role::SearchNode], &ca, "index");
+    let (addr, _stop) = echo_server(&server);
+
+    // Control: a proper client is served.
+    let good = node_trusting(&[&ca], &[Role::IndexNode, Role::SearchNode], &ca, "search");
+    assert!(served(&good, addr));
+    // A client certificate from a CA the server does not trust (the client trusts both, so it gets as far as
+    // presenting it).
+    let from_rogue = node_trusting(
+        &[&ca, &rogue],
+        &[Role::IndexNode, Role::SearchNode],
+        &rogue,
+        "search",
+    );
+    assert!(!served(&from_rogue, addr));
+    // A trusted CA but a role the server's deployment does not accept.
+    let wrong_role = node_trusting(&[&ca], &[Role::Coordinator], &ca, "coordinator");
+    assert!(!served(&wrong_role, addr));
+}
+
+#[test]
+fn a_server_only_certificate_cannot_be_rotated_in() {
+    let ca = DevCa::new("root").unwrap();
+    let n = node(&ca, "index");
+    let mut spec = NodeCert::spiffe(&spiffe("index"));
+    spec.client_and_server = false;
+    let m = ca.issue(&spec).unwrap();
+    assert!(matches!(
+        n.tls
+            .cert()
+            .rotate(vec![m.der], Zeroizing::new(m.key_pkcs8), SystemTime::now()),
+        Err(RotateError::NotAcceptable(_))
+    ));
+    assert_eq!(n.tls.cert().generation(), 1);
 }
