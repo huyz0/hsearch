@@ -4,7 +4,7 @@
 
 ## What exists
 
-- **`Change::Replace` (lane) and the head rule (format).** The head could only name a new checkpoint root by raising the cover (`validate_successor`: "a new checkpoint root needs a higher cover"), so a compaction, which rewrites the same history, had no way to be named. A replacement now keeps the cover, needs an existing checkpoint, and **raises the publication generation by one**; the old refusal (same cover, different root, same publication generation) is unchanged and still tested. This is a format-level change to the M03.05 head and is the one thing here that is not local to `hsearch-store`.
+- **`Change::Replace { from, root }` (lane) and the head rule (format).** The head could only name a new checkpoint root by raising the cover (`validate_successor`: "a new checkpoint root needs a higher cover"), so a compaction, which rewrites the same history, had no way to be named. A replacement now keeps the cover, must name the current checkpoint as `from` (a replacement of any other root is refused by the head itself), and **raises the publication generation by one**; the old refusal (same cover, different root, same publication generation) is unchanged and still tested. This is a format-level change to the M03.05 head and is the one thing here that is not local to `hsearch-store`.
 - **`compact::Compactor`** (`crates/store/src/compact.rs`). `validate_source` requires the head to name exactly the source root, the spec's previous base to be that root, the same mapping and key envelope (`Incompatible`), the same covered prefix (`CoverageChanged`), and a source that still verifies. `compact` then publishes and `finish` names the replacement: it refuses a generation below the collection boundary (`Swept`) and swaps the head by compare-and-swap on the version read (`Publish(Lost)` for a head that moved after the last read). `finish` is public so a stalled compaction resumes at the step that matters.
 - **`boundary`** (`crates/store/src/boundary.rs`, `Layout::gc_boundary`). One object per shard incarnation holding a generation that only rises (create, then compare-and-swap on the version read; a lost race to a higher value is success).
 - **`pins::Pins`**. `register` creates the durable `PinRecord` (create-only, identity-resolved) and **then re-reads the boundary**; a generation below it is refused and its pin removed (`Swept`). `Pin::usable(now, skew)` is what a reader checks before each use, because collection may reclaim after expiry.
@@ -20,7 +20,7 @@
 
 ## Evidence
 
-`crates/store/tests/gc.rs`, 13 tests (real engine commits on disk), plus the head rule in `crates/format/tests/authority.rs` and `crates/lane/tests/authority.rs`:
+`crates/store/tests/gc.rs`, 14 tests (real engine commits on disk), plus the head rule in `crates/format/tests/authority.rs` and `crates/lane/tests/authority.rs`:
 
 - A replaced base is reclaimed (root, page, every file) and the live root stays readable; the dry run changes nothing and reports exactly what the sweep then does; a second sweep deletes nothing.
 - A pin holds its base; the instant after expiry it does not (`expires == now` is expired, `now == expires - 1` is not); the expired pin is removed.
@@ -45,6 +45,10 @@
 | LIST pages | 4 (pins, roots, payloads, pages), one page per up to 1,000 keys |
 
 Reads do not grow with the number of files (12 for 17); deletes are one per object reclaimed; LIST pages grow with keys under the prefixes, not with elapsed time. With `page = 1` the LIST count is exactly one page per key plus one per prefix (asserted), and a second run over the same state makes the same requests. The 17-file sweep took about 0.3 ms in memory, which says nothing about a provider.
+
+## Independent review (round 1) and what changed
+
+A reviewer who saw only the diff found: `finish` did not re-validate the source, so a stalled compaction resuming on a **fresh** head could replace a newer base (fixed: `finish` requires the head to name the source and generation + 1, and `Change::Replace` carries the expected old root, so the head refuses it too; test `a_stalled_compaction_resuming_on_a_fresh_head...`); a `page` above the provider cap would read a truncated listing as complete, and `page = 0` would loop (fixed: clamped to 1..=1000 and the `Inventory` contract says short pages mean the end); pins trusted the caller's shard and generation (fixed: registration reads the root and compares its own generation, `Mismatch` otherwise); expired pins were collected without a bound (now bounded by `max_tracked`); pins are decoded with `decode_for`. Not changed: every read is a HEAD plus a GET (two requests an object) and kept roots and pages are re-read each sweep, which is the cost shown above; one undecodable or oversized pin, root or page blocks collection of that index by design (an unknown reference is never guessed); and a run stopped by `max_roots`/`max_deletes` can leave a root whose page is gone, whose surviving files only orphan reclaim can then free.
 
 ## Limits and downsides
 

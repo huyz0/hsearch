@@ -198,6 +198,9 @@ impl<S: MetadataStore, I: Inventory> Sweeper<S, I> {
         page: usize,
         mut each: impl FnMut(&Listed) -> Result<(), Error>,
     ) -> Result<(), Error> {
+        // An inventory returns fewer than `limit` only at the end of the prefix, and no provider
+        // returns more than 1,000: a larger request would read a truncated page as the last one.
+        let page = page.clamp(1, 1000);
         let mut after: Option<String> = None;
         loop {
             self.io.counters.list();
@@ -276,12 +279,14 @@ impl<S: MetadataStore, I: Inventory> Sweeper<S, I> {
         let mut protected: HashSet<Id> = HashSet::new();
         let prefix = self.layout.pin_prefix(index);
         let mut expired: Vec<Listed> = Vec::new();
+        let mut complete = true;
         self.list_all(&prefix, cfg.page, |l| {
             // A pin released (or refused and removed) since the listing no longer holds anything.
             let Some((bytes, _)) = self.io.read(&l.key)? else {
                 return Ok(());
             };
-            let pin = PinRecord::decode(&bytes)?;
+            let id = id_after(&l.key, &prefix).ok_or(Error::Corrupt("pin key"))?;
+            let pin = PinRecord::decode_for(&bytes, index, &id)?;
             if pin.index != *index {
                 return Err(Error::Corrupt("pin names another index"));
             }
@@ -289,7 +294,12 @@ impl<S: MetadataStore, I: Inventory> Sweeper<S, I> {
                 report.pins_active += 1;
                 track(&mut protected, pin.manifest, cfg.max_tracked)
             } else {
-                expired.push(l.clone());
+                // Bounded like everything else: the rest are removed by a later run.
+                if expired.len() < cfg.max_tracked {
+                    expired.push(l.clone());
+                } else {
+                    complete = false;
+                }
                 Ok(())
             }
         })?;
@@ -297,7 +307,6 @@ impl<S: MetadataStore, I: Inventory> Sweeper<S, I> {
         let mut files: HashSet<Id> = HashSet::new();
         let mut pages: HashSet<Id> = HashSet::new();
         let mut candidates: Vec<(usize, Candidate)> = Vec::new();
-        let mut complete = true;
         for (n, (s, l)) in shards.iter().zip(&live).enumerate() {
             let boundary = l.as_ref().map_or(0, |(g, _)| *g);
             let prefix = self.layout.manifest_prefix(index, &s.shard, s.incarnation);

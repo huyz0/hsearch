@@ -135,6 +135,11 @@ impl<S: MetadataStore + hsearch_object::LargeObjectWriter + 'static> Compactor<S
         spec: &BaseSpec<'_>,
         dependencies: &dyn Dependencies,
     ) -> Result<(StructuralHead, VersionToken), Error> {
+        let source = spec.previous.ok_or(Error::SourceMoved)?;
+        let named = manifest_id(&spec.index, &spec.shard, &source.token);
+        if at.head.checkpoint != Some(named) || published.root.generation != source.generation + 1 {
+            return Err(Error::SourceMoved);
+        }
         self.above_boundary(spec, published.root.generation)?;
         Ok(self.publisher.replace(at, published, spec, dependencies)?)
     }

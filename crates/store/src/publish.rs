@@ -436,7 +436,10 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
         spec: &BaseSpec<'_>,
         dependencies: &dyn Dependencies,
     ) -> Result<(StructuralHead, VersionToken), Error> {
+        let source = spec.previous.ok_or(Error::Mismatch)?;
+        let from = manifest_id(&spec.index, &spec.shard, &source.token);
         self.transition(at, published, spec, dependencies, |root| Change::Replace {
+            from,
             root,
         })
     }

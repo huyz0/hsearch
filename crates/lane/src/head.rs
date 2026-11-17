@@ -41,6 +41,8 @@ pub enum Change {
     /// replaces the checkpoint root: the cover stays and the publication generation rises by one,
     /// which is what tells a validator the root changed on purpose. Needs a checkpoint to replace.
     Replace {
+        /// The root being replaced: the transition is refused unless it is the current checkpoint.
+        from: Id,
         /// The replacement root's identity, never all zero.
         root: Id,
     },
@@ -165,10 +167,10 @@ fn successor(current: &StructuralHead, change: Change) -> Result<StructuralHead>
             next.checkpoint = Some(root);
             next.tail.ordinal = current.tail.ordinal.max(cover);
         }
-        Change::Replace { root } => {
-            if root == [0; 16] || current.checkpoint.is_none() {
+        Change::Replace { from, root } => {
+            if root == [0; 16] || current.checkpoint != Some(from) {
                 return Err(Error::Invalid(
-                    "a replacement needs a checkpoint and a real root",
+                    "a replacement must replace the current checkpoint with a real root",
                 ));
             }
             next.checkpoint = Some(root);

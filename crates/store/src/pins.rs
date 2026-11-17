@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use hsearch_format::{FormatError, Id, Layout, PinRecord};
+use hsearch_format::{FormatError, Id, Layout, ManifestRoot, PinRecord};
 use hsearch_object::{Error as StoreError, MetadataStore, Precondition};
 
 use crate::boundary::{self, Boundary};
@@ -19,6 +19,8 @@ use crate::io::{Io, request_id};
 pub enum Error {
     /// The pin's expiry is not in the future.
     Expired,
+    /// The manifest is not a root of that shard incarnation, or its generation is not the one stated.
+    Mismatch,
     /// The generation is below the collection boundary; read the head again and pin the current one.
     Swept {
         /// The boundary that refused it.
@@ -93,6 +95,15 @@ impl<S: MetadataStore> Pins<S> {
     ) -> Result<Pin, Error> {
         if record.expires_unix_ms <= now_unix_ms {
             return Err(Error::Expired);
+        }
+        // The generation the boundary is compared with is the root's own, not the caller's word.
+        let root_key =
+            self.layout
+                .manifest_root(&record.index, shard, incarnation, &record.manifest);
+        let (root_bytes, _) = self.io.read(&root_key)?.ok_or(Error::Mismatch)?;
+        let root = ManifestRoot::decode_for(&root_bytes, &record.index)?;
+        if root.generation != record.manifest_generation {
+            return Err(Error::Mismatch);
         }
         let key = self.layout.pin(&record.index, &record.pin);
         let mut bytes = Vec::new();

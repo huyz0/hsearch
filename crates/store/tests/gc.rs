@@ -472,10 +472,35 @@ fn a_pin_below_the_boundary_is_refused_and_leaves_nothing() {
         let w = World::new();
         let b1 = w.write(f, names, 3, 1, None);
         let _b2 = w.compact(f, names, &b1.root, 2).unwrap();
-        w.sweep(Mode::Sweep, 2_000).unwrap();
-        // The reader read the head before the compaction and registers after the collection.
+        // The collector has published its boundary but not yet deleted b1's root (a budget of 0).
+        let mut cfg = config(Mode::Sweep, 2_000);
+        cfg.max_deletes = 0;
+        w.sweeper().run(&INDEX, &[shard_ref()], &cfg).unwrap();
+        // The reader read the head before the compaction and registers after that.
         let late = w.pins().register(&pin_for(&b1, 2, 9_000), &SHARD, 1, 2_100);
-        assert!(matches!(late, Err(PinError::Swept { boundary: 2 })));
+        assert!(
+            matches!(late, Err(PinError::Swept { boundary: 2 })),
+            "{late:?}"
+        );
+        assert_eq!(w.store.count(&layout().pin_prefix(&INDEX)), 0);
+        // After the sweep the root is gone: a pin on it names nothing.
+        w.sweep(Mode::Sweep, 2_000).unwrap();
+        let gone = w.pins().register(&pin_for(&b1, 2, 9_000), &SHARD, 1, 2_100);
+        assert!(matches!(gone, Err(PinError::Mismatch)), "{gone:?}");
+        // A wrong shard, or a generation the root does not have, is refused before any write.
+        let live = head_of(&w.store).0.checkpoint.unwrap();
+        let mut rec = pin_for(&b1, 5, 9_000);
+        rec.manifest = live;
+        rec.manifest_generation = 2;
+        assert!(matches!(
+            w.pins().register(&rec, &[1; 16], 1, 2_100),
+            Err(PinError::Mismatch)
+        ));
+        rec.manifest_generation = 9;
+        assert!(matches!(
+            w.pins().register(&rec, &SHARD, 1, 2_100),
+            Err(PinError::Mismatch)
+        ));
         assert_eq!(w.store.count(&layout().pin_prefix(&INDEX)), 0);
         // A pin already past its expiry is refused without a write.
         assert!(matches!(
@@ -555,6 +580,42 @@ fn a_publisher_suspended_across_a_sweep_cannot_name_a_swept_generation() {
             ),
             "{direct:?}"
         );
+    });
+}
+
+#[test]
+fn a_stalled_compaction_resuming_on_a_fresh_head_cannot_replace_a_newer_base() {
+    with_commit("fresh-resume", |f, names| {
+        let w = World::new();
+        let b1 = w.write(f, names, 3, 1, None);
+        // The compaction publishes generation 2 from b1 and stalls.
+        let stale_spec = spec(b1.root.covered, 10, Some(&b1.root));
+        let stalled = w
+            .publisher
+            .publish(f, names, &stale_spec, &AnyDependencies)
+            .unwrap();
+        // A writer publishes generation 2 with more history, and a sweep sets the boundary to 2.
+        let b2 = w.write(f, names, 5, 2, Some(&b1.root));
+        w.sweep(Mode::Sweep, 2_000).unwrap();
+        // Resuming with a head read taken now passes the boundary (2 is not below 2) and the swap
+        // would win, but the head no longer names the source: refused, nothing changes.
+        let (head, version) = head_of(&w.store);
+        let at = HeadRead {
+            lane: &lane(),
+            head: &head,
+            version: &version,
+        };
+        let r = w
+            .compactor
+            .finish(&at, &stalled, &stale_spec, &AnyDependencies);
+        assert!(matches!(r, Err(CompactError::SourceMoved)), "{r:?}");
+        assert_eq!(head_of(&w.store).0.checkpoint, Some(b2.manifest));
+        // The head rule itself refuses a replacement that names the wrong source.
+        let wrong = w
+            .publisher
+            .replace(&at, &stalled, &stale_spec, &AnyDependencies);
+        assert!(wrong.is_err(), "{wrong:?}");
+        assert_eq!(head_of(&w.store).0.checkpoint, Some(b2.manifest));
     });
 }
 
@@ -914,7 +975,7 @@ fn readers_pinning_while_compaction_and_sweeps_run_never_lose_their_base() {
                             }
                             w.pins().release(&INDEX, &rec.pin).unwrap();
                         }
-                        Err(PinError::Swept { .. }) => {
+                        Err(PinError::Swept { .. } | PinError::Mismatch) => {
                             refused.fetch_add(1, Ordering::SeqCst);
                         }
                         Err(e) => panic!("{e:?}"),

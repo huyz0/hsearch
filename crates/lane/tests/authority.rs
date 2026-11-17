@@ -102,7 +102,10 @@ fn establishing_checkpointing_and_bumping_walk_the_head_forward() {
             &lane(),
             &h,
             &v,
-            Change::Replace { root: [8; 16] },
+            Change::Replace {
+                from: [9; 16],
+                root: [8; 16],
+            },
         ))
         .unwrap(),
     );
@@ -115,7 +118,25 @@ fn establishing_checkpointing_and_bumping_walk_the_head_forward() {
             &lane(),
             &h,
             &v,
-            Change::Replace { root: [0; 16] },
+            Change::Replace {
+                from: [7; 16],
+                root: [6; 16],
+            },
+        ))
+        .is_err(),
+        "a replacement must name the current checkpoint"
+    );
+    assert!(
+        block_on(advance_head(
+            &*store,
+            &layout(),
+            &lane(),
+            &h,
+            &v,
+            Change::Replace {
+                from: [8; 16],
+                root: [0; 16],
+            },
         ))
         .is_err(),
         "the zero id is not a root"
