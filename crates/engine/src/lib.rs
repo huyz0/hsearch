@@ -3,6 +3,8 @@
 mod aggregations;
 mod budget;
 pub use budget::{DiskBudget, DiskReservation};
+mod integrity;
+pub use integrity::{verify_directory, verify_files};
 mod maintenance;
 pub use maintenance::{MergeScheduler, MergeTicket};
 mod checkpoint;

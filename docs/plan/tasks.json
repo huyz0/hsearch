@@ -2152,7 +2152,7 @@
       "title": "Lucene Rust bridge and committed readers",
       "goal": "Deliver a production-shaped engine adapter with remote I/O and exact commit/visibility boundaries.",
       "owner": "engine",
-      "status": "planned",
+      "status": "done",
       "depends_on": [
         "M02",
         "M03"
@@ -2313,8 +2313,13 @@
             "M04.05"
           ],
           "owner": "engine",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m04-06-bridge-qualification.md",
+              "result": "Release-profile engine suite green; 153-case corruption corpus found that open does not recompute CRCs (2 flips answered wrongly), fixed by opt-in verify_files/verify_directory, after which all 153 are refused, mutation seen red; local vs in-memory-remote benchmark (3 round trips cold, warm p50 within about 27 percent). Provisional (one host, in-memory store, no RustFS here, corpus 387 KB). verify is not yet wired into publish (M06)."
+            }
+          ]
         }
       ]
     },
@@ -2590,7 +2595,7 @@
           "title": "Publish segments and archive coordinates",
           "goal": "Make every published base recoverable.",
           "deliverables": [
-            "Pinned engine commit uploads, manifest/root publisher, schema/key dependencies",
+            "Pinned engine commit uploads, manifest/root publisher, schema/key dependencies; every uploaded native file is checked with hsearch_engine::verify_files before the manifest names it (M04.06 found that open does not recompute CRCs)",
             "Segment files are written through the engine's ObjectUploadSink (M03.14), create-only, never buffered whole"
           ],
           "validation": [
@@ -2652,7 +2657,7 @@
           "title": "Deliver lifecycle and standalone API",
           "goal": "Make local end-to-end use operationally complete.",
           "deliverables": [
-            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls",
+            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls; the writer is moved onto the M04.04 barrier (Replay, Readers, Cut) and the M04.03 resolver, and a failed refresh keeps the published reader (M04 milestone review: both modules are unwired today)",
             "Native /v1 capabilities/receipts and explicitly selected thin adapter routes; core request/response/queue/retention admission",
             "Early selected OpenSearch-reference and intentional-difference/unsupported conformance corpus; no broad SDK promise",
             "Refresh the core-v1 fixture corpus for the rows revised on 13 November 2026 (the refresh=true history, the partial `_update` example in A11, nested/join and kNN inputs, aliases, snapshots) together with the pinned engine differential bundle that hashes it; until then those native inputs predate the product requirements"
