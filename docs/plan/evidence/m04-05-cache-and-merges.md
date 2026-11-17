@@ -23,3 +23,8 @@
 - The uncached fallback holds a whole file on the heap for that read (bounded by the file, and by `heap_budget` on the range path).
 - `merge_scheduled` still runs the merge under the engine's state lock, as `merge` does; moving merges off that lock is M21.10. The reservation is an upper bound (inputs' size), not the output's measured size.
 - `PageCache` (the range path) keeps its own disk budget; sharing a `DiskBudget` with it needs a lucene-rust change and is not done here.
+- A file served uncached is fetched again on every open (one GET each, no negative caching) and each concurrent reader holds its own copy; `uncached()` is the signal to size the disk tier. Before this change a failed cache write was an error.
+- `file_length` of a cached file answers from the recorded size (no fetch); an uncached name still opens it. `merge_scheduled` reserves the whole directory's bytes, an over-estimate of the inputs, and propagates a length error rather than guessing.
+- `cache_namespace` is a helper: `open_blob` still takes any namespace string, so using it is the caller's job (M06 wires it).
+- A wrong-length cached file is now repaired on the default path too (a behaviour change beyond the disk-full fallback).
+- Review (independent subagent) findings fixed: file_length fetch, pin race (retry), eviction failure no longer fails a read, delete clears the pin, ticket returns bytes before waking a waiter.

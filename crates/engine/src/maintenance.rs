@@ -35,7 +35,7 @@ pub struct MergeScheduler {
 /// on its disk reservation, whether the merge succeeded or not.
 pub struct MergeTicket {
     shared: Arc<Shared>,
-    _reservation: DiskReservation,
+    reservation: Option<DiskReservation>,
 }
 
 fn lock(shared: &Shared) -> Result<std::sync::MutexGuard<'_, State>> {
@@ -72,7 +72,7 @@ impl MergeScheduler {
         state.running += 1;
         Ok(MergeTicket {
             shared: Arc::clone(&self.shared),
-            _reservation: reservation,
+            reservation: Some(reservation),
         })
     }
 
@@ -118,6 +118,8 @@ impl std::fmt::Debug for MergeTicket {
 
 impl Drop for MergeTicket {
     fn drop(&mut self) {
+        // Return the bytes before waking a waiter, so an idle scheduler holds none.
+        drop(self.reservation.take());
         // Recover a poisoned lock: the count must still fall or shutdown hangs.
         let mut state = self
             .shared

@@ -713,7 +713,11 @@ impl<'d> Engine<'d> {
     pub fn merge_scheduled(&self, scheduler: &crate::MergeScheduler) -> Result<()> {
         let mut bytes = 0u64;
         for name in self.directory.list_all().map_err(|_| Error::Native)? {
-            bytes = bytes.saturating_add(self.directory.file_length(&name).unwrap_or(0));
+            bytes = bytes.saturating_add(
+                self.directory
+                    .file_length(&name)
+                    .map_err(|_| Error::Native)?,
+            );
         }
         let _ticket = scheduler.admit(bytes)?;
         self.merge()

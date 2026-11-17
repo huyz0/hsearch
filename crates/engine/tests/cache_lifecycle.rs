@@ -189,3 +189,49 @@ fn merges_are_admitted_by_slot_and_disk_and_stop_at_shutdown() {
     assert!(scheduler.wait_idle(Duration::ZERO));
     engine.close().unwrap();
 }
+
+#[test]
+fn file_length_of_a_cached_file_costs_no_fetch_and_a_failed_write_returns_its_budget() {
+    let (_written, store, names) = uploaded();
+    let budget = DiskBudget::new(1 << 30);
+    let cache = Scratch::new("length");
+    let dir = CachedDirectory::new(&cache.0, &store, names.clone(), 1 << 30)
+        .unwrap()
+        .with_budget(budget.clone());
+    let name = &names[0];
+    let expected = store.files.lock().unwrap()[name].len() as u64;
+    dir.open(name).unwrap();
+    let fetches = dir.fetches();
+    assert_eq!(dir.file_length(name).unwrap(), expected);
+    assert_eq!(dir.fetches(), fetches);
+
+    std::fs::remove_dir_all(&cache.0).unwrap();
+    std::fs::write(&cache.0, b"x").unwrap();
+    let other = &names[1];
+    dir.open(other).unwrap();
+    assert_eq!(dir.uncached(), 1);
+    assert_eq!(
+        budget.used(),
+        dir.cached_bytes(),
+        "a failed write holds no budget"
+    );
+    let _ = std::fs::remove_file(&cache.0);
+}
+
+#[test]
+fn deleting_a_pinned_file_clears_its_pin() {
+    let (_written, store, names) = uploaded();
+    let cache = Scratch::new("delpin");
+    let dir = CachedDirectory::new(&cache.0, &store, names.clone(), 1 << 30).unwrap();
+    let pin = dir.pin(&names[0]).unwrap();
+    dir.delete_file(&names[0]).unwrap();
+    dir.mark_remote(&names[0]).unwrap();
+    dir.open(&names[0]).unwrap();
+    drop(pin);
+    dir.evict_all().unwrap();
+    assert_eq!(
+        dir.cached_bytes(),
+        0,
+        "a stale pin must not outlive its entry"
+    );
+}

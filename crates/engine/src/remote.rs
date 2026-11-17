@@ -173,19 +173,23 @@ impl<R: RemoteFiles> CachedDirectory<R> {
     /// Fetch `name` into the cache if absent and keep it from eviction until the
     /// returned pin drops. A file that could not be cached cannot be pinned.
     pub fn pin(&self, name: &str) -> lucene_store::Result<CachePin<'_, R>> {
-        self.open(name)?;
-        let mut cache = self.cache.lock().map_err(|_| poisoned())?;
-        if !cache.sizes.contains_key(name) {
-            return Err(io_error(
-                io::ErrorKind::OutOfMemory,
-                "file could not be cached",
-            ));
+        // Another open may evict the file between the fetch and the pin (it is not
+        // pinned yet), so retry a few times before giving up.
+        for _ in 0..4 {
+            self.open(name)?;
+            let mut cache = self.cache.lock().map_err(|_| poisoned())?;
+            if cache.sizes.contains_key(name) {
+                *cache.pins.entry(name.to_owned()).or_insert(0) += 1;
+                return Ok(CachePin {
+                    directory: self,
+                    name: name.to_owned(),
+                });
+            }
         }
-        *cache.pins.entry(name.to_owned()).or_insert(0) += 1;
-        Ok(CachePin {
-            directory: self,
-            name: name.to_owned(),
-        })
+        Err(io_error(
+            io::ErrorKind::OutOfMemory,
+            "file could not be cached",
+        ))
     }
 
     /// Whole-file fetches issued so far, one per cache miss.
@@ -245,7 +249,7 @@ impl<R: RemoteFiles> CachedDirectory<R> {
         // Make room: evict unpinned files, oldest first. Anything that cannot fit
         // is still served, from memory, so a full or failing disk never fails a read.
         while cache.bytes + length > self.max_bytes {
-            if !evict_one(&self.local, cache)? {
+            if !evict_one(&self.local, cache).unwrap_or(false) {
                 self.uncached.fetch_add(1, Ordering::Relaxed);
                 return Ok(Input::Owned(bytes));
             }
@@ -256,7 +260,7 @@ impl<R: RemoteFiles> CachedDirectory<R> {
                 match budget.reserve(length) {
                     Ok(r) => break Some(r),
                     Err(_) => {
-                        if !evict_one(&self.local, cache)? {
+                        if !evict_one(&self.local, cache).unwrap_or(false) {
                             self.uncached.fetch_add(1, Ordering::Relaxed);
                             return Ok(Input::Owned(bytes));
                         }
@@ -360,6 +364,23 @@ impl<R: RemoteFiles> Directory for CachedDirectory<R> {
         self.fetch_into_cache(name, &mut cache)
     }
 
+    /// A cached file's recorded length, without opening it (and so without a fetch);
+    /// any other name takes the default, which opens it.
+    fn file_length(&self, name: &str) -> lucene_store::Result<u64> {
+        if valid_name(name)
+            && let Some(size) = self
+                .cache
+                .lock()
+                .map_err(|_| poisoned())?
+                .sizes
+                .get(name)
+                .copied()
+        {
+            return Ok(size);
+        }
+        Ok(self.open(name)?.len() as u64)
+    }
+
     fn create_output(&self, name: &str) -> lucene_store::Result<FsIndexOutput> {
         self.local.create_output(name)
     }
@@ -389,6 +410,7 @@ impl<R: RemoteFiles> Directory for CachedDirectory<R> {
         let mut cache = self.cache.lock().map_err(|_| poisoned())?;
         let removed = self.backed.lock().map_err(|_| poisoned())?.remove(name);
         if removed {
+            cache.pins.remove(name);
             remove_cached(&self.local, &mut cache, name)
         } else {
             drop(cache);
