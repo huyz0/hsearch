@@ -366,7 +366,7 @@ def selftest(data: dict) -> int:
     case("self cycle", "Dependency cycle", lambda d: task(d, "M00.01")["depends_on"].append("M00.01"))
     case("duplicate task", "Duplicate task", lambda d: milestone(d, "M00")["tasks"].append(copy.deepcopy(task(d, "M00.01"))))
     case("missing done evidence", "Done task lacks evidence", lambda d: task(d, "M00.01").update(status="done", evidence=[]))
-    case("false milestone completion", "Milestone/task completion mismatch", lambda d: milestone(d, "M04").update(status="done"), raw=True)
+    case("false milestone completion", "Milestone/task completion mismatch", lambda d: milestone(d, "M17").update(status="done"), raw=True)
     case("cancelled without reason", "Cancelled task needs a reason", lambda d: task(d, "M01.08").update(status="cancelled", cancelled_reason=""))
     case("invalid status", "Invalid task status", lambda d: task(d, "M02.01").update(status="passed"))
     case("missing task acceptance", "Missing task definition_of_done", lambda d: task(d, "M00.01").update(definition_of_done=[]))
