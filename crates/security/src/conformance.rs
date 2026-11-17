@@ -2,10 +2,13 @@
 //!
 //! Run [`run`] against a provider and a customer key that exists in it; the result is a report with one line
 //! per check: `pass`, `FAIL` with what was observed, or `NOT-RUN` with the reason (a check that needs an
-//! owner action the caller did not supply, or a capability the provider does not claim). A provider with no
+//! owner action the caller did not supply). A provider with no
 //! credentials reports every check `NOT-RUN`, never `pass`. The in-memory test provider runs it in the test
 //! suite; the real providers (M15) run the same suite against a real account, so a provider's claims are the
 //! report, not a description.
+//!
+//! Revocation and rotation take effect eventually at a real provider; the owner-action checks assume the
+//! effect is immediate, so an M15 run waits for propagation inside its `OwnerActions` before returning.
 //!
 //! The suite never logs or returns key material: a check that compares keys does so in place and reports
 //! only a verdict.
@@ -56,6 +59,12 @@ impl Report {
             .filter(|(_, v)| matches!(v, Verdict::Fail(_)))
             .map(|(n, _)| *n)
             .collect()
+    }
+
+    /// Whether every check passed and none was skipped: the bar for qualifying a provider. Unlike
+    /// [`Report::conforms`], a run without owner actions (so no revocation or rotation evidence) is not enough.
+    pub fn fully_conforms(&self) -> bool {
+        !self.checks.is_empty() && self.checks.iter().all(|(_, v)| *v == Verdict::Pass)
     }
 
     /// Whether anything failed or nothing ran. A report with no `Pass` is not a conforming provider.

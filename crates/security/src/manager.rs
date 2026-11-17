@@ -47,6 +47,8 @@ pub enum KeyError {
     WrongProvider,
     /// The cache policy is unusable (no entries, no lifetime, or more shards than entries).
     BadCachePolicy,
+    /// The production profile caps the data-key cache lifetime at [`MAX_PRODUCTION_TTL`].
+    CacheLifetimeTooLong,
     /// The deployment default key serves every index that names none; destroying it is not one index's
     /// crypto-shredding and is refused here.
     DefaultKeyProtected,
@@ -65,6 +67,9 @@ impl fmt::Display for KeyError {
             KeyError::DefaultKeyProtected => {
                 f.write_str("the deployment default key cannot be shredded for one index")
             }
+            KeyError::CacheLifetimeTooLong => f.write_str(
+                "the production profile allows a data-key cache lifetime of at most 60 seconds",
+            ),
             KeyError::BadCachePolicy => f.write_str(
                 "cache policy needs entries, a non-zero lifetime and 1..=max_entries shards",
             ),
@@ -233,7 +238,7 @@ impl KeyManager {
             return Err(KeyError::TestProviderInProduction);
         }
         if profile == Profile::Production && policy.ttl > MAX_PRODUCTION_TTL {
-            return Err(KeyError::BadCachePolicy);
+            return Err(KeyError::CacheLifetimeTooLong);
         }
         if policy.max_entries == 0
             || policy.ttl.is_zero()
@@ -266,7 +271,7 @@ impl KeyManager {
         Ok(manager)
     }
 
-    /// Remembers a retryable provider failure (throttled, timeout, unavailable) for `backoff` (at most
+    /// Remembers a retryable provider failure (throttled or unavailable; never a timeout, which is a caller's own budget) for `backoff` (at most
     /// [`MAX_FAILURE_BACKOFF`]) per customer key, and answers reads that would miss the cache with that same
     /// failure instead of calling the provider again. Without it every read of a cold object is a provider
     /// call during an outage, which is a retry storm at read rate against a service that is already failing
@@ -294,7 +299,14 @@ impl KeyManager {
     }
 
     fn note_failure(&self, key: &KeyRef, error: &ProviderError) {
-        if self.failure_backoff.is_zero() || !error.is_retryable() {
+        // A timeout is relative to one caller's own budget, so it says nothing about the provider and must not
+        // be remembered for callers with longer ones.
+        if self.failure_backoff.is_zero()
+            || !matches!(
+                error,
+                ProviderError::Throttled { .. } | ProviderError::Unavailable
+            )
+        {
             return;
         }
         let hold = match error {

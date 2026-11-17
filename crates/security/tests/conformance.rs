@@ -46,13 +46,17 @@ fn the_test_provider_conforms_with_and_without_owner_actions() {
         Some(&Owner(k.clone())),
     );
     println!("{report}");
-    assert!(report.conforms(), "{report}");
+    assert!(report.conforms() && report.fully_conforms(), "{report}");
     assert!(report.checks.len() >= 13);
     assert!(report.checks.iter().all(|(_, v)| *v == Verdict::Pass));
 
     let k = kms();
     let report = run(k.as_ref(), &key("a"), &key("missing"), None);
     assert!(report.conforms());
+    assert!(
+        !report.fully_conforms(),
+        "skipped checks must not qualify a provider"
+    );
     let not_run = report
         .checks
         .iter()

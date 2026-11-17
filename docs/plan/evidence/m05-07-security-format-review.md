@@ -18,7 +18,7 @@ Scope: the encrypted block format, key lifecycle, identity and TLS from M05.01 t
 
 ## Findings and what was done
 
-1. **A failing provider is called once per attempt** (found by M05.08's counts: 100 refused reads are 100 calls). Added `KeyManager::with_failure_backoff`: a retryable failure (throttled, timeout, unavailable) is remembered per customer key for the setting, up to 30 s, and a throttle's retry-after is honoured up to that cap. A denial or revocation is never remembered. With 20 cold objects and 1,000 failing reads, one provider call is made instead of 1,000. **Off by default**: the downside (a recovered provider is not asked again for up to the window) is bounded but real, and no node wires the manager yet, so there is nothing to measure it against; whoever wires the node sets it from the provider's rate limit. Existing tests pin the off behaviour; new tests cover the on behaviour. Not seen red before the code existed (written together).
+1. **A failing provider is called once per attempt** (found by M05.08's counts: 100 refused reads are 100 calls). Added `KeyManager::with_failure_backoff`: a retryable failure (throttled or unavailable; never a timeout, which is one caller's own budget and was found by the review to poison the key for callers with longer ones) is remembered per customer key for the setting, up to 30 s, and a throttle's retry-after is honoured up to that cap. A denial or revocation is never remembered. With 20 cold objects and 1,000 failing reads, one provider call is made instead of 1,000. **Off by default**: the downside (a recovered provider is not asked again for up to the window) is bounded but real, and no node wires the manager yet, so there is nothing to measure it against; whoever wires the node sets it from the provider's rate limit. Existing tests pin the off behaviour; new tests cover the on behaviour. Not seen red before the code existed (written together).
 2. **Nothing enforced the relation between the data-key cache lifetime (300 s default) and the 60 s revocation target** (M05.05 noted it as a caller obligation). The production profile now refuses a lifetime above 60 s (`MAX_PRODUCTION_TTL`); development keeps 300 s. Cost: unwraps for a continuously read object rise from 1 per 300 s to 1 per 60 s, which at the rate card is USD 3 per million unwraps, so money is not the constraint; the provider's rate limit is (unmeasured, M05.08).
 3. **AES-GCM is not key-committing.** Per-object keys from the manager plus a provider that checks context make a key-substitution attack unreachable, and the header tag only verifies under the unwrapped key. Left as documented (M05.03); revisit if keys ever come from anywhere but the manager.
 4. **The TLS verifier does not match server names and has no revocation or OCSP check** (M05.06 evidence): identity is role and trust domain, lifetime is certificate validity and the bundle. Acceptable for the stated model; a revoked node certificate stays valid until it expires or the bundle rotates.
@@ -46,7 +46,7 @@ provider conformance: test
   pass     rotation keeps old wraps readable and new wraps use the new version
 ```
 
-Run without owner actions, the last two report `NOT-RUN`. Checks that need a real account (throttle thresholds, denial by policy, key destruction, regional behaviour) are not in the suite yet: M15 adds them with the adapters.
+Run without owner actions, the last two report `NOT-RUN` and `fully_conforms()` is false (that, not `conforms()`, is the qualification bar). A provider that cannot wrap fails the first check and stops. The revoke and rotate checks assume immediate effect, so a real run must wait for propagation inside its owner actions. Checks that need a real account (throttle thresholds, denial by policy, key destruction, regional behaviour) are not in the suite yet: M15 adds them with the adapters.
 
 ## Encrypted-path acceptance artifacts
 
@@ -58,4 +58,4 @@ Run without owner actions, the last two report `NOT-RUN`. Checks that need a rea
 
 ## Independence
 
-The author's own review of the threat table is not independent; an independent reviewer examined the diff separately (see the PR).
+The author's own review of the threat table is not independent. A separate reviewer session examined the commit; it found no P0 or P1 and two P2s (a timeout remembered across callers; the independence claim recorded before the review ran), both fixed in this commit, plus P3 documentation fixes. Its report is in the PR thread, not a file in the tree. The production-cache-lifetime refusal now has its own error.

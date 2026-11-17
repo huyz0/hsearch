@@ -496,7 +496,6 @@ impl hsearch_security::keys::KeyProvider for NotTest {
     }
 }
 
-
 #[test]
 fn the_production_profile_refuses_a_cache_lifetime_beyond_the_revocation_target() {
     let kms = Arc::new(TestKms::new());
@@ -518,12 +517,37 @@ fn the_production_profile_refuses_a_cache_lifetime_beyond_the_revocation_target(
     };
     assert!(matches!(
         build(Duration::from_secs(61)),
-        Err(KeyError::BadCachePolicy)
+        Err(KeyError::CacheLifetimeTooLong)
     ));
     assert!(matches!(
         build(Duration::from_secs(300)),
-        Err(KeyError::BadCachePolicy)
+        Err(KeyError::CacheLifetimeTooLong)
     ));
     assert!(build(Duration::from_secs(60)).is_ok());
     assert!(build(Duration::from_secs(5)).is_ok());
+}
+
+#[test]
+fn one_callers_short_timeout_is_not_remembered_for_everyone() {
+    let r = backoff_rig(Duration::from_secs(30));
+    let c = ctx(1);
+    let (_d, wrapped) = r.manager.create_object_key(None, &c, 1, &opts()).unwrap();
+    r.manager
+        .invalidate_index(&IndexId::new("orders").unwrap(), 1);
+    r.meter.reset();
+    r.kms.set_latency(Duration::from_millis(200));
+    let impatient = CallOptions {
+        timeout: Duration::from_millis(5),
+        ..opts()
+    };
+    assert_eq!(
+        r.manager
+            .open_object_key(&wrapped, &c, 1, &impatient)
+            .unwrap_err(),
+        KeyError::Provider(ProviderError::Timeout)
+    );
+    // A caller with a normal budget still reaches the provider and succeeds.
+    assert!(r.manager.open_object_key(&wrapped, &c, 1, &opts()).is_ok());
+    assert_eq!(r.meter.snapshot().all(), 2);
+    assert_eq!(r.manager.stats().backed_off, 0);
 }
