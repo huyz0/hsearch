@@ -320,3 +320,234 @@ fn the_meter_passes_everything_through_unchanged() {
         "the wrapped provider's own state is what the meter reports on"
     );
 }
+
+// ---- failure backoff (M05.07) -------------------------------------------------------------------------
+
+fn backoff_rig(backoff: Duration) -> Rig {
+    let kms = Arc::new(TestKms::new());
+    kms.create_key(&key("default")).unwrap();
+    let meter = Arc::new(MeteredProvider::new(kms.clone()));
+    let clock = Arc::new(ManualClock::new());
+    let manager = Arc::new(
+        KeyManager::new(
+            Profile::Development,
+            meter.clone(),
+            KeyAllowlist::new(vec![("test".into(), "acct".into())]),
+            key("default"),
+            CachePolicy {
+                max_entries: 1000,
+                ttl: Duration::from_secs(300),
+                shards: 1,
+            },
+            Arc::new(MemoryAuditSink::new(100_000)),
+            clock.clone(),
+        )
+        .unwrap()
+        .with_failure_backoff(backoff),
+    );
+    meter.reset();
+    Rig {
+        kms,
+        meter,
+        clock,
+        manager,
+    }
+}
+
+#[test]
+fn an_outage_costs_one_call_per_backoff_window_not_one_per_read() {
+    let r = backoff_rig(Duration::from_secs(2));
+    let objects: Vec<_> = (0..20u8)
+        .map(|n| {
+            (
+                ctx(n),
+                r.manager
+                    .create_object_key(None, &ctx(n), 1, &opts())
+                    .unwrap()
+                    .1,
+            )
+        })
+        .collect();
+    r.manager
+        .invalidate_index(&IndexId::new("orders").unwrap(), 1);
+    r.meter.reset();
+    r.kms.inject(Fault::Unavailable, 1000);
+    for _ in 0..50 {
+        for (c, w) in &objects {
+            assert_eq!(
+                r.manager.open_object_key(w, c, 1, &opts()).unwrap_err(),
+                KeyError::Provider(ProviderError::Unavailable)
+            );
+        }
+    }
+    // 1,000 failing reads of 20 objects: one provider call, the rest answered from the remembered failure.
+    assert_eq!(r.meter.snapshot().all(), 1);
+    assert_eq!(r.manager.stats().backed_off, 999);
+    // After the window the provider is asked again (and is still down: one more call), then recovers.
+    r.clock.advance(Duration::from_secs(3));
+    assert!(
+        r.manager
+            .open_object_key(&objects[0].1, &objects[0].0, 1, &opts())
+            .is_err()
+    );
+    assert_eq!(r.meter.snapshot().all(), 2);
+    r.kms.inject(Fault::Unavailable, 0);
+    r.clock.advance(Duration::from_secs(3));
+    // The injected faults are queued, so drain what is left before checking recovery.
+    while r
+        .manager
+        .open_object_key(&objects[0].1, &objects[0].0, 1, &opts())
+        .is_err()
+    {
+        r.clock.advance(Duration::from_secs(3));
+    }
+}
+
+#[test]
+fn a_denial_or_revocation_is_never_remembered_and_the_default_is_off() {
+    let r = backoff_rig(Duration::from_secs(60));
+    let c = ctx(1);
+    let (_d, wrapped) = r.manager.create_object_key(None, &c, 1, &opts()).unwrap();
+    r.manager
+        .invalidate_index(&IndexId::new("orders").unwrap(), 1);
+    r.meter.reset();
+    r.kms.revoke(&key("default"));
+    for _ in 0..10 {
+        assert!(r.manager.open_object_key(&wrapped, &c, 1, &opts()).is_err());
+    }
+    assert_eq!(
+        r.meter.snapshot().all(),
+        10,
+        "a revocation must reach the provider every time"
+    );
+    // Restoring the key works at once: nothing was remembered.
+    r.kms.restore(&key("default"));
+    assert!(r.manager.open_object_key(&wrapped, &c, 1, &opts()).is_ok());
+    // Default off: an outage is a call per attempt.
+    let off = rig(Duration::from_secs(300));
+    let (_d, w) = off.manager.create_object_key(None, &c, 1, &opts()).unwrap();
+    off.manager
+        .invalidate_index(&IndexId::new("orders").unwrap(), 1);
+    off.meter.reset();
+    off.kms.inject(Fault::Unavailable, 5);
+    for _ in 0..5 {
+        assert!(off.manager.open_object_key(&w, &c, 1, &opts()).is_err());
+    }
+    assert_eq!(off.meter.snapshot().all(), 5);
+    assert_eq!(off.manager.stats().backed_off, 0);
+}
+
+#[test]
+fn a_throttle_hint_longer_than_the_setting_is_honoured_up_to_the_cap() {
+    let r = backoff_rig(Duration::from_secs(1));
+    let c = ctx(1);
+    let (_d, wrapped) = r.manager.create_object_key(None, &c, 1, &opts()).unwrap();
+    r.manager
+        .invalidate_index(&IndexId::new("orders").unwrap(), 1);
+    r.meter.reset();
+    r.kms.inject(Fault::Throttle(Duration::from_secs(10)), 1);
+    assert!(r.manager.open_object_key(&wrapped, &c, 1, &opts()).is_err());
+    r.clock.advance(Duration::from_secs(9));
+    assert!(r.manager.open_object_key(&wrapped, &c, 1, &opts()).is_err());
+    assert_eq!(
+        r.meter.snapshot().all(),
+        1,
+        "still inside the provider's retry-after"
+    );
+    r.clock.advance(Duration::from_secs(2));
+    assert!(r.manager.open_object_key(&wrapped, &c, 1, &opts()).is_ok());
+    assert_eq!(r.meter.snapshot().all(), 2);
+}
+
+// ---- production cache lifetime (M05.07) ---------------------------------------------------------------
+
+struct NotTest(Arc<TestKms>);
+
+impl hsearch_security::keys::KeyProvider for NotTest {
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+    fn is_test(&self) -> bool {
+        false
+    }
+    fn key_info(
+        &self,
+        k: &KeyRef,
+        o: &CallOptions,
+    ) -> Result<hsearch_security::keys::KeyInfo, ProviderError> {
+        self.0.key_info(k, o)
+    }
+    fn wrap(
+        &self,
+        k: &KeyRef,
+        c: &KeyContext,
+        d: &hsearch_security::keys::SecretKey,
+        o: &CallOptions,
+    ) -> Result<hsearch_security::keys::WrappedKey, ProviderError> {
+        self.0.wrap(k, c, d, o)
+    }
+    fn unwrap(
+        &self,
+        w: &hsearch_security::keys::WrappedKey,
+        c: &KeyContext,
+        o: &CallOptions,
+    ) -> Result<hsearch_security::keys::SecretKey, ProviderError> {
+        self.0.unwrap(w, c, o)
+    }
+}
+
+#[test]
+fn the_production_profile_refuses_a_cache_lifetime_beyond_the_revocation_target() {
+    let kms = Arc::new(TestKms::new());
+    kms.create_key(&key("default")).unwrap();
+    let build = |ttl| {
+        KeyManager::new(
+            Profile::Production,
+            Arc::new(NotTest(kms.clone())),
+            KeyAllowlist::new(vec![("test".into(), "acct".into())]),
+            key("default"),
+            CachePolicy {
+                max_entries: 10,
+                ttl,
+                shards: 1,
+            },
+            Arc::new(MemoryAuditSink::new(10)),
+            Arc::new(ManualClock::new()),
+        )
+    };
+    assert!(matches!(
+        build(Duration::from_secs(61)),
+        Err(KeyError::CacheLifetimeTooLong)
+    ));
+    assert!(matches!(
+        build(Duration::from_secs(300)),
+        Err(KeyError::CacheLifetimeTooLong)
+    ));
+    assert!(build(Duration::from_secs(60)).is_ok());
+    assert!(build(Duration::from_secs(5)).is_ok());
+}
+
+#[test]
+fn one_callers_short_timeout_is_not_remembered_for_everyone() {
+    let r = backoff_rig(Duration::from_secs(30));
+    let c = ctx(1);
+    let (_d, wrapped) = r.manager.create_object_key(None, &c, 1, &opts()).unwrap();
+    r.manager
+        .invalidate_index(&IndexId::new("orders").unwrap(), 1);
+    r.meter.reset();
+    r.kms.set_latency(Duration::from_millis(200));
+    let impatient = CallOptions {
+        timeout: Duration::from_millis(5),
+        ..opts()
+    };
+    assert_eq!(
+        r.manager
+            .open_object_key(&wrapped, &c, 1, &impatient)
+            .unwrap_err(),
+        KeyError::Provider(ProviderError::Timeout)
+    );
+    // A caller with a normal budget still reaches the provider and succeeds.
+    assert!(r.manager.open_object_key(&wrapped, &c, 1, &opts()).is_ok());
+    assert_eq!(r.meter.snapshot().all(), 2);
+    assert_eq!(r.manager.stats().backed_off, 0);
+}

@@ -47,6 +47,14 @@ name = "block"
 required-features = ["test-kms"]
 
 [[test]]
+name = "adversarial"
+required-features = ["test-kms"]
+
+[[test]]
+name = "conformance"
+required-features = ["test-kms"]
+
+[[test]]
 name = "kms_paths"
 required-features = ["test-kms"]
 
