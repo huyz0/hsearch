@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "scope": "Resolved bootstrap dependencies, not a binary distribution notice bundle",
-  "engine_revision": "18d250b806206e25fbb191d1fc16156fe48fa9e6",
+  "engine_revision": "df02d694c4ffb96b2b765084b07728fa6a523a33",
   "packages": [
     {
       "name": "addr2line",
@@ -1140,91 +1140,91 @@
     {
       "name": "lucene-aggs",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-analysis",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-codecs",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-disk-hnsw",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-index",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-ivf",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-search",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-spatial3d",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-spatial4j",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-store",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-util",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-vector-quant",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
     {
       "name": "lucene-zstd",
       "version": "0.1.0",
-      "source": "git+https://github.com/huyz0/lucene-rust?rev=18d250b806206e25fbb191d1fc16156fe48fa9e6#18d250b806206e25fbb191d1fc16156fe48fa9e6",
+      "source": "git+https://github.com/huyz0/lucene-rust?rev=df02d694c4ffb96b2b765084b07728fa6a523a33#df02d694c4ffb96b2b765084b07728fa6a523a33",
       "license": "Apache-2.0",
       "checksum": null
     },
