@@ -2679,8 +2679,13 @@
             "M03.04"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-04-compaction-pins-gc.md",
+              "result": "Compaction as a same-cover head replacement (new Change::Replace raises the publication generation), source validation, a durable rising boundary published before the pin scan, pins registered then re-checked against it, and a restartable dry-run/sweep (files, pages, root last) with orphan reclaim off by default. 14 store tests incl. a publisher suspended across a sweep, a failed removal at every step, and a threaded pin race; 6 mutations seen red. Provisional (in-memory store, no RustFS); no provider LIST implementation yet."
+            }
+          ]
         },
         {
           "id": "M06.05",

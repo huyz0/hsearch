@@ -430,6 +430,40 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
         lane_cover: u64,
         dependencies: &dyn Dependencies,
     ) -> Result<(StructuralHead, VersionToken), Error> {
+        self.transition(at, published, spec, dependencies, |root| {
+            Change::Checkpoint {
+                cover: lane_cover,
+                root,
+            }
+        })
+    }
+
+    /// Replace the checkpoint the head names by `published`, a rewritten base of the same history
+    /// (compaction): the cover stays and the publication generation rises. Verified and
+    /// compare-and-swapped exactly like [`Publisher::activate`].
+    pub fn replace(
+        &self,
+        at: &HeadRead<'_>,
+        published: &Published,
+        spec: &BaseSpec<'_>,
+        dependencies: &dyn Dependencies,
+    ) -> Result<(StructuralHead, VersionToken), Error> {
+        let source = spec.previous.ok_or(Error::Mismatch)?;
+        let from = manifest_id(&spec.index, &spec.shard, &source.token);
+        self.transition(at, published, spec, dependencies, |root| Change::Replace {
+            from,
+            root,
+        })
+    }
+
+    fn transition(
+        &self,
+        at: &HeadRead<'_>,
+        published: &Published,
+        spec: &BaseSpec<'_>,
+        dependencies: &dyn Dependencies,
+        change: impl FnOnce(Id) -> Change,
+    ) -> Result<(StructuralHead, VersionToken), Error> {
         if spec.index != published.root.index
             || spec.cut.covers() != published.root.covered
             || published.root.covered > spec.committed
@@ -452,10 +486,7 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
             at.lane,
             at.head,
             at.version,
-            Change::Checkpoint {
-                cover: lane_cover,
-                root: published.manifest,
-            },
+            change(published.manifest),
         )) {
             Ok(Advance::Done(next, version)) => Ok((next, version)),
             Ok(Advance::Lost) => Err(Error::Lost),

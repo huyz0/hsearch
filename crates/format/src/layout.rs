@@ -151,4 +151,47 @@ impl Layout {
     pub fn pin(&self, index: &Id, pin: &Id) -> String {
         self.key(format_args!("indexes/{}/pins/{}", hex(index), hex(pin)))
     }
+
+    /// The prefix every pin of `index` lives under. Only garbage collection lists it; no read or
+    /// write path derives a pin by listing.
+    #[must_use]
+    pub fn pin_prefix(&self, index: &Id) -> String {
+        self.key(format_args!("indexes/{}/pins/", hex(index)))
+    }
+
+    /// The prefix of every payload object of `index`. Only garbage collection lists it.
+    #[must_use]
+    pub fn payload_prefix(&self, index: &Id) -> String {
+        self.key(format_args!("indexes/{}/payloads/", hex(index)))
+    }
+
+    /// The prefix of every manifest root of one shard incarnation. Only garbage collection lists it.
+    #[must_use]
+    pub fn manifest_prefix(&self, index: &Id, shard: &Id, incarnation: u64) -> String {
+        self.key(format_args!(
+            "indexes/{}/shards/{}/{incarnation:020}/manifests/",
+            hex(index),
+            hex(shard)
+        ))
+    }
+
+    /// The prefix of every manifest page of one shard incarnation. Only garbage collection lists it.
+    #[must_use]
+    pub fn page_prefix(&self, index: &Id, shard: &Id, incarnation: u64) -> String {
+        self.key(format_args!(
+            "indexes/{}/shards/{}/{incarnation:020}/pages/",
+            hex(index),
+            hex(shard)
+        ))
+    }
+
+    /// The durable garbage-collection boundary of one shard incarnation: a generation that only rises.
+    #[must_use]
+    pub fn gc_boundary(&self, index: &Id, shard: &Id, incarnation: u64) -> String {
+        self.key(format_args!(
+            "indexes/{}/shards/{}/{incarnation:020}/gc-boundary",
+            hex(index),
+            hex(shard)
+        ))
+    }
 }
