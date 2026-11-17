@@ -13,7 +13,7 @@ use crate::checkpoint::{Head, Lineage, NativeCommit, WriterLease};
 use crate::directory::DirectoryAttempt;
 use crate::schema::{MAX_DOCUMENT_BYTES, analyzer};
 use crate::{
-    CleanupStatus, Directory, EngineDirectory, Error, ReleaseStatus, Result, Schema, Value,
+    CleanupStatus, Directory, EngineDirectory, Error, Kind, ReleaseStatus, Result, Schema, Value,
 };
 
 const VERSION: LuceneVersion = LuceneVersion {
@@ -37,7 +37,7 @@ fn batch_bytes(schema: &Schema) -> usize {
 }
 
 /// Caller-resolved mutation. The adapter never generates IDs or versions.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mutation<'a> {
     /// Replace or create a whole document at a strictly newer logical version.
     Put {
@@ -100,6 +100,7 @@ impl Operation {
                     Value::Shared(s) => Stored::Text(s),
                     Value::Boolean(b) => Stored::Text(if *b { "true" } else { "false" }),
                     Value::Integer(n) | Value::Date(n) => Stored::Long(*n),
+                    Value::Vector(v) => Stored::Floats(v),
                 }))),
             },
             Mutation::Delete { id, version } => Self {
@@ -286,6 +287,15 @@ pub(crate) fn digest<'a>(values: impl Iterator<Item = Stored<'a>>) -> u128 {
                     h.write_i64(n);
                 }
             }
+            Stored::Floats(v) => {
+                for h in [&mut a, &mut b] {
+                    h.write_u8(3);
+                    h.write_u64(v.len() as u64);
+                    for c in v {
+                        h.write_u32(c.to_bits());
+                    }
+                }
+            }
         }
     }
     (u128::from(a.finish()) << 64) | u128::from(b.finish())
@@ -295,6 +305,8 @@ pub(crate) fn digest<'a>(values: impl Iterator<Item = Stored<'a>>) -> u128 {
 pub(crate) enum Stored<'a> {
     Text(&'a str),
     Long(i64),
+    /// A vector's components, compared bit for bit.
+    Floats(&'a [f32]),
 }
 
 #[derive(Clone)]
@@ -403,10 +415,21 @@ impl<'d> Engine<'d> {
     ) -> Result<Self> {
         let buffered = schema.limits.buffered_documents;
         let auto_merge_mb = schema.limits.auto_merge_mb;
+        let vectors: Vec<(String, crate::VectorSpec)> = schema
+            .fields
+            .iter()
+            .filter_map(|(name, kind)| match kind {
+                Kind::Vector(spec) => Some((name.clone(), *spec)),
+                _ => None,
+            })
+            .collect();
         // Room for a full buffer of worst-case documents, never below 8 MiB.
         let ram_mb = (buffered as f64 * MAX_DOCUMENT_BYTES as f64 / 1_048_576.0).clamp(8.0, 256.0);
         Self::open_configured(directory, schema, checkpoint, move |writer| {
             writer.set_analyzer(Some(Arc::new(analyzer())));
+            for (name, spec) in &vectors {
+                writer.set_knn_vectors_format_for_field(name, spec.format());
+            }
             writer
                 .set_ram_buffer_size_mb(ram_mb)
                 .map_err(|_| Error::Native)?;
