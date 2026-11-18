@@ -3,11 +3,3 @@ xtask = "run --locked --offline --package xtask --"
 
 [build]
 jobs = 2
-
-# The vector kernels (distances, quantizer codes) pick their AVX2 and FMA
-# versions at compile time; without this a default x86-64 build runs the scalar
-# ones. aarch64 has NEON in its baseline and needs nothing. A CPU without AVX2
-# or FMA is refused at startup (`hsearch_node::cpu`); build with
-# `RUSTFLAGS="-C target-cpu=x86-64"` for one. See m23-05-simd.md.
-[target.'cfg(target_arch = "x86_64")']
-rustflags = ["-C", "target-cpu=x86-64-v3"]

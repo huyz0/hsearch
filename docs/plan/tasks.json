@@ -3418,17 +3418,17 @@
         },
         {
           "id": "M23.05",
-          "title": "Build the vector kernels with SIMD on x86-64",
+          "title": "Offer an x86-64-v3 build for the vector kernels",
           "goal": "Run the AVX2 and FMA distance and code kernels the engine already has, on ARM and x86 (PR-22).",
           "deliverables": [
-            "x86-64-v3 build flags so the compile-time-selected kernels are the SIMD ones, and a startup refusal on a CPU without them",
+            "An opt-in x86-64-v3 build (`scripts/build-v3.sh`) so the compile-time-selected kernels are the SIMD ones, a portable default build, and a startup refusal on a CPU without the features",
             "Measured build and query cost of the SIMD build against the baseline build"
           ],
           "validation": [
             "Build time, query p50 and recall of HNSW, IVF and disk HNSW variants under both builds; a test fails on a baseline build"
           ],
           "definition_of_done": [
-            "The x86 build selects the AVX2 and FMA kernels, recall is unchanged, and the measured gain and the CPU floor it sets are stated",
+            "The v3 build selects the AVX2 and FMA kernels, recall is unchanged, and the measured gain and the CPU floor it sets are stated; the default build stays portable",
             "The ARM path is stated as run or unrun"
           ],
           "depends_on": [
@@ -3439,7 +3439,7 @@
           "evidence": [
             {
               "path": "evidence/m23-05-simd.md",
-              "result": "hsearch built with no target-cpu, so the compile-time AVX2/FMA kernels of lucene-rust ran as scalar code on x86-64. `.cargo/config.toml` now targets x86-64-v3 and the node refuses to start on a CPU without the x86-64-v3 features. At 50,000 x 128 d builds are 25 to 30% faster and IVF queries 1.5x to 2x faster at identical recall; HNSW query p50 is within noise; AVX-512 at run time adds nothing consistent. A test fails on a baseline build. Downside: no CPU older than Haswell without a baseline rebuild. Provisional: one shared x86 VM, single runs, synthetic corpus. ARM (NEON in the aarch64 baseline) is unrun."
+              "result": "hsearch built with no target-cpu, so lucene-rust's compile-time AVX2/FMA kernels ran as scalar code on x86-64. `scripts/build-v3.sh` builds with x86-64-v3 for release artifacts; the default build stays portable (a global flag was dropped because a v3 binary dies on older x86 CPUs and some VMs, and there is no run-time dispatch), and the node refuses to start on a CPU lacking the build's features. At 50,000 x 128 d builds are 25 to 30% faster and IVF queries 1.5x to 2x faster at identical recall; HNSW query p50 is within noise; AVX-512 at run time adds nothing consistent. Multiversioned kernels upstream would remove the choice and are not built. Provisional: one shared x86 VM, single runs, synthetic corpus. ARM (NEON in the aarch64 baseline) is unrun."
             }
           ]
         }

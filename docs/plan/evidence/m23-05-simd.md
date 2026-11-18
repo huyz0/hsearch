@@ -8,10 +8,10 @@ lucene-rust picks its distance and quantizer-code kernels at compile time (`cfg(
 
 ## Change
 
-- `.cargo/config.toml` sets `-C target-cpu=x86-64-v3` for every `x86_64` target. An environment `RUSTFLAGS` replaces it, so `RUSTFLAGS="-C target-cpu=x86-64"` builds for any x86-64 CPU (the CI step that forces software AES already sets its own `RUSTFLAGS`).
-- `hsearch_engine::check_cpu()` (upstream's `lucene_util::cpu::check_baseline`, which probes the whole x86-64-v3 table: AVX2, FMA, BMI1/2, LZCNT, MOVBE, F16C and the rest) runs first in `hsearch-node` and refuses to start on a CPU that lacks any, naming the features, instead of dying on an illegal instruction. It is best effort, since the check is itself built for v3, and only the `hsearch-node` binary calls it (the bench examples do not; `--help` also fails first on an old CPU). The refusal path itself is tested upstream, not here.
-- Tests: `an_x86_build_compiles_the_avx2_and_fma_kernels_in` (seen red: with `RUSTFLAGS="-C target-cpu=x86-64"` the test build fails to compile on its const assertions) and `the_test_machine_has_the_features_the_build_requires`.
-- An environment `RUSTFLAGS` (a release pipeline, a developer's linker flag) replaces the config and silently selects the scalar kernels; the compile-time test catches it only in test builds. Host build scripts and proc macros are also built for v3, so a build host without AVX2 cannot build.
+- The default build is **unchanged and portable**. `scripts/build-v3.sh` builds with `-C target-cpu=x86-64-v3` (it keeps any `RUSTFLAGS` you set, adds the flag on x86-64 and is a plain build elsewhere; with no arguments it runs `cargo build --release`) for the release artifacts that will run on Haswell (2013) or newer CPUs. Checked: `scripts/build-v3.sh rustc -p hsearch-types --lib -- --print cfg` lists `avx2`, `fma` and `bmi2`; the default build lists none of them.
+- A global `.cargo/config.toml` setting was tried first and dropped on review: with no run-time dispatch a v3 binary dies on an older x86 CPU or on a VM that hides AVX2, so the fast build is opt-in.
+- `hsearch_engine::check_cpu()` (upstream's `lucene_util::cpu::check_baseline`) runs first in `hsearch-node`. It probes every feature the build was compiled with, so it asks for the whole v3 table in a v3 build, nothing in a default build, and refuses to start naming the missing features instead of dying on an illegal instruction. It is best effort (the check is itself built for v3), only the `hsearch-node` binary calls it, and `--help` also fails first on an old CPU. The refusal path itself is tested upstream, not here.
+- Test: `the_test_machine_has_the_features_the_build_requires` (passes in a default and in a v3 build).
 
 ## Measured: baseline x86-64 against x86-64-v3 (queries like the data)
 
@@ -25,14 +25,15 @@ lucene-rust picks its distance and quantizer-code kernels at compile time (`cfg(
 
 Builds are 25 to 30% faster everywhere. IVF queries are 1.5x to 2x faster (the cluster scans and rerank are distance loops). HNSW plain and bbq queries are within noise: their per-node work is small and cache-bound at this size. Recall is identical in every row. AVX-512 against AVX2 at run time (`LUCENE_RUST_SIMD=avx2` or `avx512`, v3 build): IVF bbq 1.46 against 1.47 ms, IVF osq4 1.43 against 1.63 ms, HNSW bbq 1.16 against 1.04 ms; no consistent difference, so the default stays.
 
-## Downsides
+## Trade-off and downsides
 
-- An x86-64-v3 binary does not run on a CPU older than Haswell (2013) or on one that hides any v3 feature from a guest; the startup check turns that into a message. A deployment that needs such a CPU builds with `RUSTFLAGS="-C target-cpu=x86-64"` and runs the scalar kernels, about 25% slower to build and up to 2x slower to scan IVF.
-- Every x86 build recompiles once after this change (a cold CI cache).
-- Results from a v3 and a baseline build of the same index are identical in recall here, but floating-point summation order differs between the scalar and SIMD kernels, so scores can differ in the last bits; no test compares scores across builds.
+- Default build: portable, runs the scalar kernels (about 25% slower to build and up to 2x slower to scan IVF than v3). v3 build: needs Haswell (2013) or newer with AVX2, FMA, BMI1/2, LZCNT, MOVBE, F16C visible to the guest; the startup check says so on anything older. Which artifact to ship is a release decision; the evidence supports v3 wherever the fleet is known to have those features.
+- A pipeline that sets `RUSTFLAGS` itself must add `-C target-cpu=x86-64-v3` (the script does) or silently gets the scalar kernels.
+- Floating-point summation order differs between the scalar and SIMD kernels, so scores can differ in the last bits between builds; no test compares scores across builds.
+- Recall is identical in every row measured.
 
 ## Not done here
 
 - ARM: NEON kernels are chosen by `cfg(target_arch = "aarch64")` upstream and need no flag; there is no run on an ARM machine. The ARM CI workflow is manual only (project decision), so this stays unrun until someone dispatches it.
 - Per-kernel microbenchmarks and a run on AVX-512-only paths (popcount, VNNI) beyond the level comparison above.
-- Run-time dispatch instead of a build flag: lucene-rust selects the AVX2/FMA kernels with `cfg(target_feature)`, so one binary cannot choose at start-up. A portable binary needs multiversioned kernels (each kernel compiled for a baseline and for v3 and picked once by CPU detection) as an additive upstream PR to huyz0/lucene-rust; it is not cheap and is not done here. Until then the opt-out is a rebuild with `RUSTFLAGS="-C target-cpu=x86-64"`.
+- Run-time dispatch: lucene-rust selects the AVX2/FMA kernels with `cfg(target_feature)`, so one binary cannot choose at start-up. One portable binary that is also fast needs multiversioned kernels (each compiled for the baseline and for v3, picked once by CPU detection) as an additive upstream PR to huyz0/lucene-rust; it is not cheap and is not done. It would remove the choice between the two artifacts.
