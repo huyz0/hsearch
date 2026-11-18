@@ -150,10 +150,6 @@ fn bad_vectors_mappings_and_queries_are_refused_by_name() {
             "[nprobes] must be 1 to 65536",
         ),
         (
-            json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf"}}),
-            "[method.parameters.nprobes] is required for ivf",
-        ),
-        (
             json!({"type": "knn_vector", "dimension": 4, "method": {"name": "ivf", "parameters": {"encoder": {"name": "pq"}}}}),
             "there is no flat or pq encoder",
         ),
@@ -349,6 +345,29 @@ fn an_on_disk_hnsw_field_is_mapped_searched_and_survives_a_restart() {
     assert_eq!(
         search(&node, json!({}), Some(even)),
         vec!["d10", "d12", "d8"]
+    );
+}
+
+#[test]
+fn an_ivf_field_without_nprobes_is_accepted_and_searches() {
+    let scratch = Scratch::new("vectors-ivf-auto");
+    let node = Node::with_limits(store(), scratch.0.clone(), Limits::default()).unwrap();
+    node.create(
+        "v",
+        &json!({"mappings": {"properties": {
+            "tag": {"type": "keyword"},
+            "emb": {"type": "knn_vector", "dimension": 4, "space_type": "l2",
+                    "method": {"name": "ivf", "engine": "faiss",
+                               "parameters": {"target_cluster_size": 16}}}
+        }}}),
+    )
+    .unwrap();
+    load(&node);
+    assert_eq!(ivf_knn(&node, json!({}), None), vec!["d10", "d11", "d9"]);
+    // A query may still name its own depth.
+    assert_eq!(
+        ivf_knn(&node, json!({"nprobes": 1000}), None),
+        vec!["d10", "d11", "d9"]
     );
 }
 

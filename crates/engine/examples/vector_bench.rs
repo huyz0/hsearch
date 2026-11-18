@@ -33,10 +33,17 @@ impl Rng {
 }
 
 fn corpus(n: usize, dim: usize, seed: u64) -> Vec<Vec<f32>> {
-    let mut rng = Rng(seed);
+    corpus_at(n, dim, (seed, seed))
+}
+
+/// `n` vectors around the 64 centres `centre_seed` draws, with noise from
+/// `noise_seed`: the same centres as the data make in-distribution queries.
+fn corpus_at(n: usize, dim: usize, (centre_seed, noise_seed): (u64, u64)) -> Vec<Vec<f32>> {
+    let mut rng = Rng(centre_seed);
     let centres: Vec<Vec<f32>> = (0..64)
         .map(|_| (0..dim).map(|_| rng.normal() * 3.0).collect())
         .collect();
+    let mut rng = Rng(noise_seed);
     (0..n)
         .map(|i| centres[i % 64].iter().map(|c| c + rng.normal()).collect())
         .collect()
@@ -91,7 +98,13 @@ fn main() {
         other => panic!("unknown variant {other}"),
     };
     let vectors = corpus(n, dim, 7);
-    let queries = corpus(200, dim, 99);
+    // HS_QUERIES=near draws the queries around the data's own centres;
+    // otherwise they are around other centres (far from every cluster).
+    let queries = if std::env::var("HS_QUERIES").is_ok_and(|v| v == "near") {
+        corpus_at(200, dim, (7, 99))
+    } else {
+        corpus(200, dim, 99)
+    };
     let spec = ivf_spec
         .unwrap_or_else(|| VectorSpec::hnsw(dim as u16, Similarity::L2).with_quantizer(quantizer));
     let schema = Schema::new(1, &[("embedding", Kind::Vector(spec))])
