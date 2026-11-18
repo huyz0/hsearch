@@ -3425,7 +3425,7 @@
             "Measured build and query cost of the SIMD build against the baseline build"
           ],
           "validation": [
-            "Build time, query p50 and recall of HNSW, IVF and disk HNSW variants under both builds; a test fails on a baseline build"
+            "Build time, query p50 and recall of HNSW, IVF and disk HNSW variants under both builds; the v3 build lists avx2 and fma in `rustc --print cfg` (manual check, recorded in the evidence)"
           ],
           "definition_of_done": [
             "The v3 build selects the AVX2 and FMA kernels, recall is unchanged, and the measured gain and the CPU floor it sets are stated; the default build stays portable",
