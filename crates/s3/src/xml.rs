@@ -6,6 +6,10 @@
 pub(crate) struct Listed {
     pub(crate) key: Vec<u8>,
     pub(crate) version_id: String,
+    /// The version's ETag as the provider prints it (quotes included), when listed.
+    pub(crate) etag: Option<String>,
+    /// `LastModified` in Unix milliseconds, when listed and well formed.
+    pub(crate) modified_ms: Option<u64>,
 }
 
 /// A parsed page of versions.
@@ -13,6 +17,8 @@ pub(crate) struct Listed {
 pub(crate) struct Page {
     pub(crate) versions: Vec<Listed>,
     pub(crate) truncated: bool,
+    /// The last key scanned, delete markers included: where the next page resumes.
+    pub(crate) last_key: Option<Vec<u8>>,
 }
 
 fn tag<'a>(block: &'a str, name: &str) -> Option<&'a str> {
@@ -52,6 +58,42 @@ fn unescape(text: &str) -> Vec<u8> {
     out
 }
 
+/// `2026-11-17T22:30:00.000Z` (fraction optional, UTC only) as Unix milliseconds.
+fn unix_ms(text: &str) -> Option<u64> {
+    let (date, time) = text.strip_suffix('Z')?.split_once('T')?;
+    let mut d = date.split('-');
+    let (y, m, day): (i64, i64, i64) = (
+        d.next()?.parse().ok()?,
+        d.next()?.parse().ok()?,
+        d.next()?.parse().ok()?,
+    );
+    let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
+    let mut t = clock.split(':');
+    let (h, mi, sec): (u64, u64, u64) = (
+        t.next()?.parse().ok()?,
+        t.next()?.parse().ok()?,
+        t.next()?.parse().ok()?,
+    );
+    if d.next().is_some()
+        || !(1..=12).contains(&m)
+        || !(1..=31).contains(&day)
+        || h > 23
+        || mi > 59
+        || sec > 60
+    {
+        return None;
+    }
+    let millis: u64 = format!("{fraction:0<3}").get(..3)?.parse().ok()?;
+    // Days from 1970-01-01 (Howard Hinnant's civil-from-days, inverted).
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = u64::try_from(era * 146_097 + doe - 719_468).ok()?;
+    Some(((days * 24 + h) * 60 + mi) * 60_000 + sec * 1000 + millis)
+}
+
 /// Parse a `ListObjectVersions` body. `None` when it has no result element.
 pub(crate) fn parse_versions(body: &str) -> Option<Page> {
     if !body.contains("<ListVersionsResult") {
@@ -66,12 +108,18 @@ pub(crate) fn parse_versions(body: &str) -> Option<Page> {
         versions.push(Listed {
             key: unescape(tag(block, "Key")?),
             version_id: String::from_utf8(unescape(tag(block, "VersionId")?)).ok()?,
+            etag: tag(block, "ETag").and_then(|t| String::from_utf8(unescape(t)).ok()),
+            modified_ms: tag(block, "LastModified").and_then(unix_ms),
         });
         rest = &after[end..];
     }
     Some(Page {
         versions,
         truncated: tag(body, "IsTruncated") == Some("true"),
+        last_key: body
+            .rfind("<Key>")
+            .and_then(|at| tag(&body[at..], "Key"))
+            .map(unescape),
     })
 }
 
@@ -84,6 +132,19 @@ mod tests {
         <Version><Key>a&amp;b</Key><VersionId>v2</VersionId><IsLatest>true</IsLatest></Version>\
         <DeleteMarker><Key>a&amp;b</Key><VersionId>dm</VersionId></DeleteMarker>\
         <Version><Key>a&amp;b</Key><VersionId>v1</VersionId></Version></ListVersionsResult>";
+
+    #[test]
+    fn a_page_of_only_delete_markers_still_names_where_it_ended() {
+        let page = parse_versions(
+            "<ListVersionsResult><IsTruncated>true</IsTruncated>\
+             <DeleteMarker><Key>a</Key><VersionId>d1</VersionId></DeleteMarker>\
+             <DeleteMarker><Key>b&amp;c</Key><VersionId>d2</VersionId></DeleteMarker>\
+             </ListVersionsResult>",
+        )
+        .unwrap();
+        assert!(page.versions.is_empty() && page.truncated);
+        assert_eq!(page.last_key.as_deref(), Some(&b"b&c"[..]));
+    }
 
     #[test]
     fn lists_versions_in_order_and_skips_delete_markers() {
@@ -99,6 +160,26 @@ mod tests {
     }
 
     #[test]
+    fn etag_and_last_modified_are_read_when_listed() {
+        let page = parse_versions(
+            "<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>k</Key>\
+             <VersionId>v</VersionId><LastModified>2026-11-17T22:30:00.250Z</LastModified>\
+             <ETag>&quot;abc&quot;</ETag></Version></ListVersionsResult>",
+        )
+        .unwrap();
+        assert_eq!(page.versions[0].etag.as_deref(), Some("\"abc\""));
+        // 2026-11-17 is day 20,774 since the epoch: 20409 * 86400 + 22.5 h.
+        assert_eq!(
+            page.versions[0].modified_ms,
+            Some(20_774 * 86_400_000 + 81_000_250)
+        );
+        assert_eq!(unix_ms("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(unix_ms("2000-03-01T00:00:00.5Z"), Some(951_868_800_500));
+        assert_eq!(unix_ms("garbage"), None);
+        assert_eq!(unix_ms("2026-13-01T00:00:00Z"), None);
+    }
+
+    #[test]
     fn empty_and_foreign_documents() {
         let empty = parse_versions(
             "<ListVersionsResult><IsTruncated>false</IsTruncated></ListVersionsResult>",
@@ -107,7 +188,8 @@ mod tests {
             empty,
             Some(Page {
                 versions: vec![],
-                truncated: false
+                truncated: false,
+                last_key: None
             })
         );
         assert_eq!(parse_versions("<Error><Code>X</Code></Error>"), None);

@@ -52,8 +52,9 @@ pub use traffic::{
 };
 
 use hsearch_object::{
-    ByteRange, Error, Metadata, MetadataStore, Mutation, ObjectBackend, ObjectInfo, ObjectKey,
-    Operation, Payload, Precondition, RequestContext, VersionToken, WriteReceipt,
+    ByteRange, Error, Inventory, ListPage, ListedObject, Metadata, MetadataStore, Mutation,
+    ObjectBackend, ObjectInfo, ObjectKey, Operation, Payload, Precondition, RequestContext,
+    VersionToken, WriteReceipt,
 };
 use sigv4::{Signer, amz_date, encode, hex, sha256_hex, unhex};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -855,6 +856,94 @@ impl S3Store {
         }
     }
 
+    /// One page of `ListObjectVersions` for garbage collection: versions under `prefix` whose key
+    /// sorts after `after`, at most `limit` of them (and at most 1,000, which S3 returns). One LIST
+    /// request, priced like a PUT. A page that is cut by the limit gives up the trailing versions of
+    /// its last key unless that is the whole page, so a key's versions are never split across pages;
+    /// the keys listed here are written once and never overwritten, so each has one version. A key that does have several yields each of them, newest excluded only by the provider's own order.
+    fn list_versions(
+        &self,
+        context: &RequestContext,
+        prefix: &str,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<ListPage, Error> {
+        self.logical(Role::Metadata);
+        let limit = limit.clamp(1, 1000);
+        context.charge_request(prefix.len() as u64 + after.map_or(0, str::len) as u64 + 64)?;
+        let mut marker = after.map(str::to_owned);
+        let mut skipped = 0;
+        let page = loop {
+            let mut query = String::new();
+            if let Some(marker) = &marker {
+                query.push_str(&format!("key-marker={}&", encode(marker.as_bytes(), false)));
+            }
+            query.push_str(&format!(
+                "max-keys={limit}&prefix={}&versions=",
+                encode(prefix.as_bytes(), false)
+            ));
+            let reply = self.send(
+                context,
+                Role::Metadata,
+                Op::List,
+                None,
+                &query,
+                &[],
+                &[],
+                1 << 20,
+            )?;
+            if !(200..300).contains(&reply.status) {
+                return Err(status_error(reply.status, false));
+            }
+            let text = String::from_utf8(reply.body).map_err(|_| Error::Corrupt)?;
+            let page = xml::parse_versions(&text).ok_or(Error::Corrupt)?;
+            // A truncated page holding only delete markers has nothing to hand back; resume past
+            // them rather than report no progress. Bounded so a provider that ignores the marker
+            // cannot loop forever.
+            if page.truncated && page.versions.is_empty() {
+                skipped += 1;
+                let next = page
+                    .last_key
+                    .as_ref()
+                    .and_then(|k| String::from_utf8(k.clone()).ok());
+                match next {
+                    Some(next) if skipped <= 16 && marker.as_deref() != Some(next.as_str()) => {
+                        marker = Some(next);
+                        continue;
+                    }
+                    _ => return Err(Error::Corrupt),
+                }
+            }
+            break page;
+        };
+        let mut versions = page.versions;
+        if page.truncated
+            && let Some(last) = versions.last().map(|v| v.key.clone())
+        {
+            let kept = versions
+                .iter()
+                .rposition(|v| v.key != last)
+                .map_or(0, |i| i + 1);
+            if kept > 0 {
+                versions.truncate(kept);
+            }
+        }
+        let objects = versions
+            .into_iter()
+            .map(|v| {
+                Ok(ListedObject {
+                    key: ObjectKey::new(&v.key).map_err(|_| Error::Corrupt)?,
+                    version: token(&v.version_id, v.etag.as_deref().ok_or(Error::Corrupt)?)?,
+                    modified_unix_ms: v.modified_ms.ok_or(Error::Corrupt)?,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(ListPage {
+            objects,
+            more: page.truncated,
+        })
+    }
+
     fn info_from(reply: &Reply, length: u64) -> Result<ObjectInfo, Error> {
         let etag = reply.header("etag").ok_or(Error::Unsupported)?;
         let version_id = reply.header("x-amz-version-id").ok_or(Error::Unsupported)?;
@@ -1158,6 +1247,18 @@ impl MetadataStore for S3Store {
         version: &'a VersionToken,
     ) -> Operation<'a, ()> {
         Box::pin(async move { S3Store::delete_version(self, context, key, version) })
+    }
+}
+
+impl Inventory for S3Store {
+    fn list<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        prefix: &'a str,
+        after: Option<&'a str>,
+        limit: usize,
+    ) -> Operation<'a, ListPage> {
+        Box::pin(async move { self.list_versions(context, prefix, after, limit) })
     }
 }
 

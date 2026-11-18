@@ -1357,6 +1357,7 @@ dependencies = [
  "hsearch-index",
  "hsearch-lane",
  "hsearch-object",
+ "hsearch-s3",
  "sha2 0.11.1",
 ]
 

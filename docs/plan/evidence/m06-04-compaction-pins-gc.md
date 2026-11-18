@@ -20,7 +20,7 @@
 
 ## Evidence
 
-`crates/store/tests/gc.rs`, 14 tests (real engine commits on disk), plus the head rule in `crates/format/tests/authority.rs` and `crates/lane/tests/authority.rs`:
+`crates/store/tests/gc.rs`, 15 tests (real engine commits on disk), plus the head rule in `crates/format/tests/authority.rs` and `crates/lane/tests/authority.rs`:
 
 - A replaced base is reclaimed (root, page, every file) and the live root stays readable; the dry run changes nothing and reports exactly what the sweep then does; a second sweep deletes nothing.
 - A pin holds its base; the instant after expiry it does not (`expires == now` is expired, `now == expires - 1` is not); the expired pin is removed.
@@ -52,11 +52,24 @@ A reviewer who saw only the diff found: `finish` did not re-validate the source,
 
 ## Limits and downsides
 
-- **No provider LIST yet.** `Inventory` is a trait; nothing in the workspace implements it for S3 or RustFS (the adapter has no list). M06.05 or the lifecycle task must supply it, and until then collection runs only against a store that can list.
 - **Pin and boundary objects are small and untested against a provider's consistency.** Safety rests on the linearizable create and compare-and-swap the object contract already requires, and on `pin_gc`, which is a model, not a proof of this code.
 - **A pin that expires under a live reader** is a safety hole the reader closes by checking `Pin::usable` (with a skew margin) before every use; nothing enforces it here (M07).
 - **Orphan reclamation needs the complete shard list and a grace** (above); it is off by default for that reason.
-- `Publisher::activate` itself does not consult the boundary. A stale base published by it fails on swept files or loses the head swap, but only `Compactor::finish` refuses by boundary first. Wiring writers through the boundary is M06.05.
 - Content equivalence of a merge (the same documents, deletes honoured) is the engine's contract (M04.05); only coordinates are compared here.
 - Memory is bounded by `max_tracked` (16 bytes an identity plus the set's overhead) and by one root and one page read at a time; a 2,048 x 4,096-file base needs a larger `max_tracked` to be swept at all, and refuses rather than running out of memory.
 - Coverage was not measured locally (no `cargo llvm-cov` here); CI's coverage job decides. `tools/workspace.py check` could not run here (`cargo metadata --offline` needs crates that are not downloaded); CI runs it.
+
+## Follow-up: the S3 inventory and RustFS (same task)
+
+- **`hsearch_object::Inventory`** (moved from the store crate so every provider can implement it without a layer edge): `list(prefix, after, limit)` returns a page (`objects`, `more`) in key order, one version each. The sweep follows `more`, so a provider that returns short pages is read to the end; a page that says `more` and names nothing is an error rather than a loop.
+- **`S3Store` implements it** with one `ListObjectVersions` request a page (`key-marker`, `max-keys` up to 1,000, `prefix`), reading each version's id, ETag and `LastModified` (parsed to Unix milliseconds, tested). A page cut by the limit gives up the trailing versions of its last key so a key's versions are never split; the prefixes listed hold create-once objects, one version each. A listed version is for removal, not for a compare-and-exchange precondition.
+- **Cost on the wire** (asserted by the in-memory counter test and in `rustfs.rs`): a sweep makes one LIST per page per prefix (pins, roots, payloads, pages: 4 for one replaced base), one DELETE per object reclaimed, and reads that grow with roots and pages, not files. Listing drops from `n + 1` pages to `n` for `n` full pages because `more` replaces the empty trailing page.
+- **`Publisher::activate` and `replace` now refuse a base below the boundary** (`Error::Swept`, two reads), so every writer path is guarded and not only `Compactor::finish`. This closes the gap noted in the first version of this document.
+- **`crates/store/tests/rustfs.rs`**, 3 tests against a real S3-compatible store: publish, recover, compact, sweep and recover again (the log replays to the same ledger before and after, the replaced root is gone, the live root verifies, LIST and DELETE counts asserted); a pin that holds a base on the store until it expires; and the listing itself (7 objects, 3 a page, exact version ids, `LastModified` within an hour of the clock, removal by listed version). They skip with a message unless `HSEARCH_S3_ENDPOINT` is set and fail when `HSEARCH_S3_REQUIRED=1` and it is not (CI).
+- **Not run against RustFS by me.** This sandbox has no Docker daemon and cannot download RustFS, so the three tests printed SKIPPED here; CI's RustFS run is their first execution. The in-memory suites (15 gc, 11 publish, the recover tests) pass locally.
+
+### Review notes on the inventory
+
+- A truncated listing page that holds only delete markers is resumed past (at most 16 times) instead of aborting the sweep.
+- `orphan_grace_ms` must exceed the longest upload: on AWS S3 a multipart object's `LastModified` is the time the upload started. The setting is off by default.
+- A listing page is bounded by 1,000 entries, not by bytes; a response over the 1 MiB read limit fails the listing, which fails the sweep safely (it deletes nothing from that page).

@@ -17,6 +17,7 @@ sha2 = "=0.11.1"
 
 [dev-dependencies]
 hsearch-commit = { path = "../commit" }
+hsearch-s3 = { path = "../s3" }
 
 [lints]
 workspace = true

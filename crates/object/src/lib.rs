@@ -166,6 +166,46 @@ pub trait MetadataStore: ObjectBackend {
     }
 }
 
+/// One object found by a listing: its key, the exact version a removal must name, and when the
+/// provider last modified it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListedObject {
+    /// The object's key.
+    pub key: ObjectKey,
+    /// The exact version listed, to name when removing it. A provider may print a version's other
+    /// identity parts differently in a listing than on a write, so this is for removal, never for a
+    /// compare-and-exchange precondition: read the object to get that token.
+    pub version: VersionToken,
+    /// The provider's last-modified time, in Unix milliseconds.
+    pub modified_unix_ms: u64,
+}
+
+/// One page of a listing, in key order.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ListPage {
+    /// The objects of this page. A page may hold fewer than the limit asked and still not be the last.
+    pub objects: Vec<ListedObject>,
+    /// Whether keys remain after the last one here; continue with that key as `after`.
+    pub more: bool,
+}
+
+/// Listing, for garbage collection and repair only. **A LIST is priced like a PUT** and returns a
+/// bounded page, so no read, write or startup path may use it: keys are derived, never discovered.
+pub trait Inventory: ObjectBackend {
+    /// At most `limit` objects whose key starts with `prefix` and sorts strictly after `after`, in
+    /// key order, one version each. The default is [`Error::Unsupported`].
+    fn list<'a>(
+        &'a self,
+        context: &'a RequestContext,
+        prefix: &'a str,
+        after: Option<&'a str>,
+        limit: usize,
+    ) -> Operation<'a, ListPage> {
+        let _ = (context, prefix, after, limit);
+        Box::pin(async { Err(Error::Unsupported) })
+    }
+}
+
 /// A retry decision borrows the entire original envelope without changing it.
 #[derive(Debug, Eq, PartialEq)]
 pub enum RetryAction<'a> {
