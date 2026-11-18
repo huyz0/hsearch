@@ -41,3 +41,14 @@ Downside: about 4% more CPU per record (buffered file appends), plus local disk 
 Upside: digest memory is constant (it was 32 bytes a record, 3.2 GB at 100M records). RSS is a coarse,
 provisional reading. Requests are unchanged by the spill; each external document costs 1 HEAD plus
 ceil(length / 8 MiB) GETs.
+
+## Review findings (independent reviewer)
+
+- Repeated external records refetched without bound: fixed, repeats are counted against the bytes bound
+  (`repeated_external_records_cannot_refetch_past_the_bytes_bound`).
+- `Recovered.tail` and `Record.ordinal` after a successor hop refer to the lane they were read in:
+  documented on the fields.
+- Known limitation, not fixable in recovery: a seal names the last sequence, and a seal at 0 is ambiguous
+  between "Put 0 written" and "nothing written", so a lost final slot immediately before an unfinished
+  promotion's seal is not detected without `Expect.seq`. A format change (the seal naming the next due
+  sequence) would close it; raised to the coordinator.

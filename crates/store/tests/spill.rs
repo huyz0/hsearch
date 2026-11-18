@@ -508,3 +508,24 @@ fn bench_spill_against_memory() {
         );
     }
 }
+
+#[test]
+fn repeated_external_records_cannot_refetch_past_the_bytes_bound() {
+    let body = vec![3u8; 1000];
+    let store = Crash::new();
+    let lane = lane_with(&store);
+    put_payload(&store, &INDEX, &[8; 16], &body);
+    let mut w = raw_writer(&store, lane);
+    let specs: Vec<_> = (0..5).map(|_| external(INDEX, 0, [8; 16], &body)).collect();
+    block_on(w.append(&specs)).unwrap();
+    drop(w);
+    let (p, t) = tally(&store);
+    // The first fetch applies (1000), four repeats would add 4000 more.
+    let tight = ReplayLimits {
+        bytes: 3000,
+        ..big()
+    };
+    let (got, _) = run_with(&p, &lane, tight, Expect::default(), &plain());
+    assert_eq!(got.unwrap_err(), NotReady::Limit);
+    assert!(t.counts().0 <= 4, "stopped refetching at the bound");
+}

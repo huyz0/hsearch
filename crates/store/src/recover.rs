@@ -79,7 +79,7 @@ pub struct Record<'a> {
     pub delete: bool,
     /// The body (empty for a delete).
     pub body: &'a [u8],
-    /// The slot it was found in.
+    /// The slot it was found in, in the lane it was read from (a successor lane's ordinals restart).
     pub ordinal: u64,
 }
 
@@ -132,7 +132,8 @@ pub struct Recovered {
     pub replayed: u64,
     /// Slots read.
     pub slots: u64,
-    /// The first absent lane position: where the log ends.
+    /// The first absent position of the lane recovery started in (not of a successor lane it
+    /// followed: `followed > 0` means the history ends elsewhere).
     pub tail: u64,
     /// The head generation recovery started from.
     pub head_generation: u64,
@@ -330,6 +331,8 @@ struct Run<'a, S, F> {
     slots: u64,
     replayed: u64,
     bytes: u64,
+    /// Bytes fetched only to compare a repeated external record; bounded like `bytes`.
+    repeated: u64,
     /// The buffer an external document is assembled in, kept between records.
     payload: Vec<u8>,
     /// The sequence the index was sealed at in the lane being read.
@@ -452,6 +455,10 @@ where
                         length,
                         digest,
                     } => {
+                        self.repeated += length;
+                        if self.repeated > self.hard.bytes {
+                            return Err(NotReady::Limit);
+                        }
                         let mut held = std::mem::take(&mut self.payload);
                         self.fetch(&mut held, seq, &object, length, &digest)?;
                         let d = body_digest(false, &held);
@@ -622,6 +629,7 @@ where
         slots: 0,
         replayed: 0,
         bytes: 0,
+        repeated: 0,
         payload: Vec::new(),
         sealed: None,
         failure: None,
