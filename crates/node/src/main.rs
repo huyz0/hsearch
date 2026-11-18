@@ -20,6 +20,7 @@ fn env(name: &str) -> Result<String, String> {
 }
 
 fn run() -> Result<(), String> {
+    hsearch_engine::check_cpu()?;
     let options = parse_args(std::env::args().skip(1))?;
     let store = S3Store::new(S3Config {
         endpoint: env("HSEARCH_S3_ENDPOINT")?,
