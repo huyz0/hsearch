@@ -308,11 +308,57 @@ enum Recovered {
     Long(i64),
     Floats(Vec<f32>),
 }
+/// Compare a reopened index against what the caller expects of it.
 pub(crate) fn verify(
     reader: &DirectoryReader,
     schema: &Schema,
     expected: &BTreeMap<String, crate::adapter::Live>,
 ) -> Result<()> {
+    let live = expected
+        .values()
+        .filter(|live| live.digest.is_some())
+        .count();
+    let seen = scan(reader, schema, |id, version, digest, _| {
+        let op = expected.get(id).ok_or(Error::Checkpoint)?;
+        if version != op.version || op.digest != Some(digest) {
+            return Err(Error::Checkpoint);
+        }
+        Ok(())
+    })?;
+    if seen != live {
+        return Err(Error::Checkpoint);
+    }
+    Ok(())
+}
+
+/// What a reopened index says of its live documents: identity, version and the digest of the
+/// stored values, with the native documents each root holds. Tombstones are not in the index.
+pub(crate) fn rebuild(
+    reader: &DirectoryReader,
+    schema: &Schema,
+) -> Result<BTreeMap<String, crate::adapter::Live>> {
+    let mut found = BTreeMap::new();
+    scan(reader, schema, |id, version, digest, docs| {
+        found.insert(
+            id.to_string(),
+            crate::adapter::Live {
+                version,
+                digest: Some(digest),
+                docs,
+            },
+        );
+        Ok(())
+    })?;
+    Ok(found)
+}
+
+/// Visit every live root document once with `(id, version, digest, native documents)`, refusing
+/// a duplicate identity. Returns how many were visited.
+fn scan(
+    reader: &DirectoryReader,
+    schema: &Schema,
+    mut visit: impl FnMut(&str, i64, u128, usize) -> Result<()>,
+) -> Result<usize> {
     // Use the same bounded production reader and preserve duplicate detection.
     if reader.max_doc() > schema.limits.documents as i32
         || reader.segment_readers().len() > schema.limits.segments
@@ -357,14 +403,6 @@ pub(crate) fn verify(
         }
     }
     let mut seen = std::collections::BTreeSet::new();
-    if result.score_docs.len()
-        != expected
-            .values()
-            .filter(|live| live.digest.is_some())
-            .count()
-    {
-        return Err(Error::Checkpoint);
-    }
     for hit in result.score_docs {
         let id = match stored(reader, hit.doc, "_hs_id")? {
             FieldValue::String(s) => s,
@@ -373,11 +411,10 @@ pub(crate) fn verify(
         if !seen.insert(id.clone()) {
             return Err(Error::Checkpoint);
         }
-        let op = expected.get(&id).ok_or(Error::Checkpoint)?;
-        if !matches!(stored(reader,hit.doc,"_hs_version")?,FieldValue::Long(n) if n==op.version) {
+        let FieldValue::Long(version) = stored(reader, hit.doc, "_hs_version")? else {
             return Err(Error::Checkpoint);
-        }
-        let wanted = op.digest.ok_or(Error::Checkpoint)?;
+        };
+        let mut native_docs = 1usize;
         let mut values = Vec::with_capacity(fields.len());
         let scalar = |doc: i32, name: &str, kind: Kind| -> Result<Recovered> {
             match (kind, stored(reader, doc, name)?) {
@@ -409,6 +446,7 @@ pub(crate) fn verify(
                                 .collect()
                         })
                         .unwrap_or_default();
+                    native_docs += mine.len();
                     values.push(Recovered::Long(mine.len() as i64));
                     for doc in mine {
                         for (sub, sub_kind) in &schema.nested[at].fields {
@@ -429,11 +467,9 @@ pub(crate) fn verify(
             Recovered::Long(n) => crate::adapter::Stored::Long(*n),
             Recovered::Floats(v) => crate::adapter::Stored::Floats(v),
         }));
-        if got != wanted {
-            return Err(Error::Checkpoint);
-        }
+        visit(&id, version, got, native_docs)?;
     }
-    Ok(())
+    Ok(seen.len())
 }
 
 #[cfg(test)]

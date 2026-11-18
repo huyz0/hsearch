@@ -19,7 +19,7 @@ Mutations seen red: trailing bytes accepted, a delete decoded as a put, a record
 
 - **Only batches the engine accepted belong in the log.** Replay turns an engine refusal (a stale version, a create-only collision, a limit) into `RebuildError::Engine` and stops, so a durable-first writer that logs a body before the engine applies it would stop its own recovery at that sequence. Which side of the commit the engine apply sits on is the write path's decision (M06.05); this task states the requirement and tests that a refusal stops at its sequence.
 - The engine is discarded on any error (a refused or partial apply can poison it); rebuilding into a non-empty engine is not refused.
-- A head that names a base is refused (`BaseNotOpened`); opening an engine on a verified base and replaying the tail onto it, spill, external payloads and following a sealed index are M06.11.
+- A head that names a base is refused (`BaseNotOpened`); opening an engine on a verified base is M06.11 (engine side) and M06.12 (store side), and spill, external payloads and following a sealed index are M06.13.
 - Memory: the receipts of every replayed batch are held, bounded by the caller's record limit; decoding a body reserves roughly sixteen times its size and there is no body-length cap here (the lane's inline record bound is the limit in practice).
 - The body format is version 1 and is a new on-log contract; the Java shell does not read it.
 - Tests were written after the code, then made to fail by the mutations (disclosed departure from test-first).

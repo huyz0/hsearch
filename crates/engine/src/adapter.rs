@@ -375,6 +375,14 @@ pub struct Checkpoint {
     native: NativeCommit,
 }
 
+impl Checkpoint {
+    /// The versions of the identities deleted as of this checkpoint's commit, for writing beside
+    /// a base so [`Engine::open_recovered`] can refuse a stale put over a deleted identity.
+    pub fn tombstones(&self) -> Result<Vec<u8>> {
+        crate::tombstones::encode(&self.state.current, self.native.to_bytes())
+    }
+}
+
 /// Where an engine's automatic merges run. A cluster default, chosen per index
 /// when its engine is opened.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -568,6 +576,16 @@ impl<'d> Engine<'d> {
         checkpoint: Option<Checkpoint>,
         mode: MergeMode,
     ) -> Result<Self> {
+        Self::open_with(directory, schema, checkpoint, None, mode)
+    }
+
+    fn open_with<D: Directory>(
+        directory: &'d EngineDirectory<D>,
+        schema: Schema,
+        checkpoint: Option<Checkpoint>,
+        recovered: Option<([u8; 32], BTreeMap<String, i64>)>,
+        mode: MergeMode,
+    ) -> Result<Self> {
         let background = mode == MergeMode::Background && schema.limits.auto_merge_mb > 0;
         let buffered = schema.limits.buffered_documents;
         let auto_merge_mb = schema.limits.auto_merge_mb;
@@ -581,28 +599,35 @@ impl<'d> Engine<'d> {
             .collect();
         // Room for a full buffer of worst-case documents, never below 8 MiB.
         let ram_mb = (buffered as f64 * MAX_DOCUMENT_BYTES as f64 / 1_048_576.0).clamp(8.0, 256.0);
-        Self::open_configured_as(directory, schema, checkpoint, background, move |writer| {
-            writer.set_analyzer(Some(Arc::new(analyzer())));
-            if background {
-                // No merge on a refresh's full flush: the merge thread owns merging.
-                writer.set_max_full_flush_merge_wait_millis(0);
-            }
-            for (name, spec) in &vectors {
-                writer.set_knn_vectors_format_for_field(name, spec.format());
-            }
-            writer
-                .set_ram_buffer_size_mb(ram_mb)
-                .map_err(|_| Error::Native)?;
-            if auto_merge_mb > 0 {
-                writer.set_merge_policy(Some(MergePolicyConfig {
-                    max_merged_segment_size: (auto_merge_mb as u64) << 20,
-                    ..MergePolicyConfig::default()
-                }));
-            }
-            writer
-                .set_max_buffered_docs(buffered as i32)
-                .map_err(|_| Error::Native)
-        })
+        Self::open_configured_as(
+            directory,
+            schema,
+            checkpoint,
+            recovered,
+            background,
+            move |writer| {
+                writer.set_analyzer(Some(Arc::new(analyzer())));
+                if background {
+                    // No merge on a refresh's full flush: the merge thread owns merging.
+                    writer.set_max_full_flush_merge_wait_millis(0);
+                }
+                for (name, spec) in &vectors {
+                    writer.set_knn_vectors_format_for_field(name, spec.format());
+                }
+                writer
+                    .set_ram_buffer_size_mb(ram_mb)
+                    .map_err(|_| Error::Native)?;
+                if auto_merge_mb > 0 {
+                    writer.set_merge_policy(Some(MergePolicyConfig {
+                        max_merged_segment_size: (auto_merge_mb as u64) << 20,
+                        ..MergePolicyConfig::default()
+                    }));
+                }
+                writer
+                    .set_max_buffered_docs(buffered as i32)
+                    .map_err(|_| Error::Native)
+            },
+        )
     }
 
     #[cfg(test)]
@@ -612,13 +637,14 @@ impl<'d> Engine<'d> {
         checkpoint: Option<Checkpoint>,
         configure: impl FnOnce(&mut IndexWriter<'d>) -> Result<()>,
     ) -> Result<Self> {
-        Self::open_configured_as(directory, schema, checkpoint, false, configure)
+        Self::open_configured_as(directory, schema, checkpoint, None, false, configure)
     }
 
     fn open_configured_as<D: Directory>(
         directory: &'d EngineDirectory<D>,
         schema: Schema,
         checkpoint: Option<Checkpoint>,
+        recovered: Option<([u8; 32], BTreeMap<String, i64>)>,
         background: bool,
         configure: impl FnOnce(&mut IndexWriter<'d>) -> Result<()>,
     ) -> Result<Self> {
@@ -645,6 +671,46 @@ impl<'d> Engine<'d> {
         }
         let files = directory.list_all().map_err(|_| Error::Native)?;
         let state = match checkpoint {
+            None if recovered.is_some() => {
+                // Opened on the files of a base alone: the index says what is live, the
+                // tombstone list says what was deleted, and nothing else is remembered.
+                if files.is_empty() {
+                    return Err(Error::Checkpoint);
+                }
+                let reader = DirectoryReader::open(directory).map_err(|_| Error::Native)?;
+                let native = NativeCommit::from_infos(&reader.segment_infos);
+                let (taken_at, tombstones) = recovered.ok_or(Error::Checkpoint)?;
+                // The list must describe these files: another commit's list would silently
+                // forget a delete or invent one.
+                if taken_at != native.to_bytes() {
+                    return Err(Error::Checkpoint);
+                }
+                let mut state = State {
+                    current: crate::reader::rebuild(&reader, &schema)?,
+                    ..State::default()
+                };
+                for (id, version) in tombstones {
+                    if state
+                        .current
+                        .insert(
+                            id,
+                            Live {
+                                version,
+                                digest: None,
+                                docs: 0,
+                            },
+                        )
+                        .is_some()
+                    {
+                        // A deleted identity that is also live is not a state this index was in.
+                        return Err(Error::Checkpoint);
+                    }
+                }
+                state.physical_documents =
+                    usize::try_from(reader.max_doc()).map_err(|_| Error::Limit)?;
+                head.native = Some(native);
+                state
+            }
             None => {
                 if !files.is_empty() {
                     return Err(Error::Checkpoint);
@@ -712,6 +778,22 @@ impl<'d> Engine<'d> {
             schema,
             state: Mutex::new(state),
         })
+    }
+
+    /// Open on the files of a committed base and the tombstone list written with it
+    /// ([`Checkpoint::tombstones`]), in a process that holds no checkpoint. Live documents,
+    /// their versions and digests are read back from the index; deleted identities keep their
+    /// versions from the list. Request history is not restored: a retry of a request from before
+    /// the base is not recognised, though its version is still refused as stale. Anything that does
+    /// not match is `Error::Checkpoint`.
+    pub fn open_recovered<D: Directory>(
+        directory: &'d EngineDirectory<D>,
+        schema: Schema,
+        tombstones: &[u8],
+        mode: MergeMode,
+    ) -> Result<Self> {
+        let (taken_at, recovered) = crate::tombstones::decode(tombstones)?;
+        Self::open_with(directory, schema, None, Some((taken_at, recovered)), mode)
     }
 
     /// Apply a caller-accepted preparation. Refusal is represented by dropping
