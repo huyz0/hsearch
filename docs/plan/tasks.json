@@ -2710,7 +2710,8 @@
             "M06.04",
             "M19",
             "M13.01",
-            "M06.10"
+            "M06.10",
+            "M06.11"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -2811,21 +2812,47 @@
         },
         {
           "id": "M06.10",
-          "title": "Rebuild engine state and spill on recovery",
-          "goal": "A recovered index serves with the documents, versions and idempotency state its committed history implies, for tails and payloads past memory.",
+          "title": "Rebuild engine state from the recovered log",
+          "goal": "A recovered index's engine holds the documents, versions and request identities its committed history implies.",
           "deliverables": [
-            "Reconstruct engine documents, versions and idempotency receipts from the recovery stream into a reopened writer, and open a reader on the base",
+            "A commit-log batch body codec (request identity and mutations) a recovering writer replays through the same preparation a live write meets",
+            "Recovery's records applied into an engine, stopping at the sequence the engine refuses"
+          ],
+          "validation": [
+            "Rebuild a fresh scratch engine from the log alone and compare documents, versions, request receipts and refused stale versions with an independent ledger; truncated, trailing and malformed bodies are refused whole."
+          ],
+          "definition_of_done": [
+            "Rebuilt documents, versions and request outcomes match the independent ledger; nothing local is consulted. Opening on a base, spill, external payloads and sealed successors are M06.11."
+          ],
+          "depends_on": [
+            "M06.03"
+          ],
+          "owner": "storage/runtime",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-10-rebuild.md",
+              "result": "encode_batch/apply_batch codec and store::rebuild replaying recovery's records into an engine; a rebuilt scratch engine matches an independent model on presence, version, stored value and every batch's receipts, refuses stale and under-tombstone versions, and recognises the first batch's request identity; vector/join/shared/nested values replay; truncated/trailing/bad-version/oversized-count bodies refused, an engine refusal stops at its sequence, a record-level delete is Unsupported, a head naming a base is BaseNotOpened. 7 tests, 7 mutations seen red, 1 equivalent (count bound). Provisional (in-memory store, local scratch engine, no RustFS); no base open, spill or external payloads (M06.11)."
+            }
+          ]
+        },
+        {
+          "id": "M06.11",
+          "title": "Open on a base, spill and external payloads",
+          "goal": "Recovery serves from a published base and a tail or payload past memory, and follows a sealed index.",
+          "deliverables": [
+            "Open an engine on the verified base's files (not only a scratch engine) and replay the tail onto it",
             "Spill a tail over the in-memory bounds to scratch instead of refusing it, and apply external (large) payloads by fetching their objects with digest verification",
             "Follow a sealed index to its successor lane"
           ],
           "validation": [
-            "Delete every cache and scratch directory, restart, and compare documents, versions and idempotency answers with an independent receipt ledger; oversized and external-payload histories recover."
+            "Delete every cache and scratch directory, restart, and compare documents, versions and request answers with an independent ledger from a base plus a tail; oversized and external-payload histories recover."
           ],
           "definition_of_done": [
-            "Recovered documents, versions and idempotency state match the independent ledger; nothing local is consulted."
+            "Recovery from a base plus a spilled tail and external payloads matches the independent ledger; nothing local is consulted."
           ],
           "depends_on": [
-            "M06.03"
+            "M06.10"
           ],
           "owner": "storage/runtime",
           "status": "planned",

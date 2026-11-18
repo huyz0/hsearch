@@ -7,6 +7,7 @@ pub mod compact;
 mod io;
 pub mod pins;
 pub mod publish;
+pub mod rebuild;
 pub mod recover;
 pub mod sweep;
 

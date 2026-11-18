@@ -23,6 +23,8 @@ pub use range::{
 };
 mod upload;
 pub use upload::ObjectUploadSink;
+mod wal;
+pub use wal::{apply_batch, encode_batch};
 mod schema;
 pub use aggregations::{Bucket, Metrics};
 mod adapter;

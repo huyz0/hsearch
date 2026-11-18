@@ -3,125 +3,17 @@
 mod support;
 
 use std::sync::Arc;
-use std::time::Duration;
 
-use hsearch_commit::{AnyDependencies as AnyDeps, Committer, Outcome, Receipt, Request};
-use hsearch_format::{Durability, Id, KeyIdentity, PayloadRef, PolicyTuple, RecordOp, RecordSpec};
-use hsearch_lane::batch::BatchPolicy;
-use hsearch_lane::{
-    LaneId, LaneWriter, block_on, create_head, create_lane, read_head, shared_group,
-};
+use hsearch_commit::{AnyDependencies as AnyDeps, Committer, Receipt};
+use hsearch_format::{PayloadRef, RecordOp, RecordSpec};
+use hsearch_lane::{LaneId, LaneWriter, block_on, read_head};
 use hsearch_object::{
-    Budget, Cancellation, Metadata, MetadataStore, Mutation as Put, ObjectBackend, ObjectKey,
-    Payload, Precondition, RequestContext, RequestId,
+    Metadata, MetadataStore, Mutation as Put, ObjectBackend, ObjectKey, Payload, Precondition,
+    RequestId,
 };
 use hsearch_store::publish::{AnyDependencies, BaseSpec};
-use hsearch_store::recover::{Expect, NotReady, Record, ReplayLimits, Target, recover};
+use hsearch_store::recover::{Expect, NotReady, Record, ReplayLimits, recover};
 use support::*;
-
-const B: Id = [1; 16];
-
-fn policy() -> PolicyTuple {
-    PolicyTuple {
-        key: KeyIdentity::DeploymentDefault,
-        residency: "region-a".into(),
-        durability: Durability::Object,
-        format_version: 1,
-    }
-}
-
-fn big() -> ReplayLimits {
-    ReplayLimits {
-        slots: 10_000,
-        records: 10_000,
-        bytes: 64 << 20,
-    }
-}
-
-fn target(lane: &LaneId, limits: ReplayLimits, expect: Expect) -> Target<'_> {
-    Target {
-        lane,
-        index: INDEX,
-        shard: SHARD,
-        incarnation: 1,
-        limits,
-        expect,
-    }
-}
-
-fn ctx() -> RequestContext {
-    RequestContext::new(
-        Duration::from_secs(30),
-        Cancellation::default(),
-        Budget {
-            request_bytes: 1 << 20,
-            response_bytes: 1 << 20,
-            attempts: 8,
-        },
-    )
-    .unwrap()
-}
-
-/// A lane of two indexes with its head, and the committer that writes it one record to a slot.
-fn open_lane(store: &Arc<Crash>) -> (LaneId, Committer<Crash, AnyDeps>) {
-    let (domain, group) = shared_group(&policy(), 0);
-    let lane = LaneId::new(domain);
-    block_on(create_lane(
-        store.inner_ref(),
-        &layout(),
-        &lane,
-        &policy(),
-        group,
-        1000,
-        &[B, INDEX],
-    ))
-    .unwrap();
-    block_on(create_head(
-        store.inner_ref(),
-        &layout(),
-        &lane,
-        Durability::Object,
-    ))
-    .unwrap();
-    (lane, writer(store, lane))
-}
-
-fn writer(store: &Arc<Crash>, lane: LaneId) -> Committer<Crash, AnyDeps> {
-    let (w, _) = block_on(LaneWriter::open_with_head(
-        Arc::clone(store),
-        layout(),
-        lane,
-        |_| Ok(()),
-    ))
-    .unwrap();
-    let policy = BatchPolicy {
-        max_records: 1,
-        max_bytes: 4 << 20,
-        max_wait: Duration::from_millis(1),
-    };
-    Committer::new(w, AnyDeps, policy).unwrap()
-}
-
-fn req(index: Id, seq: u64, body: &str) -> Request {
-    Request {
-        index,
-        seq,
-        body: body.as_bytes().to_vec(),
-        delete: false,
-        deps: hsearch_commit::Dependencies {
-            schema: [1; 32],
-            crypto: [1; 32],
-            resolved: [1; 32],
-        },
-    }
-}
-
-fn commit(c: &mut Committer<Crash, AnyDeps>, r: Request) -> Receipt {
-    match block_on(c.commit(vec![r])).remove(0) {
-        Outcome::Committed(receipt) => receipt,
-        other => panic!("not committed: {other:?}"),
-    }
-}
 
 /// Interleave `n` records of A (seq 0..n, body "a<seq>") with a record of B every other time.
 fn fill(c: &mut Committer<Crash, AnyDeps>, n: u64) -> Vec<Receipt> {
@@ -456,14 +348,6 @@ fn a_seal_record_is_not_a_document_operation() {
     let recovered = result.unwrap();
     assert_eq!(recovered.applied, 2);
     assert_eq!(got, vec![(0, "a0".into()), (1, "a1".into())]);
-}
-
-fn del(index: Id, seq: u64) -> Request {
-    Request {
-        delete: true,
-        body: Vec::new(),
-        ..req(index, seq, "")
-    }
 }
 
 #[test]
