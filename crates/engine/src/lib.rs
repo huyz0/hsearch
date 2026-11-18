@@ -14,7 +14,9 @@ mod directory;
 pub use directory::EngineDirectory;
 mod local;
 mod remote;
-pub use local::{LocalFiles, with_local_engine, with_local_engine_merging};
+pub use local::{
+    LocalFiles, with_local_engine, with_local_engine_merging, with_recovered_local_engine,
+};
 pub use remote::{CachePin, CachedDirectory, RemoteError, RemoteFiles};
 mod range;
 pub use range::{
@@ -24,7 +26,7 @@ pub use range::{
 mod upload;
 pub use upload::ObjectUploadSink;
 mod tombstones;
-pub use tombstones::MAX_TOMBSTONES;
+pub use tombstones::{MAX_TOMBSTONES, TOMBSTONES_FILE};
 mod wal;
 pub use wal::{apply_batch, encode_batch};
 mod schema;
