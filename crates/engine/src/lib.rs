@@ -49,6 +49,15 @@ pub use vector::{
     Quantizer, Rerank, ScalarBits, Similarity, VectorSpec,
 };
 
+/// `Ok` when the CPU has every feature this build was compiled to require
+/// (the x86-64-v3 set in a build from `scripts/build-v3.sh`, which selects the
+/// SIMD vector kernels; nothing in a default build or on aarch64). A process that runs
+/// the engine calls it first, so an older CPU gets a message naming the
+/// missing features instead of an illegal instruction.
+pub fn check_cpu() -> std::result::Result<(), String> {
+    lucene_util::cpu::check_baseline().map_err(|e| e.to_string())
+}
+
 /// Exact upstream engine revision.
 pub const ENGINE_REVISION: &str = "3979974b4bdd3a8442f747d62914ce92dca56618";
 pub use lucene_store::{Directory, Input};
@@ -154,6 +163,14 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 /// Adapter result with redacted typed errors.
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod cpu_tests {
+    #[test]
+    fn the_test_machine_has_the_features_the_build_requires() {
+        assert_eq!(super::check_cpu(), Ok(()));
+    }
+}
 
 #[cfg(test)]
 #[path = "../tests/support/adapter_directory.rs"]
