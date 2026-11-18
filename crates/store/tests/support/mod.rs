@@ -4,17 +4,23 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::time::Duration;
 
+use hsearch_commit::{AnyDependencies as AnyDeps, Committer, Outcome, Receipt, Request};
 use hsearch_engine::{Kind, LocalFiles, Mutation, Schema, Value, with_local_engine};
 use hsearch_format::{CommitToken, Durability, Id, Layout, StructuralHead};
+use hsearch_format::{KeyIdentity, PolicyTuple};
 use hsearch_index::barrier::{Cut, Replay};
+use hsearch_lane::batch::BatchPolicy;
 use hsearch_lane::{LaneId, block_on, create_head, read_head};
+use hsearch_lane::{LaneWriter, create_lane, shared_group};
 use hsearch_object::memory::{MemoryLimits, MemoryStore};
+use hsearch_object::{Budget, Cancellation};
 use hsearch_object::{
     ByteRange, Error as StoreError, LargeObjectWriter, MetadataStore, Mutation as Put,
     ObjectBackend, ObjectInfo, ObjectKey, Operation, Payload, RequestContext, VersionToken,
     WriteReceipt,
 };
 use hsearch_store::publish::{AnyDependencies, BaseSpec, Dependencies, Error, HeadRead, Publisher};
+use hsearch_store::recover::{Expect, ReplayLimits, Target};
 use sha2::{Digest, Sha256};
 
 pub const INDEX: Id = [7; 16];
@@ -287,5 +293,117 @@ pub fn at<'a>(
         lane,
         head,
         version,
+    }
+}
+
+pub const B: Id = [1; 16];
+
+pub fn policy() -> PolicyTuple {
+    PolicyTuple {
+        key: KeyIdentity::DeploymentDefault,
+        residency: "region-a".into(),
+        durability: Durability::Object,
+        format_version: 1,
+    }
+}
+
+pub fn big() -> ReplayLimits {
+    ReplayLimits {
+        slots: 10_000,
+        records: 10_000,
+        bytes: 64 << 20,
+    }
+}
+
+pub fn target(lane: &LaneId, limits: ReplayLimits, expect: Expect) -> Target<'_> {
+    Target {
+        lane,
+        index: INDEX,
+        shard: SHARD,
+        incarnation: 1,
+        limits,
+        expect,
+    }
+}
+
+pub fn ctx() -> RequestContext {
+    RequestContext::new(
+        Duration::from_secs(30),
+        Cancellation::default(),
+        Budget {
+            request_bytes: 1 << 20,
+            response_bytes: 1 << 20,
+            attempts: 8,
+        },
+    )
+    .unwrap()
+}
+
+/// A lane of two indexes with its head, and the committer that writes it one record to a slot.
+pub fn open_lane(store: &Arc<Crash>) -> (LaneId, Committer<Crash, AnyDeps>) {
+    let (domain, group) = shared_group(&policy(), 0);
+    let lane = LaneId::new(domain);
+    block_on(create_lane(
+        store.inner_ref(),
+        &layout(),
+        &lane,
+        &policy(),
+        group,
+        1000,
+        &[B, INDEX],
+    ))
+    .unwrap();
+    block_on(create_head(
+        store.inner_ref(),
+        &layout(),
+        &lane,
+        Durability::Object,
+    ))
+    .unwrap();
+    (lane, writer(store, lane))
+}
+
+pub fn writer(store: &Arc<Crash>, lane: LaneId) -> Committer<Crash, AnyDeps> {
+    let (w, _) = block_on(LaneWriter::open_with_head(
+        Arc::clone(store),
+        layout(),
+        lane,
+        |_| Ok(()),
+    ))
+    .unwrap();
+    let policy = BatchPolicy {
+        max_records: 1,
+        max_bytes: 4 << 20,
+        max_wait: Duration::from_millis(1),
+    };
+    Committer::new(w, AnyDeps, policy).unwrap()
+}
+
+pub fn req(index: Id, seq: u64, body: &str) -> Request {
+    Request {
+        index,
+        seq,
+        body: body.as_bytes().to_vec(),
+        delete: false,
+        deps: hsearch_commit::Dependencies {
+            schema: [1; 32],
+            crypto: [1; 32],
+            resolved: [1; 32],
+        },
+    }
+}
+
+pub fn commit(c: &mut Committer<Crash, AnyDeps>, r: Request) -> Receipt {
+    match block_on(c.commit(vec![r])).remove(0) {
+        Outcome::Committed(receipt) => receipt,
+        other => panic!("not committed: {other:?}"),
+    }
+}
+
+pub fn del(index: Id, seq: u64) -> Request {
+    Request {
+        delete: true,
+        body: Vec::new(),
+        ..req(index, seq, "")
     }
 }
