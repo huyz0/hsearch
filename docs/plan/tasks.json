@@ -2857,6 +2857,33 @@
           "owner": "storage/runtime",
           "status": "planned",
           "evidence": []
+        },
+        {
+          "id": "M06.13",
+          "title": "Spill, external payloads and sealed successors in recovery",
+          "goal": "Recovery replays a tail larger than memory, large documents held in their own objects, and an index that moved to another lane.",
+          "deliverables": [
+            "recover_with and a Spill setting: digests past the in-memory bound go to a scratch file, default refuse",
+            "External payload records fetched by ranged reads with length and SHA-256 verified",
+            "A sealed index followed to its successor lane"
+          ],
+          "validation": [
+            "Compare applied records with an independent model for a spilled tail, external payloads (absent, short, long, altered) and one- and two-hop promotions; seal and successor gaps are named."
+          ],
+          "definition_of_done": [
+            "Applied records match the model, every unreadable payload or hole blocks readiness by name, and the spill is measured against an all-in-memory replay."
+          ],
+          "depends_on": [
+            "M06.10"
+          ],
+          "owner": "storage/runtime",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-13-spill-external-successor.md",
+              "result": "recover_with/Spill, 8 MiB ranged external fetch with digest check, successor following; 14 spill tests, 11 mutations seen red, 3 unreachable survivors named. Spill costs about 4% CPU per record for constant digest memory. Provisional (in-memory store; the RustFS test only compiled locally)."
+            }
+          ]
         }
       ]
     },

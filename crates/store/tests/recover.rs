@@ -384,7 +384,7 @@ fn a_delete_reaches_apply_as_a_delete_and_conflicts_with_a_put_of_the_same_seque
 }
 
 #[test]
-fn an_external_payload_blocks_readiness_instead_of_being_skipped() {
+fn an_external_payload_that_is_absent_blocks_readiness_instead_of_being_skipped() {
     let store = Crash::new();
     let (lane, mut c) = open_lane(&store);
     commit(&mut c, req(INDEX, 0, "a0"));
@@ -409,7 +409,7 @@ fn an_external_payload_blocks_readiness_instead_of_being_skipped() {
     .unwrap();
     assert_eq!(
         run(&store, &lane, big(), Expect::default()).0.unwrap_err(),
-        NotReady::Unsupported(1)
+        NotReady::Payload(1)
     );
 }
 
