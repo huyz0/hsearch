@@ -2901,11 +2901,16 @@
             "Recovery of a spilled tail, external payloads and a sealed index matches the independent ledger."
           ],
           "depends_on": [
-            "M06.12"
+            "M06.10"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-13-spill-external-successor.md",
+              "result": "recover_with/Spill, 8 MiB ranged external fetch with digest check, successor following; 15 spill tests, 11 mutations seen red, 3 unreachable survivors named. Spill costs about 4% CPU per record for constant digest memory. Provisional (in-memory store; the RustFS test only compiled locally). Known format follow-up: a seal at 0 is ambiguous."
+            }
+          ]
         }
       ]
     },
