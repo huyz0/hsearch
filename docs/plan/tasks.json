@@ -2711,7 +2711,8 @@
             "M19",
             "M13.01",
             "M06.10",
-            "M06.11"
+            "M06.12",
+            "M06.13"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -2822,7 +2823,7 @@
             "Rebuild a fresh scratch engine from the log alone and compare documents, versions, request receipts and refused stale versions with an independent ledger; truncated, trailing and malformed bodies are refused whole."
           ],
           "definition_of_done": [
-            "Rebuilt documents, versions and request outcomes match the independent ledger; nothing local is consulted. Opening on a base, spill, external payloads and sealed successors are M06.11."
+            "Rebuilt documents, versions and request outcomes match the independent ledger; nothing local is consulted. Opening on a base is M06.11/M06.12; spill, external payloads and sealed successors are M06.13."
           ],
           "depends_on": [
             "M06.03"
@@ -2832,27 +2833,75 @@
           "evidence": [
             {
               "path": "evidence/m06-10-rebuild.md",
-              "result": "encode_batch/apply_batch codec and store::rebuild replaying recovery's records into an engine; a rebuilt scratch engine matches an independent model on presence, version, stored value and every batch's receipts, refuses stale and under-tombstone versions, and recognises the first batch's request identity; vector/join/shared/nested values replay; truncated/trailing/bad-version/oversized-count bodies refused, an engine refusal stops at its sequence, a record-level delete is Unsupported, a head naming a base is BaseNotOpened. 7 tests, 7 mutations seen red, 1 equivalent (count bound). Provisional (in-memory store, local scratch engine, no RustFS); no base open, spill or external payloads (M06.11)."
+              "result": "encode_batch/apply_batch codec and store::rebuild replaying recovery's records into an engine; a rebuilt scratch engine matches an independent model on presence, version, stored value and every batch's receipts, refuses stale and under-tombstone versions, and recognises the first batch's request identity; vector/join/shared/nested values replay; truncated/trailing/bad-version/oversized-count bodies refused, an engine refusal stops at its sequence, a record-level delete is Unsupported, a head naming a base is BaseNotOpened. 7 tests, 7 mutations seen red, 1 equivalent (count bound). Provisional (in-memory store, local scratch engine, no RustFS); no base open (M06.11/M06.12), spill or external payloads (M06.13)."
             }
           ]
         },
         {
           "id": "M06.11",
-          "title": "Open on a base, spill and external payloads",
-          "goal": "Recovery serves from a published base and a tail or payload past memory, and follows a sealed index.",
+          "title": "Open an engine on a base's files and tombstones",
+          "goal": "A writer's engine can be reopened from a published base's native files alone, because native files do not carry deleted identities.",
           "deliverables": [
-            "Open an engine on the verified base's files (not only a scratch engine) and replay the tail onto it",
-            "Spill a tail over the in-memory bounds to scratch instead of refusing it, and apply external (large) payloads by fetching their objects with digest verification",
-            "Follow a sealed index to its successor lane"
+            "`Checkpoint::tombstones` (the versions of deleted identities at a commit, bound to its native commit identity) and `Engine::open_recovered`, which rebuilds live identities, versions and digests from the index and takes deleted versions from the list",
+            "Refusal of a list that does not parse whole, that names a live identity, or that has no files behind it"
           ],
           "validation": [
-            "Delete every cache and scratch directory, restart, and compare documents, versions and request answers with an independent ledger from a base plus a tail; oversized and external-payload histories recover."
+            "Commit a history, copy only its native files and tombstone list into a fresh directory, open it in a fresh engine and continue: accepted and refused versions match the engine that wrote it; truncated, trailing and inconsistent lists are refused."
           ],
           "definition_of_done": [
-            "Recovery from a base plus a spilled tail and external payloads matches the independent ledger; nothing local is consulted."
+            "A recovered engine accepts and refuses exactly the versions the writing engine would. Request history is not restored (a retry of a pre-base request is refused as stale, not recognised) and the writing of the list at commit and its store-side wiring are M06.12."
           ],
           "depends_on": [
             "M06.10"
+          ],
+          "owner": "storage/runtime",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-11-engine-base-open.md",
+              "result": "Checkpoint::tombstones and Engine::open_recovered: live versions and digests are read back from the index, deleted versions from the list; a recovered engine's outcomes and refusals match the engine that wrote the base on a continuation, a put under a tombstone (including a delete of a never-seen identity) is Conflict; truncated/trailing/bad-magic/oversized/non-positive/out-of-order/live-and-dead lists, a list from another commit and an empty directory are refused; every value kind reopens as a checkpoint. 7 tests, 6 mutations seen red. Provisional (local files, no RustFS); request history is not restored."
+            }
+          ]
+        },
+        {
+          "id": "M06.12",
+          "title": "Recover a writer from a base and tail",
+          "goal": "A writer activates from a published base plus the committed tail with nothing local.",
+          "deliverables": [
+            "Write the tombstone list beside each base and name it in the manifest, verified with the other files",
+            "Fetch the verified base's files to scratch, open the engine on them (`Engine::open_recovered`) and replay the tail onto it; remove the base refusal in `rebuild`"
+          ],
+          "validation": [
+            "Delete every cache and scratch directory, restart, and compare documents, versions and refusals with an independent ledger from a base plus a tail."
+          ],
+          "definition_of_done": [
+            "Recovery from a base plus a tail matches the independent ledger; nothing local is consulted."
+          ],
+          "depends_on": [
+            "M06.11",
+            "M06.10"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.13",
+          "title": "Spill, external payloads and sealed successors",
+          "goal": "Recovery handles a tail or payload past memory and follows a sealed index to its successor lane.",
+          "deliverables": [
+            "Spill a tail over the in-memory bounds to scratch instead of refusing it",
+            "Apply external (large) payloads by fetching their objects with digest verification",
+            "Follow a sealed index to its successor lane"
+          ],
+          "validation": [
+            "Oversized, external-payload and sealed histories recover against an independent ledger with scratch deleted."
+          ],
+          "definition_of_done": [
+            "Recovery of a spilled tail, external payloads and a sealed index matches the independent ledger."
+          ],
+          "depends_on": [
+            "M06.12"
           ],
           "owner": "storage/runtime",
           "status": "planned",

@@ -43,7 +43,7 @@ pub struct Rebuilt {
 /// Recover `target` and replay its records into an empty `engine`, which the caller discards on
 /// any error (a refused or partial apply can leave it poisoned). Only batches the engine accepted
 /// belong in the log, since a replayed refusal stops recovery for good. A head that names a base
-/// is refused until M06.11 opens the engine on it. The receipts of every replayed batch are held,
+/// is refused until M06.12 opens the engine on it. The receipts of every replayed batch are held,
 /// bounded by the caller's record limit.
 pub fn rebuild<S, D>(
     publisher: &Publisher<S>,
