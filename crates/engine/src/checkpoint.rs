@@ -20,6 +20,14 @@ impl NativeCommit {
             version: infos.version,
         }
     }
+    /// The commit identity as 32 bytes, for binding a sidecar to the files it describes.
+    pub(crate) fn to_bytes(self) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        out[..16].copy_from_slice(&self.id);
+        out[16..24].copy_from_slice(&self.generation.to_le_bytes());
+        out[24..].copy_from_slice(&self.version.to_le_bytes());
+        out
+    }
     pub(crate) fn read(directory: &dyn Directory) -> Result<Self> {
         segment_infos::read_latest(directory)
             .map(|infos| Self::from_infos(&infos))
