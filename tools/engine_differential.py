@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CAP = 65536
 FIXTURE = 'fixtures/engine-research/java-differential-v1.json'
 PROVENANCE = 'fixtures/engine-research/java-differential-v1.PROVENANCE.json'
-FIXTURE_SHA = 'e56f8bf8ee611a69998bdd1961081a52e8830fd71a9346aeea53d9980c719b2e'
-PROVENANCE_SHA = '4ee3121ce1097663374ebff7a531e99fb676b8a21d469f385246392da4202734'
+FIXTURE_SHA = '4141f3198e0ea17737903cefeab3af4e31247cb1bbab4f22ce4fea9d10d0e21c'
+PROVENANCE_SHA = '081218e1936b7e098a14c89d4ba483027edb4a57c02197111d6ce30aeeb4c067'
 TARGETS = ('x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu')
 SHA = re.compile(r'[0-9a-f]{64}')
 

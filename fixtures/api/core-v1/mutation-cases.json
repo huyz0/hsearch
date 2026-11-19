@@ -630,10 +630,10 @@
     "native_target": "Reference sequence/term conditions are context only; native opaque versions must bind tenant/incarnation/version and cannot be field-renamed from these values."
   },
   {
-    "id": "forced-refresh-adaptation",
+    "id": "refresh-visibility-modes",
     "area": "A05",
     "profile_class": "difference",
-    "intent": "intentional_difference",
+    "intent": "matching_target",
     "setup": "empty",
     "steps": [
       {
@@ -674,9 +674,48 @@
           ],
           "exact_total": 1
         }
+      },
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/waited?refresh=wait_for",
+          "json": {
+            "uid": "waited",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 10,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 201
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_search",
+          "json": {
+            "query": {
+              "term": {
+                "uid": "waited"
+              }
+            },
+            "track_total_hits": true
+          }
+        },
+        "expect": {
+          "status": 200,
+          "hit_ids": [
+            "waited"
+          ],
+          "exact_total": 1
+        }
       }
     ],
-    "native_target": "Forced per-write refresh is excluded from hsearch. Use deferred visibility or bounded receipt wait; a committed wait timeout retains its receipt."
+    "native_target": "All three modes are supported (PR-07). refresh=true acks once a reader covering the write is published and shares one publication with other forced refreshes in a batching window, never one segment per write; wait_for acks when searchable; false acks when durable and promises no visibility. A visibility timeout keeps the committed receipt. refresh=false visibility is time-dependent and has no deterministic reference step here."
   },
   {
     "id": "pit-mutation-repeat-pages",
@@ -874,5 +913,153 @@
       }
     ],
     "native_target": "An exact count must be complete; a requested lower bound cannot exceed the independent eleven-document total. Native count admission remains separate."
+  },
+  {
+    "id": "partial-update-merge",
+    "area": "A02",
+    "profile_class": "subset",
+    "intent": "matching_target",
+    "setup": "empty",
+    "steps": [
+      {
+        "request": {
+          "method": "PUT",
+          "path": "/{index}/_doc/u1",
+          "json": {
+            "uid": "u1",
+            "tenant": "acct-a",
+            "category": "book",
+            "title": "Original public fixture",
+            "price": 10,
+            "active": true,
+            "created_at": "2026-01-01T00:00:00Z"
+          }
+        },
+        "expect": {
+          "status": 201
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_update/u1",
+          "json": {
+            "doc": {
+              "price": 11
+            }
+          }
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/result": "updated"
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "path": "/{index}/_doc/u1"
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/found": true,
+            "/_source": {
+              "uid": "u1",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 11,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_update/u1",
+          "json": {
+            "doc": {
+              "price": 11
+            }
+          }
+        },
+        "expect": {
+          "status": 200,
+          "fields": {
+            "/result": "noop"
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_update/missing",
+          "json": {
+            "doc": {
+              "price": 5
+            }
+          }
+        },
+        "expect": {
+          "status": 404,
+          "error_required": true
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_update/u3",
+          "json": {
+            "doc": {
+              "uid": "u3",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 10,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            },
+            "doc_as_upsert": true
+          }
+        },
+        "expect": {
+          "status": 201,
+          "fields": {
+            "/result": "created"
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "POST",
+          "path": "/{index}/_update/u4",
+          "json": {
+            "doc": {
+              "price": 1
+            },
+            "upsert": {
+              "uid": "u4",
+              "tenant": "acct-a",
+              "category": "book",
+              "title": "Original public fixture",
+              "price": 1,
+              "active": true,
+              "created_at": "2026-01-01T00:00:00Z"
+            }
+          }
+        },
+        "expect": {
+          "status": 201,
+          "fields": {
+            "/result": "created"
+          }
+        }
+      }
+    ],
+    "native_target": "Partial-document merge, upsert, doc_as_upsert and detect_noop without scripts (A02, PR-47). The update is resolved once on the shard owner against committed state and the resolved operation is what is logged, so replay never re-evaluates it. Reference receipts are context; native receipts carry their own version tokens, and a missing target without upsert is a typed not-found before any mutation."
   }
 ]

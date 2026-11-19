@@ -28,6 +28,7 @@ pub mod barrier;
 mod error;
 pub mod format;
 mod index;
+mod live;
 pub mod resolve;
 mod store;
 mod writer;

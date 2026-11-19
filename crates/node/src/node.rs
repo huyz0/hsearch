@@ -19,6 +19,8 @@ use crate::mapping::{Mapping, infer, typed_owned, valid_field_name};
 use crate::policy::{Dynamic, MappingLimits};
 use crate::search::{self, Source};
 
+mod get;
+
 /// Operations per call to the write path, below its slot bound.
 const CHUNK: usize = 1000;
 /// A document of at least this many bytes is charged its indexing working set
@@ -669,30 +671,6 @@ impl<S: MetadataStore + 'static> Node<S> {
         items.clear();
         out.extend(responses.into_iter().flatten());
         errors
-    }
-
-    /// `GET /{index}/_doc/{id}`, from the latest searchable view.
-    pub fn get(&self, name: &str, id: &str) -> Result<(u16, Value), ApiError> {
-        let entry = self.entry(name)?;
-        // The mapping first, then the snapshot: a snapshot is never older than the
-        // mapping it is read with, because an index evolves before its mapping does.
-        let mapping = entry.mapping();
-        let names = mapping.names();
-        let snapshot = entry.index.snapshot()?;
-        match snapshot.get(id, &names)? {
-            None => Ok((404, json!({"_index": name, "_id": id, "found": false}))),
-            Some(hit) => {
-                let mut source = Map::new();
-                for (field, value) in &hit.fields {
-                    source.insert(field.clone(), json_value(value));
-                }
-                Ok((
-                    200,
-                    json!({"_index": name, "_id": id, "_version": hit.version,
-                           "found": true, "_source": source}),
-                ))
-            }
-        }
     }
 
     /// `POST /{index}/_search`.

@@ -16,28 +16,103 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
+# The jobs run in parallel; ci-ok is the one required check and needs all of them. What used to
+# be one 20 to 30 minute `check` job is split so the slowest part, not the sum, sets the wall time.
 jobs:
-  # Light ship path: fmt, clippy, tests, doc tests, plan/contract/policy checks.
+  # fmt, clippy, the plan, API and policy checks and the Python tests. No RustFS.
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Install pinned toolchain
-        run: rustup show active-toolchain || rustup toolchain install
-      - name: Prefetch locked dependencies
-        run: cargo fetch --locked
-      - name: Start pinned RustFS
-        run: eval "$(scripts/rustfs.sh up)" && env | grep '^HSEARCH_S3_' >> "$GITHUB_ENV"
-      - name: fmt, clippy, tests, plan and policy checks
-        run: python3 tools/check.py
-      - name: Security crate on the forced software AES path (bytes must match the hardware path)
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: lint
+          save: "true"
+      - name: fmt, clippy, plan and policy checks (cargo test runs in the test jobs)
+        run: python3 tools/check.py --skip-cargo-test
+      - name: Status from tasks.json (job summary, no reconciliation PRs)
+        if: always()
+        run: python3 docs/plan/tools/plan.py summary >> "$GITHUB_STEP_SUMMARY"
+
+  # The node crate's tests, including the 100k document and 100 MiB tests against RustFS, on
+  # their own runner so they do not compete with the rest of the workspace for CPU.
+  test-node:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: dev
+          rustfs: "true"
+      - name: Build the tests
+        run: cargo test --locked -p hsearch-node --all-features --no-run
+      - name: RustFS answers a signed write and read
+        run: scripts/rustfs.sh health
+      - name: Tests (hsearch-node)
+        run: cargo test --locked -p hsearch-node --all-features
+      - name: RustFS log
+        if: failure()
+        run: scripts/rustfs.sh logs | tail -300
+
+  # Every other crate's tests and doc tests.
+  test-rest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: dev
+          save: "true"
+          rustfs: "true"
+      - name: Build the tests
+        run: cargo test --locked --workspace --exclude hsearch-node --all-features --no-run
+      - name: RustFS answers a signed write and read
+        run: scripts/rustfs.sh health
+      - name: Tests (workspace except hsearch-node)
+        run: cargo test --locked --workspace --exclude hsearch-node --all-features
+      - name: RustFS log
+        if: failure()
+        run: scripts/rustfs.sh logs | tail -300
+
+  # The security crate again with the software AES path forced; its bytes must match the hardware path.
+  security-soft:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: soft
+          save: "true"
+      - name: Security crate on the forced software AES path
         run: >-
           RUSTFLAGS='--cfg aes_backend="soft" --cfg polyval_backend="soft"' HSEARCH_EXPECT_FORCED_SOFT=1
           cargo test --locked --target-dir target/soft -p hsearch-security --all-features
+
+  # RustFS capability probe with a restart, then the node killed with -9 and restarted over plain HTTP.
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: dev
+          rustfs: "true"
       - name: RustFS capability probe and restart check
         shell: bash
         run: |
@@ -48,9 +123,9 @@ jobs:
           cargo run --locked -q -p hsearch-s3 --example probe -- verify | tee -a "$GITHUB_STEP_SUMMARY"
       - name: End to end over plain HTTP (100k documents, kill -9, restart)
         run: scripts/e2e.sh | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Status from tasks.json (job summary, no reconciliation PRs)
-        if: always()
-        run: python3 docs/plan/tools/plan.py summary >> "$GITHUB_STEP_SUMMARY"
+      - name: RustFS log
+        if: failure()
+        run: scripts/rustfs.sh logs | tail -300
 
   # Standard cargo-llvm-cov, per-crate line floor. See scripts/coverage.sh.
   coverage:
@@ -60,19 +135,26 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Install pinned toolchain
-        run: rustup show active-toolchain || rustup toolchain install
-      - name: Prefetch locked dependencies
-        run: cargo fetch --locked
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: coverage
+          save: "true"
+          rustfs: "true"
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked --version 0.9.1
-      - name: Start pinned RustFS
-        run: eval "$(scripts/rustfs.sh up)" && env | grep '^HSEARCH_S3_' >> "$GITHUB_ENV"
+      # The restored cache holds instrumented workspace-crate objects from an older main build;
+      # mixed with fresh ones they give "functions have mismatched data" and a false low
+      # percentage. Dependencies stay cached; every workspace crate is rebuilt and measured.
+      - name: Drop stale instrumented workspace objects
+        run: cargo llvm-cov clean --workspace
       - name: Per-crate coverage floor
         run: scripts/coverage.sh 90
+      - name: RustFS log
+        if: failure()
+        run: scripts/rustfs.sh logs | tail -300
 
-  # Advisory: warns in the job log and summary when tools/CI/gate work is over ~20%
-  # of recent commits. It never fails the PR; product docs are not counted.
+  # Advisory: warns in the job log and summary when tools/CI/gate work is over ~20% of recent
+  # commits. It never fails the PR; product docs are not counted.
   harness-budget:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -87,7 +169,7 @@ jobs:
 
   ci-ok:
     if: always()
-    needs: [check, coverage, harness-budget]
+    needs: [check, test-node, test-rest, security-soft, e2e, coverage, harness-budget]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every job to have passed or been skipped

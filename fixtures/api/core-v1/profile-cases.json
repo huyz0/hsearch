@@ -7,21 +7,54 @@
     "native_property_input": {
       "unknown_indexed_field": "unadvertised",
       "field_count_limit": 4,
-      "field_count": 5
+      "field_count": 5,
+      "alias_actions": {
+        "alias": "docs",
+        "old_target": "docs-v1",
+        "new_target": "docs-v2",
+        "request": [
+          {
+            "remove": {
+              "index": "docs-v1",
+              "alias": "docs"
+            }
+          },
+          {
+            "add": {
+              "index": "docs-v2",
+              "alias": "docs"
+            }
+          }
+        ],
+        "concurrent_reads_during_swap": 8,
+        "write_alias_targets": 2
+      },
+      "evolve_mapping": {
+        "add_field": "rank",
+        "change_existing_field_type": "price"
+      }
     },
     "independent_oracle": {
       "typed_refusal": true,
       "silent_coercion": false,
-      "automatic_field_growth": false
+      "automatic_field_growth": false,
+      "alias_swap_mixed_view": false,
+      "alias_swap_request_failed": false,
+      "write_alias_with_two_targets_admitted": false,
+      "type_change_refused_before_effects": true
     },
     "reference_case_ids": [
       "strict-unknown-field"
     ],
     "unsupported_requests": [],
-    "alternatives": "Schema migration creates a new generation and a bounded alias cutover; unindexed source-only attributes remain retrievable, not searchable.",
+    "alternatives": "A type or analyzer change creates a new index and uses _reindex behind an alias swap; unindexed source-only attributes remain retrievable, not searchable.",
     "owning_tasks": [
       "M03.03",
-      "M06.05"
+      "M06.05",
+      "M21.02",
+      "M21.03",
+      "M21.04",
+      "M22.02"
     ]
   },
   {
@@ -39,24 +72,56 @@
         "retry_same_identity",
         "delete",
         "recreate_collection"
-      ]
+      ],
+      "update_actions": [
+        "partial_merge",
+        "upsert",
+        "doc_as_upsert",
+        "detect_noop",
+        "if_seq_no_if_primary_term",
+        "replay_after_crash"
+      ],
+      "update_request": {
+        "method": "POST",
+        "path": "/{index}/_update/001",
+        "json": {
+          "doc": {
+            "price": 11
+          }
+        }
+      },
+      "get_modes": [
+        "realtime_default",
+        "realtime_false"
+      ],
+      "refresh": "false",
+      "routing": "tenant-a"
     },
     "independent_oracle": {
       "latest_get_stale_success": false,
       "old_incarnation_write": false,
-      "retry_changes_committed_identity": false
+      "retry_changes_committed_identity": false,
+      "update_resolved_once_on_owner": true,
+      "replay_reevaluates_update": false,
+      "update_adds_object_requests_beyond_index": false,
+      "realtime_get_misses_acknowledged_write": false,
+      "realtime_false_reads_published_state_only": true
     },
     "reference_case_ids": [
       "stable-id-crud",
       "create-conflict",
-      "generated-id-adaptation"
+      "generated-id-adaptation",
+      "partial-update-merge"
     ],
     "unsupported_requests": [],
     "alternatives": "Native /v1 document operations expose explicit receipts and read modes.",
     "owning_tasks": [
       "M04.03",
       "M06.05",
-      "M07.03"
+      "M07.03",
+      "M21.05",
+      "M21.06",
+      "M07.12"
     ]
   },
   {
@@ -72,12 +137,32 @@
       ],
       "max_items": 2,
       "max_request_bytes": 128,
-      "structural_bad_tail": "{\"index\":\n"
+      "structural_bad_tail": "{\"index\":\n",
+      "job_actions": [
+        "reindex",
+        "update_by_query",
+        "delete_by_query"
+      ],
+      "job_actions_run": [
+        "start",
+        "throttle",
+        "kill_worker",
+        "resume",
+        "change_source_doc",
+        "cancel"
+      ],
+      "page_limit": 2,
+      "document_ceiling_bytes": 209715200
     },
     "independent_oracle": {
       "limit_plus_one_admitted": false,
       "bad_tail_commits": 0,
-      "semantic_errors_erase_other_receipts": false
+      "semantic_errors_erase_other_receipts": false,
+      "job_loses_document_on_resume": false,
+      "job_duplicates_effect_on_resume": false,
+      "changed_since_pinned_view_overwritten": false,
+      "job_starves_foreground": false,
+      "document_one_byte_over_ceiling_admitted": false
     },
     "reference_case_ids": [
       "bulk-semantic-isolation",
@@ -89,7 +174,10 @@
     "owning_tasks": [
       "M04.03",
       "M06.05",
-      "M07.03"
+      "M07.03",
+      "M21.01",
+      "M22.03",
+      "M22.04"
     ]
   },
   {
@@ -134,20 +222,36 @@
       "id": "001",
       "durability": "selected_profile",
       "visibility_wait_ms": 1,
-      "event": "commit_then_visibility_timeout"
+      "refresh_modes": [
+        "false",
+        "wait_for",
+        "true"
+      ],
+      "concurrent_refresh_true_writes": 1000,
+      "batching_window_ms": 50,
+      "events": [
+        "commit_then_visibility_timeout",
+        "lose_reply",
+        "overload"
+      ]
     },
     "independent_oracle": {
       "committed_receipt_retained": true,
       "rollback_claim": false,
-      "retry_creates_new_identity": false
+      "retry_creates_new_identity": false,
+      "refresh_false_acks_when_durable": true,
+      "wait_for_acks_when_searchable": true,
+      "refresh_true_acks_when_reader_covers_write": true,
+      "publications_at_most_per_window": 1,
+      "publication_per_write": false
     },
     "reference_case_ids": [
-      "forced-refresh-adaptation"
+      "refresh-visibility-modes"
     ],
     "unsupported_requests": [
       {
         "method": "PUT",
-        "path": "/{index}/_doc/001?refresh=true",
+        "path": "/{index}/_doc/001?wait_for_active_shards=2",
         "json": {
           "uid": "001",
           "tenant": "acct-a",
@@ -159,11 +263,12 @@
         }
       }
     ],
-    "alternatives": "Use at_least(receipt) or native visibility wait, and a versioned object/quorum durability profile. Maintenance is an admitted job, not per-write segment forcing.",
+    "alternatives": "Use at_least(receipt) or a native visibility wait, and a versioned object/quorum durability profile. Maintenance is an admitted job, never per-write segment forcing.",
     "owning_tasks": [
       "M06.05",
       "M07.05",
-      "M09.08"
+      "M09.08",
+      "M06.07"
     ]
   },
   {
@@ -175,12 +280,190 @@
       "query_clause_limit": 2,
       "clauses": 3,
       "unknown_operator": "unadvertised_query",
-      "rank_mode": "shard_local_bm25"
+      "rank_mode": "shard_local_bm25",
+      "nested": {
+        "mapping": {
+          "children": {
+            "type": "nested",
+            "properties": {
+              "color": {
+                "type": "keyword"
+              },
+              "size": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "documents": [
+          {
+            "id": "n1",
+            "children": [
+              {
+                "color": "blue",
+                "size": 1
+              },
+              {
+                "color": "red",
+                "size": 2
+              }
+            ]
+          },
+          {
+            "id": "n2",
+            "children": [
+              {
+                "color": "blue",
+                "size": 2
+              }
+            ]
+          },
+          {
+            "id": "n3",
+            "children": [
+              {
+                "color": "red",
+                "size": 1
+              }
+            ]
+          }
+        ],
+        "query": {
+          "nested": {
+            "path": "children",
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "term": {
+                      "children.color": "blue"
+                    }
+                  },
+                  {
+                    "term": {
+                      "children.size": 2
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "join": {
+        "mapping": {
+          "relation": {
+            "type": "join",
+            "relations": {
+              "parent": "child"
+            }
+          }
+        },
+        "documents": [
+          {
+            "id": "p1",
+            "relation": "parent"
+          },
+          {
+            "id": "c1",
+            "relation": {
+              "name": "child",
+              "parent": "p1"
+            },
+            "color": "blue"
+          },
+          {
+            "id": "c2",
+            "relation": {
+              "name": "child",
+              "parent": "p1"
+            },
+            "color": "red"
+          },
+          {
+            "id": "p2",
+            "relation": "parent"
+          }
+        ],
+        "query": {
+          "has_child": {
+            "type": "child",
+            "query": {
+              "term": {
+                "color": "blue"
+              }
+            }
+          }
+        }
+      },
+      "knn": {
+        "mapping": {
+          "embedding": {
+            "type": "knn_vector",
+            "dimension": 2,
+            "space_type": "l2"
+          }
+        },
+        "documents": [
+          {
+            "id": "v1",
+            "embedding": [
+              1,
+              0
+            ]
+          },
+          {
+            "id": "v2",
+            "embedding": [
+              0,
+              1
+            ]
+          },
+          {
+            "id": "v3",
+            "embedding": [
+              1,
+              1
+            ]
+          },
+          {
+            "id": "v4",
+            "embedding": [
+              5,
+              5
+            ]
+          }
+        ],
+        "query": {
+          "knn": {
+            "embedding": {
+              "vector": [
+                1,
+                0.1
+              ],
+              "k": 2
+            }
+          }
+        }
+      }
     },
     "independent_oracle": {
       "over_limit_evaluated": false,
       "unknown_operator_empty_success": false,
-      "bit_identical_global_score_claim": false
+      "bit_identical_global_score_claim": false,
+      "nested_same_object_match_ids": [
+        "n2"
+      ],
+      "nested_cross_object_leak_ids": [],
+      "has_child_ids": [
+        "p1"
+      ],
+      "knn_nearest_ids": [
+        "v1",
+        "v3"
+      ],
+      "knn_exact_distance_order": true,
+      "knn_recall_claim_from_this_input": false
     },
     "reference_case_ids": [
       "match-all",
@@ -211,7 +494,12 @@
     "owning_tasks": [
       "M02.02",
       "M04.01",
-      "M07.04"
+      "M07.04",
+      "M21.07",
+      "M23.01",
+      "M23.02",
+      "M23.03",
+      "M02.12"
     ]
   },
   {
@@ -233,13 +521,35 @@
         "repeat_page",
         "expire_s1",
         "replay_s1"
-      ]
+      ],
+      "scroll": {
+        "size": 3,
+        "keep_alive_ms": 1,
+        "actions": [
+          "open",
+          "page",
+          "mutate",
+          "page",
+          "expire",
+          "page"
+        ]
+      },
+      "window_limit": {
+        "from": 9999,
+        "size": 2,
+        "max_result_window": 10000
+      }
     },
     "independent_oracle": {
       "new_data_under_old_cursor": false,
       "expired_snapshot_success": false,
       "quota_plus_one_admitted": false,
-      "global_serializable_timestamp_claim": false
+      "global_serializable_timestamp_claim": false,
+      "scroll_sees_data_after_open": false,
+      "expired_scroll_success": false,
+      "pin_collected_while_live": false,
+      "over_window_request_admitted": false,
+      "limit_named_in_refusal": true
     },
     "reference_case_ids": [
       "pit-mutation-repeat-pages"
@@ -248,7 +558,8 @@
     "alternatives": "POST /v1/search-snapshots and cursor pages; bulk export uses resumable jobs. Tokens pin routing/catalog and per-partition reader generations.",
     "owning_tasks": [
       "M07.05",
-      "M10.01"
+      "M10.01",
+      "M22.01"
     ]
   },
   {
@@ -313,7 +624,7 @@
     "execution_target": "future_hsearch_conformance",
     "wire_abi_frozen": false,
     "native_property_input": {
-      "query": {
+      "unmapped_nested_query": {
         "nested": {
           "path": "children",
           "query": {
@@ -322,11 +633,30 @@
             }
           }
         }
+      },
+      "refusal_cases": [
+        "nested_on_unmapped_path",
+        "has_child_on_unmapped_join",
+        "child_without_routable_parent",
+        "cross_shard_join",
+        "nesting_depth_two",
+        "fifth_nested_path",
+        "sixty_fifth_object",
+        "grandchild_relation"
+      ],
+      "limits": {
+        "nesting_depth": 1,
+        "nested_paths": 4,
+        "nested_objects_per_document": 64,
+        "child_relations": 4
       }
     },
     "independent_oracle": {
-      "typed_unsupported": true,
-      "join_equivalence_claim": false
+      "typed_refusal": true,
+      "refusal_names_reason": true,
+      "approximated_result": false,
+      "join_equivalence_claim": false,
+      "nested_inner_hits_accepted": false
     },
     "reference_case_ids": [],
     "unsupported_requests": [
@@ -357,12 +687,28 @@
             }
           }
         }
+      },
+      {
+        "method": "POST",
+        "path": "/{index}/_search",
+        "json": {
+          "query": {
+            "nested": {
+              "path": "children",
+              "inner_hits": {},
+              "query": {
+                "match_all": {}
+              }
+            }
+          }
+        }
       }
     ],
-    "alternatives": "Denormalized search documents, precomputed views or explicitly bounded application-side key lookups; these change the data model and are not equivalent joins.",
+    "alternatives": "Denormalized documents or bounded application-side lookups where a cross-shard join is needed.",
     "owning_tasks": [
       "M02.01",
-      "M07.04"
+      "M07.04",
+      "M21.07"
     ]
   },
   {
@@ -371,7 +717,7 @@
     "execution_target": "future_hsearch_conformance",
     "wire_abi_frozen": false,
     "native_property_input": {
-      "update": {
+      "scripted_update": {
         "script": {
           "source": "ctx._source.price += params.delta",
           "params": {
@@ -379,12 +725,20 @@
           }
         }
       },
+      "unknown_update_option": {
+        "doc": {
+          "price": 11
+        },
+        "scripted_upsert": true
+      },
       "client_transform_attempt_limit": 2
     },
     "independent_oracle": {
       "server_executes_user_code": false,
       "before_mutation_refusal": true,
-      "native_patch_implicitly_implemented": false
+      "unadvertised_update_mode_accepted": false,
+      "replay_reexecutes_user_code": false,
+      "partial_doc_update_refused": false
     },
     "reference_case_ids": [],
     "unsupported_requests": [
@@ -392,9 +746,22 @@
         "method": "POST",
         "path": "/{index}/_update/001",
         "json": {
+          "script": {
+            "source": "ctx._source.price += params.delta",
+            "params": {
+              "delta": 1
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/{index}/_update/001",
+        "json": {
           "doc": {
             "price": 11
-          }
+          },
+          "scripted_upsert": true
         }
       },
       {
@@ -414,7 +781,8 @@
     "alternatives": "Typed client-side transforms and precomputed indexed fields; future bounded declarative transforms require replay determinism and CPU budgets.",
     "owning_tasks": [
       "M04.03",
-      "M06.05"
+      "M06.05",
+      "M21.06"
     ]
   },
   {
@@ -424,14 +792,16 @@
     "wire_abi_frozen": false,
     "native_property_input": {
       "requested_features": [
-        "knn",
         "sql",
-        "arbitrary_plugin"
-      ]
+        "ppl",
+        "jvm_plugin"
+      ],
+      "knn_on_field_not_knn_vector": "title"
     },
     "independent_oracle": {
       "advertised_as_implemented": false,
-      "silent_fallback_success": false
+      "silent_fallback_success": false,
+      "knn_on_non_vector_field_refused": true
     },
     "reference_case_ids": [],
     "unsupported_requests": [
@@ -444,11 +814,18 @@
       },
       {
         "method": "POST",
+        "path": "/_plugins/_ppl",
+        "json": {
+          "query": "source=fixtures | fields uid"
+        }
+      },
+      {
+        "method": "POST",
         "path": "/{index}/_search",
         "json": {
           "query": {
             "knn": {
-              "embedding": {
+              "title": {
                 "vector": [
                   1,
                   0
@@ -464,7 +841,12 @@
     "owning_tasks": [
       "M02.01",
       "M14.01",
-      "M16.06"
+      "M16.06",
+      "M24.01",
+      "M24.02",
+      "M24.03",
+      "M24.04",
+      "M24.05"
     ]
   },
   {
@@ -519,12 +901,32 @@
         "c3"
       ],
       "page_limit": 2,
-      "maintenance_scope_limit": 2
+      "maintenance_scope_limit": 2,
+      "snapshots": {
+        "index_object_counts": [
+          10,
+          1000
+        ],
+        "shallow_actions": [
+          "create",
+          "delete_source_object",
+          "restore_same_key"
+        ],
+        "full_actions": [
+          "create",
+          "delete_source_bucket",
+          "restore_other_provider"
+        ]
+      }
     },
     "independent_oracle": {
       "whole_cluster_catalog_response": false,
       "all_partition_maintenance_without_admission": false,
-      "invented_replica_status": false
+      "invented_replica_status": false,
+      "shallow_request_count_depends_on_index_size": false,
+      "pinned_object_collected": false,
+      "full_restore_reads_deleted_source": false,
+      "cost_reported_before_full_copy": true
     },
     "reference_case_ids": [],
     "unsupported_requests": [
@@ -539,13 +941,25 @@
       {
         "method": "POST",
         "path": "/{index}/_forcemerge"
+      },
+      {
+        "method": "PUT",
+        "path": "/_snapshot/{repository}",
+        "json": {
+          "type": "fs",
+          "settings": {
+            "location": "/mnt/snapshots"
+          }
+        }
       }
     ],
     "alternatives": "Bounded authorized /v1 diagnostics, paginated catalog, admitted maintenance and native snapshot/export/copy contracts.",
     "owning_tasks": [
       "M08.03",
       "M10.01",
-      "M16.01"
+      "M16.01",
+      "M22.05",
+      "M11.06"
     ]
   },
   {
