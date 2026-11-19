@@ -3,13 +3,18 @@
 //! index and the documents already written, so a recurring tail can be located.
 //! Provisional: one shared host.
 //!
-//!     cargo run --release -p hsearch-node --example visibility_tail -- [batches] [batch] [slow_ms] [auto_merge_mb] [background: 0|1]
+//!     cargo run --release -p hsearch-node --example visibility_tail -- [batches] [batch] [slow_ms] [auto_merge_mb] [background: 0|1] [store: memory|s3]
+//!
+//! With `s3` the catalog lives on the RustFS from `scripts/rustfs.sh up` (`HSEARCH_S3_*`
+//! exported) and the S3 request counts are printed; segments stay on the local disk.
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use hsearch_index::Wait;
 use hsearch_node::{Limits, Node};
 use hsearch_object::memory::{MemoryLimits, MemoryStore};
+use hsearch_object::{Budget, Cancellation, MetadataStore, RequestContext};
+use hsearch_s3::{S3Config, S3Store};
 use serde_json::json;
 
 fn written_bytes() -> u64 {
@@ -23,24 +28,66 @@ fn written_bytes() -> u64 {
         .unwrap_or(0)
 }
 
+fn s3_store() -> Arc<S3Store> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let store = S3Store::new(S3Config {
+        endpoint: std::env::var("HSEARCH_S3_ENDPOINT").expect("HSEARCH_S3_ENDPOINT"),
+        bucket: format!("hvt-{nanos}"),
+        access_key: std::env::var("HSEARCH_S3_ACCESS_KEY").expect("access key"),
+        secret_key: std::env::var("HSEARCH_S3_SECRET_KEY").expect("secret key"),
+        region: "us-east-1".into(),
+    })
+    .unwrap();
+    let ctx = RequestContext::new(
+        Duration::from_secs(60),
+        Cancellation::default(),
+        Budget {
+            request_bytes: 1 << 30,
+            response_bytes: 1 << 30,
+            attempts: 100_000,
+        },
+    )
+    .unwrap();
+    store.prepare_bucket(&ctx).expect("prepare bucket");
+    Arc::new(store)
+}
+
 fn main() {
-    let mut args = std::env::args().skip(1);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.get(5).is_some_and(|v| v == "s3") {
+        let store = s3_store();
+        drive(Arc::clone(&store), &args);
+        let c = store.counts();
+        println!(
+            "S3 requests: GET {} PUT {} HEAD {} LIST {} DELETE {}",
+            c.get, c.put, c.head, c.list, c.delete
+        );
+    } else {
+        let store = Arc::new(
+            MemoryStore::new(MemoryLimits {
+                objects: 4096,
+                versions: 16384,
+                version_bytes: 64 << 20,
+                identities: 16384,
+                identity_bytes: 64 << 20,
+            })
+            .unwrap(),
+        );
+        drive(store, &args);
+    }
+}
+
+fn drive<S: MetadataStore + 'static>(store: Arc<S>, args: &[String]) {
+    let mut args = args.iter().cloned();
     let batches: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(400);
     let batch: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(100);
     let slow: f64 = args.next().and_then(|v| v.parse().ok()).unwrap_or(100.0);
     let auto_merge: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(4);
     let background = args.next().is_some_and(|v| v == "1");
     let dir = std::env::temp_dir().join(format!("hsearch-tail-{}", std::process::id()));
-    let store = Arc::new(
-        MemoryStore::new(MemoryLimits {
-            objects: 4096,
-            versions: 16384,
-            version_bytes: 64 << 20,
-            identities: 16384,
-            identity_bytes: 64 << 20,
-        })
-        .unwrap(),
-    );
     let node = Node::with_limits(
         store,
         dir.clone(),
@@ -110,7 +157,7 @@ fn main() {
         search[100], search[198]
     );
     println!(
-        "total {:.1} s, process bytes written {:.0} MiB (all writes, in-memory store)",
+        "total {:.1} s, process bytes written {:.0} MiB (wchar: disk writes, plus socket sends with the s3 store)",
         started.elapsed().as_secs_f64(),
         (written_bytes() - written0) as f64 / 1_048_576.0
     );
