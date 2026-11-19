@@ -1325,6 +1325,9 @@ dependencies = [
 name = "hsearch-seal"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
+ "hsearch-format",
+ "hsearch-lane",
  "hsearch-object",
  "hsearch-security",
  "sha2 0.10.9",

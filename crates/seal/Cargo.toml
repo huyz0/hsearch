@@ -8,6 +8,9 @@ repository.workspace = true
 description = "Encrypting decorator over the object contracts (M05.04): sealed blocks with per-object data keys"
 
 [dependencies]
+aes-gcm = "=0.11.1"
+hsearch-format = { path = "../format" }
+hsearch-lane = { path = "../lane" }
 hsearch-object = { path = "../object" }
 hsearch-security = { path = "../security" }
 sha2 = "=0.10.9"
