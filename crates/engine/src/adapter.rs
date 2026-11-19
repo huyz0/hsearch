@@ -173,6 +173,15 @@ impl Operation {
     }
 }
 
+/// What [`Engine::admit`] found.
+#[derive(Debug, Eq, PartialEq)]
+pub enum Checked {
+    /// The batch has not been applied and would be accepted now.
+    Fresh,
+    /// The same request with the same operations was applied before: these were its receipts.
+    Recognised(Vec<Receipt>),
+}
+
 /// Validated private preparation. Dropping it has no writer effects.
 pub struct PreparedBatch {
     schema: Schema,
@@ -816,12 +825,9 @@ impl<'d> Engine<'d> {
         Self::open_with(directory, schema, None, Some((taken_at, recovered)), mode)
     }
 
-    /// Apply a caller-accepted preparation. Refusal is represented by dropping
-    /// preparation; this method does not decide distributed authority.
-    /// Native failures may be partial and permanently poison continuation.
-    pub fn apply(&self, batch: PreparedBatch) -> Result<Vec<Receipt>> {
-        let mut state = gate(&self.state)?;
-        live(&state)?;
+    /// Every refusal [`Engine::apply`] can make before it changes anything, decided against the
+    /// state held in `state`, without changing it.
+    fn precheck(&self, state: &State, batch: &PreparedBatch) -> Result<Checked> {
         let limits = {
             let held = self.schema.read().map_err(|_| Error::Poisoned)?;
             if batch.schema != *held {
@@ -831,7 +837,7 @@ impl<'d> Engine<'d> {
         };
         if let Some(old) = state.history.iter().find(|h| h.request == batch.request) {
             return if old.operations == batch.operations {
-                Ok(old.receipts.clone())
+                Ok(Checked::Recognised(old.receipts.clone()))
             } else {
                 Err(Error::Conflict)
             };
@@ -866,6 +872,36 @@ impl<'d> Engine<'d> {
                 return Err(Error::Conflict);
             }
         }
+        let additions: usize = batch.documents.iter().flatten().map(Vec::len).sum();
+        let mut held = self.writer.hold()?;
+        if held.segment_count() + additions / limits.buffered_documents + 2 > limits.segments {
+            return Err(Error::Limit);
+        }
+        Ok(Checked::Fresh)
+    }
+
+    /// Whether [`Engine::apply`] would accept `batch` now, changing nothing: a batch already
+    /// applied (same request, same operations) is `Recognised` with its receipts. A caller that
+    /// serialises its writes can commit a `Fresh` batch to a log first and apply it after, and
+    /// the apply is refused only if a native call fails (which poisons the engine) or the
+    /// segment bound is crossed by a flush in between.
+    pub fn admit(&self, batch: &PreparedBatch) -> Result<Checked> {
+        let state = gate(&self.state)?;
+        live(&state)?;
+        self.precheck(&state, batch)
+    }
+
+    /// Apply a caller-accepted preparation. Refusal is represented by dropping
+    /// preparation; this method does not decide distributed authority.
+    /// Native failures may be partial and permanently poison continuation.
+    pub fn apply(&self, batch: PreparedBatch) -> Result<Vec<Receipt>> {
+        let mut state = gate(&self.state)?;
+        live(&state)?;
+        if let Checked::Recognised(receipts) = self.precheck(&state, &batch)? {
+            return Ok(receipts);
+        }
+        let limits = self.schema.read().map_err(|_| Error::Poisoned)?.limits;
+        let additions: usize = batch.documents.iter().flatten().map(Vec::len).sum();
         let receipts: Vec<_> = batch
             .operations
             .iter()
@@ -892,9 +928,6 @@ impl<'d> Engine<'d> {
             })
             .collect();
         let mut writer = self.writer.hold()?;
-        if writer.segment_count() + additions / limits.buffered_documents + 2 > limits.segments {
-            return Err(Error::Limit);
-        }
         for (op, document) in batch.operations.iter().zip(batch.documents) {
             let term = Term::new("_hs_id", op.id.as_bytes());
             let done = if let Some(block) = document {

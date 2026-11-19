@@ -2950,8 +2950,13 @@
             "M06.12"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-14-serving-writer.md",
+              "result": "Engine::admit (shared precheck with apply) and store::serve::Serving: prepare, admit, commit, apply; refused batches never reach the log, a recognised request is not rewritten, a lost reply or post-commit apply failure breaks the writer until recovery. A recovery of the log matches the live engine; 4 tests, 3 mutations seen red. Provisional (in-memory store, no RustFS); the segment bound crossed between admit and apply is documented, not tested."
+            }
+          ]
         },
         {
           "id": "M06.15",
