@@ -18,8 +18,8 @@
     "schema.json": "38e6c912a21e096ea0ff0388c9045bd430a36026f967030bee28d6c2c89f173f",
     "search-cases.json": "825496fcf3992caa4357ba869b2282644d42963a26ba26e378bc901fd99466d1",
     "analyzer-cases.json": "1d759273809ab7951901e7d0dc3f197881f0e633d1bb324a76aaf59795102756",
-    "mutation-cases.json": "78450f10dab308e53ac932e658caf5881a160e3d257510779830ba5dfdce789c",
-    "profile-cases.json": "db09d6a5d8215e9209100df1d0c6f749347399637aba3e45690e4ea7942e8e5d"
+    "mutation-cases.json": "c130c551734c54dcfa9bdcc30c3234cf474c11b89b1f82d6d6c6cd5a685d4160",
+    "profile-cases.json": "84244ec5830a7d62f23b5222865a346192a373ca33843f33ba3a51ca554dc91a"
   },
   "missing": [
     "The pinned user OpenSearch fork/serverless request tests are available and selectively inspected; current application-specific client/proxy configuration and private representative traces/datasets have not been supplied or identified.",
