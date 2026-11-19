@@ -168,8 +168,13 @@ fn create_bulk_get_search_refresh_and_delete() {
             ("not_found".into(), 404)
         ]
     );
-    // Without refresh the old view still answers; after a refresh the new one does.
-    assert_eq!(call(addr, "GET", "/orders/_doc/d2", "").0, 200);
+    // Without refresh the searchable view is the old one (`realtime=false`), while
+    // a get is real-time and already sees the delete (M21.05).
+    assert_eq!(
+        call(addr, "GET", "/orders/_doc/d2?realtime=false", "").0,
+        200
+    );
+    assert_eq!(call(addr, "GET", "/orders/_doc/d2", "").0, 404);
     let (status, body) = call(addr, "POST", "/orders/_refresh", "");
     assert_eq!((status, body["_shards"]["failed"].clone()), (200, json!(0)));
     assert_eq!(call(addr, "GET", "/orders/_doc/d2", "").0, 404);

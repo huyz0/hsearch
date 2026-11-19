@@ -3170,8 +3170,13 @@
             "M06.03"
           ],
           "owner": "engine/api",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m21-05-realtime-get.md",
+              "result": "GET and _mget answer from the owner and return the latest acknowledged write before any refresh; realtime=false reads the searchable snapshot; 0 object-store requests, equal for 10 and 20 documents; correct after restart and with absent trailing fields; owner record bounded (16,384 ids, 8 MiB, refresh or shed past it). Owner-record read 0.3 us per document, snapshot read about 6 us, durable write 0 to 10% slower. Provisional, 4-CPU container."
+            }
+          ]
         },
         {
           "id": "M21.06",

@@ -588,8 +588,7 @@
       "id": "get-after-unrefreshed-delete-is-not-found",
       "area": "A02",
       "dataset": true,
-      "state": "pending",
-      "owner": "M21.05",
+      "state": "enforced",
       "oracle": {
         "kind": "hsearch-profile",
         "ref": "docs/plan/api-compatibility.md#a02"
@@ -617,8 +616,7 @@
             }
           }
         }
-      ],
-      "fails_with": "status 200, expected one of [404]"
+      ]
     },
     {
       "id": "native-capabilities-lists-only-what-is-implemented",
