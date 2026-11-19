@@ -10,6 +10,8 @@
 
 ## Evidence
 
+A recovered writer (`Serving::recovered`, `crates/store/tests/base.rs`) has a reader due at once covering what recovery applied (3), then covers 4 after one write and sees it.
+
 `crates/store/tests/readers.rs` (4 tests).
 
 - A reader covers exactly the applied batches (generation 1 covers 1, generation 2 covers 2), a held reader stays frozen while the writer moves ahead, and a refresh with nothing new returns the same generation.

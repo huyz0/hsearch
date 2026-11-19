@@ -79,7 +79,8 @@ pub struct Serving<S: MetadataStore, D: DependencyView> {
 }
 
 /// Generations a query may hold at once besides the newest. The engine allows four open
-/// snapshots in all, so this stays below that.
+/// snapshots in all: this and the newest use three, leaving one for a snapshot opened before the
+/// barrier refuses it (an engine at its limit is [`RefreshError::Engine`], not `Refused`).
 pub const MAX_PINNED_READERS: usize = 2;
 
 /// Why a refresh published nothing. The previously published reader still serves.
@@ -197,7 +198,9 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
     /// Publish a reader over every batch applied so far, if that is more than the one serving.
     /// Returns the reader serving afterwards. The engine is not written to meanwhile (`&mut
     /// self`), so the snapshot covers exactly the barrier cut. Any failure leaves the previously
-    /// published reader serving, and the next refresh tries again.
+    /// published reader serving, and the next refresh tries again. A broken writer can still
+    /// refresh: a reader covers only batches that were applied, so it stays consistent, and only
+    /// a failed cursor ([`RefreshError::Cut`]) stops it.
     ///
     /// # Errors
     /// [`RefreshError`] naming the step that failed; nothing was published.

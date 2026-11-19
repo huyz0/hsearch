@@ -556,3 +556,51 @@ fn a_base_below_the_collection_boundary_is_refused_and_leaves_the_head_alone() {
     })
     .unwrap();
 }
+
+#[test]
+fn a_recovered_writer_publishes_a_reader_over_what_recovery_applied_and_then_over_its_own_writes() {
+    let (store, lane) = world("readers");
+    let schema = schema();
+    let committer = writer(&store, lane);
+    let scratch = scratch_dir("readers");
+    let (first, second, tag) = recover_writer(
+        &publisher(&store),
+        &target(&lane, big(), Expect::default()),
+        &AnyDependencies,
+        &schema,
+        &scratch,
+        |engine, _, rebuilt| {
+            let mut serving = Serving::recovered(committer, INDEX, &rebuilt.recovered, deps());
+            let applied = serving.next_seq();
+            assert_eq!(applied, 3);
+            // Recovery's prefix is already committed and applied: a reader over it is due at once.
+            assert!(serving.refresh_due());
+            let first = serving.refresh(engine).unwrap().unwrap();
+            let first = (first.covers, first.generation);
+            let fresh = [("tag", Value::String("new"))];
+            serving
+                .write(
+                    &schema,
+                    engine,
+                    "after-recovery",
+                    &[Mutation::Put {
+                        id: "zz",
+                        version: 1,
+                        fields: &fresh,
+                    }],
+                )
+                .unwrap();
+            let second = serving.refresh(engine).unwrap().unwrap();
+            let StoredValue::String(tag) =
+                &second.reader.get("zz", &["tag"]).unwrap().unwrap().fields[0].1
+            else {
+                panic!("tag is a string")
+            };
+            (first, (second.covers, second.generation), tag.clone())
+        },
+    )
+    .unwrap();
+    assert_eq!(first, (3, 1));
+    assert_eq!(second, (4, 2));
+    assert_eq!(tag, "new");
+}
