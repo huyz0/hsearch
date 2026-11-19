@@ -150,16 +150,15 @@ fn boolean_spellings_of_dynamic_are_accepted_and_junk_is_refused() {
 }
 
 #[test]
-fn dynamic_true_checks_the_limit_before_anything_else_and_never_half_applies() {
+fn dynamic_true_adds_fields_within_the_limit_and_refuses_the_one_past_it_alone() {
     let limits = MappingLimits {
         max_fields: 3,
         ..MappingLimits::default()
     };
     let (node, _scratch) = node("true-limit", limits);
     node.create("d", &body(Some("true"), &["a", "b"])).unwrap();
-    // One new field would make 3: within the limit, but adding fields to a live
-    // index is M21.04, so the item is refused and says so.
-    // Two new fields would make 4: over the limit, refused by the limit.
+    // One new field makes 3: within the limit, so it is added (M21.04). Two new
+    // would make 4: over the limit, refused alone by the limit, nothing half applied.
     let response = bulk(
         &node,
         "d",
@@ -169,12 +168,15 @@ fn dynamic_true_checks_the_limit_before_anything_else_and_never_half_applies() {
         ],
     );
     assert_eq!(response["errors"], json!(true));
-    let (kind0, _) = item_error(&response, 0);
-    assert_eq!(kind0, "mapping_update_unavailable_exception");
+    assert_eq!(
+        response["items"][0]["index"]["status"],
+        json!(201),
+        "{response}"
+    );
     let (kind1, reason1) = item_error(&response, 1);
     assert_eq!(kind1, "illegal_argument_exception");
     assert!(reason1.contains("Limit of total fields [3]"), "{reason1}");
-    assert_eq!(node.get("d", "0").unwrap().0, 404);
+    assert_eq!(node.get("d", "0").unwrap().1["_source"]["c"], json!("z"));
     assert_eq!(node.get("d", "1").unwrap().0, 404);
 }
 

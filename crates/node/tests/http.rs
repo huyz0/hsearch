@@ -41,6 +41,43 @@ fn load(addr: std::net::SocketAddr, n: usize) {
 }
 
 #[test]
+fn put_mapping_adds_a_field_over_http() {
+    let (store, dir) = (store(), Scratch::new("putmapping"));
+    let node = start(&store, &dir);
+    let addr = node.addr;
+    assert_eq!(call(addr, "PUT", "/orders", MAPPING).0, 200);
+    let (status, body) = call(
+        addr,
+        "PUT",
+        "/orders/_mapping",
+        r#"{"properties":{"note":{"type":"keyword"}}}"#,
+    );
+    assert_eq!(
+        (status, &body["acknowledged"]),
+        (200, &json!(true)),
+        "{body}"
+    );
+    // POST is accepted too, and a type change is refused with the mapping unchanged.
+    let (status, body) = call(
+        addr,
+        "POST",
+        "/orders/_mapping",
+        r#"{"properties":{"note":{"type":"text"}}}"#,
+    );
+    assert_eq!(status, 400, "{body}");
+    assert!(
+        body["error"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("_reindex")
+    );
+    assert_eq!(
+        call(addr, "PUT", "/missing/_mapping", r#"{"dynamic":true}"#).0,
+        404
+    );
+}
+
+#[test]
 fn create_bulk_get_search_refresh_and_delete() {
     let (store, dir) = (store(), Scratch::new("flow"));
     let node = start(&store, &dir);
@@ -189,7 +226,9 @@ fn routes_parameters_and_bodies_outside_the_subset_are_refused_by_name() {
         kind(call(addr, "GET", "/", "")),
         (404, "no_handler_found_exception".into())
     );
-    assert_eq!(kind(call(addr, "GET", "/orders/_mapping", "")).0, 404);
+    assert_eq!(kind(call(addr, "GET", "/orders/_settings", "")).0, 404);
+    // put-mapping is served (M21.04); reading a mapping back is not.
+    assert_eq!(kind(call(addr, "GET", "/orders/_mapping", "")).0, 405);
     assert_eq!(kind(call(addr, "DELETE", "/orders", "")).0, 405);
     assert_eq!(kind(call(addr, "GET", "/orders/_bulk", "")).0, 405);
     assert_eq!(kind(call(addr, "PUT", "/orders/_doc/d1", "{}")).0, 405);

@@ -92,19 +92,23 @@ pub(crate) enum Command {
     Bulk(Bulk),
     Refresh(Sender<Result<()>>),
     Publish(Sender<Result<Published>>),
+    /// Replace the schema with one that extends it (fields added online).
+    Evolve(Schema, Sender<Result<()>>),
     Stop,
 }
 
 pub(crate) type Shared = Arc<Mutex<Option<Arc<Snapshot>>>>;
 
-fn value(field: &Field) -> Value<'_> {
-    match field {
+/// The engine's value for a field, or `None` for an absent one.
+fn value(field: &Field) -> Option<Value<'_>> {
+    Some(match field {
         Field::Str(s) => Value::Shared(s),
         Field::Int(n) => Value::Integer(*n),
         Field::Bool(b) => Value::Boolean(*b),
         Field::Date(n) => Value::Date(*n),
         Field::Vector(v) => Value::Vector(v),
-    }
+        Field::Absent => return None,
+    })
 }
 
 fn prepare(
@@ -118,13 +122,17 @@ fn prepare(
     for op in ops {
         rows.push(match op {
             Op::Put { fields, .. } => {
-                if fields.len() != names.len() {
+                // Fewer values than fields is a document written before the
+                // trailing fields were added; the engine checks that every
+                // required field is there.
+                if fields.len() > names.len() || fields.len() < schema.required_fields() {
                     return Err(Error::Invalid);
                 }
                 names
                     .iter()
                     .copied()
-                    .zip(fields.iter().map(value))
+                    .zip(fields.iter())
+                    .filter_map(|(name, field)| Some((name, value(field)?)))
                     .collect()
             }
             Op::Delete { .. } => Vec::new(),
@@ -329,6 +337,19 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         })?;
         *shared = Some(Arc::new(snapshot));
         Ok(())
+    }
+
+    /// Swap in a schema that extends the current one, between slots (the writer
+    /// is single-threaded), and make a snapshot under it so the new fields can be
+    /// searched at once. Every later operation is prepared, and every earlier slot
+    /// replays, under the extended schema.
+    fn evolve(&mut self, schema: Schema) -> Result<()> {
+        if self.poisoned {
+            return Err(Error::Poisoned);
+        }
+        self.engine.evolve_schema(schema.clone())?;
+        self.schema = schema;
+        self.refresh()
     }
 
     fn poison(&mut self) {
@@ -761,6 +782,39 @@ pub(crate) fn put_mapping<S: MetadataStore>(store: &S, name: &str, bytes: &[u8])
     }
 }
 
+/// Replace the stored mapping bytes of an index with `new`, if they are still
+/// exactly `expected`: a HEAD, a read and one compare-exchange, however large the
+/// index. [`Error::Changed`] when another writer replaced them first, and nothing
+/// is written; [`Error::NotFound`] when the index has no mapping.
+pub(crate) fn replace_mapping<S: MetadataStore>(
+    store: &S,
+    name: &str,
+    expected: &[u8],
+    new: &[u8],
+) -> Result<()> {
+    let object = key(&format!("{name}/mapping"))?;
+    let info = block(store.head(&context(), &object)).map_err(|error| match error {
+        hsearch_object::Error::NotFound => Error::NotFound,
+        other => Error::Store(other),
+    })?;
+    if read_version(store, &object, &info.version, info.length)? != expected {
+        return Err(Error::Changed);
+    }
+    let request = mutation(
+        &format!("{name}/mapping/replace/{}", nonce()),
+        &format!("{name}/mapping"),
+        new,
+        Precondition::Matches(info.version),
+    )?;
+    match write(store, &request, true) {
+        Written::Done(_) => Ok(()),
+        // The version moved between the read and the write: someone replaced it.
+        Written::Occupied => Err(Error::Changed),
+        Written::Refused(error) => Err(Error::Store(error)),
+        Written::Unknown => Err(Error::Unknown),
+    }
+}
+
 /// Create one shared immutable object at `key`, outside every index prefix. If the
 /// key is already held, the bytes there must be identical (the same content
 /// stored twice is one object); different bytes are refused, never replaced.
@@ -1177,6 +1231,9 @@ fn serve<S: MetadataStore + 'static>(core: &mut Core<'_, '_, S>, commands: &Rece
             }
             Command::Publish(reply) => {
                 let _ = reply.send(core.publish());
+            }
+            Command::Evolve(schema, reply) => {
+                let _ = reply.send(core.evolve(schema));
             }
             Command::Bulk(first) => {
                 // Group commit: everything already queued shares one slot.

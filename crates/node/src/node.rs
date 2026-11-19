@@ -2,10 +2,10 @@
 //! object store: create, bulk, get, search and refresh.
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
-use hsearch_engine::{Outcome, StoredValue};
+use hsearch_engine::{Kind, Outcome, StoredValue};
 use hsearch_format::{Digest, Layout};
 use hsearch_index::{Field, Index, Op, Wait};
 use hsearch_object::MetadataStore;
@@ -15,7 +15,7 @@ use typed_arena::Arena;
 use crate::ApiError;
 use crate::bulk::{self, Action, Item};
 use crate::limits::{Limits, MemoryGate};
-use crate::mapping::{Mapping, typed_owned};
+use crate::mapping::{Mapping, infer, typed_owned, valid_field_name};
 use crate::policy::{Dynamic, MappingLimits};
 use crate::search::{self, Source};
 
@@ -33,8 +33,29 @@ const INDEX_COST_FACTOR: u64 = 32;
 
 struct Entry {
     index: Index,
-    /// One parsed copy per node, shared by every index with this mapping.
-    mapping: Arc<Mapping>,
+    /// The mapping version writers and searches use now: one parsed copy per node,
+    /// shared by every index with this mapping. Replaced only by a mapping change,
+    /// after the index itself has evolved to it.
+    mapping: RwLock<Arc<Mapping>>,
+    /// The reference stored for the mapping, as last read or written. Held for the
+    /// whole of a mapping change, so changes to one index run one at a time and
+    /// each replaces exactly what the one before it left.
+    stored: Mutex<Vec<u8>>,
+}
+
+impl Entry {
+    fn new(index: Index, mapping: Arc<Mapping>, stored: Vec<u8>) -> Self {
+        Self {
+            index,
+            mapping: RwLock::new(mapping),
+            stored: Mutex::new(stored),
+        }
+    }
+
+    /// The mapping version to build one request's documents or query under.
+    fn mapping(&self) -> Arc<Mapping> {
+        Arc::clone(&self.mapping.read().unwrap_or_else(|p| p.into_inner()))
+    }
 }
 
 /// The deployment name this single-process node keys shared objects under.
@@ -255,16 +276,17 @@ impl<S: MetadataStore + 'static> Node<S> {
 
     /// An index's mapping, resolved only through that index's own stored
     /// reference. Mappings an earlier node wrote inline are read as they are.
-    fn load_mapping(&self, name: &str) -> Result<Arc<Mapping>, ApiError> {
+    fn load_mapping(&self, name: &str) -> Result<(Arc<Mapping>, Vec<u8>), ApiError> {
         let stored = hsearch_index::get_mapping(&*self.store, name)?;
         if Mapping::is_inline(&stored) {
-            return Ok(Arc::new(Mapping::decode(&stored)?));
+            let mapping = Arc::new(Mapping::decode(&stored)?);
+            return Ok((mapping, stored));
         }
         let corrupt = |reason| ApiError::new(500, "corrupt_exception", reason);
         let hash = Mapping::parse_reference(&stored)
             .ok_or_else(|| corrupt("stored mapping reference is unreadable"))?;
         if let Some(found) = self.cached(&hash) {
-            return Ok(found);
+            return Ok((found, stored));
         }
         let object = hsearch_index::get_shared(&*self.store, &Self::mapping_key(&hash)).map_err(
             |error| match error {
@@ -276,7 +298,7 @@ impl<S: MetadataStore + 'static> Node<S> {
         )?;
         let mapping = Arc::new(Mapping::from_object(&object, &hash)?);
         self.remember(hash, &mapping);
-        Ok(mapping)
+        Ok((mapping, stored))
     }
 
     /// The engine schema for `mapping` under this node's settings.
@@ -287,7 +309,7 @@ impl<S: MetadataStore + 'static> Node<S> {
     }
 
     fn open(&self, name: &str) -> Result<Arc<Entry>, ApiError> {
-        let mapping = self.load_mapping(name)?;
+        let (mapping, stored) = self.load_mapping(name)?;
         let index = Index::open_merging(
             Arc::clone(&self.store),
             name,
@@ -295,7 +317,7 @@ impl<S: MetadataStore + 'static> Node<S> {
             &self.scratch(name),
             self.merge_mode(),
         )?;
-        Ok(Arc::new(Entry { index, mapping }))
+        Ok(Arc::new(Entry::new(index, mapping, stored)))
     }
 
     /// `PUT /{index}`. The root is created first and the mapping second; a
@@ -334,8 +356,9 @@ impl<S: MetadataStore + 'static> Node<S> {
             };
             index.map_err(ApiError::from).and_then(|index| {
                 let (mapping, hash) = self.share(mapping.clone())?;
-                hsearch_index::put_mapping(&*self.store, name, &Mapping::reference(&hash))?;
-                *guard = Some(Arc::new(Entry { index, mapping }));
+                let stored = Mapping::reference(&hash);
+                hsearch_index::put_mapping(&*self.store, name, &stored)?;
+                *guard = Some(Arc::new(Entry::new(index, mapping, stored)));
                 Ok(())
             })
         };
@@ -344,6 +367,112 @@ impl<S: MetadataStore + 'static> Node<S> {
         }
         created?;
         Ok(json!({"acknowledged": true, "shards_acknowledged": true, "index": name}))
+    }
+
+    /// `PUT /{index}/_mapping`: add fields to a live index, or change its dynamic
+    /// setting, as a new immutable mapping version. Writes and searches keep running:
+    /// every document is built entirely under the version before or the one after.
+    /// A field redeclared with another type is refused and nothing changes.
+    pub fn put_mapping(&self, name: &str, body: &Value) -> Result<Value, ApiError> {
+        let entry = self.entry(name)?;
+        let current = entry.mapping();
+        // Refuse before taking the change lock: a refusal costs no request.
+        if current.evolve(body, &self.mapping_limits)?.is_none() {
+            return Ok(json!({"acknowledged": true}));
+        }
+        let mut stored = entry.stored.lock().map_err(|_| poisoned())?;
+        // Read again under the lock: another change may have landed first, and this
+        // one applies to the version that is current now.
+        let current = entry.mapping();
+        if let Some(next) = current.evolve(body, &self.mapping_limits)? {
+            self.publish(name, &entry, &current, next, &mut stored)?;
+        }
+        Ok(json!({"acknowledged": true}))
+    }
+
+    /// Publish `next` as the mapping of `name` and move the live index and its
+    /// readers to it, in that order. Requests, however many documents or segments
+    /// the index has: one create-only PUT of the immutable mapping object (none if
+    /// this node already holds it), and a HEAD, a GET and one compare-exchange of
+    /// the index's reference.
+    fn publish(
+        &self,
+        name: &str,
+        entry: &Arc<Entry>,
+        current: &Mapping,
+        next: Mapping,
+        stored: &mut Vec<u8>,
+    ) -> Result<(), ApiError> {
+        let schema = self.schema_of(&next)?;
+        let grew = next.fields.len() > current.fields.len();
+        let (next, hash) = self.share(next)?;
+        let reference = Mapping::reference(&hash);
+        if let Err(error) = hsearch_index::replace_mapping(&*self.store, name, stored, &reference) {
+            // Another writer changed the mapping, or whether this write landed is not
+            // known: forget the index, so the next request reopens it under whatever
+            // the store now holds.
+            if matches!(
+                error,
+                hsearch_index::Error::Changed | hsearch_index::Error::Unknown
+            ) {
+                self.evict(name, entry);
+            }
+            return Err(error.into());
+        }
+        *stored = reference;
+        // From here the new version is durable. The index evolves before the mapping
+        // does, so no document is built with a field the writer cannot yet take.
+        if grew && let Err(error) = entry.index.evolve(schema) {
+            self.evict(name, entry);
+            return Err(error.into());
+        }
+        *entry.mapping.write().map_err(|_| poisoned())? = next;
+        Ok(())
+    }
+
+    /// Under `dynamic: true`, add the fields a run of documents introduces as one
+    /// new mapping version, however many documents or fields: so the cost of a
+    /// bulk that adds fields is one mapping change, not one per document. A
+    /// document whose fields cannot be added (a type another document fixed first,
+    /// an unmappable value, a limit) is refused alone by [`document`].
+    fn add_dynamic_fields(&self, name: &str, entry: &Arc<Entry>, window: &[Item]) {
+        let mapping = entry.mapping();
+        if mapping.dynamic != Dynamic::True {
+            return;
+        }
+        let mut pending: Vec<(String, Kind)> = Vec::new();
+        // Every item of the batch for this index (a batch is at most `CHUNK` items,
+        // so this covers the whole run), skipping those refused regardless: a
+        // document that will not be written must not add a field.
+        for item in window.iter().take_while(|it| it.index == name) {
+            if check_id(&item.id).is_err() {
+                continue;
+            }
+            if let Ok((Action::Index, Some(Value::Object(object)))) = &item.work {
+                if self.mapping_limits.check_source(object).is_err() {
+                    continue;
+                }
+                let _ = plan_dynamic(&mapping, &self.mapping_limits, object, &mut pending);
+            }
+        }
+        if pending.is_empty() {
+            return;
+        }
+        let Ok(mut stored) = entry.stored.lock() else {
+            return;
+        };
+        // Under the lock the current version may already have some of these.
+        let current = entry.mapping();
+        let mut fresh = Vec::new();
+        plan_pending(&current, &self.mapping_limits, pending, &mut fresh);
+        if fresh.is_empty() {
+            return;
+        }
+        if let Ok(next) = current.next_version(fresh, current.dynamic, &self.mapping_limits) {
+            // A failure leaves the version as it was; the documents that needed the
+            // fields are refused with the reason `document` finds.
+            let _ = self.publish(name, entry, &current, next, &mut stored);
+        }
     }
 
     /// One write, bisecting a refused chunk so a bad item fails alone. A single
@@ -485,6 +614,12 @@ impl<S: MetadataStore + 'static> Node<S> {
             // A run of consecutive valid items for one index is one write.
             let name = items[i].index.clone();
             let entry = valid_index(&name).and_then(|()| self.entry(&name));
+            if let Ok(entry) = &entry {
+                self.add_dynamic_fields(&name, entry, &items[i..]);
+            }
+            // One mapping version for the whole run, read after any fields the run
+            // adds: a document is built entirely under one version.
+            let mapping = entry.as_ref().ok().map(|entry| entry.mapping());
             let mut ops: Vec<Op> = Vec::new();
             let mut slots: Vec<usize> = Vec::new();
             let mut j = i;
@@ -500,9 +635,10 @@ impl<S: MetadataStore + 'static> Node<S> {
                     (Ok(_), Ok((Action::Delete, _))) => Ok(Op::Delete {
                         id: item.id.clone(),
                     }),
-                    (Ok(entry), Ok((Action::Index, Some(source)))) => {
-                        document(&entry.mapping, &self.mapping_limits, &item.id, source)
-                    }
+                    (Ok(_), Ok((Action::Index, Some(source)))) => match &mapping {
+                        Some(mapping) => document(mapping, &self.mapping_limits, &item.id, source),
+                        None => Err(poisoned()),
+                    },
                     (Ok(_), Ok((Action::Index, None))) => Err(ApiError::bad("missing source")),
                 };
                 match verdict {
@@ -538,7 +674,10 @@ impl<S: MetadataStore + 'static> Node<S> {
     /// `GET /{index}/_doc/{id}`, from the latest searchable view.
     pub fn get(&self, name: &str, id: &str) -> Result<(u16, Value), ApiError> {
         let entry = self.entry(name)?;
-        let names = entry.mapping.names();
+        // The mapping first, then the snapshot: a snapshot is never older than the
+        // mapping it is read with, because an index evolves before its mapping does.
+        let mapping = entry.mapping();
+        let names = mapping.names();
         let snapshot = entry.index.snapshot()?;
         match snapshot.get(id, &names)? {
             None => Ok((404, json!({"_index": name, "_id": id, "found": false}))),
@@ -560,9 +699,10 @@ impl<S: MetadataStore + 'static> Node<S> {
     pub fn search(&self, name: &str, body: &Value) -> Result<Value, ApiError> {
         let started = Instant::now();
         let entry = self.entry(name)?;
-        let parsed = search::parse(&entry.mapping, body)?;
+        let mapping = entry.mapping();
+        let parsed = search::parse(&mapping, body)?;
         let projection: Vec<&str> = match &parsed.source {
-            Source::All => entry.mapping.names(),
+            Source::All => mapping.names(),
             Source::None => Vec::new(),
             Source::Some(names) => names.iter().map(String::as_str).collect(),
         };
@@ -639,28 +779,41 @@ fn document(
             }
             Dynamic::False => object.retain(|k, _| mapping.kind(k).is_some()),
             Dynamic::True => {
-                // A change that would pass the limit is refused whole, before
-                // anything else is said about it; a change within it cannot be
-                // published yet, because adding fields to a live index is M21.04.
-                limits.check_fields(mapping.fields.len() + unknown)?;
-                return Err(ApiError::new(
-                    400,
-                    "mapping_update_unavailable_exception",
-                    "dynamic [true] would add fields, which needs online mapping evolution; \
-                     declare them in the mapping or use dynamic [false] or [strict]",
-                ));
+                // A null is no value: it adds no field and is not indexed.
+                object.retain(|k, v| mapping.kind(k).is_some() || !v.is_null());
+                if object.keys().any(|k| mapping.kind(k).is_none()) {
+                    // The run's added fields did not cover this document: say why.
+                    return Err(plan_dynamic(mapping, limits, &object, &mut Vec::new())
+                        .err()
+                        .unwrap_or_else(|| {
+                            ApiError::new(
+                                503,
+                                "mapping_update_unavailable_exception",
+                                "the mapping could not take this document's new fields; retry it",
+                            )
+                        }));
+                }
             }
         }
     }
+    let required = mapping.required();
     let mut fields = Vec::with_capacity(mapping.fields.len());
-    for (name, kind) in &mapping.fields {
-        let value = object.remove(name).ok_or_else(|| {
-            ApiError::new(
-                400,
-                "mapper_parsing_exception",
-                format!("field [{name}] is required: every mapped field must be present"),
-            )
-        })?;
+    for (at, (name, kind)) in mapping.fields.iter().enumerate() {
+        let value = match object.remove(name) {
+            // A field added after the index was created may be left out, or null.
+            None | Some(Value::Null) if at >= required => {
+                fields.push(Field::Absent);
+                continue;
+            }
+            Some(value) => value,
+            None => {
+                return Err(ApiError::new(
+                    400,
+                    "mapper_parsing_exception",
+                    format!("field [{name}] is required: every mapped field must be present"),
+                ));
+            }
+        };
         fields.push(typed_owned(*kind, value).map_err(|why| {
             ApiError::new(
                 400,
@@ -674,6 +827,88 @@ fn document(
         id: id.to_string(),
         fields,
     })
+}
+
+/// Add to `pending` the fields `object` introduces that `mapping` and `pending`
+/// do not already have, each with the kind its first value maps to, or say why the
+/// document cannot be mapped: a value that cannot be inferred, a field already
+/// fixed as another kind, a name the engine refuses, or a limit. All or nothing: a
+/// refused document adds none of its fields.
+fn plan_dynamic(
+    mapping: &Mapping,
+    limits: &MappingLimits,
+    object: &Map<String, Value>,
+    pending: &mut Vec<(String, Kind)>,
+) -> Result<(), ApiError> {
+    let mut fresh: Vec<(String, Kind)> = Vec::new();
+    for (name, value) in object {
+        if value.is_null() && mapping.kind(name).is_none() {
+            continue;
+        }
+        let known = mapping
+            .kind(name)
+            .or_else(|| pending.iter().find(|(n, _)| n == name).map(|(_, k)| *k));
+        let Some(known) = known else {
+            if !valid_field_name(name) {
+                return Err(ApiError::new(
+                    400,
+                    "mapper_parsing_exception",
+                    format!(
+                        "field [{name}]: names are 1-64 of [A-Za-z0-9_] and do not start with an underscore"
+                    ),
+                ));
+            }
+            fresh.push((name.clone(), infer(name, value)?));
+            continue;
+        };
+        // A field another document fixed in this run fixes the kind for this one.
+        if pending.iter().any(|(n, _)| n == name) {
+            typed_owned(known, value.clone()).map_err(|why| {
+                ApiError::new(
+                    400,
+                    "mapper_parsing_exception",
+                    format!("field [{name}]: {why}"),
+                )
+            })?;
+        }
+    }
+    let total = mapping.fields.len() + pending.len() + fresh.len();
+    limits.check_fields(total)?;
+    // The engine's own bound sits under the configured one.
+    if total + 2 > hsearch_engine::MAX_FIELDS {
+        return Err(ApiError::new(
+            400,
+            "mapper_parsing_exception",
+            format!(
+                "an index holds at most {} fields",
+                hsearch_engine::MAX_FIELDS - 2
+            ),
+        ));
+    }
+    pending.extend(fresh);
+    Ok(())
+}
+
+/// The part of `pending` the current mapping still lacks, with the kind any
+/// other change already gave an existing field left alone.
+fn plan_pending(
+    mapping: &Mapping,
+    limits: &MappingLimits,
+    pending: Vec<(String, Kind)>,
+    fresh: &mut Vec<(String, Kind)>,
+) {
+    for (name, kind) in pending {
+        if mapping.kind(&name).is_none() {
+            fresh.push((name, kind));
+        }
+    }
+    // Keep only what fits; the documents that needed the rest are refused with the
+    // limit that stopped them.
+    let room = limits
+        .max_fields
+        .min(hsearch_engine::MAX_FIELDS - 2)
+        .saturating_sub(mapping.fields.len());
+    fresh.truncate(room);
 }
 
 fn item_error(action: &str, index: &str, id: &str, error: &ApiError) -> Value {
@@ -749,7 +984,7 @@ mod tests {
         }
         node.create("d", &other).unwrap();
         let held = |node: &Node<MemoryStore>| {
-            ["a", "b", "c", "d"].map(|n| node.entry(n).unwrap().mapping.clone())
+            ["a", "b", "c", "d"].map(|n| node.entry(n).unwrap().mapping())
         };
         let before = held(&node);
         assert!(Arc::ptr_eq(&before[0], &before[1]) && Arc::ptr_eq(&before[1], &before[2]));

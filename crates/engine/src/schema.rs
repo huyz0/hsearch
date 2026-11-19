@@ -225,6 +225,10 @@ pub struct Schema {
     pub(crate) limits: Limits,
     pub(crate) nested: Vec<NestedSpec>,
     pub(crate) join: Option<JoinSpec>,
+    /// How many of the trailing fields were added after creation by
+    /// [`Schema::evolve`]. Those are optional: a document written before the
+    /// field existed has no value for it.
+    pub(crate) evolved: usize,
 }
 
 impl Schema {
@@ -263,7 +267,102 @@ impl Schema {
             limits: Limits::BOUNDED,
             nested: Vec::new(),
             join: None,
+            evolved: 0,
         })
+    }
+
+    /// This schema with `added` appended as optional fields, at `revision`. Only
+    /// scalar fields (keyword, text, integer, boolean, date) can be added to a
+    /// live schema; a repeated or already-declared name, a name that is not a
+    /// valid field name, a revision that does not move forward, or more fields
+    /// than the native bound all refuse, and so does changing what an existing
+    /// field is: nothing here edits a declared field. Documents written under
+    /// this schema keep their meaning under the evolved one, with the added
+    /// fields absent from them.
+    pub fn evolve(&self, revision: u64, added: &[(&str, Kind)]) -> Result<Self> {
+        if added.is_empty()
+            || revision <= self.revision
+            || self.fields.len() + added.len() + 2 > MAX_FIELDS
+        {
+            return Err(Error::Schema);
+        }
+        for (i, (name, kind)) in added.iter().enumerate() {
+            if !ident(name)
+                || !matches!(
+                    kind,
+                    Kind::Keyword | Kind::Text | Kind::Integer | Kind::Boolean | Kind::Date
+                )
+                || self.fields.iter().any(|(n, _)| n == name)
+                || added[..i].iter().any(|(other, _)| other == name)
+            {
+                return Err(Error::Schema);
+            }
+        }
+        let mut next = self.clone();
+        next.revision = revision;
+        next.evolved += added.len();
+        next.fields
+            .extend(added.iter().map(|(n, k)| (n.to_string(), *k)));
+        Ok(next)
+    }
+
+    /// How many fields every document must carry: all but the ones added by
+    /// [`Schema::evolve`], which a document may leave out.
+    pub fn required_fields(&self) -> usize {
+        self.required()
+    }
+
+    /// Fields every document must carry: all but the ones added by evolution.
+    pub(crate) fn required(&self) -> usize {
+        self.fields.len() - self.evolved
+    }
+
+    /// Whether this schema is `older` plus fields added by [`Schema::evolve`]
+    /// (or `older` itself): every document and checkpoint valid under `older`
+    /// is valid under this one.
+    pub(crate) fn extends(&self, older: &Schema) -> bool {
+        // With nothing added it is the same schema, revision included.
+        if self.fields.len() == older.fields.len() {
+            return self == older;
+        }
+        older.revision < self.revision
+            && older.limits == self.limits
+            && older.nested == self.nested
+            && older.join == self.join
+            && older.required() == self.required()
+            && self.fields.starts_with(&older.fields)
+    }
+
+    /// A document's fields must be declared ones, once each, in schema order,
+    /// with every required field present. An evolved (optional) field may be
+    /// left out.
+    pub(crate) fn check_row(&self, row: &[(&str, Value<'_>)]) -> Result<()> {
+        // The common row names every field in order: one pass, no search.
+        if row.len() == self.fields.len()
+            && row
+                .iter()
+                .zip(&self.fields)
+                .all(|((name, _), (declared, _))| name == declared)
+        {
+            return Ok(());
+        }
+        let required = self.required();
+        let mut at = 0;
+        for (name, _) in row {
+            let found = self.fields[at..]
+                .iter()
+                .position(|(declared, _)| declared == name)
+                .ok_or(Error::Document)?;
+            // Fields skipped on the way to this one must all be optional.
+            if found > 0 && at < required {
+                return Err(Error::Document);
+            }
+            at += found + 1;
+        }
+        if at < required {
+            return Err(Error::Document);
+        }
+        Ok(())
     }
 
     /// Replace the admission bounds. Part of schema identity: a checkpoint only
@@ -312,7 +411,8 @@ impl Schema {
     /// ([`MAX_NESTED_DEPTH`]): an object cannot hold a nested path.
     pub fn with_nested(mut self, path: &str, fields: &[(&str, Kind)]) -> Result<Self> {
         let sub_total: usize = self.nested.iter().map(|n| n.fields.len()).sum();
-        if !ident(path)
+        if self.evolved > 0
+            || !ident(path)
             || self.fields.iter().any(|(n, _)| n == path)
             || self.nested.len() >= MAX_NESTED_PATHS
             || fields.is_empty()
@@ -346,6 +446,7 @@ impl Schema {
     /// [`crate::Query::HasChild`] and [`crate::Query::HasParent`].
     pub fn with_join(mut self, name: &str, parent: &str, children: &[&str]) -> Result<Self> {
         if self.join.is_some()
+            || self.evolved > 0
             || !ident(name)
             || !ident(parent)
             || self.fields.iter().any(|(n, _)| n == name)
@@ -455,9 +556,10 @@ impl Schema {
         version: i64,
         fields: &[(&str, Value<'_>)],
     ) -> Result<Vec<Document>> {
-        if id.is_empty() || id.len() > 256 || version <= 0 || fields.len() != self.fields.len() {
+        if id.is_empty() || id.len() > 256 || version <= 0 {
             return Err(Error::Document);
         }
+        self.check_row(fields)?;
         let mut bytes = id.len();
         // Check bytes and types before allocating native fields or analyzing text.
         for (i, (name, value)) in fields.iter().enumerate() {

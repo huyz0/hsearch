@@ -485,6 +485,8 @@ fn engine_value(field: &Field) -> Typed<'_> {
         Field::Bool(b) => Typed::Boolean(*b),
         Field::Date(n) => Typed::Date(*n),
         Field::Vector(v) => Typed::Vector(v),
+        // A query value comes from `typed`, which never builds an absent one.
+        Field::Absent => Typed::String(""),
     }
 }
 
