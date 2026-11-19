@@ -3081,7 +3081,8 @@
           "deliverables": [
             "`hsearch-node` opens indexes through the host (create, open, bulk, refresh, snapshot, evolve), with the layer table updated",
             "The v0 writer in `hsearch-index` is kept only as long as another crate needs it, then removed; its disposable formats are replaced by the lane records",
-            "The restart and kill -9 path of scripts/e2e.sh runs over the host"
+            "The restart and kill -9 path of scripts/e2e.sh runs over the host",
+            "Until M06.21 lands each index has its own lane, as the v0 write path had its own log: the node moves off the v0 log without yet sharing a lane"
           ],
           "validation": [
             "The existing node tests and the 100k-document kill -9 e2e pass unchanged against RustFS; delete/recreate name races on an index name never reuse old authority or history"
@@ -3091,8 +3092,7 @@
           ],
           "depends_on": [
             "M06.16",
-            "M06.18",
-            "M06.21"
+            "M06.18"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -3122,11 +3122,13 @@
         },
         {
           "id": "M06.21",
-          "title": "Share the node's lane between indexes",
-          "goal": "Indexes of one node write one lane: the committer is shared, each index has its own cover, and an index joins and leaves the lane through its membership, sealed on open.",
+          "title": "Share the node's lane between indexes: per-index base pointers and a shared committer",
+          "goal": "Indexes of one node write one lane, and each still publishes and recovers from its own base: the structural head names a single checkpoint for a whole lane, so a shared lane needs a per-index base pointer and a lane-level cover.",
           "deliverables": [
-            "Create and delete of an index's lane membership through the node's lane (one write log per node: principles), seal on open, and a base published on a bounded schedule (records or bytes since the last base) so a restart replays a bounded tail",
-            "Per-index lane cover (M03.09) so a base's cover is right on a lane shared with other indexes"
+            "Design record (ADR) for per-index bases on a shared lane: a per-index conditional base pointer object carrying the index's manifest and its lane cover, the lane head's cover as the minimum over members, and what recovery, `Publisher::activate`, compaction and collection read instead of `StructuralHead::checkpoint`",
+            "A shared committer thread: hosts submit their records, one lane slot carries records of many indexes, outcomes are returned per record, poison and fence are shared; `Serving` takes the log through a trait so a host works on a direct committer or a shared one",
+            "Create and delete of an index's lane membership through the node's lane (one write log per node: principles), seal on open",
+            "Per-index lane cover so a base's cover is right on a lane shared with other indexes"
           ],
           "validation": [
             "Several indexes writing one lane through hosts, killed and restarted at every step, each serves exactly its acknowledged writes; request counts per acknowledged write and per restart stay constant in the number of indexes, no LIST"
@@ -3141,6 +3143,35 @@
           "owner": "storage/runtime",
           "status": "planned",
           "evidence": []
+        },
+        {
+          "id": "M06.22",
+          "title": "Serve an index by name, writing a group's runs as one commit",
+          "goal": "A node-facing handle that creates, opens, writes, evolves and reads one index by its name over the serving host, and a host that logs a group's runs together so requests scale with slots, not with sixteen-operation records.",
+          "deliverables": [
+            "`Engine::admit_chain`: decide a run of batches as if applied one after another, so a batch logged after another is one the engine will take when its turn comes",
+            "`Serving::write_chain` and a host that writes up to 64 runs of a group as one commit, stopping at the first refused run, writing it alone and going round again so versions still rise with the records written",
+            "`store::served::ServedIndex`: create and open by name (lane and head derived from the name, a creation that stopped between lane and head is finished), bulk with a refused document failing alone, refresh, evolve (republishing the reader under the new schema), snapshot and read by id with a real-time view; an empty index is searchable"
+          ],
+          "validation": [
+            "Admit-chain decisions equal one-by-one apply for order, version, request identity and bound crossings, and asking changes nothing",
+            "112 identities are 7 records and one write when a slot takes them; a restart after packed slots serves every document and the next version is above all of them; a refusal in the middle of a packed run leaves the runs around it written and rising versions",
+            "A restart serves every acknowledged write; a second open fences the first; names never share a log"
+          ],
+          "definition_of_done": [
+            "A group's runs share slots, a bad document fails alone, and an index is found by name and recovered from the store"
+          ],
+          "depends_on": [
+            "M06.16"
+          ],
+          "owner": "storage/runtime",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-22-served-index.md",
+              "result": "Engine::admit_chain (3 tests, 2 mutations seen red), Serving::write_chain and the host packing a group's runs into one commit (112 identities: 7 records, 1 write; restart after packed slots; refusal in the middle leaves the runs around it written; 3 mutations seen red), ServedIndex create/open/bulk/evolve/snapshot/get by name (7 tests: Exists, NotFound, restart, fencing, names apart, a half-created index finished, a document refused alone). Provisional: in-memory store; no RustFS measurement here."
+            }
+          ]
         }
       ]
     },
