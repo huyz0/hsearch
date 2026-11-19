@@ -75,7 +75,7 @@ pub struct Serving<S: MetadataStore, D: DependencyView> {
     /// The base this writer last published (or recovered on): the next one replaces it.
     base: Option<ManifestRoot>,
     /// The readers queries run on: the committed watermark and the published snapshot.
-    readers: Readers<Snapshot>,
+    readers: Arc<Readers<Snapshot>>,
 }
 
 /// Generations a query may hold at once besides the newest. The engine allows four open
@@ -135,7 +135,7 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
     /// every record is prepared against; it is fixed for the writer's life, so after a dependency
     /// changes every write is `Rejected(Stale)` until the writer is rebuilt.
     pub fn new(committer: Committer<S, D>, index: Id, next: u64, deps: Dependencies) -> Self {
-        let readers = Readers::new(MAX_PINNED_READERS);
+        let readers = Arc::new(Readers::new(MAX_PINNED_READERS));
         // Everything before `next` is committed and applied; the watermark starts there.
         let _ = readers.commit(next);
         Self {
@@ -187,6 +187,19 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
     #[must_use]
     pub fn reader(&self) -> Option<Arc<Gen<Snapshot>>> {
         self.readers.pin()
+    }
+
+    /// The barrier's readers, shared: other threads pin the serving reader from it while this
+    /// writer keeps refreshing it.
+    #[must_use]
+    pub fn readers(&self) -> Arc<Readers<Snapshot>> {
+        Arc::clone(&self.readers)
+    }
+
+    /// Prepare every later record against `deps`: after the schema (or another dependency) the
+    /// committer's view checks has moved on and the engine has followed it.
+    pub fn set_deps(&mut self, deps: Dependencies) {
+        self.deps = deps;
     }
 
     /// Whether a refresh would publish a reader covering more than the one serving.
