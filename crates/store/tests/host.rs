@@ -1,0 +1,370 @@
+//! The serving host: acknowledged writes survive a restart, versions never go backwards, bulks
+//! share records, and a base keeps the replay bounded. Everything runs on the in-memory store, so
+//! the numbers are provisional.
+#[path = "support/history.rs"]
+mod history;
+mod support;
+
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
+use history::*;
+use hsearch_commit::Dependencies;
+use hsearch_engine::{Outcome, StoredValue};
+use hsearch_index::{Field, ItemResult, Op, Wait};
+use hsearch_lane::{block_on, read_head};
+use hsearch_store::host::{Config, Host, HostError, OpenArgs};
+use hsearch_store::publish::AnyDependencies;
+use support::*;
+
+fn deps() -> Dependencies {
+    Dependencies {
+        schema: [1; 32],
+        crypto: [1; 32],
+        resolved: [1; 32],
+    }
+}
+
+fn put(id: &str, tag: &str) -> Op {
+    Op::Put {
+        id: id.into(),
+        fields: vec![Field::Str(Arc::new(tag.into()))],
+    }
+}
+
+fn del(id: &str) -> Op {
+    Op::Delete { id: id.into() }
+}
+
+fn config(label: &str, window_ms: u64, base_every: u64, seed: u8) -> Config {
+    Config {
+        index: INDEX,
+        shard: SHARD,
+        incarnation: 1,
+        scratch: std::env::temp_dir().join(format!("hsearch-host-{label}-{}", std::process::id())),
+        limits: big(),
+        deps: deps(),
+        engine_format: "lucene-test".into(),
+        mapping: [5; 32],
+        crypto_envelope: [6; 16],
+        window: Duration::from_millis(window_ms),
+        base_every_batches: base_every,
+        token_seed: [seed; 8],
+        pin: None,
+    }
+}
+
+/// Open a host on `lane`: a fresh committer fences whatever came before.
+fn open(store: &Arc<Crash>, lane: hsearch_lane::LaneId, config: Config) -> Host {
+    Host::open(
+        OpenArgs {
+            store: Arc::clone(store),
+            publisher: publisher(store),
+            committer: writer(store, lane),
+            lane,
+            dependencies: AnyDependencies,
+            schema: schema(),
+        },
+        config,
+    )
+    .unwrap()
+}
+
+fn new_lane() -> (Arc<Crash>, hsearch_lane::LaneId) {
+    let store = Crash::new();
+    let (lane, first) = open_lane(&store);
+    drop(first);
+    (store, lane)
+}
+
+fn tag(host: &Host, id: &str) -> Option<String> {
+    let reader = host.reader()?;
+    reader.reader.get(id, &["tag"]).unwrap().map(|hit| {
+        let StoredValue::String(tag) = &hit.fields[0].1 else {
+            panic!("tag is a string")
+        };
+        tag.clone()
+    })
+}
+
+fn versions(results: &[ItemResult]) -> Vec<i64> {
+    results.iter().map(|r| r.version).collect()
+}
+
+#[test]
+fn a_searchable_bulk_is_visible_and_takes_server_assigned_versions() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("basic", 0, 0, 1));
+    assert!(host.reader().is_none());
+    let got = host
+        .bulk(vec![put("a", "x"), put("b", "y")], Wait::Searchable)
+        .unwrap();
+    // The first batch is sequence 0: versions start at 1 << 20 and rise by position.
+    assert_eq!(versions(&got), vec![1 << 20, (1 << 20) + 1]);
+    assert!(got.iter().all(|r| r.outcome == Outcome::Created));
+    assert_eq!(tag(&host, "a").as_deref(), Some("x"));
+    assert_eq!(tag(&host, "b").as_deref(), Some("y"));
+    // A durable bulk is acknowledged before it is searchable; a refresh makes it so.
+    let next = host.bulk(vec![put("a", "z")], Wait::Durable).unwrap();
+    assert_eq!(next[0].outcome, Outcome::Updated);
+    assert_eq!(next[0].version, 2 << 20);
+    assert_eq!(tag(&host, "a").as_deref(), Some("x"));
+    host.refresh().unwrap();
+    assert_eq!(tag(&host, "a").as_deref(), Some("z"));
+    let gone = host.bulk(vec![del("b")], Wait::Searchable).unwrap();
+    assert_eq!(gone[0].outcome, Outcome::Deleted);
+    assert_eq!(tag(&host, "b"), None);
+    assert!(matches!(
+        host.bulk(vec![], Wait::Durable),
+        Err(HostError::Invalid)
+    ));
+}
+
+#[test]
+fn acknowledged_writes_recover_and_versions_never_go_backwards() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("restart", 0, 0, 1));
+    let first = host
+        .bulk(vec![put("a", "1"), put("b", "2")], Wait::Durable)
+        .unwrap();
+    let second = host
+        .bulk(vec![put("a", "3"), del("b")], Wait::Durable)
+        .unwrap();
+    let before = second
+        .iter()
+        .chain(&first)
+        .map(|r| r.version)
+        .max()
+        .unwrap();
+    host.stop();
+    // Nothing local survives: a new host recovers from the lane alone.
+    let again = open(&store, lane, config("restart-2", 0, 0, 2));
+    assert_eq!(tag(&again, "a").as_deref(), Some("3"));
+    assert_eq!(tag(&again, "b"), None);
+    let next = again.bulk(vec![put("c", "4")], Wait::Searchable).unwrap();
+    assert!(next[0].version > before, "{} > {before}", next[0].version);
+    assert_eq!(tag(&again, "c").as_deref(), Some("4"));
+}
+
+#[test]
+fn a_restart_after_every_prefix_serves_exactly_what_was_acknowledged() {
+    let batches: Vec<Vec<Op>> = vec![
+        vec![put("a", "1"), put("b", "1")],
+        vec![put("a", "2")],
+        vec![del("b"), put("c", "1")],
+        vec![put("b", "3"), del("c")],
+        vec![put("d", "1")],
+    ];
+    for acknowledged in 0..=batches.len() {
+        let (store, lane) = new_lane();
+        let host = open(&store, lane, config("prefix", 0, 2, 1));
+        let mut ledger = std::collections::BTreeMap::new();
+        let mut top = 0;
+        for ops in batches.iter().take(acknowledged) {
+            let got = host.bulk(ops.clone(), Wait::Durable).unwrap();
+            top = top.max(*versions(&got).iter().max().unwrap());
+            for op in ops {
+                match op {
+                    Op::Put { id, fields } => {
+                        let Field::Str(tag) = &fields[0] else {
+                            unreachable!()
+                        };
+                        ledger.insert(id.clone(), Some((**tag).clone()));
+                    }
+                    Op::Delete { id } => {
+                        ledger.insert(id.clone(), None);
+                    }
+                }
+            }
+        }
+        host.stop();
+        let again = open(&store, lane, config("prefix-2", 0, 2, 2));
+        for (id, want) in &ledger {
+            assert_eq!(&tag(&again, id), want, "after {acknowledged} batches: {id}");
+        }
+        let next = again.bulk(vec![put("zz", "1")], Wait::Durable).unwrap();
+        assert!(next[0].version > top);
+    }
+}
+
+#[test]
+fn a_write_the_store_refuses_is_not_acknowledged_and_the_host_serves_on() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("refuse", 0, 0, 1));
+    host.bulk(vec![put("a", "1")], Wait::Searchable).unwrap();
+    store.allow.store(0, Ordering::SeqCst);
+    let refused = host.bulk(vec![put("b", "2")], Wait::Searchable);
+    assert!(
+        matches!(refused, Err(HostError::Rejected(_))),
+        "{refused:?}"
+    );
+    store.allow.store(i64::MAX, Ordering::SeqCst);
+    assert!(!host.is_broken());
+    assert_eq!(tag(&host, "b"), None);
+    host.bulk(vec![put("b", "3")], Wait::Searchable).unwrap();
+    assert_eq!(tag(&host, "b").as_deref(), Some("3"));
+    host.stop();
+}
+
+#[test]
+fn a_lost_reply_breaks_the_host_and_a_reopen_shows_what_is_in_the_log() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("lost", 0, 0, 1));
+    host.bulk(vec![put("a", "1")], Wait::Durable).unwrap();
+    store.fail_resolve.store(true, Ordering::SeqCst);
+    store.lose.store(store.writes() as i64, Ordering::SeqCst);
+    let lost = host.bulk(vec![put("b", "2")], Wait::Durable);
+    assert!(
+        matches!(lost, Err(HostError::Unknown | HostError::Broken)),
+        "{lost:?}"
+    );
+    assert!(host.is_broken());
+    assert!(matches!(
+        host.bulk(vec![put("c", "3")], Wait::Durable),
+        Err(HostError::Broken)
+    ));
+    host.stop();
+    store.fail_resolve.store(false, Ordering::SeqCst);
+    let again = open(&store, lane, config("lost-2", 0, 0, 2));
+    // The lost write is durable, so it is served now; the one refused after it is not.
+    assert_eq!(tag(&again, "a").as_deref(), Some("1"));
+    assert_eq!(tag(&again, "b").as_deref(), Some("2"));
+    assert_eq!(tag(&again, "c"), None);
+}
+
+#[test]
+fn bulks_that_queue_together_share_records_and_the_same_identity_keeps_its_order() {
+    let (store, lane) = new_lane();
+    let host = Arc::new(open(&store, lane, config("group", 100, 0, 1)));
+    let threads: Vec<_> = (0..6)
+        .map(|i| {
+            let host = Arc::clone(&host);
+            std::thread::spawn(move || {
+                host.bulk(vec![put(&format!("d{i}"), "v")], Wait::Durable)
+                    .unwrap()
+            })
+        })
+        .collect();
+    let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+    assert_eq!(results.len(), 6);
+    let records = host.stats().records;
+    assert!(records < 6, "six bulks made {records} records");
+    host.refresh().unwrap();
+    for i in 0..6 {
+        assert_eq!(tag(&host, &format!("d{i}")).as_deref(), Some("v"));
+    }
+    // Two operations on one identity in one bulk become two records, in order.
+    let before = host.stats().records;
+    let got = host
+        .bulk(
+            vec![put("same", "first"), put("same", "second")],
+            Wait::Searchable,
+        )
+        .unwrap();
+    assert!(got[1].version > got[0].version);
+    assert_eq!(host.stats().records, before + 2);
+    assert_eq!(tag(&host, "same").as_deref(), Some("second"));
+}
+
+#[test]
+fn a_base_on_a_schedule_bounds_what_a_restart_replays() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("base", 0, 2, 1));
+    for i in 0..5 {
+        host.bulk(vec![put(&format!("d{i}"), "v")], Wait::Durable)
+            .unwrap();
+    }
+    // Five batches, a base after every second: two bases, the head names one. The base runs
+    // after the acknowledgement, so a refresh queues behind it.
+    host.refresh().unwrap();
+    assert_eq!(host.stats().bases, 2);
+    assert_eq!(host.stats().base_failures, 0);
+    let head = block_on(read_head(store.inner_ref(), &layout(), &lane))
+        .unwrap()
+        .0;
+    assert!(head.checkpoint.is_some());
+    host.stop();
+    let again = open(&store, lane, config("base-2", 0, 2, 2));
+    for i in 0..5 {
+        assert_eq!(tag(&again, &format!("d{i}")).as_deref(), Some("v"));
+    }
+}
+
+#[test]
+fn a_base_that_cannot_be_published_is_counted_and_never_fails_a_write() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("basefail", 0, 1, 1));
+    host.bulk(vec![put("a", "1")], Wait::Durable).unwrap();
+    // The base runs after the acknowledgement; a refresh queues behind it.
+    host.refresh().unwrap();
+    assert_eq!(host.stats().bases, 1);
+    // Let the record through and refuse everything the base needs after it.
+    store.allow.store(1, Ordering::SeqCst);
+    host.bulk(vec![put("b", "2")], Wait::Durable).unwrap();
+    let _ = host.refresh();
+    assert!(host.stats().base_failures >= 1);
+    store.allow.store(i64::MAX, Ordering::SeqCst);
+    host.bulk(vec![put("c", "3")], Wait::Searchable).unwrap();
+    host.refresh().unwrap();
+    assert_eq!(host.stats().bases, 2);
+    assert_eq!(tag(&host, "b").as_deref(), Some("2"));
+}
+
+#[test]
+fn a_schema_evolved_online_is_written_and_recovered_with_its_new_field() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("evolve", 0, 0, 1));
+    host.bulk(vec![put("a", "1")], Wait::Searchable).unwrap();
+    let evolved = schema()
+        .evolve(2, &[("extra", hsearch_engine::Kind::Keyword)])
+        .unwrap();
+    host.evolve(evolved.clone(), deps()).unwrap();
+    host.bulk(
+        vec![Op::Put {
+            id: "b".into(),
+            fields: vec![
+                Field::Str(Arc::new("2".into())),
+                Field::Str(Arc::new("e".into())),
+            ],
+        }],
+        Wait::Searchable,
+    )
+    .unwrap();
+    assert_eq!(tag(&host, "b").as_deref(), Some("2"));
+    assert_eq!(tag(&host, "a").as_deref(), Some("1"));
+}
+
+#[test]
+fn request_counts_per_acknowledged_write_and_per_restart_do_not_scale_with_history() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("counts", 0, 0, 1));
+    // One acknowledged record is one write; writes scale with operations, never with history.
+    let per_bulk: Vec<usize> = [1, 20, 32]
+        .iter()
+        .map(|n| {
+            let before = store.writes();
+            let ops: Vec<Op> = (0..*n).map(|i| put(&format!("k{n}-{i}"), "v")).collect();
+            host.bulk(ops, Wait::Durable).unwrap();
+            store.writes() - before
+        })
+        .collect();
+    assert_eq!(per_bulk, vec![1, 2, 2]);
+    host.stop();
+    // A restart costs the same writes (the seal and the guard) after one record or after many.
+    let cost = |records: usize, label: &str| {
+        let (store, lane) = new_lane();
+        let host = open(&store, lane, config(label, 0, 0, 1));
+        for i in 0..records {
+            host.bulk(vec![put(&format!("r{i}"), "v")], Wait::Durable)
+                .unwrap();
+        }
+        host.stop();
+        let before = store.writes();
+        let again = open(&store, lane, config(label, 0, 0, 2));
+        let cost = store.writes() - before;
+        again.stop();
+        cost
+    };
+    assert_eq!(cost(1, "cost-a"), cost(40, "cost-b"));
+}

@@ -26,6 +26,8 @@ const VERSION: LuceneVersion = LuceneVersion {
     bugfix: 0,
 };
 const MAX_BATCH: usize = 16;
+/// Most mutations one prepared batch carries.
+pub const MAX_BATCH_OPERATIONS: usize = MAX_BATCH;
 const MAX_BATCH_BYTES: usize = 65_536;
 
 /// Most bytes one prepared batch carries: the research profile's bound, plus

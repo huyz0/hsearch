@@ -2692,7 +2692,7 @@
           "title": "Deliver lifecycle and standalone API",
           "goal": "Make local end-to-end use operationally complete.",
           "deliverables": [
-            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls; the serving writer's durability wiring is M06.14 to M06.20",
+            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls; the serving writer's durability wiring is M06.14 to M06.21",
             "Native /v1 capabilities/receipts and explicitly selected thin adapter routes; core request/response/queue/retention admission",
             "Early selected OpenSearch-reference and intentional-difference/unsupported conformance corpus; no broad SDK promise",
             "Refresh the core-v1 fixture corpus for the rows revised on 13 November 2026 (the refresh=true history, the partial `_update` example in A11, nested/join and kNN inputs, aliases, snapshots) together with the pinned engine differential bundle that hashes it; until then those native inputs predate the product requirements"
@@ -2719,7 +2719,8 @@
             "M06.17",
             "M06.18",
             "M06.19",
-            "M06.20"
+            "M06.20",
+            "M06.21"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -2997,7 +2998,7 @@
             "`store::host`: a writer thread per index owning the engine and `Serving`, group-committing queued bulks into one lane record per batching window (the v0 queue's behaviour), with `Wait::Durable` and `Wait::Searchable` acknowledgement",
             "Server-assigned versions that survive recovery: a batch's versions are `(index sequence << 20) + position` (batches are bounded below 2^20 operations), so the next version is a function of the recovered sequence and replay never needs a separate counter",
             "Open by `recover_writer_held` with a pin and a scratch directory under the node's data directory; no whole-log replay and no LIST",
-            "Create and delete of an index's lane membership through the node's lane (one write log per node: principles), seal on open, and a base published on a bounded schedule (records or bytes since the last base) so a restart replays a bounded tail"
+            "A base published on a bounded schedule (batches since the last base) so a restart replays a bounded tail"
           ],
           "validation": [
             "Kill and restart histories at every step against an independent ledger: acknowledged writes recover, unacknowledged ones may or may not, no version goes backwards, scratch deleted between runs",
@@ -3012,8 +3013,13 @@
             "M06.17"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-16-serving-host.md",
+              "result": "store::host::Host: a writer thread per index owns the engine and Serving, opened by recover_writer_held, group-committing bulks into records of distinct identities (at most 16 operations, halved if the engine finds one too large), Wait::Durable and Wait::Searchable, server-assigned versions ((sequence + 1) << 20) + position, reader pinned without a thread hop, bases on a batch schedule. 10 in-memory tests including a restart after every prefix against a ledger and a lost reply; one acknowledged record is one write and a restart costs the same after 1 or 40 records; 4 mutations seen red. Provisional (in-memory): the RustFS test compiled but was not run here (CI runs it), so nothing is measured on RustFS. One lane per index: the node's shared lane and lane membership moved to M06.21."
+            }
+          ]
         },
         {
           "id": "M06.17",
@@ -3080,7 +3086,8 @@
           ],
           "depends_on": [
             "M06.16",
-            "M06.18"
+            "M06.18",
+            "M06.21"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -3103,6 +3110,28 @@
           "depends_on": [
             "M06.14",
             "M06.17"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.21",
+          "title": "Share the node's lane between indexes",
+          "goal": "Indexes of one node write one lane: the committer is shared, each index has its own cover, and an index joins and leaves the lane through its membership, sealed on open.",
+          "deliverables": [
+            "Create and delete of an index's lane membership through the node's lane (one write log per node: principles), seal on open, and a base published on a bounded schedule (records or bytes since the last base) so a restart replays a bounded tail",
+            "Per-index lane cover (M03.09) so a base's cover is right on a lane shared with other indexes"
+          ],
+          "validation": [
+            "Several indexes writing one lane through hosts, killed and restarted at every step, each serves exactly its acknowledged writes; request counts per acknowledged write and per restart stay constant in the number of indexes, no LIST"
+          ],
+          "definition_of_done": [
+            "Hosts of different indexes share one lane and recover independently"
+          ],
+          "depends_on": [
+            "M06.16",
+            "M03.09"
           ],
           "owner": "storage/runtime",
           "status": "planned",
