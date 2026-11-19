@@ -246,12 +246,13 @@ fn a_deleted_and_live_identity_is_refused() {
     let (files, real, _) = base("dl");
     let schema = schema();
     // Build the list by hand: one tombstone, for the live "a".
-    let mut bytes = b"HST2".to_vec();
+    let mut bytes = b"HST3".to_vec();
     bytes.extend_from_slice(&real[4..36]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.push(b'a');
     bytes.extend_from_slice(&9i64.to_le_bytes());
+    lucene_store::codec_util::write_footer(&mut bytes);
     let dir = place("dl-open", &files);
     let directory = EngineDirectory::new(FsDirectory::open(&dir));
     assert_eq!(
@@ -267,12 +268,13 @@ fn a_tombstone_without_a_positive_version_is_refused() {
     let (files, real, _) = base("zero");
     let schema = schema();
     for version in [0i64, -3] {
-        let mut bytes = b"HST2".to_vec();
+        let mut bytes = b"HST3".to_vec();
         bytes.extend_from_slice(&real[4..36]);
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.push(b'z');
         bytes.extend_from_slice(&version.to_le_bytes());
+        lucene_store::codec_util::write_footer(&mut bytes);
         let dir = place("zero-open", &files);
         let directory = EngineDirectory::new(FsDirectory::open(&dir));
         assert_eq!(
@@ -286,7 +288,7 @@ fn a_tombstone_without_a_positive_version_is_refused() {
 
 /// A list with the base's own commit identity and the given tombstones.
 fn list(real: &[u8], dead: &[(&str, i64)]) -> Vec<u8> {
-    let mut bytes = b"HST2".to_vec();
+    let mut bytes = b"HST3".to_vec();
     bytes.extend_from_slice(&real[4..36]);
     bytes.extend_from_slice(&(dead.len() as u32).to_le_bytes());
     for (id, version) in dead {
@@ -294,6 +296,7 @@ fn list(real: &[u8], dead: &[(&str, i64)]) -> Vec<u8> {
         bytes.extend_from_slice(id.as_bytes());
         bytes.extend_from_slice(&version.to_le_bytes());
     }
+    lucene_store::codec_util::write_footer(&mut bytes);
     bytes
 }
 

@@ -24,6 +24,8 @@ Mutations seen red: tombstones not restored, the live-and-dead check removed, th
 
 ## Limits
 
+- The list format was revised in M06.12 (`HST3`: the same list followed by the native CRC-32 footer, so a publisher verifies it with the native files); the tests here use the current format.
+
 - **Request history is not restored.** A retry of a request from before the base is not recognised; it is refused as a stale version instead (and a first-time request is unaffected). Recognition resumes for requests since the base, including the tail replayed onto it.
 - The tombstone list grows with deletes and has no retention policy yet; `MAX_TOMBSTONES` bounds one list and a larger one is refused at encode, so a base that deletes more than that cannot be published until compaction of tombstones exists.
 - **Counters restart.** The recovered state starts with zero operations and history bytes, where a checkpoint reopen carries them, so a writer gets a fresh `limits.operations` budget after a recovery.

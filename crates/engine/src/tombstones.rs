@@ -5,14 +5,20 @@
 //! A writer recovered from a base would otherwise accept a stale put over a deleted identity. This
 //! is the list of those versions at one commit, written with the base and read when the engine is
 //! opened on it. It names the native commit it was taken at, so a list cannot be paired with files
-//! of another commit: the engine refuses a mismatch. It is a bounded, length-checked list; anything that does not parse whole is
-//! `Error::Checkpoint`, never a partial list.
+//! of another commit: the engine refuses a mismatch. It ends in the same CRC-32 footer the native
+//! files carry, so it is verified like them. It is a bounded, length-checked list; anything that
+//! does not parse whole is `Error::Checkpoint`, never a partial list.
 use std::collections::BTreeMap;
+
+use lucene_store::codec_util;
 
 use crate::adapter::Live;
 use crate::{Error, Result};
 
-const MAGIC: &[u8; 4] = b"HST2";
+const MAGIC: &[u8; 4] = b"HST3";
+/// The name a base carries its tombstone list under. It ends in a Lucene footer, so the
+/// publisher verifies it with the native files.
+pub const TOMBSTONES_FILE: &str = "hsearch.tombstones";
 /// Most tombstones one base carries; a list past it is refused rather than truncated.
 pub const MAX_TOMBSTONES: usize = 1 << 24;
 
@@ -42,6 +48,7 @@ pub(crate) fn encode(current: &BTreeMap<String, Live>, commit: [u8; 32]) -> Resu
         out.extend_from_slice(id.as_bytes());
         out.extend_from_slice(&version.to_le_bytes());
     }
+    codec_util::write_footer(&mut out);
     Ok(out)
 }
 
@@ -49,6 +56,12 @@ pub(crate) fn encode(current: &BTreeMap<String, Live>, commit: [u8; 32]) -> Resu
 /// strictly ordered list.
 pub(crate) fn decode(bytes: &[u8]) -> Result<([u8; 32], BTreeMap<String, i64>)> {
     let bad = Error::Checkpoint;
+    let payload_end = bytes
+        .len()
+        .checked_sub(codec_util::FOOTER_LENGTH)
+        .ok_or(bad)?;
+    codec_util::check_whole_file_footer(bytes, payload_end).map_err(|_| bad)?;
+    let bytes = &bytes[..payload_end];
     let rest = bytes.strip_prefix(MAGIC).ok_or(bad)?;
     let (commit, rest) = rest.split_first_chunk::<32>().ok_or(bad)?;
     let (count, mut rest) = rest.split_first_chunk::<4>().ok_or(bad)?;

@@ -2692,7 +2692,7 @@
           "title": "Deliver lifecycle and standalone API",
           "goal": "Make local end-to-end use operationally complete.",
           "deliverables": [
-            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls; the writer is moved onto the M04.04 barrier (Replay, Readers, Cut) and the M04.03 resolver, and a failed refresh keeps the published reader (M04 milestone review: both modules are unwired today)",
+            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls; the writer's base publish writes the tombstone list (`LocalFiles::write_tombstones`) so `recover_writer` can open it, and only engine-accepted batches are logged; the writer is moved onto the M04.04 barrier (Replay, Readers, Cut) and the M04.03 resolver, and a failed refresh keeps the published reader (M04 milestone review: both modules are unwired today)",
             "Native /v1 capabilities/receipts and explicitly selected thin adapter routes; core request/response/queue/retention admission",
             "Early selected OpenSearch-reference and intentional-difference/unsupported conformance corpus; no broad SDK promise",
             "Refresh the core-v1 fixture corpus for the rows revised on 13 November 2026 (the refresh=true history, the partial `_update` example in A11, nested/join and kNN inputs, aliases, snapshots) together with the pinned engine differential bundle that hashes it; until then those native inputs predate the product requirements"
@@ -2873,22 +2873,27 @@
           "title": "Recover a writer from a base and tail",
           "goal": "A writer activates from a published base plus the committed tail with nothing local.",
           "deliverables": [
-            "Write the tombstone list beside each base and name it in the manifest, verified with the other files",
-            "Fetch the verified base's files to scratch, open the engine on them (`Engine::open_recovered`) and replay the tail onto it; remove the base refusal in `rebuild`"
+            "`LocalFiles::write_tombstones` writes the commit's tombstone list (a footer-checked file) beside the native files so the base names and verifies it like any file",
+            "`Publisher::entries` and `Publisher::fetch` (ranged, digest- and length-checked, one range in memory), and `recover_writer`: fetch the verified base to scratch, open the engine on it with `Engine::open_recovered`, replay the committed tail onto it; with no base, replay the whole log into an empty engine"
           ],
           "validation": [
-            "Delete every cache and scratch directory, restart, and compare documents, versions and refusals with an independent ledger from a base plus a tail."
+            "Publish a base from a writer engine, commit the whole history to the lane, delete the writer's scratch, recover into a fresh scratch directory (also one left holding a previous recovery) and compare documents, versions, tail receipts and refusals with an independent ledger; a base without a tombstone list, a lost file object, a digest or length mismatch and an unsafe name are refused."
           ],
           "definition_of_done": [
-            "Recovery from a base plus a tail matches the independent ledger; nothing local is consulted."
+            "A writer recovered from a base plus the tail matches the independent ledger on documents, versions, tail receipts and refused stale versions (including a delete inside the base); nothing local is consulted. Spill, external payloads and sealed successors are M06.13; pinning the base against collection and the boundary check are M06.05."
           ],
           "depends_on": [
             "M06.11",
             "M06.10"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-12-writer-recovery.md",
+              "result": "recover_writer fetches the verified base (digest- and length-checked) and its tombstone list into scratch, opens the engine on them and replays the committed tail; a recovered writer matches an independent ledger on documents, versions, tail receipts and refused stale versions (a delete inside the base stays refused), a second recovery over a dirty scratch gives the same state, and a missing tombstone list, a lost file, a bad digest, a wrong length and an unsafe name are each refused. 4 tests, 5 mutations seen red, 1 untested (BaseMoved). Provisional (in-memory store, local scratch); no RustFS, base not pinned, request history not restored."
+            }
+          ]
         },
         {
           "id": "M06.13",

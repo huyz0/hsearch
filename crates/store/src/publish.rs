@@ -27,6 +27,9 @@ use sha2::{Digest as _, Sha256};
 use crate::boundary::{self, Boundary};
 use crate::io::Io;
 
+/// Most bytes one ranged read of a base file asks for.
+const FETCH_RANGE: u64 = 8 << 20;
+
 /// Largest manifest root or page read back (the format bounds both well below this).
 const READ_BOUND: u64 = 1 << 20;
 
@@ -392,6 +395,89 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
             root,
             files: uploaded.len(),
         })
+    }
+
+    /// The files `root` names, in page order, each page verified against the root. Reads the pages
+    /// only: nothing is fetched.
+    pub fn entries(
+        &self,
+        index: &Id,
+        shard: &Id,
+        incarnation: u64,
+        root: &ManifestRoot,
+    ) -> Result<Vec<FileEntry>, Error> {
+        let mut out = Vec::new();
+        for (i, page_ref) in root.pages.iter().enumerate() {
+            let key = self
+                .layout
+                .manifest_page(index, shard, incarnation, &page_ref.page);
+            out.extend(root.verify_page(i, &self.read(&key)?)?.entries);
+        }
+        Ok(out)
+    }
+
+    /// Download `entry` into `dir` under its own name, in ranges of at most `FETCH_RANGE` bytes
+    /// (one range in memory), checking the length and the SHA-256 digest the manifest records.
+    /// A file that fails either check is removed and is `Error::Broken`; an existing file is
+    /// never overwritten.
+    pub fn fetch(&self, index: &Id, entry: &FileEntry, dir: &std::path::Path) -> Result<(), Error> {
+        use std::io::Write as _;
+        let name = entry.name.as_str();
+        if name.is_empty() || name.contains(['/', '\\', '\0']) || name == "." || name == ".." {
+            return Err(Error::Broken("file name"));
+        }
+        let key = ObjectKey::new(self.layout.payload(index, &entry.object).as_bytes())?;
+        let ctx = context(self.deadline, 0)?;
+        let info = block_on(self.store.head(&ctx, &key))?;
+        if info.length != entry.length {
+            return Err(Error::Broken("file length"));
+        }
+        let path = dir.join(name);
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|_| Error::Broken("scratch file"))?;
+        let fetched = (|| {
+            let mut hash = Sha256::new();
+            let mut at = 0u64;
+            while at < info.length {
+                let len = (info.length - at).min(FETCH_RANGE);
+                let ctx = RequestContext::new(
+                    self.deadline,
+                    Cancellation::default(),
+                    Budget {
+                        request_bytes: 4096,
+                        response_bytes: 4096 + FETCH_RANGE,
+                        attempts: 8,
+                    },
+                )?;
+                let part = block_on(self.store.read_range(
+                    &ctx,
+                    &key,
+                    &info.version,
+                    ByteRange::new(at, len)?,
+                ))?;
+                let bytes = part.as_bytes();
+                if bytes.len() as u64 != len {
+                    return Err(Error::Broken("file length"));
+                }
+                hash.update(bytes);
+                file.write_all(bytes)
+                    .map_err(|_| Error::Broken("scratch file"))?;
+                at += len;
+            }
+            let digest: Digest = hash.finalize().into();
+            if digest != entry.digest {
+                return Err(Error::Broken("file digest"));
+            }
+            file.sync_all().map_err(|_| Error::Broken("scratch file"))
+        })();
+        if fetched.is_err() {
+            drop(file);
+            let _ = std::fs::remove_file(&path);
+        }
+        fetched
     }
 
     /// Read the root `manifest` and prove everything it depends on: the mapping and key it names

@@ -29,6 +29,15 @@ impl LocalFiles {
         Ok(names)
     }
 
+    /// Write `checkpoint`'s tombstone list into the directory as [`crate::TOMBSTONES_FILE`] and
+    /// return that name, to be published with the native files. Call after the commit it names and
+    /// before the engine continues: it is the list for that commit only.
+    pub fn write_tombstones(&self, checkpoint: &crate::Checkpoint) -> Result<String> {
+        let bytes = checkpoint.tombstones()?;
+        std::fs::write(self.root.join(crate::TOMBSTONES_FILE), bytes).map_err(|_| Error::Native)?;
+        Ok(crate::TOMBSTONES_FILE.to_string())
+    }
+
     /// The exact bytes of one native file.
     pub fn read(&self, name: &str) -> Result<Vec<u8>> {
         if name.is_empty() || name.contains(['/', '\\', '\0']) || name == ".." || name == "." {
@@ -89,6 +98,30 @@ pub fn with_local_engine_merging<R>(
         }
         run(&engine, &files)
     });
+    engine.close()?;
+    Ok(result)
+}
+
+/// Open an engine on the files of a base already placed in `root` (the native files and
+/// [`crate::TOMBSTONES_FILE`], as a recovering writer fetched them) and run `run` with it. The
+/// tombstone list is read and removed first, so the engine sees only native files; the engine is
+/// closed afterwards without committing. A missing or invalid list, or one that does not belong to
+/// these files, is `Error::Checkpoint`.
+pub fn with_recovered_local_engine<R>(
+    root: &Path,
+    schema: Schema,
+    mode: crate::MergeMode,
+    run: impl FnOnce(&Engine<'_>, &LocalFiles) -> R,
+) -> Result<R> {
+    let list = root.join(crate::TOMBSTONES_FILE);
+    let tombstones = std::fs::read(&list).map_err(|_| Error::Checkpoint)?;
+    std::fs::remove_file(&list).map_err(|_| Error::Native)?;
+    let directory = EngineDirectory::new(FsDirectory::open(root));
+    let engine = Engine::open_recovered(&directory, schema, &tombstones, mode)?;
+    let files = LocalFiles {
+        root: root.to_path_buf(),
+    };
+    let result = run(&engine, &files);
     engine.close()?;
     Ok(result)
 }
