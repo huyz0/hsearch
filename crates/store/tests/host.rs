@@ -57,6 +57,15 @@ fn config(label: &str, window_ms: u64, base_every: u64, seed: u8) -> Config {
 
 /// Open a host on `lane`: a fresh committer fences whatever came before.
 fn open(store: &Arc<Crash>, lane: hsearch_lane::LaneId, config: Config) -> Host {
+    open_schema(store, lane, config, schema())
+}
+
+fn open_schema(
+    store: &Arc<Crash>,
+    lane: hsearch_lane::LaneId,
+    config: Config,
+    schema: hsearch_engine::Schema,
+) -> Host {
     Host::open(
         OpenArgs {
             store: Arc::clone(store),
@@ -64,7 +73,7 @@ fn open(store: &Arc<Crash>, lane: hsearch_lane::LaneId, config: Config) -> Host 
             committer: writer(store, lane),
             lane,
             dependencies: AnyDependencies,
-            schema: schema(),
+            schema,
         },
         config,
     )
@@ -312,7 +321,7 @@ fn a_base_that_cannot_be_published_is_counted_and_never_fails_a_write() {
 }
 
 #[test]
-fn a_schema_evolved_online_is_written_and_recovered_with_its_new_field() {
+fn a_schema_evolved_online_is_written_and_a_host_opened_on_it_recovers_the_field() {
     let (store, lane) = new_lane();
     let host = open(&store, lane, config("evolve", 0, 0, 1));
     host.bulk(vec![put("a", "1")], Wait::Searchable).unwrap();
@@ -333,6 +342,12 @@ fn a_schema_evolved_online_is_written_and_recovered_with_its_new_field() {
     .unwrap();
     assert_eq!(tag(&host, "b").as_deref(), Some("2"));
     assert_eq!(tag(&host, "a").as_deref(), Some("1"));
+    host.stop();
+    // The log does not carry the schema: the caller opens on the evolved one, as the node does
+    // from its durable mapping, and the document with the new field replays.
+    let again = open_schema(&store, lane, config("evolve-2", 0, 0, 2), evolved);
+    assert_eq!(tag(&again, "b").as_deref(), Some("2"));
+    assert_eq!(tag(&again, "a").as_deref(), Some("1"));
 }
 
 #[test]
@@ -367,4 +382,78 @@ fn request_counts_per_acknowledged_write_and_per_restart_do_not_scale_with_histo
         cost
     };
     assert_eq!(cost(1, "cost-a"), cost(40, "cost-b"));
+}
+
+#[test]
+fn a_bulk_that_fails_midway_leaves_a_durable_prefix_and_nothing_after_it() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("prefix-fail", 0, 0, 1));
+    // Three operations on one identity are three records: the engine refuses the middle one (a
+    // document over the batch bound), and the third must not be written after it.
+    let huge = "h".repeat(200_000);
+    let failed = host.bulk(
+        vec![put("x", "a"), put("x", &huge), put("x", "c")],
+        Wait::Durable,
+    );
+    assert!(matches!(failed, Err(HostError::Refused(_))), "{failed:?}");
+    host.stop();
+    let again = open(&store, lane, config("prefix-fail-2", 0, 0, 2));
+    assert_eq!(tag(&again, "x").as_deref(), Some("a"));
+}
+
+#[test]
+fn a_malformed_bulk_in_a_group_is_refused_alone_and_the_waits_mix() {
+    let (store, lane) = new_lane();
+    let host = Arc::new(open(&store, lane, config("mixed", 100, 0, 1)));
+    let send = |ops: Vec<Op>, wait: Wait| {
+        let host = Arc::clone(&host);
+        std::thread::spawn(move || host.bulk(ops, wait))
+    };
+    let durable = send(vec![put("a", "1")], Wait::Durable);
+    let searchable = send(vec![put("b", "2")], Wait::Searchable);
+    let empty = send(vec![], Wait::Durable);
+    let wide = send(
+        vec![Op::Put {
+            id: "c".into(),
+            fields: vec![
+                Field::Str(Arc::new("3".into())),
+                Field::Str(Arc::new("extra".into())),
+            ],
+        }],
+        Wait::Durable,
+    );
+    assert!(durable.join().unwrap().is_ok());
+    assert!(searchable.join().unwrap().is_ok());
+    assert_eq!(empty.join().unwrap().unwrap_err(), HostError::Invalid);
+    assert_eq!(wide.join().unwrap().unwrap_err(), HostError::Invalid);
+    // The searchable bulk made the reader current for the whole group.
+    assert_eq!(tag(&host, "b").as_deref(), Some("2"));
+    assert_eq!(tag(&host, "a").as_deref(), Some("1"));
+    assert_eq!(tag(&host, "c"), None);
+}
+
+#[test]
+fn the_batching_window_is_a_deadline_not_a_wait_after_each_arrival() {
+    let (store, lane) = new_lane();
+    let host = Arc::new(open(&store, lane, config("deadline", 100, 0, 1)));
+    // Bulks from other callers arrive every 30 ms for about a second, each well inside the window.
+    let stream: Vec<_> = (0..30)
+        .map(|i| {
+            let host = Arc::clone(&host);
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(30 * (i + 1)));
+                let _ = host.bulk(vec![put(&format!("s{i}"), "v")], Wait::Durable);
+            })
+        })
+        .collect();
+    let started = std::time::Instant::now();
+    host.bulk(vec![put("first", "v")], Wait::Durable).unwrap();
+    let waited = started.elapsed();
+    for t in stream {
+        t.join().unwrap();
+    }
+    assert!(
+        waited < Duration::from_millis(500),
+        "the first bulk waited {waited:?} behind a stream"
+    );
 }

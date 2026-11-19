@@ -365,10 +365,16 @@ impl Host {
 
 impl Drop for Host {
     fn drop(&mut self) {
-        if let Ok(commands) = self.commands.lock() {
-            let _ = commands.send(Command::Stop);
-        }
-        let handle = self.thread.lock().ok().and_then(|mut thread| thread.take());
+        let _ = self
+            .commands
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .send(Command::Stop);
+        let handle = self
+            .thread
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         if let Some(handle) = handle {
             let _ = handle.join();
         }
@@ -439,8 +445,11 @@ where
                     let mut group = vec![Bulk::new(ops, wait, reply)];
                     let mut count = group[0].ops.len();
                     // Others queued, or arriving inside the window, share this group's records.
+                    // The window is one deadline for the group, not a wait after each arrival.
+                    let deadline = std::time::Instant::now() + self.config.window;
                     while count < MAX_BATCH_OPS {
-                        match inbox.recv_timeout(self.config.window) {
+                        let left = deadline.saturating_duration_since(std::time::Instant::now());
+                        match inbox.recv_timeout(left) {
                             Ok(Command::Bulk(ops, wait, reply)) => {
                                 count += ops.len();
                                 group.push(Bulk::new(ops, wait, reply));
@@ -486,7 +495,10 @@ where
             .refresh(self.engine)
             .map(|_| ())
             .map_err(|e| match e {
-                RefreshError::Cut => HostError::Broken,
+                RefreshError::Cut => {
+                    self.counters.broken.store(1, Ordering::Release);
+                    HostError::Broken
+                }
                 RefreshError::Engine(_) | RefreshError::Refused(_) => HostError::Refresh,
             })
     }
@@ -537,13 +549,26 @@ where
         }
         if self.publish_base().is_err() {
             self.counters.base_failures.fetch_add(1, Ordering::Relaxed);
+            // The next attempt waits for another `every` batches: a base that cannot be published
+            // is retried on the schedule, not once per write.
+            self.batches_since_base = 0;
         }
     }
 
     /// Cut the group into runs of distinct identities, write each as one record, and answer.
     fn group(&mut self, mut group: Vec<Bulk>) {
+        let fields = self.schema.fields().count();
+        let required = self.schema.required_fields();
         for bulk in &mut group {
-            if bulk.ops.is_empty() || bulk.ops.len() > MAX_BATCH_OPS {
+            // A put has no more values than the schema has fields and no fewer than it requires
+            // (documents written before a field was added have the trailing ones absent).
+            let shaped = bulk.ops.iter().all(|op| match op {
+                Op::Put { fields: values, .. } => {
+                    values.len() <= fields && values.len() >= required
+                }
+                Op::Delete { .. } => true,
+            });
+            if bulk.ops.is_empty() || bulk.ops.len() > MAX_BATCH_OPS || !shaped {
                 bulk.failed = Some(HostError::Invalid);
             }
         }
@@ -570,6 +595,14 @@ where
             runs.push(run);
         }
         for run in runs {
+            // A bulk that has failed writes nothing more, so it leaves a durable prefix.
+            let run: Vec<(usize, usize)> = run
+                .into_iter()
+                .filter(|(b, _)| group[*b].failed.is_none())
+                .collect();
+            if run.is_empty() {
+                continue;
+            }
             let result = self.write_split(&group, &run);
             match result {
                 Ok(receipts) => {
