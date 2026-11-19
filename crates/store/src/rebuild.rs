@@ -8,13 +8,14 @@
 use std::path::Path;
 
 use hsearch_engine::{
-    Engine, Error as EngineError, MergeMode, Receipt, Schema, TOMBSTONES_FILE, apply_batch,
-    with_local_engine, with_recovered_local_engine,
+    Engine, Error as EngineError, LocalFiles, MergeMode, Receipt, Schema, TOMBSTONES_FILE,
+    apply_batch, with_local_engine, with_recovered_local_engine,
 };
-use hsearch_format::{ManifestRoot, StructuralHead};
+use hsearch_format::{CommitToken, Id, ManifestRoot, PinRecord, StructuralHead};
 use hsearch_lane::{Error as LaneError, block_on, read_head};
 use hsearch_object::{LargeObjectWriter, MetadataStore};
 
+use crate::pins::{Error as PinError, Pins};
 use crate::publish::{Dependencies, Error as PublishError, Publisher};
 use crate::recover::{NotReady, Record, Recovered, Target, recover};
 
@@ -42,6 +43,11 @@ pub enum RebuildError {
     Open(EngineError),
     /// Scratch space could not be prepared or a base file could not be fetched into it.
     Scratch(String),
+    /// The base could not be held with a pin: a collection has passed its generation (read the
+    /// head again and recover again), or the pin could not be registered.
+    Pin(String),
+    /// The pin's lifetime ran out before every file was fetched; recover again.
+    PinLapsed,
     /// A record deletes a whole sequence slot rather than carrying a batch: batches carry their
     /// own document deletes, so this log is not one this rebuild understands.
     Unsupported(u64),
@@ -125,6 +131,23 @@ where
     }
 }
 
+/// A pin to hold the base alive while its files are fetched, so a collection cannot delete one
+/// from under the fetch.
+pub struct Hold<'a, S> {
+    /// The pin registry.
+    pub pins: &'a Pins<S>,
+    /// The pin's own id.
+    pub pin: Id,
+    /// Unique to this registration.
+    pub token: CommitToken,
+    /// How long the pin lives from registration, in milliseconds.
+    pub ttl_ms: u64,
+    /// Clock error allowed between this node and the collector, in milliseconds.
+    pub skew_ms: u64,
+    /// The clock, in Unix milliseconds.
+    pub now: &'a dyn Fn() -> u64,
+}
+
 /// Recover a serving writer with nothing local: read the head, and if it names a base fetch the
 /// base's files (digest-checked) and tombstone list into `scratch` (emptied first), open the engine
 /// on them, replay the committed tail onto it, and run `run` with the engine and what was replayed.
@@ -136,7 +159,27 @@ pub fn recover_writer<S, D, R>(
     dependencies: &D,
     schema: &Schema,
     scratch: &Path,
-    run: impl FnOnce(&Engine<'_>, &Rebuilt) -> R,
+    run: impl FnOnce(&Engine<'_>, &LocalFiles, &Rebuilt) -> R,
+) -> Result<R, RebuildError>
+where
+    S: MetadataStore + LargeObjectWriter + 'static,
+    D: Dependencies,
+{
+    recover_writer_held(publisher, target, dependencies, schema, scratch, None, run)
+}
+
+/// [`recover_writer`], holding the base with a pin while its files are fetched when `hold` is
+/// given. The pin is registered before the first file is read and checked usable before each, and
+/// released when the fetch ends. A generation a collection has already passed is refused
+/// ([`RebuildError::Pin`]) before anything is fetched.
+pub fn recover_writer_held<S, D, R>(
+    publisher: &Publisher<S>,
+    target: &Target<'_>,
+    dependencies: &D,
+    schema: &Schema,
+    scratch: &Path,
+    hold: Option<&Hold<'_, S>>,
+    run: impl FnOnce(&Engine<'_>, &LocalFiles, &Rebuilt) -> R,
 ) -> Result<R, RebuildError>
 where
     S: MetadataStore + LargeObjectWriter + 'static,
@@ -154,9 +197,9 @@ where
     };
     let Some(manifest) = head.checkpoint else {
         claim_scratch(scratch)?;
-        return with_local_engine(scratch, schema.clone(), |engine, _| {
+        return with_local_engine(scratch, schema.clone(), |engine, local| {
             rebuild_onto(publisher, target, dependencies, schema, engine, None)
-                .map(|rebuilt| run(engine, &rebuilt))
+                .map(|rebuilt| run(engine, local, &rebuilt))
         })
         .map_err(RebuildError::Open)?;
     };
@@ -190,20 +233,59 @@ where
         std::fs::remove_dir_all(scratch).map_err(|e| scratch_error("clear", &e))?;
     }
     std::fs::create_dir_all(scratch).map_err(|e| scratch_error("create", &e))?;
-    for entry in &entries {
-        publisher
-            .fetch(&target.index, entry, scratch)
-            .map_err(|e| match e {
-                PublishError::Store(hsearch_object::Error::NotFound) => {
-                    RebuildError::NotReady(NotReady::Base(format!("{e:?}")))
-                }
-                other => scratch_error(&entry.name, &other),
-            })?;
+    let pin = match hold {
+        Some(h) => {
+            let at = (h.now)();
+            let record = PinRecord {
+                pin: h.pin,
+                index: target.index,
+                manifest,
+                manifest_generation: root.generation,
+                expires_unix_ms: at.saturating_add(h.ttl_ms),
+                token: h.token,
+            };
+            // The root was verified above: it is not read a second time.
+            Some(
+                h.pins
+                    .register_verified(&record, &target.shard, target.incarnation, &root, at)
+                    .map_err(|e: PinError| RebuildError::Pin(format!("{e:?}")))?,
+            )
+        }
+        None => None,
+    };
+    let fetched = (|| {
+        for entry in &entries {
+            if let (Some(pin), Some(h)) = (&pin, hold)
+                && !pin.usable((h.now)(), h.skew_ms)
+            {
+                return Err(RebuildError::PinLapsed);
+            }
+            publisher
+                .fetch(&target.index, entry, scratch)
+                .map_err(|e| match e {
+                    PublishError::Store(hsearch_object::Error::NotFound) => {
+                        RebuildError::NotReady(NotReady::Base(format!("{e:?}")))
+                    }
+                    other => scratch_error(&entry.name, &other),
+                })?;
+        }
+        Ok(())
+    })();
+    // The files are local now (or the recovery failed): the pin has done its work. A release that
+    // fails leaves a pin that expires on its own.
+    if let (Some(pin), Some(h)) = (&pin, hold) {
+        let _ = h.pins.release(&pin.record.index, &pin.record.pin);
     }
-    with_recovered_local_engine(scratch, schema.clone(), MergeMode::Inline, |engine, _| {
-        rebuild_onto(publisher, target, dependencies, schema, engine, Some(&root))
-            .map(|rebuilt| run(engine, &rebuilt))
-    })
+    fetched?;
+    with_recovered_local_engine(
+        scratch,
+        schema.clone(),
+        MergeMode::Inline,
+        |engine, local| {
+            rebuild_onto(publisher, target, dependencies, schema, engine, Some(&root))
+                .map(|rebuilt| run(engine, local, &rebuilt))
+        },
+    )
     .map_err(|e| match e {
         EngineError::Checkpoint => RebuildError::Open(EngineError::Checkpoint),
         other => RebuildError::Open(other),

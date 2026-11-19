@@ -78,7 +78,7 @@ fn recover(
         &AnyDependencies,
         &schema(),
         dir,
-        run,
+        |engine, _, rebuilt| run(engine, rebuilt),
     )
 }
 
