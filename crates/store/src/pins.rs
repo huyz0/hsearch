@@ -102,6 +102,23 @@ impl<S: MetadataStore> Pins<S> {
                 .manifest_root(&record.index, shard, incarnation, &record.manifest);
         let (root_bytes, _) = self.io.read(&root_key)?.ok_or(Error::Mismatch)?;
         let root = ManifestRoot::decode_for(&root_bytes, &record.index)?;
+        self.register_verified(record, shard, incarnation, &root, now_unix_ms)
+    }
+
+    /// [`Pins::register`] for a caller that has just read and decoded the root itself, so the
+    /// root is not fetched twice. Registering the identical record again is not an error: the
+    /// pin is already held, and the boundary is checked again.
+    pub(crate) fn register_verified(
+        &self,
+        record: &PinRecord,
+        shard: &Id,
+        incarnation: u64,
+        root: &ManifestRoot,
+        now_unix_ms: u64,
+    ) -> Result<Pin, Error> {
+        if record.expires_unix_ms <= now_unix_ms {
+            return Err(Error::Expired);
+        }
         if root.generation != record.manifest_generation {
             return Err(Error::Mismatch);
         }
@@ -109,8 +126,14 @@ impl<S: MetadataStore> Pins<S> {
         let mut bytes = Vec::new();
         record.encode(&mut bytes)?;
         let identity = request_id(&[b"pin", key.as_bytes(), record.token.as_bytes()])?;
-        self.io
-            .write(&key, &bytes, Precondition::Absent, identity)?;
+        match self.io.write(&key, &bytes, Precondition::Absent, identity) {
+            Ok(()) => {}
+            Err(StoreError::Conflict) => match self.io.read(&key)? {
+                Some((held, _)) if held == bytes => {}
+                _ => return Err(Error::Store(StoreError::Conflict)),
+            },
+            Err(e) => return Err(e.into()),
+        }
         let (boundary, _) =
             Boundary::new(&self.layout, &record.index, shard, incarnation).read(&self.io)?;
         if record.manifest_generation < boundary {
@@ -118,6 +141,11 @@ impl<S: MetadataStore> Pins<S> {
             return Err(Error::Swept { boundary });
         }
         Ok(Pin { record: *record })
+    }
+
+    /// The requests this registry has made so far.
+    pub(crate) fn requests(&self) -> crate::Requests {
+        self.io.counters.snapshot()
     }
 
     /// Remove a pin. Releasing one that is already gone is not an error.

@@ -100,7 +100,7 @@ Pin: `pin[16] | index[16] | manifest[16] | manifest_generation u64 | expires_uni
 
 ## Object layout
 
-`Layout` derives every key from identities in hand (deployment name `[a-z0-9-]{1,63}`): `fleet/FORMAT`, `lanes/<domain>/<inc>/{HEAD,AUTHORITY}`, `catalog/<catalog>/{ROOT,pages/<bucket>}`, `lanes/<domain>/<inc>/wal/...`, `indexes/<index>/{descriptor/<gen>, payloads/<object>, pins/<pin>, shards/<shard>/<inc>/{manifests,pages}/<id>}`, `mappings/<hash>`. Under tenant = index, an index's own objects share one prefix; lanes are shared across indexes and live outside it. Nothing is discovered by LIST. This replaces the tenant-level layout in the architecture page, whose `tenants/<tenant_uuid>/` level has no meaning once a tenant is an index; the architecture page is updated to point here.
+`Layout` derives every key from identities in hand (deployment name `[a-z0-9-]{1,63}`): `fleet/FORMAT`, `lanes/<domain>/<inc>/{HEAD,AUTHORITY}`, `catalog/<catalog>/{ROOT,pages/<bucket>}`, `lanes/<domain>/<inc>/wal/...`, `indexes/<index>/{descriptor/<gen>, payloads/<object>, pins/<pin>, snapshots/<snapshot>, origin, shards/<shard>/<inc>/{manifests,pages}/<id>}`, `mappings/<hash>`. Under tenant = index, an index's own objects share one prefix; lanes are shared across indexes and live outside it. Nothing is discovered by LIST. This replaces the tenant-level layout in the architecture page, whose `tenants/<tenant_uuid>/` level has no meaning once a tenant is an index; the architecture page is updated to point here.
 
 ## Cost of the checks (provisional, measured)
 
