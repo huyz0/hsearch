@@ -83,6 +83,10 @@ impl PayloadSink for Recording {
         self.staged.lock().unwrap().push(external);
         Ok(external)
     }
+
+    fn discard(&self, index: &Id, external: &hsearch_commit::External) {
+        self.inner.discard(index, external);
+    }
 }
 
 fn sink(store: &Arc<Crash>) -> (Box<Recording>, Arc<Mutex<Vec<hsearch_commit::External>>>) {
@@ -491,4 +495,38 @@ fn identical_documents_get_distinct_payload_objects() {
     assert_eq!(a.digest, b.digest);
     assert_ne!(a.object, b.object);
     assert_eq!(big.keys().len(), 2);
+}
+
+#[test]
+fn a_payload_whose_record_was_refused_is_removed_and_a_lost_create_reply_is_settled() {
+    let store = Crash::new();
+    let (lane, committer) = open_lane(&store);
+    let limit = 16 * MIB;
+    let schema = schema(limit);
+    let (sink, staged) = sink(&store);
+    let dir = std::env::temp_dir().join(format!("hsearch-payload-orphan-{}", std::process::id()));
+    let body = text(3 * MIB, 40);
+    with_local_engine(&dir, schema.clone(), |engine, _| {
+        let mut writer = Serving::new(committer, INDEX, 0, deps()).with_payloads(sink);
+        let fields = [("tag", Value::String("t")), ("body", Value::String(&body))];
+        // The object is created, then the slot is refused.
+        store.allow.store(1, Ordering::SeqCst);
+        let err = writer
+            .write(&schema, engine, "r1", &[put("a", 1, &fields)])
+            .unwrap_err();
+        assert_eq!(err, ServeError::Rejected(hsearch_commit::Reject::Store));
+        let object = staged.lock().unwrap()[0].object;
+        let key = ObjectKey::new(layout().payload(&INDEX, &object).as_bytes()).unwrap();
+        assert!(block_on(store.head(&ctx(), &key)).is_err(), "removed");
+        // The create's reply is lost after it landed: resolved by identity, the write completes.
+        store.allow.store(i64::MAX, Ordering::SeqCst);
+        store.lose.store(store.writes() as i64, Ordering::SeqCst);
+        writer
+            .write(&schema, engine, "r1", &[put("a", 1, &fields)])
+            .unwrap();
+        assert!(!writer.is_broken());
+    })
+    .unwrap();
+    let got = recovered_body(&store, &lane, "orphan", &["a"], limit).unwrap();
+    assert_eq!(got[0].as_deref(), Some(body.as_str()));
 }

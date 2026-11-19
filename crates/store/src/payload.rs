@@ -20,10 +20,11 @@
 //!   instructions where present (SHA-NI on x86, the SHA2 extension on ARM), selected at run time
 //!   by the `sha2` crate.
 //!
+//! ⚠️ [`crate::sweep`]'s orphan pass (off by default) treats a payload no manifest names as dead once old, and a payload only a committed record names is exactly that until a base covers it: do not enable it for an index written through this sink before the sweep reads the log's references.
+//!
 //! An upload that fails is aborted and nothing is committed: the object is invisible until its
-//! upload completes. A payload that completed but whose record was then refused or never settled is
-//! an unreferenced object; the payload prefix is what garbage collection lists for those
-//! ([`crate::sweep`]). The store is whatever the writer was given, so an encrypting decorator seals
+//! upload completes. A payload whose record was certainly refused is removed again (best effort); one whose
+//! outcome is unknown is kept, because the record may be in the log. The store is whatever the writer was given, so an encrypting decorator seals
 //! the object and the lane seals nothing here.
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -64,6 +65,10 @@ pub trait PayloadSink: Send + Sync {
     /// # Errors
     /// [`PayloadError`]; nothing is left readable at the key.
     fn stage(&self, index: &Id, body: &[u8]) -> Result<External, PayloadError>;
+
+    /// Best-effort removal of an object [`PayloadSink::stage`] wrote whose record was certainly not
+    /// committed. A failure is ignored: the object stays unreferenced.
+    fn discard(&self, index: &Id, external: &External);
 }
 
 /// Payload objects written to an object store through its multipart upload.
@@ -108,9 +113,11 @@ impl<P: MetadataStore + LargeObjectWriter + 'static> ObjectPayloads<P> {
         let context = self.context(key, body.len())?;
         match block_on(self.store.create(&context, &request)) {
             Ok(_) => Ok(()),
-            Err(ObjectError::UnknownOutcome | ObjectError::DeadlineExceeded) => {
-                block_on(self.store.resolve(&self.context(key, 0)?, &request)).map(|_| ())
-            }
+            Err(ObjectError::UnknownOutcome | ObjectError::DeadlineExceeded) => block_on(
+                self.store
+                    .resolve(&self.context(key, body.len())?, &request),
+            )
+            .map(|_| ()),
             Err(e) => Err(e),
         }
     }
@@ -182,6 +189,21 @@ impl<P: MetadataStore + LargeObjectWriter + 'static> PayloadSink for ObjectPaylo
             digest: hash.finalize().into(),
         })
     }
+
+    fn discard(&self, index: &Id, external: &External) {
+        let _ = self.remove(index, &external.object);
+    }
+}
+
+impl<P: MetadataStore + LargeObjectWriter + 'static> ObjectPayloads<P> {
+    fn remove(&self, index: &Id, object: &Id) -> Result<(), ObjectError> {
+        let key = ObjectKey::new(self.layout.payload(index, object).as_bytes())?;
+        let info = block_on(self.store.head(&self.context(&key, 0)?, &key))?;
+        block_on(
+            self.store
+                .remove_version(&self.context(&key, 0)?, &key, &info.version),
+        )
+    }
 }
 
 static COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -237,5 +259,18 @@ pub(crate) fn commit<S: MetadataStore, D: DependencyView>(
         body: Vec::new(),
         ..request
     };
-    Ok(block_on(committer.commit_external(request, external)))
+    let index = request.index;
+    let outcome = block_on(committer.commit_external(request, external));
+    // A record the log certainly does not hold leaves an object nothing names: remove it rather
+    // than leave it to a sweep (off by default). An unknown outcome or a taken slot may be our own
+    // record, so those keep the object.
+    if matches!(
+        outcome,
+        Outcome::Rejected(
+            Reject::Store | Reject::Stale(_) | Reject::NotAdmitted | Reject::Poisoned
+        ) | Outcome::NotAttempted
+    ) {
+        sink.discard(&index, &external);
+    }
+    Ok(outcome)
 }

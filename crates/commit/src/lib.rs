@@ -116,7 +116,9 @@ pub struct External {
 
 impl External {
     /// The digest receipts and resolution match on for an external record: index, sequence, and the
-    /// payload's length and digest, which is everything the log holds of it.
+    /// payload's length and digest, which is everything the log holds of it. The object's name is
+    /// left out on purpose: each attempt stages under a fresh name, and a record that carries the
+    /// same length and digest is the same request.
     #[must_use]
     pub fn fingerprint(&self, index: &Id, seq: u64) -> Fingerprint {
         let mut h = Sha256::new();

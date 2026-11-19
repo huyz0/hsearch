@@ -13,13 +13,13 @@ The batch is the unit that is external, not a field: recovery already reads the 
 
 ## Evidence
 
-`crates/store/tests/payload.rs` (10 tests), `crates/commit/tests/commit.rs` (+3), `crates/engine/tests/wal.rs` (+1).
+`crates/store/tests/payload.rs` (11 tests), `crates/commit/tests/commit.rs` (+3), `crates/engine/tests/wal.rs` (+1).
 
 - Documents of 2, 8 MiB minus 100, 8 and 12 MiB written through `Serving` with a real engine recover into a fresh engine to the same stored bytes; requests per write are 2, 2, 4, 4 (create or parts plus completion, plus the slot).
 - A history of 2 MiB, 8 MiB, 8 MiB+1, 24 MiB+5, 100 MiB and the 200 MiB ceiling (`CEILING`) is committed and recovered with the recovery buffer only; every body's SHA-256 matches, no request carries more than 8 MiB, and the request count is `parts + 2 per upload`. A removed object, one flipped byte and a one-byte-short object each give `NotReady::Payload(seq)` at that sequence. Not through the engine at 200 MiB: a batch applied by the engine is covered to 12 MiB.
 - A batch of exactly 1 MiB is inline (1 write), one byte more is staged (2 writes). Store refusal at the create, a part and the completion leaves the log and sequence alone and a retry recovers. No sink keeps the old refusal. Over-ceiling and empty are refused with no request.
 
-Mutations seen red: external arm of `recover` skipped, inline threshold `>` to `>=`, single-request threshold `<=` to `<`, digest not taken on the small path, digest over the first part only, length check admitting zero in `stage`. Survived: the same length check in `commit_external` (the lane refuses a zero length too, the outcome is the same). Untested: the abort of a failed upload (the in-memory store cannot show an open upload). Tests were written after the code and then mutated (disclosed departure from test-first).
+Mutations seen red: external arm of `recover` skipped, inline threshold `>` to `>=`, single-request threshold `<=` to `<`, digest not taken on the small path, digest over the first part only, length check admitting zero in `stage`. Survived: the same length check in `commit_external` (the lane refuses a zero length too, the outcome is the same). Tests were written after the code and then mutated (disclosed departure from test-first).
 
 ## Measurements (`cargo run --release -p hsearch-store --example payload_profile`, provisional)
 
@@ -36,5 +36,7 @@ Stage time is the digest: framing parts costs nothing measurable. Peak memory be
 ## Limits
 
 - Provisional: no RustFS, so no real multipart latency. A single 200 MiB document needs a batch of at most `MAX_DOCUMENT_BYTES` including ids and field names, so the node's `MAX_INDEXED_DOCUMENT_BYTES - 512` source bound leaves that headroom.
-- Orphaned payloads from a refused or unsettled commit are not deleted by the writer.
+- A payload whose record was certainly refused (store, stale, not admitted, poisoned) is removed again best effort (one HEAD, one delete); one whose outcome is unknown or whose slot was taken is kept, because the record may be in the log. Test: refused slot leaves no object; a lost create reply is settled by `resolve` (its budget now carries the body size).
+- **`sweep` orphan pass hazard (found in review, not changed here):** with `orphan_grace_ms` set (off by default) a payload no manifest names is deleted once old, and a payload only a committed log record names is exactly that until a base covers it. Do not enable it for an index written through this sink until the sweep reads the log's references; wire this before M06.19 turns the sink on.
+- Unknown outcome of a multipart completion and the abort of a failed upload are untested (the in-memory store cannot show either).
 - The serving host (M06.16) does not install a sink yet; wiring it is M06.19.
