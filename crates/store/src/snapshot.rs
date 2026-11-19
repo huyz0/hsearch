@@ -43,10 +43,10 @@ use crate::sweep::ShardRef;
 /// index with more shards needs a paged record, which this form does not have.
 pub const MAX_SHARDS: usize = 4096;
 
-/// How many times a create re-reads the head after a sweep took the base it was about to pin.
 /// Most restored indexes that may share one snapshot at once.
 pub const MAX_HOLDERS: usize = 64;
 
+/// How many times a create re-reads the head after a sweep took the base it was about to pin.
 const CREATE_ATTEMPTS: usize = 3;
 
 const MAGIC: [u8; 4] = *b"HSSN";
@@ -665,7 +665,12 @@ impl<S: MetadataStore> Snapshots<S> {
             // (An id that already exists keeps its own: they are not these.)
             Err(Error::AlreadyExists) => Err(Error::AlreadyExists),
             Err(e) => {
-                let _ = self.release_all(index, &held);
+                // Also the pin of the shard that failed mid-registration, which `held` lacks: its
+                // id is a function of the snapshot and the shard.
+                for s in shards {
+                    let pin = derive("snapshot", &[b"pin", snapshot, &s.shard]);
+                    let _ = self.pins.release(index, &pin);
+                }
                 Err(e)
             }
         }
@@ -699,8 +704,13 @@ impl<S: MetadataStore> Snapshots<S> {
         }
         let (bytes, version) = self.io.read(&key)?.ok_or(Error::NotFound)?;
         let mut record = SnapshotRecord::decode_for(&bytes, source, snapshot)?;
+        // A retry by a holder is allowed on a retired snapshot: its holder mark is already there
+        // and the snapshot keeps its pins for it, so finishing the restore is safe and the only
+        // way to end an unfinished one (drop_restore needs the origin this writes).
+        let already = record.holders.contains(new_index);
         match record.state {
             State::Active => {}
+            State::Retired if already => {}
             State::Deleting | State::Retired => return Err(Error::Deleting),
         }
         for s in &record.shards {
@@ -712,7 +722,7 @@ impl<S: MetadataStore> Snapshots<S> {
         }
         // Register as a holder first: a holder with no origin is a leak a retry mends, an origin
         // with no holder would be a reader of objects nothing keeps.
-        if !record.holders.contains(new_index) {
+        if !already {
             if record.holders.len() >= MAX_HOLDERS {
                 return Err(Error::TooManyHolders);
             }

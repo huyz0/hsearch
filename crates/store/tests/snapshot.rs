@@ -52,6 +52,8 @@ struct Tracked {
     gate: Mutex<Option<Gate>>,
     /// Fail the next create under this prefix once, as an unavailable store.
     fail_create: Mutex<Option<String>>,
+    /// Fail the next HEAD of exactly this key once.
+    fail_head: Mutex<Option<String>>,
 }
 
 impl Tracked {
@@ -73,6 +75,7 @@ impl Tracked {
             ops: Mutex::new(Vec::new()),
             gate: Mutex::new(None),
             fail_create: Mutex::new(None),
+            fail_head: Mutex::new(None),
         })
     }
     fn log(&self, op: &'static str, key: &ObjectKey) {
@@ -122,6 +125,13 @@ impl ObjectBackend for Tracked {
     fn head<'a>(&'a self, c: &'a RequestContext, k: &'a ObjectKey) -> Operation<'a, ObjectInfo> {
         self.log("head", k);
         self.pause(k);
+        {
+            let mut f = self.fail_head.lock().unwrap();
+            if f.as_deref().is_some_and(|p| p.as_bytes() == k.as_bytes()) {
+                *f = None;
+                return Box::pin(async { Err(StoreError::Unavailable) });
+            }
+        }
         self.inner.head(c, k)
     }
     fn create<'a>(&'a self, c: &'a RequestContext, r: &'a Put) -> Operation<'a, WriteReceipt> {
@@ -1055,5 +1065,50 @@ fn a_snapshot_refuses_more_holders_than_a_record_carries() {
         let over = s.restore(&INDEX, &SNAP, &[99; 16], &AnyKeys, 2_200);
         assert!(matches!(over, Err(SnapError::TooManyHolders)), "{over:?}");
         assert!(s.read_origin(&[99; 16]).unwrap().is_none());
+    });
+}
+
+#[test]
+fn an_unfinished_restore_can_be_finished_after_its_snapshot_is_retired() {
+    with_commit("unfinished", 4, |f, names| {
+        let w = World::new();
+        let _b1 = w.write(f, names, 3, 1, None);
+        let s = snaps(&w);
+        s.create(&INDEX, &SNAP, &[shard_ref()], &AnyKeys, 2_000)
+            .unwrap();
+        // The origin write fails after the holder mark was written.
+        *w.store.fail_create.lock().unwrap() =
+            Some(format!("v1/test/indexes/{}/origin", hex(&NEW)));
+        assert!(s.restore(&INDEX, &SNAP, &NEW, &AnyKeys, 2_100).is_err());
+        assert_eq!(s.read(&INDEX, &SNAP).unwrap().unwrap().holders, vec![NEW]);
+        // The snapshot is deleted meanwhile: it is retired, kept for its holder.
+        s.delete(&INDEX, &SNAP).unwrap();
+        assert_eq!(
+            s.read(&INDEX, &SNAP).unwrap().unwrap().state,
+            State::Retired
+        );
+        // A stranger is refused; the holder finishes, then drops, which frees everything.
+        assert!(matches!(
+            s.restore(&INDEX, &SNAP, &[14; 16], &AnyKeys, 2_200),
+            Err(SnapError::Deleting)
+        ));
+        s.restore(&INDEX, &SNAP, &NEW, &AnyKeys, 2_300).unwrap();
+        assert_eq!(s.drop_restore(&NEW).unwrap().pins, 1);
+        assert!(s.read(&INDEX, &SNAP).unwrap().is_none());
+        assert_eq!(w.store.keys(&layout().pin_prefix(&INDEX)).len(), 0);
+    });
+}
+
+#[test]
+fn a_create_that_fails_while_registering_releases_that_shards_pin() {
+    with_commit("midpin", 4, |f, names| {
+        let w = World::new();
+        let _b1 = w.write(f, names, 3, 1, None);
+        let s = snaps(&w);
+        // The boundary read after the pin write fails once: the pin exists but is not in any list.
+        *w.store.fail_head.lock().unwrap() = Some(layout().gc_boundary(&INDEX, &SHARD, 1));
+        let failed = s.create(&INDEX, &SNAP, &[shard_ref()], &AnyKeys, 2_000);
+        assert!(failed.is_err(), "{failed:?}");
+        assert_eq!(w.store.keys(&layout().pin_prefix(&INDEX)).len(), 0);
     });
 }
