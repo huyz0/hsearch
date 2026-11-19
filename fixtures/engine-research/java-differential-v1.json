@@ -23,11 +23,11 @@
     },
     {
       "path": "fixtures/api/core-v1/mutation-cases.json",
-      "sha256": "78450f10dab308e53ac932e658caf5881a160e3d257510779830ba5dfdce789c"
+      "sha256": "c130c551734c54dcfa9bdcc30c3234cf474c11b89b1f82d6d6c6cd5a685d4160"
     },
     {
       "path": "fixtures/api/core-v1/profile-cases.json",
-      "sha256": "db09d6a5d8215e9209100df1d0c6f749347399637aba3e45690e4ea7942e8e5d"
+      "sha256": "84244ec5830a7d62f23b5222865a346192a373ca33843f33ba3a51ca554dc91a"
     },
     {
       "path": "fixtures/engine-research/held-out.json",
@@ -637,8 +637,8 @@
   "counts": {
     "original_search": 14,
     "original_analyzer": 4,
-    "original_mutation_histories": 11,
-    "original_mutation_steps": 34,
+    "original_mutation_histories": 12,
+    "original_mutation_steps": 43,
     "supplement_analyzer": 6,
     "supplement_search": 3,
     "supplement_discrimination_controls": 2

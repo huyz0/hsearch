@@ -75,7 +75,7 @@ Queries share a 128-node, 128-term, 8,192-byte and depth-eight budget. Each in-p
 
 `adapter_public.rs` is generated from the exact source hashes in the accepted research envelope, without editing fixtures or expected values. It covers all 14 selected public search/aggregation cases and four analyzer cases using the production adapter. Regenerate and check with `python crates/engine/tests/render_adapter_fixtures.py --root .` and `--check`; the formatter is explicit/replaceable through `--formatter`, and freshness compares formatted bytes exactly. The earlier research projection and its generator remain unchanged. Pinned Java/OpenSearch evidence remains the accepted M02.01 reference, not a newly executed JVM campaign here.
 
-The 11 public mutation histories contain 34 HTTP steps. They are mapped below; this component does not claim to execute HTTP histories or to supply unimplemented facade/authority semantics.
+The 12 public mutation histories contain 43 HTTP steps. They are mapped below; this component does not claim to execute HTTP histories or to supply unimplemented facade/authority semantics.
 
 | Public history | Native component evidence or remaining owner |
 | --- | --- |
@@ -87,9 +87,10 @@ The 11 public mutation histories contain 34 HTTP steps. They are mapped below; t
 | bulk-malformed-tail | No parser here; typed input and invalid-middle control cover the native effect boundary, NDJSON parser remains M06.05 |
 | generated-id-adaptation | Empty identity refuses; no generated-ID capability |
 | stale-occ-condition | Strict caller version monotonicity and exact retry replay tested; incarnation-bound opaque authority tokens remain M04.03/M06.05 |
-| forced-refresh-adaptation | Explicit native refresh only; forced HTTP refresh and durability/wait receipts remain M06.05/M07.05/M09.08 |
+| refresh-visibility-modes | Explicit native refresh only; the HTTP refresh modes (false, wait_for, true) and durability/wait receipts remain M06.05/M07.05/M09.08. Replaces the forced-refresh-adaptation history, which predated PR-07 |
 | pit-mutation-repeat-pages | Frozen native snapshots survive mutation and close; quota/TTL/cursor/routing/PIT protocol remains M07.05/M10.01 |
 | bounded-total-hit-relation | Complete finite native exact scope; lower-bound/distributed budget response remains M06.05/M07.04 |
+| partial-update-merge | No HTTP or `_update` here; the native Put and version replay cover the resolved-once effect. Merge, upsert, `doc_as_upsert` and `detect_noop` receipts remain M04.03/M06.05/M21.06 |
 
 All 16 profile-property inputs remain declared future conformance inputs, not native runtime proof. A01 maps to schema limits; A02/A04 to identity/retry state without collection-incarnation authority; A03 to typed effect admission without NDJSON/bulk semantics; A05 to explicit native visibility/commit separation; A06 to bounded IR; A07 to frozen readers without cursor/TTL; A08 to finite exact counts; A09 to overflow refusal; A10/A11/A12/A15 to explicit unsupported operators rather than empty success. A13 logical routing, A14 catalog/maintenance paging and A16 wire discovery/parameter validation remain their declared non-engine owners. No missing HTTP feature is described as a native port or accepted profile amendment.
 

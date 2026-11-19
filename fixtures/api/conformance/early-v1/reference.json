@@ -1,0 +1,947 @@
+{
+  "class": "reference",
+  "meaning": "Behaviour OpenSearch documents and hsearch matches. The expectation is the documented OpenSearch result for the small dataset in dataset.json; reference_cases names a core-v1 case whose reference-run oracle covers the same behaviour. Nothing here was executed against an OpenSearch server by this corpus.",
+  "cases": [
+    {
+      "id": "match-all-total",
+      "area": "A08",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/search-apis/search/"
+      },
+      "reference_cases": [
+        "bounded-total-hit-relation"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 0
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "total": {
+                  "value": 8,
+                  "relation": "eq"
+                },
+                "hits": []
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "keyword-term-sorted",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/query-dsl/term/term/"
+      },
+      "reference_cases": [
+        "keyword-term",
+        "bounded-field-sort"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "term": {
+                "tag": "t1"
+              }
+            },
+            "sort": [
+              {
+                "n": "asc"
+              }
+            ]
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "total": {
+                  "value": 3,
+                  "relation": "eq"
+                },
+                "hits": [
+                  {
+                    "_id": "d1"
+                  },
+                  {
+                    "_id": "d3"
+                  },
+                  {
+                    "_id": "d5"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "terms-descending",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/query-dsl/term/terms/"
+      },
+      "reference_cases": [
+        "keyword-terms"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "terms": {
+                "n": [
+                  3,
+                  4
+                ]
+              }
+            },
+            "sort": [
+              {
+                "n": {
+                  "order": "desc"
+                }
+              }
+            ]
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": [
+                  {
+                    "_id": "d4"
+                  },
+                  {
+                    "_id": "d3"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "integer-range-bounds",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/query-dsl/term/range/"
+      },
+      "reference_cases": [
+        "integer-range"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "range": {
+                "n": {
+                  "gte": 5,
+                  "lt": 8
+                }
+              }
+            },
+            "sort": [
+              "n"
+            ]
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": [
+                  {
+                    "_id": "d5"
+                  },
+                  {
+                    "_id": "d6"
+                  },
+                  {
+                    "_id": "d7"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "range": {
+                "n": {
+                  "gt": 5,
+                  "lte": 8
+                }
+              }
+            },
+            "sort": [
+              "n"
+            ]
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": [
+                  {
+                    "_id": "d6"
+                  },
+                  {
+                    "_id": "d7"
+                  },
+                  {
+                    "_id": "d8"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "date-range",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/query-dsl/term/range/"
+      },
+      "reference_cases": [
+        "date-range"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "range": {
+                "at": {
+                  "gte": "2026-01-07"
+                }
+              }
+            },
+            "sort": [
+              "n"
+            ]
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": [
+                  {
+                    "_id": "d7"
+                  },
+                  {
+                    "_id": "d8"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "bool-filter-and-must-not",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/query-dsl/compound/bool/"
+      },
+      "reference_cases": [
+        "integer-threshold-bool"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "bool": {
+                "filter": [
+                  {
+                    "term": {
+                      "tag": "t2"
+                    }
+                  },
+                  {
+                    "range": {
+                      "n": {
+                        "lte": 8
+                      }
+                    }
+                  }
+                ],
+                "must_not": [
+                  {
+                    "term": {
+                      "ok": false
+                    }
+                  }
+                ]
+              }
+            },
+            "sort": [
+              "n"
+            ]
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": [
+                  {
+                    "_id": "d2"
+                  },
+                  {
+                    "_id": "d4"
+                  },
+                  {
+                    "_id": "d8"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "standard-match-is-case-insensitive",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/query-dsl/full-text/match/"
+      },
+      "reference_cases": [
+        "standard-match"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "match": {
+                "title": "QUICK"
+              }
+            },
+            "sort": [
+              "n"
+            ]
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": [
+                  {
+                    "_id": "d1"
+                  },
+                  {
+                    "_id": "d2"
+                  },
+                  {
+                    "_id": "d4"
+                  },
+                  {
+                    "_id": "d6"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "match-phrase-adjacent-terms",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/query-dsl/full-text/match-phrase/"
+      },
+      "reference_cases": [
+        "standard-phrase"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "match_phrase": {
+                "title": "brown fox"
+              }
+            },
+            "sort": [
+              "n"
+            ]
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": [
+                  {
+                    "_id": "d1"
+                  },
+                  {
+                    "_id": "d8"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "page-and-source-filter",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/search-apis/search/"
+      },
+      "reference_cases": [
+        "bounded-field-sort"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "n": "asc"
+              }
+            ],
+            "from": 5,
+            "size": 2,
+            "_source": [
+              "n"
+            ]
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "total": {
+                  "value": 8,
+                  "relation": "eq"
+                },
+                "hits": [
+                  {
+                    "_id": "d6",
+                    "_source": {
+                      "n": 6
+                    }
+                  },
+                  {
+                    "_id": "d7",
+                    "_source": {
+                      "n": 7
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "get-found-and-missing",
+      "area": "A02",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/document-apis/get-documents/"
+      },
+      "reference_cases": [
+        "stable-id-crud"
+      ],
+      "steps": [
+        {
+          "method": "GET",
+          "path": "/orders/_doc/d3",
+          "expect": {
+            "status": 200,
+            "body": {
+              "_index": "orders",
+              "_id": "d3",
+              "found": true,
+              "_source": {
+                "title": "lazy brown dog",
+                "tag": "t1",
+                "n": 3
+              }
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/ghost",
+          "expect": {
+            "status": 404,
+            "body": {
+              "_id": "ghost",
+              "found": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "create-index-twice",
+      "area": "A01",
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/index-apis/create-index/"
+      },
+      "reference_cases": [],
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/things",
+          "body": {
+            "mappings": {
+              "properties": {
+                "a": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "acknowledged": true
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/things",
+          "body": {
+            "mappings": {
+              "properties": {
+                "a": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "resource_already_exists_exception"
+              },
+              "status": 400
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "search-missing-index",
+      "area": "A16",
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/search-apis/search/"
+      },
+      "reference_cases": [],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/nope/_search",
+          "body": {},
+          "expect": {
+            "status": 404,
+            "body": {
+              "error": {
+                "type": "index_not_found_exception"
+              },
+              "status": 404
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "bulk-results-keep-submitted-order",
+      "area": "A03",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/document-apis/bulk/"
+      },
+      "reference_cases": [
+        "bulk-repeated-id-order"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_bulk?refresh=true",
+          "body_text": "{\"index\":{\"_id\":\"x1\"}}\n{\"title\":\"one\",\"tag\":\"a\",\"n\":11,\"ok\":true,\"at\":\"2026-02-01\"}\n{\"index\":{\"_id\":\"x1\"}}\n{\"title\":\"two\",\"tag\":\"b\",\"n\":12,\"ok\":true,\"at\":\"2026-02-01\"}\n{\"delete\":{\"_id\":\"x1\"}}\n{\"delete\":{\"_id\":\"ghost\"}}\n",
+          "expect": {
+            "status": 200,
+            "body": {
+              "errors": false,
+              "items": [
+                {
+                  "index": {
+                    "_id": "x1",
+                    "status": 201,
+                    "result": "created"
+                  }
+                },
+                {
+                  "index": {
+                    "_id": "x1",
+                    "status": 200,
+                    "result": "updated"
+                  }
+                },
+                {
+                  "delete": {
+                    "_id": "x1",
+                    "status": 200,
+                    "result": "deleted"
+                  }
+                },
+                {
+                  "delete": {
+                    "_id": "ghost",
+                    "status": 404,
+                    "result": "not_found"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/x1",
+          "expect": {
+            "status": 404,
+            "body": {
+              "found": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "bulk-item-failure-does-not-erase-neighbours",
+      "area": "A03",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/document-apis/bulk/"
+      },
+      "reference_cases": [
+        "bulk-semantic-isolation"
+      ],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_bulk?refresh=true",
+          "body_text": "{\"index\":{\"_id\":\"ok1\"}}\n{\"title\":\"fine\",\"tag\":\"a\",\"n\":21,\"ok\":true,\"at\":\"2026-02-01\"}\n{\"index\":{\"_id\":\"bad\"}}\n{\"title\":\"x\",\"tag\":\"a\",\"n\":22,\"ok\":true,\"at\":\"2026-02-01\",\"extra\":1}\n{\"index\":{\"_id\":\"ok2\"}}\n{\"title\":\"fine\",\"tag\":\"a\",\"n\":23,\"ok\":true,\"at\":\"2026-02-01\"}\n",
+          "expect": {
+            "status": 200,
+            "body": {
+              "errors": true,
+              "items": [
+                {
+                  "index": {
+                    "_id": "ok1",
+                    "status": 201
+                  }
+                },
+                {
+                  "index": {
+                    "_id": "bad",
+                    "status": 400
+                  }
+                },
+                {
+                  "index": {
+                    "_id": "ok2",
+                    "status": 201
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/bad",
+          "expect": {
+            "status": 404,
+            "body": {
+              "found": false
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/ok2",
+          "expect": {
+            "status": 200,
+            "body": {
+              "found": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "refresh-reports-no-failed-shards",
+      "area": "A05",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/index-apis/refresh/"
+      },
+      "reference_cases": [],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_refresh",
+          "expect": {
+            "status": 200,
+            "body": {
+              "_shards": {
+                "failed": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "put-document-with-explicit-id",
+      "area": "A02",
+      "dataset": true,
+      "state": "pending",
+      "owner": "M06.05",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/document-apis/index-document/"
+      },
+      "reference_cases": [],
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/orders/_doc/p1?refresh=true",
+          "body": {
+            "title": "put",
+            "tag": "a",
+            "n": 91,
+            "ok": true,
+            "at": "2026-02-01"
+          },
+          "expect": {
+            "status": 201,
+            "body": {
+              "_index": "orders",
+              "_id": "p1",
+              "result": "created"
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/orders/_doc/p1?refresh=true",
+          "body": {
+            "title": "put again",
+            "tag": "a",
+            "n": 91,
+            "ok": true,
+            "at": "2026-02-01"
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "result": "updated"
+            }
+          }
+        }
+      ],
+      "fails_with": "status 405"
+    },
+    {
+      "id": "delete-document-by-id",
+      "area": "A02",
+      "dataset": true,
+      "state": "pending",
+      "owner": "M06.05",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/document-apis/delete-document/"
+      },
+      "reference_cases": [],
+      "steps": [
+        {
+          "method": "DELETE",
+          "path": "/orders/_doc/d1?refresh=true",
+          "expect": {
+            "status": 200,
+            "body": {
+              "_id": "d1",
+              "result": "deleted"
+            }
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/orders/_doc/d1",
+          "expect": {
+            "status": 404,
+            "body": {
+              "result": "not_found"
+            }
+          }
+        }
+      ],
+      "fails_with": "status 405"
+    },
+    {
+      "id": "update-merges-a-partial-document",
+      "area": "A02",
+      "dataset": true,
+      "state": "pending",
+      "owner": "M21.06",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/document-apis/update-document/"
+      },
+      "reference_cases": [],
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_update/d1?refresh=true",
+          "body": {
+            "doc": {
+              "n": 99
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "_id": "d1",
+              "result": "updated"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/d1",
+          "expect": {
+            "status": 200,
+            "body": {
+              "_source": {
+                "title": "quick brown fox",
+                "n": 99
+              }
+            }
+          }
+        }
+      ],
+      "fails_with": "status 404"
+    },
+    {
+      "id": "delete-index-then-search-is-not-found",
+      "area": "A01",
+      "dataset": true,
+      "state": "pending",
+      "owner": "M06.05",
+      "oracle": {
+        "kind": "opensearch-docs",
+        "ref": "https://docs.opensearch.org/latest/api-reference/index-apis/delete-index/"
+      },
+      "reference_cases": [],
+      "steps": [
+        {
+          "method": "DELETE",
+          "path": "/orders",
+          "expect": {
+            "status": 200,
+            "body": {
+              "acknowledged": true
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {},
+          "expect": {
+            "status": 404,
+            "body": {
+              "error": {
+                "type": "index_not_found_exception"
+              }
+            }
+          }
+        }
+      ],
+      "fails_with": "status 405"
+    }
+  ]
+}
