@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use hsearch_index::Wait;
 use hsearch_node::{Limits, Node};
 use hsearch_object::memory::{MemoryLimits, MemoryStore};
-use hsearch_object::{Budget, Cancellation, MetadataStore, RequestContext};
+use hsearch_object::{Budget, Cancellation, LargeObjectWriter, MetadataStore, RequestContext};
 use hsearch_s3::{S3Config, S3Store};
 use serde_json::json;
 
@@ -80,7 +80,7 @@ fn main() {
     }
 }
 
-fn drive<S: MetadataStore + 'static>(store: Arc<S>, args: &[String]) {
+fn drive<S: MetadataStore + LargeObjectWriter + 'static>(store: Arc<S>, args: &[String]) {
     let mut args = args.iter().cloned();
     let batches: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(400);
     let batch: usize = args.next().and_then(|v| v.parse().ok()).unwrap_or(100);

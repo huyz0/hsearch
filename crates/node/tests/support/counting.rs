@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use hsearch_object::memory::{MemoryLimits, MemoryStore};
 use hsearch_object::{
-    ByteRange, MetadataStore, Mutation, ObjectBackend, ObjectInfo, ObjectKey, Operation, Payload,
-    RequestContext, VersionToken, WriteReceipt,
+    ByteRange, LargeObjectWriter, MetadataStore, Mutation, ObjectBackend, ObjectInfo, ObjectKey,
+    Operation, Payload, RequestContext, VersionToken, WriteReceipt,
 };
 
 pub struct Counting {
@@ -73,5 +73,39 @@ impl MetadataStore for Counting {
     ) -> Operation<'a, WriteReceipt> {
         self.note("resolve", &r.key);
         self.inner.resolve(c, r)
+    }
+}
+
+impl LargeObjectWriter for Counting {
+    type Upload = <MemoryStore as LargeObjectWriter>::Upload;
+    fn begin_upload<'a>(
+        &'a self,
+        c: &'a RequestContext,
+        key: &'a ObjectKey,
+    ) -> Operation<'a, Self::Upload> {
+        self.note("begin", key);
+        self.inner.begin_upload(c, key)
+    }
+    fn put_part<'a>(
+        &'a self,
+        c: &'a RequestContext,
+        upload: &'a mut Self::Upload,
+        bytes: &'a [u8],
+    ) -> Operation<'a, ()> {
+        self.inner.put_part(c, upload, bytes)
+    }
+    fn complete_upload<'a>(
+        &'a self,
+        c: &'a RequestContext,
+        upload: &'a Self::Upload,
+    ) -> Operation<'a, (VersionToken, u64)> {
+        self.inner.complete_upload(c, upload)
+    }
+    fn abort_upload<'a>(
+        &'a self,
+        c: &'a RequestContext,
+        upload: &'a Self::Upload,
+    ) -> Operation<'a, ()> {
+        self.inner.abort_upload(c, upload)
     }
 }

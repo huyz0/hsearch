@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use hsearch_index::Wait;
-use hsearch_object::MetadataStore;
+use hsearch_object::{LargeObjectWriter, MetadataStore};
 use serde_json::{Value, json};
 use tiny_http::{Header, Method, Request, Response, Server};
 
@@ -93,7 +93,7 @@ fn json_body(request: &mut Request) -> Result<Value, ApiError> {
 }
 
 /// Route one request to its operation.
-pub(crate) fn route<S: MetadataStore + 'static>(
+pub(crate) fn route<S: MetadataStore + LargeObjectWriter + 'static>(
     node: &Node<S>,
     request: &mut Request,
 ) -> Result<(u16, Value), ApiError> {
@@ -222,7 +222,7 @@ impl Running {
 
 /// Bind `addr` and serve with `workers` threads. A non-loopback address is
 /// refused unless `allow_non_loopback` says the lack of authentication is understood.
-pub fn serve<S: MetadataStore + 'static>(
+pub fn serve<S: MetadataStore + LargeObjectWriter + 'static>(
     node: Arc<Node<S>>,
     addr: &str,
     workers: usize,
