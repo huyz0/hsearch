@@ -52,6 +52,19 @@ fn allow(found: &[(String, String)], known: &[&str]) -> Result<(), ApiError> {
     }
 }
 
+/// The `realtime` parameter: true unless it says false.
+fn realtime(found: &[(String, String)]) -> Result<bool, ApiError> {
+    match found
+        .iter()
+        .find(|(k, _)| k == "realtime")
+        .map(|(_, v)| v.as_str())
+    {
+        None | Some("true" | "") => Ok(true),
+        Some("false") => Ok(false),
+        Some(_) => Err(ApiError::bad("[realtime] must be true or false")),
+    }
+}
+
 fn json_body(request: &mut Request) -> Result<Value, ApiError> {
     if request.body_length().is_some_and(|n| n as u64 > MAX_BODY) {
         return Err(ApiError::new(
@@ -167,8 +180,17 @@ pub(crate) fn route<S: MetadataStore + 'static>(
             if method != Method::Get {
                 return Err(wrong());
             }
-            allow(&found, &[])?;
-            node.get(index, id)
+            allow(&found, &["realtime", "routing"])?;
+            node.get_with(index, id, realtime(&found)?)
+        }
+        ["_mget"] | [_, "_mget"] => {
+            if method != Method::Post && method != Method::Get {
+                return Err(wrong());
+            }
+            allow(&found, &["realtime", "routing"])?;
+            let body = json_body(request)?;
+            let default = (segments.len() == 2).then(|| segments[0]);
+            node.mget(default, &body, realtime(&found)?)
         }
         _ => Err(ApiError::new(
             404,

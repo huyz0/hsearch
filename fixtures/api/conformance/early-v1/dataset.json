@@ -1,0 +1,24 @@
+{
+  "index": "orders",
+  "mapping": {
+    "mappings": {
+      "properties": {
+        "title": {"type": "text"},
+        "tag": {"type": "keyword"},
+        "n": {"type": "integer"},
+        "ok": {"type": "boolean"},
+        "at": {"type": "date"}
+      }
+    }
+  },
+  "documents": [
+    {"_id": "d1", "title": "quick brown fox", "tag": "t1", "n": 1, "ok": false, "at": "2026-01-01"},
+    {"_id": "d2", "title": "quick red fox", "tag": "t2", "n": 2, "ok": true, "at": "2026-01-02"},
+    {"_id": "d3", "title": "lazy brown dog", "tag": "t1", "n": 3, "ok": false, "at": "2026-01-03"},
+    {"_id": "d4", "title": "Quick Brown Dog", "tag": "t2", "n": 4, "ok": true, "at": "2026-01-04"},
+    {"_id": "d5", "title": "slow green turtle", "tag": "t1", "n": 5, "ok": false, "at": "2026-01-05"},
+    {"_id": "d6", "title": "quick fox jumps", "tag": "t0", "n": 6, "ok": true, "at": "2026-01-06"},
+    {"_id": "d7", "title": "café au lait", "tag": "t0", "n": 7, "ok": false, "at": "2026-01-07"},
+    {"_id": "d8", "title": "brown fox", "tag": "t2", "n": 8, "ok": true, "at": "2026-01-08"}
+  ]
+}

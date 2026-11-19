@@ -25,7 +25,7 @@ fn quote(text: &str) -> String {
 fn emit(id: &str, value: String) {
     assert!(value.len() <= 65536);
     println!(
-        "{{\"engine_differential_native_case\":{{\"id\":{},\"outcome\":\"pass\",\"fixture_sha256\":\"e56f8bf8ee611a69998bdd1961081a52e8830fd71a9346aeea53d9980c719b2e\",\"value\":{}}}}}",
+        "{{\"engine_differential_native_case\":{{\"id\":{},\"outcome\":\"pass\",\"fixture_sha256\":\"4141f3198e0ea17737903cefeab3af4e31247cb1bbab4f22ce4fea9d10d0e21c\",\"value\":{}}}}}",
         quote(id),
         value
     );

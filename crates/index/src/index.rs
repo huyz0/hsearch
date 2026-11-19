@@ -5,9 +5,10 @@ use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use hsearch_engine::{MergeMode, Schema, Snapshot};
+use hsearch_engine::{Hit, MergeMode, Schema, Snapshot};
 use hsearch_object::MetadataStore;
 
+use crate::live::{self, Entry, Overlay};
 use crate::store::{StoreFiles, valid_name};
 use crate::writer::{
     Bulk, Command, Hooks, ItemResult, NoHooks, Published, Shared, Wait, create_root, read_root, run,
@@ -18,6 +19,7 @@ use crate::{Error, Op, Result};
 pub struct Index {
     commands: Sender<Command>,
     shared: Shared,
+    overlay: Overlay,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -95,14 +97,16 @@ impl Index {
         let (commands, receiver) = channel();
         let (init, ready) = channel();
         let shared: Shared = Arc::new(Mutex::new(None));
+        let overlay = live::overlay(schema.clone());
         let (name, scratch): (String, PathBuf) = (name.to_string(), scratch.to_path_buf());
         let handle = {
             let shared = Arc::clone(&shared);
+            let overlay = Arc::clone(&overlay);
             std::thread::Builder::new()
                 .name("hsearch-writer".into())
                 .spawn(move || {
                     run(
-                        store, name, schema, scratch, hooks, mode, shared, init, receiver,
+                        store, name, schema, scratch, hooks, mode, shared, overlay, init, receiver,
                     )
                 })
                 .map_err(|_| Error::Closed)?
@@ -111,6 +115,7 @@ impl Index {
             Ok(Ok(())) => Ok(Self {
                 commands,
                 shared,
+                overlay,
                 thread: Mutex::new(Some(handle)),
             }),
             Ok(Err(error)) => {
@@ -164,6 +169,71 @@ impl Index {
             .map_err(|_| Error::Poisoned)?
             .clone()
             .ok_or(Error::Busy)
+    }
+
+    /// Read documents by id. With `realtime`, each answer is the latest
+    /// acknowledged write to that id whether or not a refresh has made it
+    /// searchable (the owner's view: nothing acknowledged is ever older than
+    /// what is returned); without it, each answer is the searchable snapshot's.
+    /// One answer per id, in the order asked, `None` for a document that does not
+    /// exist. `projection` names the stored fields to return, in the order wanted.
+    ///
+    /// Costs no object-store request however many ids are asked for: documents
+    /// come from the owner's local state. A real-time read of an id whose recorded
+    /// payload was dropped to keep memory bounded asks for one refresh first.
+    pub fn get_many(
+        &self,
+        ids: &[&str],
+        projection: &[&str],
+        realtime: bool,
+    ) -> Result<Vec<Option<Hit>>> {
+        for attempt in 0..2 {
+            if let Some(found) = self.read(ids, projection, realtime)? {
+                return Ok(found);
+            }
+            if attempt == 0 {
+                self.refresh()?;
+            }
+        }
+        Err(Error::Busy)
+    }
+
+    /// One pass of [`Index::get_many`]; `None` when a refresh is needed first.
+    fn read(
+        &self,
+        ids: &[&str],
+        projection: &[&str],
+        realtime: bool,
+    ) -> Result<Option<Vec<Option<Hit>>>> {
+        // The record and the snapshot are taken together, in the writer's lock
+        // order: a refresh cannot empty the record between the two.
+        let (snapshot, entries, positions) = if realtime {
+            let recent = live::lock(&self.overlay)?;
+            if recent.poisoned() {
+                return Err(Error::Poisoned);
+            }
+            let entries: Vec<Option<Entry>> = ids.iter().map(|id| recent.get(id)).collect();
+            (self.snapshot(), entries, recent.positions(projection))
+        } else {
+            (self.snapshot(), vec![None; ids.len()], Vec::new())
+        };
+        let mut out = Vec::with_capacity(ids.len());
+        for (id, entry) in ids.iter().zip(entries) {
+            out.push(match entry {
+                Some(Entry::Doc { version, fields }) => {
+                    Some(live::hit(id, version, &fields, projection, &positions))
+                }
+                Some(Entry::Gone) => None,
+                Some(Entry::Stale) => return Ok(None),
+                // Only an id the record does not hold needs the snapshot, so a
+                // refresh that left none does not stop a read it can answer.
+                None => snapshot
+                    .as_ref()
+                    .map_err(|error| *error)?
+                    .get(id, projection)?,
+            });
+        }
+        Ok(Some(out))
     }
 
     /// Stop the writer without publishing.

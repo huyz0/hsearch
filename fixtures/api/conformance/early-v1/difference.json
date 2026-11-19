@@ -1,0 +1,648 @@
+{
+  "class": "difference",
+  "meaning": "Intentional departures from OpenSearch that the profile records (docs/plan/api-compatibility.md). The expectation is hsearch's declared behaviour, with the OpenSearch behaviour it departs from named in opensearch. state pending means the profile promises the behaviour but this node does not serve it yet: the runner requires such a case to still fail, so the day it passes the case must be promoted to enforced.",
+  "cases": [
+    {
+      "id": "unknown-query-parameter-is-refused",
+      "area": "A16",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a16"
+      },
+      "opensearch": "Accepts and ignores parameters it does not use, and honours pretty, routing and many others.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search?pretty=true",
+          "body": {},
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "illegal_argument_exception"
+              },
+              "status": 400
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_bulk?routing=x",
+          "body_text": "",
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "illegal_argument_exception"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "refresh-parameter-takes-three-modes-and-nothing-else",
+      "area": "A05",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a05"
+      },
+      "opensearch": "refresh accepts true, false, wait_for and the empty string.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_bulk?refresh=wait_for",
+          "body_text": "{\"index\":{\"_id\":\"w1\"}}\n{\"title\":\"waited\",\"tag\":\"a\",\"n\":31,\"ok\":true,\"at\":\"2026-02-01\"}\n",
+          "expect": {
+            "status": 200,
+            "body": {
+              "errors": false
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "term": {
+                "n": 31
+              }
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": [
+                  {
+                    "_id": "w1"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_bulk?refresh=maybe",
+          "body_text": "",
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "illegal_argument_exception"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "result-window-is-bounded",
+      "area": "A07",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a07"
+      },
+      "opensearch": "max_result_window defaults to 10000; a deeper page needs scroll, search_after or a point in time.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "size": 1001
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "from": 995,
+            "size": 6
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "from": 995,
+            "size": 5
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": []
+              }
+            }
+          }
+        }
+      ],
+      "note": "The bound is this node's MAX_WINDOW (1000), not a profile value; the profile only requires a configured window."
+    },
+    {
+      "id": "scroll-is-refused-until-snapshots-exist",
+      "area": "A07",
+      "dataset": true,
+      "state": "enforced",
+      "temporary_until": "M22.01",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a07"
+      },
+      "opensearch": "scroll=1m returns a _scroll_id and later pages.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search?scroll=1m",
+          "body": {
+            "size": 2
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "illegal_argument_exception"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "strict-mapping-refuses-unknown-field-per-item",
+      "area": "A01",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a01"
+      },
+      "opensearch": "dynamic defaults to true: an unknown field is mapped and indexed.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_bulk?refresh=true",
+          "body_text": "{\"index\":{\"_id\":\"s1\"}}\n{\"title\":\"t\",\"tag\":\"a\",\"n\":41,\"ok\":true,\"at\":\"2026-02-01\",\"surprise\":1}\n",
+          "expect": {
+            "status": 200,
+            "body": {
+              "errors": true,
+              "items": [
+                {
+                  "index": {
+                    "_id": "s1",
+                    "status": 400
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/s1",
+          "expect": {
+            "status": 404,
+            "body": {
+              "found": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "mapping-type-change-is-refused-with-the-reindex-path",
+      "area": "A01",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a01"
+      },
+      "opensearch": "Also refuses a type change, with a mapper_parsing_exception.",
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/orders/_mapping",
+          "body": {
+            "properties": {
+              "note": {
+                "type": "keyword"
+              }
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "acknowledged": true
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/orders/_mapping",
+          "body": {
+            "properties": {
+              "note": {
+                "type": "text"
+              }
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "illegal_argument_exception",
+                "reason": "<contains:_reindex>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "bulk-generated-id-is-refused-per-item",
+      "area": "A03",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a03"
+      },
+      "opensearch": "An index action without _id generates one.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_bulk",
+          "body_text": "{\"index\":{}}\n{\"title\":\"t\",\"tag\":\"a\",\"n\":51,\"ok\":true,\"at\":\"2026-02-01\"}\n",
+          "expect": {
+            "status": 200,
+            "body": {
+              "errors": true,
+              "items": [
+                {
+                  "index": {
+                    "status": 400
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "bulk-malformed-tail-commits-nothing",
+      "area": "A03",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a03"
+      },
+      "opensearch": "Applies the actions before the malformed line and fails the request at it.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_bulk",
+          "body_text": "{\"index\":{\"_id\":\"m1\"}}\n{\"title\":\"t\",\"tag\":\"a\",\"n\":61,\"ok\":true,\"at\":\"2026-02-01\"}\ngarbage\n",
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_refresh",
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/m1",
+          "expect": {
+            "status": 404,
+            "body": {
+              "found": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "bulk-external-versioning-is-refused",
+      "area": "A04",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a04"
+      },
+      "opensearch": "version with version_type external or external_gte is accepted.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_bulk?refresh=true",
+          "body_text": "{\"index\":{\"_id\":\"v1\",\"version\":3,\"version_type\":\"external\"}}\n{\"title\":\"t\",\"tag\":\"a\",\"n\":71,\"ok\":true,\"at\":\"2026-02-01\"}\n",
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "parsing_exception"
+              }
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/v1",
+          "expect": {
+            "status": 404,
+            "body": {
+              "found": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "sort-on-analysed-text-is-refused",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a06"
+      },
+      "opensearch": "Refuses sorting on a text field unless fielddata is enabled.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "sort": [
+              {
+                "title": "asc"
+              }
+            ]
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "query-nesting-is-bounded",
+      "area": "A06",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a06"
+      },
+      "opensearch": "Bounds nesting by a different, larger clause limit.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "limit_exceeded_exception"
+              }
+            }
+          },
+          "body": {
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "bool": {
+                      "must": [
+                        {
+                          "bool": {
+                            "must": [
+                              {
+                                "bool": {
+                                  "must": [
+                                    {
+                                      "bool": {
+                                        "must": [
+                                          {
+                                            "bool": {
+                                              "must": [
+                                                {
+                                                  "bool": {
+                                                    "must": [
+                                                      {
+                                                        "bool": {
+                                                          "must": [
+                                                            {
+                                                              "bool": {
+                                                                "must": [
+                                                                  {
+                                                                    "bool": {
+                                                                      "must": [
+                                                                        {
+                                                                          "bool": {
+                                                                            "must": [
+                                                                              {
+                                                                                "bool": {
+                                                                                  "must": [
+                                                                                    {
+                                                                                      "match_all": {}
+                                                                                    }
+                                                                                  ]
+                                                                                }
+                                                                              }
+                                                                            ]
+                                                                          }
+                                                                        }
+                                                                      ]
+                                                                    }
+                                                                  }
+                                                                ]
+                                                              }
+                                                            }
+                                                          ]
+                                                        }
+                                                      }
+                                                    ]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "refresh-true-on-a-single-document-write",
+      "area": "A05",
+      "dataset": true,
+      "state": "pending",
+      "owner": "M06.05",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a05"
+      },
+      "opensearch": "refresh=true on PUT /{index}/_doc/{id} makes the write searchable before the reply.",
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/orders/_doc/r1?refresh=true",
+          "body": {
+            "title": "forced",
+            "tag": "a",
+            "n": 81,
+            "ok": true,
+            "at": "2026-02-01"
+          },
+          "expect": {
+            "status": 201,
+            "body": {
+              "_id": "r1",
+              "result": "created"
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "term": {
+                "n": 81
+              }
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "hits": {
+                "hits": [
+                  {
+                    "_id": "r1"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "fails_with": "status 405"
+    },
+    {
+      "id": "get-after-unrefreshed-delete-is-not-found",
+      "area": "A02",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a02"
+      },
+      "opensearch": "GET is real-time by default, so a delete acknowledged without refresh is already invisible; hsearch routes it to the shard owner under an authority barrier. The write-then-GET direction needs its own case once PUT _doc is served.",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_bulk",
+          "body_text": "{\"delete\":{\"_id\":\"d2\"}}\n",
+          "expect": {
+            "status": 200,
+            "body": {
+              "errors": false
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/d2",
+          "expect": {
+            "status": 404,
+            "body": {
+              "found": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "native-capabilities-lists-only-what-is-implemented",
+      "area": "A16",
+      "state": "pending",
+      "owner": "M06.05",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a16"
+      },
+      "opensearch": "No equivalent: the root endpoint reports a version number, not the operations served.",
+      "steps": [
+        {
+          "method": "GET",
+          "path": "/v1/capabilities",
+          "expect": {
+            "status": 200,
+            "body": {
+              "profile": "<any>",
+              "operations": "<any>",
+              "limits": "<any>"
+            }
+          }
+        }
+      ],
+      "fails_with": "status 404"
+    }
+  ]
+}
