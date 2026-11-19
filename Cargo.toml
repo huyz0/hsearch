@@ -35,5 +35,10 @@ missing_docs = "deny"
 [workspace.lints.clippy]
 all = "deny"
 
+# SHA-256 over hundreds of megabytes (external payloads at the document ceiling, base files) is
+# otherwise unoptimised in a test build and dominates the run.
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.release]
 overflow-checks = true

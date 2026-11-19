@@ -5,6 +5,7 @@
 mod boundary;
 pub mod compact;
 mod io;
+pub mod payload;
 pub mod pins;
 pub mod publish;
 pub mod rebuild;

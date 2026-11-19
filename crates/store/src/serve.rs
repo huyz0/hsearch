@@ -30,6 +30,7 @@ use hsearch_lane::{LaneId, block_on, read_head};
 use hsearch_object::{LargeObjectWriter, MetadataStore};
 use std::sync::Arc;
 
+use crate::payload::{self, PayloadSink};
 use crate::publish::{self, BaseSpec, Publisher};
 use crate::recover::Recovered;
 
@@ -76,6 +77,8 @@ pub struct Serving<S: MetadataStore, D: DependencyView> {
     base: Option<ManifestRoot>,
     /// The readers queries run on: the committed watermark and the published snapshot.
     readers: Readers<Snapshot>,
+    /// Where a batch too large for a record is written first; without one it is refused.
+    payloads: Option<Box<dyn PayloadSink>>,
 }
 
 /// Generations a query may hold at once besides the newest. The engine allows four open
@@ -148,7 +151,15 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
             cover: 0,
             base: None,
             readers,
+            payloads: None,
         }
+    }
+
+    /// Write batches too large for a lane record as external payload objects through `sink`.
+    #[must_use]
+    pub fn with_payloads(mut self, sink: Box<dyn PayloadSink>) -> Self {
+        self.payloads = Some(sink);
+        self
     }
 
     /// Serve `index` again after a recovery: the next sequence is what was applied, the base it
@@ -257,7 +268,8 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
             delete: false,
             deps: self.deps,
         };
-        let committed = match block_on(self.committer.commit(vec![record])).remove(0) {
+        let outcome = payload::commit(&mut self.committer, self.payloads.as_deref(), record)?;
+        let committed = match outcome {
             Outcome::Committed(receipt) => receipt,
             // A taken slot position may be our own accepted slot (see `Reject::Fenced`), so the
             // record may be in the log: only a recovery settles it.

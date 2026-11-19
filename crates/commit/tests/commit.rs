@@ -8,8 +8,8 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use hsearch_commit::{
-    AnyDependencies, Committer, Dependencies, DependencyView, Outcome, Pending, Reject, Request,
-    Resolution, Stale,
+    AnyDependencies, Committer, Dependencies, DependencyView, External, Outcome, Pending, Reject,
+    Request, Resolution, Stale,
 };
 use hsearch_format::Id;
 use hsearch_lane::batch::BatchPolicy;
@@ -474,4 +474,110 @@ fn a_seal_record_is_not_a_delete() {
     ))
     .unwrap();
     assert_eq!(resolved, vec![Resolution::NotCommitted]);
+}
+
+fn external(length: u64) -> External {
+    External {
+        object: [9; 16],
+        length,
+        digest: [5; 32],
+    }
+}
+
+fn empty_req(index: Id, seq: u64) -> Request {
+    Request {
+        body: Vec::new(),
+        ..put_req(index, seq, b"")
+    }
+}
+
+#[test]
+fn an_external_record_commits_without_its_bytes_and_a_lost_reply_resolves_by_its_reference() {
+    let store = Arc::new(Chaos::new(counted()));
+    let lane = lane_with(&*store.inner, &[1]);
+    let mut c = committer(&store, lane, AnyDependencies, one_per_slot());
+    // Larger than any inline record: the slot holds only the reference.
+    let e = external(150 << 20);
+    let request = empty_req(id(1), 1);
+    let Outcome::Committed(r) = block_on(c.commit_external(request.clone(), e)) else {
+        panic!("not committed")
+    };
+    assert_eq!(r.request_digest, e.fingerprint(&id(1), 1));
+    // Another payload under the same sequence is a different request.
+    assert_ne!(
+        r.request_digest,
+        External { length: 1, ..e }.fingerprint(&id(1), 1)
+    );
+    // A reply that never came back is settled by reading the log: the record is found by the
+    // reference alone, with no fetch of the payload.
+    let pending = [
+        Pending::of_external(&request, &e),
+        Pending::of_external(
+            &request,
+            &External {
+                digest: [6; 32],
+                ..e
+            },
+        ),
+    ];
+    let (_c2, _, resolved) = block_on(Committer::recover(
+        Arc::clone(&store),
+        layout(),
+        lane,
+        0,
+        AnyDependencies,
+        one_per_slot(),
+        &pending,
+    ))
+    .unwrap();
+    let Resolution::Committed(found) = resolved[0] else {
+        panic!("{resolved:?}")
+    };
+    assert_eq!(
+        (found.ordinal, found.request_digest),
+        (r.ordinal, r.request_digest)
+    );
+    assert_eq!(resolved[1], Resolution::NotCommitted);
+}
+
+#[test]
+fn an_external_record_is_refused_unless_it_is_a_put_with_no_body_and_a_length_in_bounds() {
+    let store = counted();
+    let lane = lane_with(&*store, &[1]);
+    let mut c = committer(&store, lane, AnyDependencies, one_per_slot());
+    let with_body = put_req(id(1), 1, b"x");
+    let delete = Request {
+        delete: true,
+        ..empty_req(id(1), 2)
+    };
+    for (request, e) in [
+        (with_body, external(5)),
+        (delete, external(5)),
+        (empty_req(id(1), 3), external(0)),
+        (empty_req(id(1), 4), external((200 << 20) + 1)),
+    ] {
+        assert_eq!(
+            block_on(c.commit_external(request, e)),
+            Outcome::Rejected(Reject::BadBody)
+        );
+    }
+    // Nothing was written, so the position is still the first.
+    let Outcome::Committed(r) =
+        block_on(c.commit_external(empty_req(id(1), 1), external(200 << 20)))
+    else {
+        panic!("the ceiling itself is accepted")
+    };
+    assert_eq!(r.ordinal, 1);
+}
+
+#[test]
+fn an_external_record_meets_the_same_dependency_check() {
+    let store = counted();
+    let lane = lane_with(&*store, &[1]);
+    let mut c = committer(&store, lane, Current(2), one_per_slot());
+    let stale = empty_req(id(1), 1);
+    assert_eq!(
+        block_on(c.commit_external(stale, external(5))),
+        Outcome::Rejected(Reject::Stale(Stale::Schema))
+    );
 }
