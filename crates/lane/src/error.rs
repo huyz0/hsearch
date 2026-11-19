@@ -44,6 +44,9 @@ pub enum Error {
     Invalid(&'static str),
     /// A bounded structure is full (for example the placement cache).
     Capacity,
+    /// Sealing or opening a slot's payloads refused (M06.09). A refusal while sealing wrote nothing
+    /// and is not poisoning: the same call may be repeated.
+    Seal(crate::sealing::SealFailure),
 }
 
 impl std::fmt::Display for Error {

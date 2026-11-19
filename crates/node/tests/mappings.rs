@@ -2,86 +2,16 @@
 //! declares them (PR-43), through the node's public API over a counting store.
 mod support;
 
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+#[path = "support/counting.rs"]
+mod counting;
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use counting::Counting;
 use hsearch_node::{ApiError, Mapping, Node};
-use hsearch_object::memory::{MemoryLimits, MemoryStore};
-use hsearch_object::{
-    ByteRange, MetadataStore, Mutation, ObjectBackend, ObjectInfo, ObjectKey, Operation, Payload,
-    RequestContext, VersionToken, WriteReceipt,
-};
 use serde_json::{Value, json};
 use support::Scratch;
-
-/// A store that records every request it serves, by kind and key.
-struct Counting {
-    inner: MemoryStore,
-    log: Mutex<Vec<(&'static str, String)>>,
-}
-
-impl Counting {
-    fn new() -> Arc<Self> {
-        Arc::new(Self {
-            inner: MemoryStore::new(MemoryLimits {
-                objects: 4096,
-                versions: 16384,
-                version_bytes: 64 << 20,
-                identities: 16384,
-                identity_bytes: 64 << 20,
-            })
-            .unwrap(),
-            log: Mutex::new(Vec::new()),
-        })
-    }
-    fn note(&self, kind: &'static str, key: &ObjectKey) {
-        let key = String::from_utf8_lossy(key.as_bytes()).into_owned();
-        self.log.lock().unwrap().push((kind, key));
-    }
-    fn take(&self) -> Vec<(&'static str, String)> {
-        std::mem::take(&mut *self.log.lock().unwrap())
-    }
-}
-
-impl ObjectBackend for Counting {
-    fn head<'a>(&'a self, c: &'a RequestContext, key: &'a ObjectKey) -> Operation<'a, ObjectInfo> {
-        self.note("head", key);
-        self.inner.head(c, key)
-    }
-    fn create<'a>(&'a self, c: &'a RequestContext, r: &'a Mutation) -> Operation<'a, WriteReceipt> {
-        self.note("create", &r.key);
-        self.inner.create(c, r)
-    }
-    fn read_range<'a>(
-        &'a self,
-        c: &'a RequestContext,
-        key: &'a ObjectKey,
-        version: &'a VersionToken,
-        range: ByteRange,
-    ) -> Operation<'a, Payload> {
-        self.note("get", key);
-        self.inner.read_range(c, key, version, range)
-    }
-}
-
-impl MetadataStore for Counting {
-    fn compare_exchange<'a>(
-        &'a self,
-        c: &'a RequestContext,
-        r: &'a Mutation,
-    ) -> Operation<'a, WriteReceipt> {
-        self.note("cas", &r.key);
-        self.inner.compare_exchange(c, r)
-    }
-    fn resolve<'a>(
-        &'a self,
-        c: &'a RequestContext,
-        r: &'a Mutation,
-    ) -> Operation<'a, WriteReceipt> {
-        self.note("resolve", &r.key);
-        self.inner.resolve(c, r)
-    }
-}
 
 const SHARED: &str = "v1/local/mappings/";
 

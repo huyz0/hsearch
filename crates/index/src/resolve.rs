@@ -257,13 +257,17 @@ impl Resolver {
     }
 
     fn kind_matches(&self, i: usize, field: &Field) -> bool {
-        matches!(
-            (self.kinds[i], field),
-            (Kind::Keyword | Kind::Text, Field::Str(_))
-                | (Kind::Integer, Field::Int(_))
-                | (Kind::Boolean, Field::Bool(_))
-                | (Kind::Date, Field::Date(_))
-        ) || matches!((self.kinds[i], field), (Kind::Vector(spec), Field::Vector(v))
+        // Whether a field may be absent is the engine's rule (only added fields
+        // may); a value that is present must have the declared kind.
+        matches!(field, Field::Absent)
+            || matches!(
+                (self.kinds[i], field),
+                (Kind::Keyword | Kind::Text, Field::Str(_))
+                    | (Kind::Integer, Field::Int(_))
+                    | (Kind::Boolean, Field::Bool(_))
+                    | (Kind::Date, Field::Date(_))
+            )
+            || matches!((self.kinds[i], field), (Kind::Vector(spec), Field::Vector(v))
             if v.len() == usize::from(spec.dimension) && v.iter().all(|c| c.is_finite()))
     }
 

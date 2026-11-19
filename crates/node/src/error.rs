@@ -72,6 +72,11 @@ impl From<hsearch_index::Error> for ApiError {
                 "writer_unavailable_exception",
                 "the index writer stopped and must be reopened",
             ),
+            E::Changed => Self::new(
+                409,
+                "version_conflict_engine_exception",
+                "the stored mapping changed while this request ran; retry it",
+            ),
             E::Corrupt => Self::new(500, "corrupt_exception", "stored data is not a v0 object"),
             E::Store(_) => Self::new(
                 503,
@@ -120,6 +125,7 @@ mod tests {
             (I::Fenced, 503),
             (I::Poisoned, 503),
             (I::Closed, 503),
+            (I::Changed, 409),
             (I::Corrupt, 500),
             (I::Store(O::Unavailable), 503),
             (I::Engine(hsearch_engine::Error::Limit), 400),

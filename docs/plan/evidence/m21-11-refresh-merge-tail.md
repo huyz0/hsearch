@@ -95,7 +95,7 @@ Tried while looking for a background merger (task M21.10). `ConcurrentIndexWrite
 
 ## M21.10: merges on a background thread (measured)
 
-Provisional: 4-CPU cloud container, in-memory object store, release build, local scratch disk, `auto_merge_mb` 4. Relative numbers only. **The RustFS rerun is an open item** (no Docker in this sandbox, so the on-RustFS p99 and uploaded bytes were not measured). Reproduce: `cargo run --release -p hsearch-node --example visibility_tail -- <calls> <docs per call> 1000000 4 <0|1>` (last argument 1 = background merge; node flag `--background-merge`).
+Provisional: 4-CPU cloud container, in-memory object store, release build, local scratch disk, `auto_merge_mb` 4. Relative numbers only. The RustFS rerun is the next subsection. Reproduce: `cargo run --release -p hsearch-node --example visibility_tail -- <calls> <docs per call> 1000000 4 <0|1>` (last argument 1 = background merge; node flag `--background-merge`).
 
 Shape: 150,000 documents per cell (1,500 x 100, 150 x 1,000, 38 x 4,000), `Wait::Searchable`, three runs per cell, inline (the engine default) against background:
 
@@ -120,3 +120,22 @@ Found in review and fixed: `publish` listed the scratch directory while the merg
 Setting: `--background-merge` (cluster default, off), applied per index when its engine opens (`Engine::open_merging(.., MergeMode::Background)`); the engine default and `--auto-merge-mb 0` keep the inline path and every existing test unchanged. A per-index REST setting needs the index settings API, which does not exist yet (open item).
 
 Tests (`crates/engine/src/background_merge_tests.rs`): a refresh never merges (40 refreshes leave 40 segments with no merge thread), the thread brings it to at most 20 with every document still found by term, a snapshot taken before the merges still answers, close joins the thread; an inline engine does no background work and `auto_merge_mb` 0 stays inline; a panic in native code poisons later calls and close; the process-wide merge bound; `with_local_engine_merging` runs and joins its thread. Upstream: huyz0/lucene-rust#473.
+
+### M21.10 on RustFS (measured)
+
+Provisional: 4-CPU cloud container, digest-pinned RustFS 1.0.4 (`scripts/rustfs.sh up`, Docker in the same container) holding the catalog and heads, release build, local scratch disk for segments, `auto_merge_mb` 4, one fresh bucket per run. Relative numbers only. Reproduce: `eval "$(scripts/rustfs.sh up)"; cargo run --release -p hsearch-node --example visibility_tail -- <calls> <docs per call> 1000000 4 <0|1> s3` (the `s3` argument sends the catalog to RustFS and prints the request counts). Same shape as above: 150,000 documents per cell, `Wait::Searchable`, three runs per cell.
+
+| docs per refresh | mode | p50 ms | p99 ms | worst ms | run time s | process bytes written MiB (disk + socket) | S3 requests |
+|---|---|---|---|---|---|---|---|
+| 100 | inline | 10.9 / 10.5 / 10.3 | 34.2 / 33.8 / 30.1 | 118 / 103 / 101 | 18.9 / 18.1 / 17.7 | 57 | 1,507 PUT, 2 GET, 3 HEAD |
+| 100 | background | 13.5 / 16.2 / 15.8 | 21.6 / 24.8 / 24.6 | 36 / 35 / 33 | 21.0 / 25.3 / 23.6 | 53 / 49 / 52 | same |
+| 1,000 | inline | 36.2 / 35.8 / 38.1 | 125.9 / 125.2 / 122.7 | 129 / 126 / 124 | 6.6 / 6.5 / 6.9 | 24 | 157 PUT |
+| 1,000 | background | 44.2 / 45.7 / 45.1 | 58.7 / 68.0 / 61.5 | 59 / 73 / 67 | 7.2 / 7.5 / 7.4 | 24 / 24 / 22 | same |
+| 4,000 | inline | 174.6 / 153.4 / 179.8 | 248.6 / 227.8 / 268.9 | = p99 (38 calls) | 7.4 / 6.4 / 7.4 | 24 | 159 PUT |
+| 4,000 | background | 192.6 / 196.2 / 188.0 | 244.6 / 255.3 / 247.9 | = p99 (38 calls) | 7.9 / 8.0 / 7.8 | 24 / 22 / 24 | same |
+
+What it shows: the in-memory result holds on RustFS. At 100 per refresh p99 falls about 30% (33 to 24 ms) and the worst call about 3x (about 107 to 35 ms); at 1,000 p99 falls about 50% (125 to 63 ms) and the worst call about 2x. At 4,000 per refresh the two modes are inside the run-to-run spread (38 calls, p99 is the maximum). A refresh during a merge returns without waiting for it (worst call at 100 and 1,000 stays near the p99). The median and run time are worse in the background mode as before: p50 +30 to 55% at 100 and +25% at 1,000, run time +15 to 35% at 100, +10% at 1,000 and +12% at 4,000 (means of three), and at 4,000 p50 is +14% (169 to 192 ms); the cause is the rich-document add inside `ConcurrentIndexWriter` (inverted under its control lock, terms copied once more into a slot), so the setting stays off by default.
+
+Cost: the S3 request counts are identical in every cell in both modes (about one PUT per refresh at 100 and 1,000 per refresh; 159 PUT for 38 refreshes at 4,000, where the extra PUTs are not attributed), so background merging adds no PUT, GET or LIST. Process bytes written (the `wchar` counter, so scratch-disk writes plus request bodies sent to RustFS, not disk alone) are 7 to 14% lower at 100 per refresh and equal at 1,000 and 4,000. Each run leaves its bucket on RustFS. Not measured, and not applicable yet: uploaded segment bytes, because the node keeps segments on the local disk today (the object-WAL and base publish are not wired into the node), so this run says nothing about bytes written to RustFS for segments; it must be taken again when they are.
+
+Deferred, not met by this task (recorded so `done` is not read as more than it is): segment bytes written to RustFS (nothing uploads segments from the node yet), and the per-index override of the setting (needs the index settings API; only the cluster default `--background-merge` exists). The median regression (inversion inside `ConcurrentIndexWriter`'s control lock) is the follow-up that would let the default turn on.

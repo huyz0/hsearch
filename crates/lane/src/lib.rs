@@ -15,8 +15,11 @@
 //! [`admission`], [`rendezvous`], [`quota`], [`feedback`] and [`subscribe`] are M13.02: tenant
 //! fairness and hot placement for a node's compute, none of which touches who is authoritative.
 //!
+//! [`sealing`] is M06.09: a [`SlotCipher`] a writer is given seals each slot's inline payloads before
+//! the one conditional create, and replay opens them. The lane never sees a key.
+//!
 //! Not here, by design: engine apply and
-//! checkpoints that move the cover (M06), AEAD (M05). A caller supplies the cover it replays from.
+//! checkpoints that move the cover (M06). A caller supplies the cover it replays from.
 pub mod activation;
 pub mod admission;
 pub mod batch;
@@ -36,6 +39,7 @@ pub mod place;
 pub mod promote;
 pub mod quota;
 pub mod rendezvous;
+pub mod sealing;
 pub mod subscribe;
 
 pub use catalog::{
@@ -51,3 +55,4 @@ pub use members::{
 };
 pub use place::{Placement, Placer};
 pub use promote::{Promotion, Route, route};
+pub use sealing::{Payloads, SealFailure, SlotCipher, read_log_sealed};

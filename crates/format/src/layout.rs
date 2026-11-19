@@ -152,6 +152,22 @@ impl Layout {
         self.key(format_args!("indexes/{}/pins/{}", hex(index), hex(pin)))
     }
 
+    /// A shallow snapshot's record, under the index it snapshots.
+    #[must_use]
+    pub fn snapshot(&self, index: &Id, snapshot: &Id) -> String {
+        self.key(format_args!(
+            "indexes/{}/snapshots/{}",
+            hex(index),
+            hex(snapshot)
+        ))
+    }
+
+    /// The record naming the snapshot a restored index shares its objects with.
+    #[must_use]
+    pub fn restore_origin(&self, index: &Id) -> String {
+        self.key(format_args!("indexes/{}/origin", hex(index)))
+    }
+
     /// The prefix every pin of `index` lives under. Only garbage collection lists it; no read or
     /// write path derives a pin by listing.
     #[must_use]

@@ -251,21 +251,7 @@ impl Snapshot {
         };
         let fields = projection
             .iter()
-            .map(|name| {
-                let kind = self.schema.kind(name)?;
-                let value = match (kind, stored(&self.reader, doc, name)?) {
-                    (Kind::Keyword | Kind::Text, FieldValue::String(s)) => StoredValue::String(s),
-                    (Kind::Integer, FieldValue::Long(n)) if i32::try_from(n).is_ok() => {
-                        StoredValue::Integer(n)
-                    }
-                    (Kind::Date, FieldValue::Long(n)) => StoredValue::Date(n),
-                    (Kind::Boolean, FieldValue::String(s)) if s == "true" || s == "false" => {
-                        StoredValue::Boolean(s == "true")
-                    }
-                    _ => return Err(Error::Checkpoint),
-                };
-                Ok((name.to_string(), value))
-            })
+            .filter_map(|name| self.stored_field(doc, name).transpose())
             .collect::<Result<_>>()?;
         Ok(Hit {
             id,
@@ -273,30 +259,68 @@ impl Snapshot {
             fields,
         })
     }
+    /// One projected field of a document, or `None` for a field added after the
+    /// document was written.
+    fn stored_field(&self, doc: i32, name: &str) -> Result<Option<(String, StoredValue)>> {
+        let kind = self.schema.kind(name)?;
+        let optional = self
+            .schema
+            .fields
+            .iter()
+            .position(|(n, _)| n == name)
+            .is_some_and(|at| at >= self.schema.required());
+        let found = if optional {
+            match stored_opt(&self.reader, doc, name)? {
+                Some(found) => found,
+                None => return Ok(None),
+            }
+        } else {
+            stored(&self.reader, doc, name)?
+        };
+        let value = match (kind, found) {
+            (Kind::Keyword | Kind::Text, FieldValue::String(s)) => StoredValue::String(s),
+            (Kind::Integer, FieldValue::Long(n)) if i32::try_from(n).is_ok() => {
+                StoredValue::Integer(n)
+            }
+            (Kind::Date, FieldValue::Long(n)) => StoredValue::Date(n),
+            (Kind::Boolean, FieldValue::String(s)) if s == "true" || s == "false" => {
+                StoredValue::Boolean(s == "true")
+            }
+            _ => return Err(Error::Checkpoint),
+        };
+        Ok(Some((name.to_string(), value)))
+    }
 }
-fn stored(reader: &DirectoryReader, mut doc: i32, name: &str) -> Result<FieldValue> {
+fn stored(reader: &DirectoryReader, doc: i32, name: &str) -> Result<FieldValue> {
+    stored_opt(reader, doc, name)?.ok_or(Error::Checkpoint)
+}
+/// A document's stored value for `name`, or `None` when no segment ever held the
+/// field or the document does not carry it: the case for a field added after the
+/// document was written.
+fn stored_opt(reader: &DirectoryReader, mut doc: i32, name: &str) -> Result<Option<FieldValue>> {
     if doc < 0 {
         return Err(Error::Native);
     }
     for segment in reader.segment_readers() {
         if doc < segment.max_doc {
-            let number = segment
+            let Some(number) = segment
                 .field_infos()
                 .fields
                 .iter()
                 .find(|f| f.name == name)
-                .ok_or(Error::Checkpoint)?
-                .number;
+                .map(|f| f.number)
+            else {
+                return Ok(None);
+            };
             let document = segment
                 .stored_document(doc)
                 .map_err(|_| Error::Native)?
                 .ok_or(Error::Checkpoint)?;
-            return document
+            return Ok(document
                 .fields
                 .into_iter()
                 .find(|f| f.field_number == number)
-                .map(|f| f.value)
-                .ok_or(Error::Checkpoint);
+                .map(|f| f.value));
         }
         doc -= segment.max_doc;
     }
@@ -304,6 +328,10 @@ fn stored(reader: &DirectoryReader, mut doc: i32, name: &str) -> Result<FieldVal
 }
 /// A field value read back from the index while a checkpoint is verified.
 enum Recovered {
+    /// The position of a field in the schema: the digest reads each present field's
+    /// position before its value, so a document that lacks an added field differs from
+    /// one that lacks a different one.
+    Name(usize),
     Text(String),
     Long(i64),
     Floats(Vec<f32>),
@@ -425,7 +453,17 @@ fn scan(
                 _ => Err(Error::Checkpoint),
             }
         };
-        for (name, kind) in schema.fields.iter().map(|(n, k)| (n.as_str(), *k)) {
+        for (at, (name, kind)) in schema
+            .fields
+            .iter()
+            .map(|(n, k)| (n.as_str(), *k))
+            .enumerate()
+        {
+            // A field added after creation is absent from documents written before it.
+            if at >= schema.required() && stored_opt(reader, hit.doc, name)?.is_none() {
+                continue;
+            }
+            values.push(Recovered::Name(at));
             match kind {
                 Kind::Vector(_) => values.push(Recovered::Floats(
                     vectors
@@ -463,6 +501,7 @@ fn scan(
             }
         }
         let got = crate::adapter::digest(values.iter().map(|v| match v {
+            Recovered::Name(at) => crate::adapter::Stored::Long(*at as i64),
             Recovered::Text(s) => crate::adapter::Stored::Text(s),
             Recovered::Long(n) => crate::adapter::Stored::Long(*n),
             Recovered::Floats(v) => crate::adapter::Stored::Floats(v),

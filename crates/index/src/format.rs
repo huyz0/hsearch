@@ -49,6 +49,8 @@ pub const BLOB_CHUNK_BYTES: usize = 8 << 20;
 const BLOB_TAG: u8 = 5;
 /// The tag of a vector field.
 const VECTOR_TAG: u8 = 6;
+/// The tag of an absent field: one byte, no payload.
+const ABSENT_TAG: u8 = 7;
 /// Wire size of a reference: tag, epoch, attempt, chunk count, byte length.
 const BLOB_REF_BYTES: usize = 1 + 8 + 8 + 4 + 8;
 
@@ -96,6 +98,10 @@ pub enum Field {
     Date(i64),
     /// A dense vector, held once and shared with the engine's document.
     Vector(Arc<[f32]>),
+    /// No value. Only a field added to the schema after creation may be absent;
+    /// a slot with none decodes exactly as before, and a slot shorter than the
+    /// schema (written before a field was added) has the missing ones absent.
+    Absent,
 }
 
 impl Field {
@@ -261,6 +267,7 @@ pub fn encode_slot_with(slot: &Slot, externalise: &mut Externalise<'_>) -> Resul
                             out.push(4);
                             out.extend_from_slice(&n.to_le_bytes());
                         }
+                        Field::Absent => out.push(ABSENT_TAG),
                         Field::Vector(v) => {
                             out.push(VECTOR_TAG);
                             out.extend_from_slice(
@@ -369,6 +376,7 @@ pub fn encoded_len(ops: &[Op]) -> usize {
                                 Field::Int(_) | Field::Date(_) => 1 + 8,
                                 Field::Bool(_) => 1 + 1,
                                 Field::Vector(v) => 1 + 4 + 4 * v.len(),
+                                Field::Absent => 1,
                             })
                             .sum::<usize>()
                 }
@@ -471,6 +479,7 @@ pub fn decode_slot_with(
                             _ => return Err(Error::Corrupt),
                         },
                         4 => Field::Date(r.i64()?),
+                        ABSENT_TAG => Field::Absent,
                         VECTOR_TAG => {
                             let len = r.u32()? as usize;
                             if len == 0 || len > MAX_VECTOR_DIMENSION {
