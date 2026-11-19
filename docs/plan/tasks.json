@@ -2978,8 +2978,13 @@
             "M06.14"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-15-publish-base.md",
+              "result": "Serving::publish_base (engine commit, tombstone list, publish, activate behind the collection boundary check, Cut from a Replay barrier the writer now owns) and recover_writer_held (pin registered before the first fetch, checked before each file, released after). Recovery from a published base, and from a base plus tail, matches the independent ledger; a lapsed pin stops recovery and is released; a boundary above the base refuses it and names nothing; 10 tests, mutations seen red (see evidence). Provisional (in-memory store, no RustFS); recovery's pin Swept and the lost head CAS are not provoked here; lane cover assumes a lane this index owns alone."
+            }
+          ]
         },
         {
           "id": "M06.16",
@@ -3008,7 +3013,7 @@
           "title": "Writer on the barrier and resolver",
           "goal": "The serving writer reads through the M04.04 barrier (Replay, Readers, Cut) and the M04.03 resolver, and a failed refresh keeps the published reader.",
           "deliverables": [
-            "Move the writer onto `hsearch_index::barrier` and `resolve`, which are unwired today (M04 milestone review)",
+            "Move the published reader onto `hsearch_index::barrier::Readers` and the writer onto `resolve` (the serving writer already owns a `Replay` cursor from M06.15); both are unwired today (M04 milestone review)",
             "A refresh that fails leaves the previously published reader serving"
           ],
           "validation": [

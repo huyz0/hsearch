@@ -21,11 +21,15 @@ use hsearch_commit::{
     Committer, Dependencies, DependencyView, Outcome, Receipt as Committed, Reject, Request,
 };
 use hsearch_engine::{
-    Checked, Engine, Error as EngineError, Mutation, Receipt, Schema, encode_batch,
+    Checked, Engine, Error as EngineError, LocalFiles, Mutation, Receipt, Schema, encode_batch,
 };
-use hsearch_format::Id;
-use hsearch_lane::block_on;
-use hsearch_object::MetadataStore;
+use hsearch_format::{CommitToken, Digest, Id, ManifestRoot};
+use hsearch_index::barrier::Replay;
+use hsearch_lane::{LaneId, block_on, read_head};
+use hsearch_object::{LargeObjectWriter, MetadataStore};
+
+use crate::publish::{self, BaseSpec, Publisher};
+use crate::recover::Recovered;
 
 /// Why a write did not complete.
 #[derive(Debug, Eq, PartialEq)]
@@ -62,6 +66,46 @@ pub struct Serving<S: MetadataStore, D: DependencyView> {
     next: u64,
     deps: Dependencies,
     broken: bool,
+    /// The applied prefix, which is what a published base may cover.
+    replay: Replay,
+    /// One past the lane slot of the last record committed, the lane cover of a base.
+    cover: u64,
+    /// The base this writer last published (or recovered on): the next one replaces it.
+    base: Option<ManifestRoot>,
+}
+
+/// Where a base is published and what it is made under.
+pub struct BaseTarget<'a> {
+    /// The lane whose structural head will name the base.
+    pub lane: &'a LaneId,
+    /// The shard.
+    pub shard: Id,
+    /// The shard's incarnation.
+    pub incarnation: u64,
+    /// The native format label recorded in the root.
+    pub engine_format: &'a str,
+    /// The mapping the files were written under.
+    pub mapping: Digest,
+    /// The key envelope the files are protected under.
+    pub crypto_envelope: Id,
+}
+
+/// Why a base could not be published.
+#[derive(Debug)]
+pub enum BaseError {
+    /// The writer must be recovered first.
+    Broken,
+    /// No batch has been committed since this writer began: there is nothing to cover.
+    Nothing,
+    /// The engine could not commit or write the list.
+    Engine(EngineError),
+    /// The applied prefix is not a barrier cut (a batch is in flight or the cursor failed).
+    Cut,
+    /// The head could not be read.
+    Head(String),
+    /// Publishing or activating failed. [`publish::Error::Swept`] means a collection passed the
+    /// base's generation: the previous base is no longer the one to replace.
+    Publish(publish::Error),
 }
 
 impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
@@ -76,7 +120,29 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
             next,
             deps,
             broken: false,
+            replay: Replay::new(next),
+            cover: 0,
+            base: None,
         }
+    }
+
+    /// Serve `index` again after a recovery: the next sequence is what was applied, the base it
+    /// was recovered on is the one the next publication replaces, and the lane cover starts at the
+    /// first absent position recovery found (zero when recovery followed a seal to another lane,
+    /// where the cover is known only after the first write). A writer made this way can publish a
+    /// base before it writes.
+    pub fn recovered(
+        committer: Committer<S, D>,
+        index: Id,
+        recovered: &Recovered,
+        deps: Dependencies,
+    ) -> Self {
+        let mut writer = Self::new(committer, index, recovered.applied, deps);
+        writer.base.clone_from(&recovered.base);
+        if recovered.followed == 0 {
+            writer.cover = recovered.tail;
+        }
+        writer
     }
 
     /// The sequence the next record will take.
@@ -145,15 +211,97 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
             }
         };
         self.next += 1;
+        self.cover = committed.ordinal + 1;
+        // The record is durable: the cursor follows the engine through the apply.
+        let in_flight = self.replay.begin(committed.seq).is_ok();
         match engine.apply(prepared) {
-            Ok(receipts) => Ok(Written {
+            Ok(receipts) if in_flight && self.replay.done(committed.seq).is_ok() => Ok(Written {
                 receipts,
                 committed: Some(committed),
             }),
-            Err(_) => {
+            _ => {
+                self.replay.fail();
                 self.broken = true;
                 Err(ServeError::Broken)
             }
         }
+    }
+
+    /// Commit the engine's files and publish them with the tombstone list as a base covering every
+    /// batch applied so far, then name it in the lane's structural head. The engine is not
+    /// written to meanwhile (`&mut self`). A collection boundary above the base's generation
+    /// refuses the activation ([`publish::Error::Swept`]) and nothing names the new objects.
+    ///
+    /// The base replaced is the one this writer last published or recovered on. Nothing checks
+    /// that the head still names it, so a compaction that replaced it in the meantime is not seen
+    /// here (the publication generation could then fail to rise past the compacted one).
+    ///
+    /// A failed publish leaves the writer's base as it was, so a retry computes the same
+    /// generation and can fail the same way after [`publish::Error::Swept`]; each attempt uploads
+    /// its files again. The caller bounds its attempts and rebuilds the writer after a `Swept`.
+    ///
+    /// The lane cover is one past the last record this writer committed (or recovery's first
+    /// absent position), which is only the right cover for a lane this index owns alone.
+    #[allow(clippy::too_many_arguments)]
+    pub fn publish_base<P>(
+        &mut self,
+        engine: &Engine<'_>,
+        local: &LocalFiles,
+        publisher: &Publisher<P>,
+        target: &BaseTarget<'_>,
+        attempt: CommitToken,
+        dependencies: &dyn publish::Dependencies,
+    ) -> Result<publish::Published, BaseError>
+    where
+        P: MetadataStore + LargeObjectWriter + 'static,
+    {
+        if self.is_broken() {
+            return Err(BaseError::Broken);
+        }
+        if self.cover == 0 {
+            return Err(BaseError::Nothing);
+        }
+        let cut = self.replay.cut().map_err(|_| BaseError::Cut)?;
+        let checkpoint = engine.commit().map_err(BaseError::Engine)?;
+        local
+            .write_tombstones(&checkpoint)
+            .map_err(BaseError::Engine)?;
+        let names = local.names().map_err(BaseError::Engine)?;
+        let spec = BaseSpec {
+            index: self.index,
+            shard: target.shard,
+            incarnation: target.incarnation,
+            engine_format: target.engine_format,
+            mapping: target.mapping,
+            crypto_envelope: target.crypto_envelope,
+            cut,
+            committed: self.next,
+            previous: self.base.as_ref(),
+            attempt,
+        };
+        let published = publisher
+            .publish(local, &names, &spec, dependencies)
+            .map_err(BaseError::Publish)?;
+        let (head, version) = block_on(read_head(
+            publisher.store(),
+            publisher.layout(),
+            target.lane,
+        ))
+        .map_err(|e| BaseError::Head(format!("{e:?}")))?;
+        publisher
+            .activate(
+                &publish::HeadRead {
+                    lane: target.lane,
+                    head: &head,
+                    version: &version,
+                },
+                &published,
+                &spec,
+                self.cover,
+                dependencies,
+            )
+            .map_err(BaseError::Publish)?;
+        self.base = Some(published.root.clone());
+        Ok(published)
     }
 }
