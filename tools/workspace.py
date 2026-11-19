@@ -36,7 +36,8 @@ LAYERS = {
     # the peer listener and the object-format encryption that use it come later and depend on it, not the reverse.
     "hsearch-security": set(),
     # M05.04: the encrypting decorator joins the object contracts to the key provider; nothing depends on it yet.
-    "hsearch-seal": {"hsearch-object", "hsearch-security"},
+    # M06.09: the slot sealer implements the lane's SlotCipher over the byte formats and the key provider.
+    "hsearch-seal": {"hsearch-object", "hsearch-security", "hsearch-format", "hsearch-lane"},
     # M07.02: bounded authenticated peer RPC over the security crate's mutual TLS; nothing else depends on it yet.
     "hsearch-peer": {"hsearch-security"},
     "hsearch-module-abi": set(),
@@ -74,8 +75,8 @@ EXTERNAL["hsearch-node"] = {"serde_json", "tiny_http", "typed-arena"}
 EXTERNAL["hsearch-security"] = {"aes", "aes-gcm", "rustls", "getrandom", "rcgen", "rustls-pki-types", "rustls-webpki", "sha2", "time", "x509-parser", "zeroize"}
 # Peer RPC transport: the TLS 1.3 stack the security crate already pins, exact-pinned in crates/peer/Cargo.toml.
 EXTERNAL["hsearch-peer"] = {"rustls"}
-# Request-retry fingerprints (SHA-256), exact-pinned in crates/seal/Cargo.toml.
-EXTERNAL["hsearch-seal"] = {"sha2"}
+# Request-retry fingerprints (SHA-256) and the slot sealer's AES-256-GCM (the cipher the security crate pins), exact-pinned in crates/seal/Cargo.toml.
+EXTERNAL["hsearch-seal"] = {"aes-gcm", "sha2"}
 # Extension module contract (JSON descriptor) and the native loader: dynamic library open, SHA-256 pin and a sealed memfd copy.
 EXTERNAL["hsearch-module-abi"] = {"serde_json"}
 EXTERNAL["hsearch-module-native"] = {"libloading", "rustix", "sha2"}

@@ -24,6 +24,7 @@ use crate::cover::{raise_cover, read_cover};
 use crate::head::{Advance, Change, advance_head, read_head};
 use crate::io::{Written, fresh_token, key, mutation, read_object, request_id, write};
 use crate::members::{LaneId, read_descriptor, swap_descriptor, without_member};
+use crate::sealing::{Payloads, Shared, SlotCipher, encode_sealed_slot, open_records};
 use crate::{Error, Result};
 
 /// A seal that keeps losing the race to a live writer gives up after this many tries.
@@ -224,6 +225,9 @@ pub struct LaneWriter<S> {
     scratch: Vec<u8>,
     /// Everything below this has been reclaimed or was below the open's cover.
     reclaimed_to: u64,
+    /// Seals each data slot's inline payloads before the one conditional create (M06.09).
+    cipher: Option<Shared>,
+    payloads: Payloads,
 }
 
 impl<S: MetadataStore> LaneWriter<S> {
@@ -368,8 +372,76 @@ impl<S: MetadataStore> LaneWriter<S> {
             stats: WriterStats::default(),
             scratch: Vec::new(),
             reclaimed_to: from,
+            cipher: None,
+            payloads: Payloads::default(),
         };
         Ok((writer, report))
+    }
+
+    /// [`LaneWriter::open`] for a lane whose data slots are sealed (M06.09): `visit` sees each
+    /// replayed slot's stored view and its records with plaintext inline payloads, and every later
+    /// [`LaneWriter::append`] seals its payloads with `cipher` before the one conditional create.
+    /// A slot that does not authenticate aborts the open with [`Error::Seal`]: the lane is not
+    /// opened over history it cannot read. Request cost is exactly `open`'s.
+    pub async fn open_sealed<F>(
+        store: Arc<S>,
+        layout: Layout,
+        id: LaneId,
+        from: u64,
+        cipher: Arc<dyn SlotCipher>,
+        mut visit: F,
+    ) -> Result<(Self, OpenReport)>
+    where
+        F: FnMut(&SlotView<'_>, &[RecordSpec<'_>]) -> Result<()>,
+    {
+        let mut scratch = Payloads::default();
+        let opener = cipher.clone();
+        let (writer, report) =
+            Self::open_at(store, layout, id, from, CoverSource::Marker, |view| {
+                let records = open_records(&*opener, view, &mut scratch)?;
+                visit(view, &records)
+            })
+            .await?;
+        Ok((writer.with_cipher(cipher), report))
+    }
+
+    /// [`LaneWriter::open_with_head`] for a sealed lane; see [`LaneWriter::open_sealed`].
+    pub async fn open_with_head_sealed<F>(
+        store: Arc<S>,
+        layout: Layout,
+        id: LaneId,
+        cipher: Arc<dyn SlotCipher>,
+        mut visit: F,
+    ) -> Result<(Self, OpenReport)>
+    where
+        F: FnMut(&SlotView<'_>, &[RecordSpec<'_>]) -> Result<()>,
+    {
+        let (head, _) = read_head(&*store, &layout, &id).await?;
+        let mut scratch = Payloads::default();
+        let opener = cipher.clone();
+        let (writer, report) =
+            Self::open_at(store, layout, id, head.cover, CoverSource::Head, |view| {
+                let records = open_records(&*opener, view, &mut scratch)?;
+                visit(view, &records)
+            })
+            .await?;
+        Ok((writer.with_cipher(cipher), report))
+    }
+
+    /// Seal every later data slot of this writer with `cipher`. [`LaneWriter::open_sealed`] does
+    /// this and also opens the replay; use this only where the replayed history is known to hold
+    /// no sealed payload, because a plain open shows sealed bytes as they are stored.
+    #[must_use]
+    pub fn with_cipher(mut self, cipher: Arc<dyn SlotCipher>) -> Self {
+        self.cipher = Some(cipher);
+        self
+    }
+
+    /// Bytes of scratch capacity this writer keeps between appends: the encoded slot and, when
+    /// sealing, the sealed payloads. Each is dropped above 1 MiB after a larger slot.
+    #[must_use]
+    pub fn retained_bytes(&self) -> usize {
+        self.scratch.capacity() + self.payloads.retained()
     }
 
     pub(crate) fn store_ref(&self) -> &S {
@@ -515,12 +587,20 @@ impl<S: MetadataStore> LaneWriter<S> {
         let ordinal = self.next;
         let token: CommitToken = fresh_token();
         self.scratch.clear();
-        encode_slot(
-            &mut self.scratch,
-            &position(&self.id, ordinal),
-            token,
-            &SlotBody::Data(records),
-        )?;
+        let at = position(&self.id, ordinal);
+        match &self.cipher {
+            // Sealed before the encode; the encoded bytes are what a lost reply resends.
+            Some(cipher) => encode_sealed_slot(
+                &**cipher,
+                &mut self.scratch,
+                &mut self.payloads,
+                &at,
+                token,
+                records,
+            )?,
+            None => encode_slot(&mut self.scratch, &at, token, &SlotBody::Data(records))?,
+        }
+        self.payloads.trim();
         let request = mutation(
             &request_id("slot", &self.id.domain, ordinal, &token),
             &slot_key(&self.layout, &self.id, ordinal),

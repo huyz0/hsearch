@@ -2808,8 +2808,13 @@
             "M06.01"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-09-sealed-slots.md",
+              "result": "SlotCipher seam in hsearch-lane and SlotSealer in hsearch-seal: fresh data key per slot, wrapped by the index key, inline in the first sealed record; replay opens every acknowledged slot; tampered, moved or wrongly keyed payloads refused; no key or nonce repeats; no extra request. 28 tests under both key scopes, 9 mutations seen red, 2 survivors explained. Per-key sharing of the slot key is the default because per-index wrapping cost one KMS wrap per sparse record and +11% bytes; both measured. Slot log 1.00 PUT per batch against 2.00 for payload plus head CAS (2.93 at 15% refusals, every orphan forcing a reopen) under one recovery oracle. Seal about 1 GB/s with hardware AES, 8 to 10 times slower on forced software, aarch64 not run. Provisional (in-memory store and test KMS, no RustFS). Lane-level only: wiring the cipher into the committer, store recovery and the node, and reserving the sealed overhead in the inline bound and batch target, is a follow-up."
+            }
+          ]
         },
         {
           "id": "M06.10",

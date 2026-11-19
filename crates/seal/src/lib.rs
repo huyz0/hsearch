@@ -18,12 +18,17 @@
 //! * **Blocking.** Key-provider calls and sealing are synchronous (the `KeyProvider` contract is); an async
 //!   runtime runs a network provider adapter off its executor threads.
 //! * **Not covered.** [`hsearch_object::MetadataStore`] mutations (`compare_exchange`, `resolve`) are not
-//!   decorated: conditional replacement has no fresh-key-per-object form, and the M03 lane and head bodies are
-//!   covered by the format envelope's capability bit, not by this crate. Object metadata is opaque caller data
+//!   decorated: conditional replacement has no fresh-key-per-object form. A commit slot's payloads are
+//!   sealed by [`SlotSealer`] (M06.09), a different mechanism: the lane hands it each slot's records, it
+//!   wraps one fresh key per index per slot and seals the inline payloads in place, and the one conditional
+//!   create is unchanged. Object metadata is opaque caller data
 //!   stored in the clear; sensitive values belong in the sealed body.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
+
+mod slot;
+pub use slot::{DekScope, SlotScopes, SlotSealer, SlotStats};
 
 use hsearch_object::{
     ByteRange, Error, Mutation, ObjectBackend, ObjectInfo, ObjectKey, Operation, Payload,
