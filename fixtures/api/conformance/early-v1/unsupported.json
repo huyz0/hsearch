@@ -1,0 +1,423 @@
+{
+  "class": "unsupported",
+  "meaning": "Requests outside the core-v1 profile. Each must be refused with a typed, non-5xx error that names the refusal, and must change nothing. temporary_until names the task that gives the feature a supported form; until it lands the refusal is the contract.",
+  "cases": [
+    {
+      "id": "script-query-is-refused",
+      "area": "A11",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a11"
+      },
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "script": {
+                "script": {
+                  "source": "doc['n'].value > 3"
+                }
+              }
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "parsing_exception"
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "script_fields": {
+              "x": {
+                "script": {
+                  "source": "1"
+                }
+              }
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "scripted-update-refuses-before-mutation",
+      "area": "A11",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a11"
+      },
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_update/d1",
+          "body": {
+            "script": {
+              "source": "ctx._source.n += params.d",
+              "params": {
+                "d": 1
+              }
+            }
+          },
+          "expect": {
+            "status_in": [
+              400,
+              404,
+              405
+            ],
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/_doc/d1",
+          "expect": {
+            "status": 200,
+            "body": {
+              "_source": {
+                "n": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "sql-plugin-endpoint-is-refused",
+      "area": "A12",
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a12"
+      },
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/_plugins/_sql",
+          "body": {
+            "query": "SELECT n FROM orders"
+          },
+          "expect": {
+            "status_in": [
+              400,
+              404,
+              405
+            ],
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/_plugins/_ppl",
+          "body": {
+            "query": "source=orders"
+          },
+          "expect": {
+            "status_in": [
+              400,
+              404,
+              405
+            ],
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "aggregations-are-refused-not-approximated",
+      "area": "A09",
+      "dataset": true,
+      "state": "enforced",
+      "temporary_until": "M07.08",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a09"
+      },
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "size": 0,
+            "aggs": {
+              "tags": {
+                "terms": {
+                  "field": "tag"
+                }
+              }
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "nested-and-join-queries-are-refused",
+      "area": "A10",
+      "dataset": true,
+      "state": "enforced",
+      "temporary_until": "M21.07",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a10"
+      },
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "nested": {
+                "path": "children",
+                "query": {
+                  "match_all": {}
+                }
+              }
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "has_child": {
+                "type": "child",
+                "query": {
+                  "match_all": {}
+                }
+              }
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "shard-count-setting-is-not-a-contract",
+      "area": "A13",
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a13"
+      },
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/sharded",
+          "body": {
+            "settings": {
+              "number_of_shards": 32
+            },
+            "mappings": {
+              "properties": {
+                "a": {
+                  "type": "keyword"
+                }
+              }
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "cluster-wide-diagnostics-are-refused",
+      "area": "A14",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a14"
+      },
+      "steps": [
+        {
+          "method": "GET",
+          "path": "/_cluster/state",
+          "expect": {
+            "status_in": [
+              400,
+              404,
+              405
+            ],
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/_cat/indices?format=json",
+          "expect": {
+            "status_in": [
+              400,
+              404,
+              405
+            ],
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_forcemerge",
+          "expect": {
+            "status_in": [
+              400,
+              404,
+              405
+            ],
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "cross-cluster-index-expression-is-refused",
+      "area": "A15",
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a15"
+      },
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/remote:orders/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            }
+          },
+          "expect": {
+            "status_in": [
+              400,
+              404
+            ],
+            "body": {
+              "error": {
+                "type": "<any>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "unadvertised-query-operator-is-not-an-empty-success",
+      "area": "A16",
+      "dataset": true,
+      "state": "enforced",
+      "oracle": {
+        "kind": "hsearch-profile",
+        "ref": "docs/plan/api-compatibility.md#a16"
+      },
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "unadvertised_query": {}
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "parsing_exception"
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/orders/_search",
+          "body": {
+            "query": {
+              "fuzzy": {
+                "title": "quik"
+              }
+            }
+          },
+          "expect": {
+            "status": 400,
+            "body": {
+              "error": {
+                "type": "parsing_exception"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

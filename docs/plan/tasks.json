@@ -2720,7 +2720,12 @@
           ],
           "owner": "storage/runtime",
           "status": "planned",
-          "evidence": []
+          "evidence": [
+            {
+              "path": "evidence/m06-05-c-early-conformance.md",
+              "result": "Part C only (provisional, in-memory store): early conformance corpus of 42 HTTP cases over all 16 profile areas, 35 enforced and 7 pending-and-still-failing, replayed against a real node by crates/node/tests/conformance.rs; no OpenSearch server or SDK was run. Task stays planned: writer wiring (A), native /v1 (B) and the core-v1 refresh (D) are open."
+            }
+          ]
         },
         {
           "id": "M06.06",
