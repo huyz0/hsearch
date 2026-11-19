@@ -149,6 +149,7 @@ fn open(store: &Arc<S3Store>, lane: LaneId, label: &str, seed: u8) -> Host {
             window: Duration::ZERO,
             base_every_batches: 2,
             token_seed: [seed; 8],
+            merge: hsearch_engine::MergeMode::Inline,
             pin: None,
         },
     )

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use hsearch_engine::{
     Engine, Error as EngineError, LocalFiles, MergeMode, Receipt, Schema, TOMBSTONES_FILE,
-    apply_batch, with_local_engine, with_recovered_local_engine,
+    apply_batch, with_local_engine_merging, with_recovered_local_engine,
 };
 use hsearch_format::{CommitToken, Id, ManifestRoot, PinRecord, StructuralHead};
 use hsearch_lane::{Error as LaneError, block_on, read_head};
@@ -185,6 +185,35 @@ where
     S: MetadataStore + LargeObjectWriter + 'static,
     D: Dependencies,
 {
+    recover_writer_merging(
+        publisher,
+        target,
+        dependencies,
+        schema,
+        scratch,
+        hold,
+        MergeMode::Inline,
+        run,
+    )
+}
+
+/// [`recover_writer_held`] with the engine's automatic merges run as `mode` says:
+/// [`MergeMode::Background`] keeps them off the writer's refresh.
+#[allow(clippy::too_many_arguments)]
+pub fn recover_writer_merging<S, D, R>(
+    publisher: &Publisher<S>,
+    target: &Target<'_>,
+    dependencies: &D,
+    schema: &Schema,
+    scratch: &Path,
+    hold: Option<&Hold<'_, S>>,
+    mode: MergeMode,
+    run: impl FnOnce(&Engine<'_>, &LocalFiles, &Rebuilt) -> R,
+) -> Result<R, RebuildError>
+where
+    S: MetadataStore + LargeObjectWriter + 'static,
+    D: Dependencies,
+{
     let (head, _): (StructuralHead, _) = match block_on(read_head(
         publisher.store(),
         publisher.layout(),
@@ -197,7 +226,7 @@ where
     };
     let Some(manifest) = head.checkpoint else {
         claim_scratch(scratch)?;
-        return with_local_engine(scratch, schema.clone(), |engine, local| {
+        return with_local_engine_merging(scratch, schema.clone(), mode, |engine, local| {
             rebuild_onto(publisher, target, dependencies, schema, engine, None)
                 .map(|rebuilt| run(engine, local, &rebuilt))
         })
@@ -277,15 +306,10 @@ where
         let _ = h.pins.release(&pin.record.index, &pin.record.pin);
     }
     fetched?;
-    with_recovered_local_engine(
-        scratch,
-        schema.clone(),
-        MergeMode::Inline,
-        |engine, local| {
-            rebuild_onto(publisher, target, dependencies, schema, engine, Some(&root))
-                .map(|rebuilt| run(engine, local, &rebuilt))
-        },
-    )
+    with_recovered_local_engine(scratch, schema.clone(), mode, |engine, local| {
+        rebuild_onto(publisher, target, dependencies, schema, engine, Some(&root))
+            .map(|rebuilt| run(engine, local, &rebuilt))
+    })
     .map_err(|e| match e {
         EngineError::Checkpoint => RebuildError::Open(EngineError::Checkpoint),
         other => RebuildError::Open(other),

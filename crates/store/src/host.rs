@@ -33,7 +33,8 @@ use std::time::Duration;
 
 use hsearch_commit::{Committer, Dependencies, DependencyView, Reject};
 use hsearch_engine::{
-    Engine, Error as EngineError, MAX_BATCH_OPERATIONS, Mutation, Receipt, Schema, Snapshot, Value,
+    Engine, Error as EngineError, MAX_BATCH_OPERATIONS, MergeMode, Mutation, Receipt, Schema,
+    Snapshot, Value,
 };
 use hsearch_format::{CommitToken, Digest, Id};
 use hsearch_index::barrier::{Gen, Readers};
@@ -43,7 +44,7 @@ use hsearch_object::{LargeObjectWriter, MetadataStore};
 
 use crate::pins::Pins;
 use crate::publish::{self, Publisher};
-use crate::rebuild::{Hold, RebuildError, recover_writer_held};
+use crate::rebuild::{Hold, RebuildError, recover_writer_merging};
 use crate::recover::{Expect, ReplayLimits, Target};
 use crate::serve::{BaseTarget, RefreshError, ServeError, Serving};
 
@@ -113,6 +114,9 @@ pub struct Config {
     pub token_seed: [u8; 8],
     /// Hold the base with a pin while it is fetched, if given.
     pub pin: Option<PinConfig>,
+    /// How the engine's automatic merges run: [`MergeMode::Background`] keeps them off the
+    /// writer's refresh.
+    pub merge: MergeMode,
 }
 
 /// Everything `open` needs besides the configuration.
@@ -167,17 +171,23 @@ pub struct Host {
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
-fn open_error(e: RebuildError) -> String {
-    format!("{e:?}")
+/// Why a host could not be opened.
+#[derive(Debug)]
+pub enum OpenError {
+    /// Recovery from the lane and base was refused or failed.
+    Recovery(RebuildError),
+    /// The recovered index could not publish its first reader.
+    Refresh,
+    /// The host thread ended before it was ready.
+    Ended,
 }
 
 impl Host {
     /// Recover the index from its lane and base and start serving it.
     ///
     /// # Errors
-    /// The recovery error, as text, if the index could not be made ready; nothing is left
-    /// running.
-    pub fn open<S, V, D>(args: OpenArgs<S, V, D>, config: Config) -> Result<Self, String>
+    /// [`OpenError`] if the index could not be made ready; nothing is left running.
+    pub fn open<S, V, D>(args: OpenArgs<S, V, D>, config: Config) -> Result<Self, OpenError>
     where
         S: MetadataStore + LargeObjectWriter + 'static,
         V: DependencyView + Send + 'static,
@@ -224,13 +234,14 @@ impl Host {
                     skew_ms: p.skew_ms,
                     now: &now,
                 });
-            let outcome = recover_writer_held(
+            let outcome = recover_writer_merging(
                 &publisher,
                 &target,
                 &dependencies,
                 &schema,
                 &config.scratch,
                 hold.as_ref(),
+                config.merge,
                 |engine, local, rebuilt| {
                     let serving = Serving::recovered(
                         committer,
@@ -254,8 +265,7 @@ impl Host {
                     // A recovered index with data is searchable at once.
                     let first = core.serving.refresh(engine);
                     if first.is_err() {
-                        let _ =
-                            ready.send(Err("the recovered index could not be refreshed".into()));
+                        let _ = ready.send(Err(OpenError::Refresh));
                         return;
                     }
                     let _ = ready.send(Ok(core.serving.readers()));
@@ -263,7 +273,7 @@ impl Host {
                 },
             );
             if let Err(e) = outcome {
-                let _ = ready.send(Err(open_error(e)));
+                let _ = ready.send(Err(OpenError::Recovery(e)));
             }
         });
         match started.recv() {
@@ -279,7 +289,7 @@ impl Host {
             }
             Err(_) => {
                 let _ = thread.join();
-                Err("the host thread ended while opening".into())
+                Err(OpenError::Ended)
             }
         }
     }

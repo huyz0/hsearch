@@ -51,6 +51,7 @@ fn config(label: &str, window_ms: u64, base_every: u64, seed: u8) -> Config {
         window: Duration::from_millis(window_ms),
         base_every_batches: base_every,
         token_seed: [seed; 8],
+        merge: hsearch_engine::MergeMode::Inline,
         pin: None,
     }
 }
