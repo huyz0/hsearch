@@ -68,8 +68,8 @@ class DifferentialControls(unittest.TestCase):
         expected = D['expected_cases'](self.bundle)
         self.assertEqual(len(expected), 29)
         self.assertEqual(sum(x.startswith('jdiff-v1-') for x in expected), 11)
-        self.assertEqual(len(self.bundle['inputs']['fixtures/api/core-v1/mutation-cases.json']), 11)
-        self.assertEqual(sum(len(x['steps']) for x in self.bundle['inputs']['fixtures/api/core-v1/mutation-cases.json']), 34)
+        self.assertEqual(len(self.bundle['inputs']['fixtures/api/core-v1/mutation-cases.json']), 12)
+        self.assertEqual(sum(len(x['steps']) for x in self.bundle['inputs']['fixtures/api/core-v1/mutation-cases.json']), 43)
 
     def test_owned_reference_supplement_retains_all_eleven_observations(self):
         port = FixedReference(self.bundle)
