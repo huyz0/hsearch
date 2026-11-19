@@ -4,10 +4,16 @@ CI is deliberately small. Every PR and push to `main` runs:
 
 | Job | What |
 |---|---|
-| `check` | `python3 tools/check.py`: fmt, clippy `-D warnings`, `cargo test --workspace --all-features`, plan/API/engine-research/dependency-policy checks, Python tests. Also writes the status summary from `tasks.json`. |
+| `check` | `python3 tools/check.py --skip-cargo-test`: fmt, clippy `-D warnings`, plan/API/engine-research/dependency-policy checks, Python tests. Also writes the status summary from `tasks.json`. |
+| `test-node` | `cargo test -p hsearch-node --all-features` against RustFS, on its own runner (the 100k document and 100 MiB tests). |
+| `test-rest` | `cargo test --workspace --exclude hsearch-node --all-features` against RustFS, plus doc tests. |
+| `security-soft` | the security crate again with the software AES path forced; bytes must match the hardware path. |
+| `e2e` | the RustFS capability probe with a restart, then `scripts/e2e.sh` (100k documents, `kill -9`, restart). |
 | `coverage` | `scripts/coverage.sh 90`: standard `cargo llvm-cov`, 90% line floor per production crate. Zero coverable lines is not applicable, not 100%. |
 | `harness-budget` | Advisory only: warns in the job summary when tools, CI and gate code are over 20% of the last 30 commits. Never fails a PR. Product docs (requirements, architecture, decisions) are not counted as harness work. |
 | `ci-ok` | Aggregates the above; the one required check. |
+
+The jobs run in parallel, so wall time is the slowest job rather than the sum. They share a dependency build cache (`.github/actions/setup-rust`, `Swatinem/rust-cache`): `main` saves it, pull requests only restore it. Every job that needs the store starts RustFS through `scripts/rustfs.sh up`, which returns only after three signed write-and-read round trips succeed (a bare HTTP answer, even 403, does not prove the store serves requests), and the two test jobs check `scripts/rustfs.sh health` again before running tests; a failing job prints the RustFS container log. `python3 tools/check.py` with no argument still runs everything, including `cargo test`, for a local loop.
 
 A small change (docs, one crate) takes the same path; there is no separate planner. Add a check only for a defect that has actually shipped.
 
