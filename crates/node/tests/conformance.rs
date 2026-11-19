@@ -145,6 +145,15 @@ fn the_corpus_is_well_formed_and_covers_every_profile_area() {
         if class == "difference" && state == "enforced" {
             assert!(!text(case, "opensearch").is_empty(), "{id}: opensearch");
         }
+        if let Some(until) = case.get("route_absent_until") {
+            assert!(
+                tasks.contains(until.as_str().unwrap()),
+                "{id}: unknown task"
+            );
+        }
+        if state == "pending" {
+            assert!(!text(case, "fails_with").is_empty(), "{id}: fails_with");
+        }
         let steps = case["steps"].as_array().expect("steps");
         assert!(!steps.is_empty(), "{id}: no steps");
         for step in steps {
@@ -153,6 +162,13 @@ fn the_corpus_is_well_formed_and_covers_every_profile_area() {
                 "{id}: method"
             );
             assert!(text(step, "path").starts_with('/'), "{id}: path");
+            let absent_ok = step["expect"]["status_in"]
+                .as_array()
+                .is_some_and(|l| l.iter().any(|s| s == 404 || s == 405));
+            assert!(
+                !absent_ok || case.get("route_absent_until").is_some(),
+                "{id}: accepting 404/405 needs route_absent_until"
+            );
             assert!(
                 step["expect"].get("status").is_some() ^ step["expect"].get("status_in").is_some(),
                 "{id}: exactly one of status and status_in"
@@ -270,6 +286,13 @@ fn run(case: &Value, dataset: &Value) -> Result<(), String> {
     if case["dataset"] == json!(true) {
         load_dataset(addr, dataset);
     }
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| steps(case, addr)))
+        .unwrap_or_else(|_| Err("the case panicked".to_string()));
+    node.shutdown();
+    outcome
+}
+
+fn steps(case: &Value, addr: std::net::SocketAddr) -> Result<(), String> {
     let mut outcome = Ok(());
     for (n, step) in case["steps"].as_array().unwrap().iter().enumerate() {
         let body = match (step.get("body"), step.get("body_text")) {
@@ -307,7 +330,6 @@ fn run(case: &Value, dataset: &Value) -> Result<(), String> {
             break;
         }
     }
-    node.shutdown();
     outcome
 }
 
@@ -323,7 +345,12 @@ fn enforced_cases_pass_and_pending_cases_still_fail() {
             ("enforced", Ok(())) => enforced += 1,
             ("enforced", Err(why)) => failures.push(format!("{class}/{id}: {why}")),
             (_, Err(why)) => {
-                eprintln!("pending {class}/{id}: {why}");
+                let wanted = text(case, "fails_with");
+                if !why.contains(wanted) {
+                    failures.push(format!(
+                        "{class}/{id}: pending but failed differently ({why}), expected {wanted:?}"
+                    ));
+                }
                 pending += 1;
             }
             (_, Ok(())) => promote.push(format!("{class}/{id}")),

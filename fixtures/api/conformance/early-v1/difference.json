@@ -160,7 +160,8 @@
             }
           }
         }
-      ]
+      ],
+      "note": "The bound is this node's MAX_WINDOW (1000), not a profile value; the profile only requires a configured window."
     },
     {
       "id": "scroll-is-refused-until-snapshots-exist",
@@ -580,10 +581,11 @@
             }
           }
         }
-      ]
+      ],
+      "fails_with": "status 405"
     },
     {
-      "id": "get-sees-an-acknowledged-unrefreshed-write",
+      "id": "get-after-unrefreshed-delete-is-not-found",
       "area": "A02",
       "dataset": true,
       "state": "pending",
@@ -592,7 +594,7 @@
         "kind": "hsearch-profile",
         "ref": "docs/plan/api-compatibility.md#a02"
       },
-      "opensearch": "GET is real-time by default; hsearch routes it to the shard owner under an authority barrier.",
+      "opensearch": "GET is real-time by default, so a delete acknowledged without refresh is already invisible; hsearch routes it to the shard owner under an authority barrier. The write-then-GET direction needs its own case once PUT _doc is served.",
       "steps": [
         {
           "method": "POST",
@@ -615,7 +617,8 @@
             }
           }
         }
-      ]
+      ],
+      "fails_with": "status 200, expected one of [404]"
     },
     {
       "id": "native-capabilities-lists-only-what-is-implemented",
@@ -640,7 +643,8 @@
             }
           }
         }
-      ]
+      ],
+      "fails_with": "status 404"
     }
   ]
 }

@@ -102,7 +102,8 @@
             }
           }
         }
-      ]
+      ],
+      "route_absent_until": "M21.06"
     },
     {
       "id": "sql-plugin-endpoint-is-refused",
@@ -151,7 +152,8 @@
             }
           }
         }
-      ]
+      ],
+      "route_absent_until": "M14.01"
     },
     {
       "id": "aggregations-are-refused-not-approximated",
@@ -278,7 +280,8 @@
             }
           }
         }
-      ]
+      ],
+      "note": "Pins current node behaviour (refusal); the A13 row only promises no shard-count contract."
     },
     {
       "id": "cluster-wide-diagnostics-are-refused",
@@ -338,7 +341,8 @@
             }
           }
         }
-      ]
+      ],
+      "route_absent_until": "M08.03"
     },
     {
       "id": "cross-cluster-index-expression-is-refused",
@@ -358,13 +362,10 @@
             }
           },
           "expect": {
-            "status_in": [
-              400,
-              404
-            ],
+            "status": 400,
             "body": {
               "error": {
-                "type": "<any>"
+                "type": "invalid_index_name_exception"
               }
             }
           }

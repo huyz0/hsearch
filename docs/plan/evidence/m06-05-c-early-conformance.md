@@ -16,4 +16,4 @@ A changed expected total fails an enforced case by name; an enforced case marked
 
 ## Limits
 
-The reference class takes its expectations from documented OpenSearch behaviour, not from a run of OpenSearch 3.9.0, and links core-v1 cases only where a reference run exists there. Unsupported cases that currently succeed by route absence (SQL, cluster state, forcemerge) accept 400, 404 or 405 and will be tightened when the native error shape is frozen (M06.05 B). No SDK was run.
+The reference class takes its expectations from documented OpenSearch behaviour, not from a run of OpenSearch 3.9.0, and links core-v1 cases only where a reference run exists there. Unsupported cases that pass today only because the route is absent (scripted update, SQL, cluster state, forcemerge) accept 404 or 405 and must carry route_absent_until, naming the task that adds the route; each pending case pins its failure with fails_with. No SDK was run.

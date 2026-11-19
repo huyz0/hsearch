@@ -822,7 +822,8 @@
             }
           }
         }
-      ]
+      ],
+      "fails_with": "status 405"
     },
     {
       "id": "delete-document-by-id",
@@ -857,7 +858,8 @@
             }
           }
         }
-      ]
+      ],
+      "fails_with": "status 405"
     },
     {
       "id": "update-merges-a-partial-document",
@@ -900,7 +902,8 @@
             }
           }
         }
-      ]
+      ],
+      "fails_with": "status 404"
     },
     {
       "id": "delete-index-then-search-is-not-found",
@@ -937,7 +940,8 @@
             }
           }
         }
-      ]
+      ],
+      "fails_with": "status 405"
     }
   ]
 }
