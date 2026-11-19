@@ -441,8 +441,17 @@ impl<S: MetadataStore + 'static> Node<S> {
             return;
         }
         let mut pending: Vec<(String, Kind)> = Vec::new();
-        for item in window.iter().take_while(|it| it.index == name).take(CHUNK) {
+        // Every item of the batch for this index (a batch is at most `CHUNK` items,
+        // so this covers the whole run), skipping those refused regardless: a
+        // document that will not be written must not add a field.
+        for item in window.iter().take_while(|it| it.index == name) {
+            if check_id(&item.id).is_err() {
+                continue;
+            }
             if let Ok((Action::Index, Some(Value::Object(object)))) = &item.work {
+                if self.mapping_limits.check_source(object).is_err() {
+                    continue;
+                }
                 let _ = plan_dynamic(&mapping, &self.mapping_limits, object, &mut pending);
             }
         }

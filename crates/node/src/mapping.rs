@@ -384,12 +384,19 @@ impl Mapping {
         added.sort_by(|a, b| a.0.cmp(&b.0));
         limits.check_fields(self.fields.len() + added.len())?;
         let evolved = self.evolved + added.len();
+        // Only a change that adds fields is a new version, so toggling the dynamic
+        // setting back and forth names the same few objects, not a new one each time.
+        let version = if added.is_empty() {
+            self.version
+        } else {
+            self.version + 1
+        };
         let mut fields = self.fields.clone();
         fields.extend(added);
         let next = Self {
             fields,
             dynamic,
-            version: self.version + 1,
+            version,
             evolved,
         };
         next.schema()?;
@@ -711,12 +718,13 @@ mod tests {
             v3.schema().unwrap(),
             live.evolve(3, &[("mid", Kind::Date)]).unwrap()
         );
-        // A change of the dynamic setting alone is a version with nothing added.
+        // A change of the dynamic setting alone adds no version: the same fields
+        // under another setting.
         let v4 = v3
             .evolve(&json!({"dynamic": true}), &limits)
             .unwrap()
             .unwrap();
-        assert_eq!((v4.version, v4.evolved, v4.dynamic), (4, 3, Dynamic::True));
+        assert_eq!((v4.version, v4.evolved, v4.dynamic), (3, 3, Dynamic::True));
         assert_eq!(Mapping::decode(&v4.encode()).unwrap(), v4);
         assert_eq!(v4.fields, v3.fields);
     }

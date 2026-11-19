@@ -553,3 +553,63 @@ fn a_mapping_changed_by_another_writer_is_not_overwritten() {
     assert!(text.contains("#evolution\t3\t2"), "{text}");
     assert!(text.contains("\nb\tkeyword\na\tkeyword\n"), "{text}");
 }
+
+#[test]
+fn a_refused_document_adds_no_field_and_a_late_document_in_a_big_bulk_is_still_mapped() {
+    let (store, dir) = (Counting::new(), Scratch::new("window"));
+    let node = node_on(&store, &dir.0);
+    create(&node, "true");
+    // 1,100 items: the first is refused (empty id), the last introduces a new field,
+    // past the 1,000th valid document.
+    let mut text = String::new();
+    text.push_str("{\"index\":{\"_id\":\"\"}}\n{\"title\":\"a\",\"n\":1,\"ghost\":\"x\"}\n");
+    for i in 0..1100 {
+        let extra = if i == 1099 { ",\"late\":\"z\"" } else { "" };
+        text.push_str(&format!(
+            "{{\"index\":{{\"_id\":\"d{i}\"}}}}\n{{\"title\":\"a\",\"n\":{i}{extra}}}\n"
+        ));
+    }
+    let (_, response) = node
+        .bulk(
+            text.as_bytes(),
+            Some(text.len() as u64),
+            Some("ix"),
+            Wait::Searchable,
+        )
+        .unwrap();
+    let items = response["items"].as_array().unwrap();
+    assert_eq!(items[0]["index"]["status"], json!(400));
+    assert_eq!(
+        items[1100]["index"]["status"],
+        json!(201),
+        "{}",
+        items[1100]
+    );
+    assert_eq!(total(&node, json!({"match": {"late": "z"}})), 1);
+    // The refused document's field was never added: it can still be declared as another type.
+    node.put_mapping("ix", &json!({"properties": {"ghost": {"type": "integer"}}}))
+        .unwrap();
+}
+
+#[test]
+fn toggling_the_dynamic_setting_reuses_the_same_mapping_objects() {
+    let (store, dir) = (Counting::new(), Scratch::new("toggle"));
+    let node = node_on(&store, &dir.0);
+    create(&node, "strict");
+    let mut created = std::collections::BTreeSet::new();
+    for i in 0..10 {
+        store.take();
+        node.put_mapping("ix", &json!({"dynamic": i % 2 == 0}))
+            .unwrap();
+        for (kind, key) in store.take() {
+            if kind == "create" && key.starts_with("v1/") {
+                created.insert(key);
+            }
+        }
+    }
+    assert_eq!(
+        created.len(),
+        2,
+        "one object per distinct state: {created:?}"
+    );
+}
