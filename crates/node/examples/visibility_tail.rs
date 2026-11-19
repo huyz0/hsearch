@@ -157,7 +157,7 @@ fn drive<S: MetadataStore + 'static>(store: Arc<S>, args: &[String]) {
         search[100], search[198]
     );
     println!(
-        "total {:.1} s, process bytes written {:.0} MiB (all writes, in-memory store)",
+        "total {:.1} s, process bytes written {:.0} MiB (wchar: disk writes, plus socket sends with the s3 store)",
         started.elapsed().as_secs_f64(),
         (written_bytes() - written0) as f64 / 1_048_576.0
     );
