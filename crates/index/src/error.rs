@@ -31,6 +31,9 @@ pub enum Error {
     Closed,
     /// No searchable snapshot is available right now.
     Busy,
+    /// A stored value changed between being read and being replaced: another
+    /// writer got there first, and the caller must start again from the new one.
+    Changed,
 }
 
 impl std::fmt::Display for Error {

@@ -37,5 +37,7 @@ pub use format::{
     BLOB_CHUNK_BYTES, Blob, BlobAt, Field, INLINE_FIELD_MAX, IntentEntry,
     MAX_INDEXED_DOCUMENT_BYTES, Op, slot_text_cap, text_fits,
 };
-pub use index::{Index, get_mapping, get_shared, open_published, put_mapping, put_shared};
+pub use index::{
+    Index, get_mapping, get_shared, open_published, put_mapping, put_shared, replace_mapping,
+};
 pub use writer::{Hooks, ItemResult, NoHooks, Point, Published, Wait};

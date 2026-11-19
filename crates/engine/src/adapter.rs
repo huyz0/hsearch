@@ -1,7 +1,7 @@
 //! Serialized admission around a caller-owned directory and native writer.
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{
-    Arc, Mutex, MutexGuard, TryLockError,
+    Arc, Mutex, MutexGuard, RwLock, TryLockError,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
@@ -119,7 +119,7 @@ pub(crate) fn stored_of<'a>(id: &'a str, value: &'a Value<'a>, out: &mut Vec<Sto
 }
 
 impl Operation {
-    fn new(mutation: &Mutation<'_>) -> Self {
+    fn new(mutation: &Mutation<'_>, schema: &Schema) -> Self {
         match mutation {
             Mutation::Put {
                 id,
@@ -135,8 +135,19 @@ impl Operation {
                 create_only: matches!(mutation, Mutation::Create { .. }),
                 version: *version,
                 digest: Some(digest({
-                    let mut stored = Vec::with_capacity(fields.len());
-                    for (_, value) in fields.iter() {
+                    let mut stored = Vec::with_capacity(fields.len() * 2);
+                    for (at, (name, value)) in fields.iter().enumerate() {
+                        // The field's schema position first: a document without an
+                        // added field must not digest like one that lacks another.
+                        let place = match schema.fields.get(at) {
+                            Some((declared, _)) if declared == name => at,
+                            _ => schema
+                                .fields
+                                .iter()
+                                .position(|(n, _)| n == name)
+                                .unwrap_or(at),
+                        };
+                        stored.push(Stored::Long(place as i64));
                         stored_of(id, value, &mut stored);
                     }
                     stored.into_iter()
@@ -210,14 +221,15 @@ impl Schema {
             }
             bytes = bytes.checked_add(id.len()).ok_or(Error::Limit)?;
             if let Some(fields) = fields {
-                if fields.len() != self.fields.len() {
-                    return Err(Error::Document);
-                }
-                for ((name, value), (declared, kind)) in fields.iter().zip(&self.fields) {
-                    if *name != declared {
-                        return Err(Error::Document);
-                    }
-                    crate::schema::validate(*kind, *value)?;
+                self.check_row(fields)?;
+                for (at, (name, value)) in fields.iter().enumerate() {
+                    // The declared field at the same position, unless an added field
+                    // was left out before this one.
+                    let kind = match self.fields.get(at) {
+                        Some((declared, kind)) if declared == name => *kind,
+                        _ => self.kind(name)?,
+                    };
+                    crate::schema::validate(kind, *value)?;
                     bytes = bytes
                         .checked_add(name.len())
                         .and_then(|n| n.checked_add(crate::schema::value_bytes(value)))
@@ -231,7 +243,7 @@ impl Schema {
                 return Err(Error::Limit);
             }
         }
-        let operations: Vec<_> = mutations.iter().map(Operation::new).collect();
+        let operations: Vec<_> = mutations.iter().map(|m| Operation::new(m, self)).collect();
         let documents = mutations
             .iter()
             .map(|m| match m {
@@ -499,7 +511,8 @@ pub struct Engine<'d> {
     attempt: DirectoryAttempt<'d>,
     directory: &'d dyn Directory,
     snapshots: Arc<AtomicUsize>,
-    schema: Schema,
+    /// Replaced only by [`Engine::evolve_schema`], with one that extends it.
+    schema: RwLock<Schema>,
     state: Mutex<State>,
 }
 
@@ -544,6 +557,13 @@ fn open_failure(attempt: &DirectoryAttempt<'_>, error: Error) -> Error {
     }
 }
 
+/// The engine's current schema. Held only to clone or compare, never across I/O.
+fn current(schema: &RwLock<Schema>) -> Result<Schema> {
+    schema
+        .read()
+        .map(|s| s.clone())
+        .map_err(|_| Error::Poisoned)
+}
 fn gate<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
     mutex.try_lock().map_err(|e| match e {
         TryLockError::WouldBlock => Error::Busy,
@@ -660,7 +680,7 @@ impl<'d> Engine<'d> {
             return Err(Error::Checkpoint);
         }
         if let Some(checkpoint) = &checkpoint
-            && (checkpoint.schema != schema
+            && (!schema.extends(&checkpoint.schema)
                 || checkpoint.epoch != head.epoch
                 || head.native != Some(checkpoint.native))
         {
@@ -775,7 +795,7 @@ impl<'d> Engine<'d> {
             snapshots: Arc::clone(&lineage.readers),
             lease: WriterLease::new(lineage),
             attempt,
-            schema,
+            schema: RwLock::new(schema),
             state: Mutex::new(state),
         })
     }
@@ -802,9 +822,13 @@ impl<'d> Engine<'d> {
     pub fn apply(&self, batch: PreparedBatch) -> Result<Vec<Receipt>> {
         let mut state = gate(&self.state)?;
         live(&state)?;
-        if batch.schema != self.schema {
-            return Err(Error::Schema);
-        }
+        let limits = {
+            let held = self.schema.read().map_err(|_| Error::Poisoned)?;
+            if batch.schema != *held {
+                return Err(Error::Schema);
+            }
+            held.limits
+        };
         if let Some(old) = state.history.iter().find(|h| h.request == batch.request) {
             return if old.operations == batch.operations {
                 Ok(old.receipts.clone())
@@ -818,7 +842,6 @@ impl<'d> Engine<'d> {
             .iter()
             .filter(|op| !state.current.contains_key(&op.id))
             .count();
-        let limits = self.schema.limits;
         if state.operations + batch.operations.len() > limits.operations
             || state.physical_documents + additions > limits.documents
             || state.current.len() + new_ids > limits.documents
@@ -927,7 +950,26 @@ impl<'d> Engine<'d> {
                 return Err(Error::Native);
             }
         };
-        crate::reader::Snapshot::new(reader, self.schema.clone(), reservation)
+        crate::reader::Snapshot::new(reader, current(&self.schema)?, reservation)
+    }
+
+    /// Replace the schema with one that extends it ([`Schema::evolve`]): fields added
+    /// to a live engine. Serialised with [`Engine::apply`], so every batch sees
+    /// one schema or the other, never a mix; a batch prepared under the old one is
+    /// refused afterwards with [`Error::Schema`]. Snapshots already open keep the
+    /// schema they were taken under. A schema that is not this one extended is refused.
+    pub fn evolve_schema(&self, schema: Schema) -> Result<()> {
+        let state = gate(&self.state)?;
+        live(&state)?;
+        let mut held = self.schema.write().map_err(|_| Error::Poisoned)?;
+        if *held == schema {
+            return Ok(());
+        }
+        if !schema.extends(&held) || schema.revision <= held.revision {
+            return Err(Error::Schema);
+        }
+        *held = schema;
+        Ok(())
     }
 
     /// Commit native files and return caller-held retry state. This is not a
@@ -969,7 +1011,7 @@ impl<'d> Engine<'d> {
         head.epoch = epoch;
         head.native = Some(native);
         Ok(Checkpoint {
-            schema: self.schema.clone(),
+            schema: current(&self.schema)?,
             state: state.clone(),
             lineage: Arc::clone(&self.lease.lineage),
             epoch,

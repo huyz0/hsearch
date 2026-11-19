@@ -139,6 +139,15 @@ pub(crate) fn route<S: MetadataStore + 'static>(
             let body = json_body(request)?;
             node.create(index, &body).map(|v| (200, v))
         }
+        [index, "_mapping"] => {
+            // OpenSearch accepts PUT and POST for put-mapping.
+            if method != Method::Put && method != Method::Post {
+                return Err(wrong());
+            }
+            allow(&found, &[])?;
+            let body = json_body(request)?;
+            node.put_mapping(index, &body).map(|v| (200, v))
+        }
         [index, "_search"] => {
             if method != Method::Post && method != Method::Get {
                 return Err(wrong());

@@ -138,6 +138,15 @@ impl Index {
         self.ask(|reply| Command::Bulk(Bulk { ops, wait, reply }))
     }
 
+    /// Replace the index's schema with one that extends it: fields added to a live
+    /// index ([`Schema::evolve`]). Runs on the writer thread between log slots, so
+    /// every bulk is written under one schema or the other; documents already
+    /// logged keep their meaning, with the added fields absent from them. Costs no
+    /// object-store request: the caller publishes the new mapping.
+    pub fn evolve(&self, schema: Schema) -> Result<()> {
+        self.ask(|reply| Command::Evolve(schema, reply))
+    }
+
     /// Make everything applied so far searchable.
     pub fn refresh(&self) -> Result<()> {
         self.ask(Command::Refresh)
@@ -204,6 +213,22 @@ pub fn put_mapping<S: MetadataStore + 'static>(store: &S, name: &str, bytes: &[u
         return Err(Error::Invalid);
     }
     crate::writer::put_mapping(store, name, bytes)
+}
+
+/// Replace the mapping bytes stored for an index with `new` if they are still
+/// `expected`. A compare-exchange: [`Error::Changed`] when another writer replaced
+/// them first. Costs a constant number of requests, never one per document or
+/// segment.
+pub fn replace_mapping<S: MetadataStore + 'static>(
+    store: &S,
+    name: &str,
+    expected: &[u8],
+    new: &[u8],
+) -> Result<()> {
+    if !valid_name(name) {
+        return Err(Error::Invalid);
+    }
+    crate::writer::replace_mapping(store, name, expected, new)
 }
 
 /// Read the mapping bytes stored for an index, or [`Error::NotFound`].
