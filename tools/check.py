@@ -3,6 +3,9 @@
 
 Plain `cargo` only. Coverage is `scripts/coverage.sh` (cargo llvm-cov); it is not
 part of this command so a developer loop stays fast.
+
+`--skip-cargo-test` runs everything else: CI runs that as the `check` job and runs
+`cargo test` in the parallel `test-*` jobs.
 """
 from pathlib import Path
 import subprocess
@@ -25,7 +28,10 @@ CHECKS = [
 
 
 def main():
-    for command in CHECKS:
+    checks = CHECKS
+    if "--skip-cargo-test" in sys.argv[1:]:
+        checks = [c for c in CHECKS if c[:2] != ["cargo", "test"]]
+    for command in checks:
         print("CHECK: " + " ".join(command), flush=True)
         if subprocess.run(command, cwd=ROOT).returncode != 0:
             print("FAIL: " + " ".join(command), file=sys.stderr)

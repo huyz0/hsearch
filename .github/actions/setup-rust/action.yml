@@ -1,0 +1,30 @@
+name: setup-rust
+description: Pinned toolchain, dependency cache and, when asked, a healthy pinned RustFS.
+inputs:
+  cache-key:
+    description: rust-cache key; jobs that build the same profile share one so a cache saved by one is restored by the others.
+    required: true
+  save:
+    description: "'true' lets this job save the cache (still only on main, so PRs restore and never evict it)."
+    default: "false"
+  rustfs:
+    description: "'true' starts the pinned RustFS, waits for a signed write and read, and exports the HSEARCH_S3_* variables."
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Install pinned toolchain
+      shell: bash
+      run: rustup show active-toolchain || rustup toolchain install
+    - name: Restore the dependency build cache
+      uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      with:
+        shared-key: ${{ inputs.cache-key }}
+        save-if: ${{ inputs.save == 'true' && github.ref == 'refs/heads/main' }}
+    - name: Prefetch locked dependencies
+      shell: bash
+      run: cargo fetch --locked
+    - name: Start pinned RustFS
+      if: inputs.rustfs == 'true'
+      shell: bash
+      run: eval "$(scripts/rustfs.sh up)" && env | grep '^HSEARCH_S3_' >> "$GITHUB_ENV"
