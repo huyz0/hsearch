@@ -41,7 +41,9 @@ pub use factory::{
 mod query;
 mod reader;
 mod vector;
-pub use adapter::{Checkpoint, Engine, MergeMode, Mutation, Outcome, PreparedBatch, Receipt};
+pub use adapter::{
+    Checked, Checkpoint, Engine, MergeMode, Mutation, Outcome, PreparedBatch, Receipt,
+};
 pub use query::{JoinScore, Query};
 pub use reader::{Hit, SearchResult, Snapshot, Sort, StoredValue};
 pub use schema::{
