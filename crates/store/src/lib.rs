@@ -4,6 +4,7 @@
 //! garbage collection reclaim what a replaced base left behind without losing a view anyone holds.
 mod boundary;
 pub mod compact;
+pub mod host;
 mod io;
 pub mod payload;
 pub mod pins;

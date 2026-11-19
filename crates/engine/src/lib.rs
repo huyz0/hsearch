@@ -42,7 +42,8 @@ mod query;
 mod reader;
 mod vector;
 pub use adapter::{
-    Checked, Checkpoint, Engine, MergeMode, Mutation, Outcome, PreparedBatch, Receipt,
+    Checked, Checkpoint, Engine, MAX_BATCH_OPERATIONS, MergeMode, Mutation, Outcome, PreparedBatch,
+    Receipt,
 };
 pub use query::{JoinScore, Query};
 pub use reader::{Hit, SearchResult, Snapshot, Sort, StoredValue};
