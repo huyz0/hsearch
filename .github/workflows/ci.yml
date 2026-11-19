@@ -142,6 +142,11 @@ jobs:
           rustfs: "true"
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked --version 0.9.1
+      # The restored cache holds instrumented workspace-crate objects from an older main build;
+      # mixed with fresh ones they give "functions have mismatched data" and a false low
+      # percentage. Dependencies stay cached; every workspace crate is rebuilt and measured.
+      - name: Drop stale instrumented workspace objects
+        run: cargo llvm-cov clean --workspace
       - name: Per-crate coverage floor
         run: scripts/coverage.sh 90
       - name: RustFS log
