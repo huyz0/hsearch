@@ -21,12 +21,14 @@ use hsearch_commit::{
     Committer, Dependencies, DependencyView, Outcome, Receipt as Committed, Reject, Request,
 };
 use hsearch_engine::{
-    Checked, Engine, Error as EngineError, LocalFiles, Mutation, Receipt, Schema, encode_batch,
+    Checked, Engine, Error as EngineError, LocalFiles, Mutation, Receipt, Schema, Snapshot,
+    encode_batch,
 };
 use hsearch_format::{CommitToken, Digest, Id, ManifestRoot};
-use hsearch_index::barrier::Replay;
+use hsearch_index::barrier::{Gen, Readers, Refuse, Replay};
 use hsearch_lane::{LaneId, block_on, read_head};
 use hsearch_object::{LargeObjectWriter, MetadataStore};
+use std::sync::Arc;
 
 use crate::publish::{self, BaseSpec, Publisher};
 use crate::recover::Recovered;
@@ -72,6 +74,24 @@ pub struct Serving<S: MetadataStore, D: DependencyView> {
     cover: u64,
     /// The base this writer last published (or recovered on): the next one replaces it.
     base: Option<ManifestRoot>,
+    /// The readers queries run on: the committed watermark and the published snapshot.
+    readers: Readers<Snapshot>,
+}
+
+/// Generations a query may hold at once besides the newest. The engine allows four open
+/// snapshots in all, so this stays below that.
+pub const MAX_PINNED_READERS: usize = 2;
+
+/// Why a refresh published nothing. The previously published reader still serves.
+#[derive(Debug)]
+pub enum RefreshError {
+    /// The applied prefix is not a barrier cut (a batch is in flight or the cursor failed).
+    Cut,
+    /// The engine could not open a reader (a snapshot limit, or a native failure).
+    Engine(EngineError),
+    /// The reader was not published: it covers slots not committed, fewer than the one serving,
+    /// or too many older generations are still held by queries.
+    Refused(Refuse),
 }
 
 /// Where a base is published and what it is made under.
@@ -114,6 +134,9 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
     /// every record is prepared against; it is fixed for the writer's life, so after a dependency
     /// changes every write is `Rejected(Stale)` until the writer is rebuilt.
     pub fn new(committer: Committer<S, D>, index: Id, next: u64, deps: Dependencies) -> Self {
+        let readers = Readers::new(MAX_PINNED_READERS);
+        // Everything before `next` is committed and applied; the watermark starts there.
+        let _ = readers.commit(next);
         Self {
             committer,
             index,
@@ -123,6 +146,7 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
             replay: Replay::new(next),
             cover: 0,
             base: None,
+            readers,
         }
     }
 
@@ -155,6 +179,41 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
     #[must_use]
     pub fn is_broken(&self) -> bool {
         self.broken || self.committer.is_poisoned()
+    }
+
+    /// The published reader, pinned until the handle is dropped: queries run on it, and the same
+    /// handle serves the fetch round. `None` before the first [`Serving::refresh`].
+    #[must_use]
+    pub fn reader(&self) -> Option<Arc<Gen<Snapshot>>> {
+        self.readers.pin()
+    }
+
+    /// Whether a refresh would publish a reader covering more than the one serving.
+    #[must_use]
+    pub fn refresh_due(&self) -> bool {
+        self.readers.refresh_due(self.replay.applied())
+    }
+
+    /// Publish a reader over every batch applied so far, if that is more than the one serving.
+    /// Returns the reader serving afterwards. The engine is not written to meanwhile (`&mut
+    /// self`), so the snapshot covers exactly the barrier cut. Any failure leaves the previously
+    /// published reader serving, and the next refresh tries again.
+    ///
+    /// # Errors
+    /// [`RefreshError`] naming the step that failed; nothing was published.
+    pub fn refresh(
+        &mut self,
+        engine: &Engine<'_>,
+    ) -> Result<Option<Arc<Gen<Snapshot>>>, RefreshError> {
+        if !self.refresh_due() {
+            return Ok(self.readers.pin());
+        }
+        let cut = self.replay.cut().map_err(|_| RefreshError::Cut)?;
+        let snapshot = engine.refresh().map_err(RefreshError::Engine)?;
+        self.readers
+            .publish(snapshot, cut)
+            .map(Some)
+            .map_err(|refused| RefreshError::Refused(refused.reason))
     }
 
     /// Prepare, admit, commit and apply one batch.
@@ -212,6 +271,8 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
         };
         self.next += 1;
         self.cover = committed.ordinal + 1;
+        // The watermark only rises (`next` only does), so this cannot be refused.
+        let _ = self.readers.commit(self.next);
         // The record is durable: the cursor follows the engine through the apply.
         let in_flight = self.replay.begin(committed.seq).is_ok();
         match engine.apply(prepared) {
