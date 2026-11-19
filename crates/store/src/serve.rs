@@ -234,9 +234,14 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
     ///
     /// The base replaced is the one this writer last published or recovered on. Nothing checks
     /// that the head still names it, so a compaction that replaced it in the meantime is not seen
-    /// here (the publication generation could then fail to rise past the compacted one). The lane cover is one past the last record
-    /// this writer committed (or recovery's first absent position), which is only the right cover
-    /// for a lane this index owns alone.
+    /// here (the publication generation could then fail to rise past the compacted one).
+    ///
+    /// A failed publish leaves the writer's base as it was, so a retry computes the same
+    /// generation and can fail the same way after [`publish::Error::Swept`]; each attempt uploads
+    /// its files again. The caller bounds its attempts and rebuilds the writer after a `Swept`.
+    ///
+    /// The lane cover is one past the last record this writer committed (or recovery's first
+    /// absent position), which is only the right cover for a lane this index owns alone.
     #[allow(clippy::too_many_arguments)]
     pub fn publish_base<P>(
         &mut self,

@@ -468,3 +468,91 @@ fn a_broken_writer_publishes_nothing() {
     })
     .unwrap();
 }
+
+/// Raise the shard's collection boundary the way a sweep does: the object a publish reads.
+fn raise_boundary(store: &Arc<Crash>, to: u64) {
+    use sha2::{Digest as _, Sha256};
+    let mut bytes = b"HSGB\x01".to_vec();
+    bytes.extend_from_slice(&to.to_le_bytes());
+    let digest = Sha256::digest(&bytes);
+    bytes.extend_from_slice(&digest[..8]);
+    let ctx = hsearch_object::RequestContext::new(
+        Duration::from_secs(5),
+        hsearch_object::Cancellation::default(),
+        hsearch_object::Budget {
+            request_bytes: 4096,
+            response_bytes: 4096,
+            attempts: 4,
+        },
+    )
+    .unwrap();
+    let put = hsearch_object::Mutation {
+        request_id: hsearch_object::RequestId::new(b"raise-boundary").unwrap(),
+        key: hsearch_object::ObjectKey::new(layout().gc_boundary(&INDEX, &SHARD, 1).as_bytes())
+            .unwrap(),
+        payload: hsearch_object::Payload::new(&bytes).unwrap(),
+        metadata: hsearch_object::Metadata::new(b"").unwrap(),
+        precondition: hsearch_object::Precondition::Absent,
+    };
+    block_on(hsearch_object::ObjectBackend::create(
+        store.inner_ref(),
+        &ctx,
+        &put,
+    ))
+    .unwrap();
+}
+
+#[test]
+fn a_base_below_the_collection_boundary_is_refused_and_leaves_the_head_alone() {
+    let store = Crash::new();
+    let (lane, committer) = open_lane(&store);
+    let h = history();
+    let dir = std::env::temp_dir().join(format!("hsearch-base-swept-{}", std::process::id()));
+    with_local_engine(&dir, schema(), |engine, local| {
+        let mut writer = Serving::new(committer, INDEX, 0, deps());
+        write_batch(&mut writer, engine, 0, &h[0]).unwrap();
+        let p = publisher(&store);
+        let first = writer
+            .publish_base(
+                engine,
+                local,
+                &p,
+                &target_of(&lane),
+                token(1),
+                &AnyDependencies,
+            )
+            .unwrap();
+        let named = block_on(read_head(store.inner_ref(), &layout(), &lane))
+            .unwrap()
+            .0
+            .checkpoint;
+        assert_eq!(named, Some(first.manifest));
+        raise_boundary(&store, first.root.generation + 5);
+        write_batch(&mut writer, engine, 1, &h[1]).unwrap();
+        let swept = writer.publish_base(
+            engine,
+            local,
+            &p,
+            &target_of(&lane),
+            token(2),
+            &AnyDependencies,
+        );
+        assert!(
+            matches!(
+                swept,
+                Err(BaseError::Publish(
+                    hsearch_store::publish::Error::Swept { .. }
+                ))
+            ),
+            "{swept:?}"
+        );
+        // Nothing names the refused base, and the writer is not broken: writes still land.
+        let after = block_on(read_head(store.inner_ref(), &layout(), &lane))
+            .unwrap()
+            .0
+            .checkpoint;
+        assert_eq!(after, named);
+        write_batch(&mut writer, engine, 2, &h[2]).unwrap();
+    })
+    .unwrap();
+}

@@ -10,7 +10,7 @@
 
 ## Evidence
 
-`crates/store/tests/base.rs` (9 tests).
+`crates/store/tests/base.rs` (10 tests).
 
 - Three batches written through `Serving`, a base published (covering 3), two more batches, a second base (covering 5, generation +1, replacing the first without the caller naming it): a recovery opens the second base, replays no tail, and matches the independent ledger for every identity. Before any write, `publish_base` is `Nothing`.
 - One base then a three-batch tail: recovery reads `from_seq` 2, replays 3, matches the ledger.
@@ -24,10 +24,11 @@ Mutations seen red: the pin not released, the usable check removed, the lane cov
 ## Limits
 
 - Provisional: in-memory store, no RustFS, no request counts beyond the pin write.
-- **Swept paths are not tested end to end here.** The boundary refusal of `activate` and of `Pins::register` is covered by `gc.rs` (M06.04); `publish_base` and `recover_writer_held` propagate it as `BaseError::Publish(Swept)` and `RebuildError::Pin`, which no test in this task provokes (raising a boundary needs the sweeper and an inventory-capable store).
+- **`publish_base` Swept is tested; the recovery pin's Swept is not.** A boundary raised past the base's generation makes `publish_base` return `BaseError::Publish(Swept)`, names nothing in the head and leaves the writer usable (`a_base_below_the_collection_boundary_is_refused_and_leaves_the_head_alone`; seen red with the boundary guard disabled). `recover_writer_held` propagating `Pins::register`'s Swept as `RebuildError::Pin` has no test here (`gc.rs`, M06.04, covers the pin itself).
+- A failed publish leaves the writer's base unchanged, so a retry after Swept recomputes the same generation and re-uploads its files: the caller bounds attempts and rebuilds the writer (M06.16 host).
 - Nothing checks that the head still names the base this writer last published or recovered on: a compaction that replaced it in between is not seen, and the next publication's generation (previous + 1) could then fail to rise past the compacted one. A follow-up for the writer wiring (M06.16).
 - A pin registered and then not released (a failed release) is not re-registered by a retry with the same id and token: the new expiry gives different bytes and the registration conflicts until the old pin expires. Recovery retries should use a new token.
 - The pin protects the fetch, not the later reopen and tail replay, and is checked before each file, not after the last.
 - The lane cover is one past the writer's last committed record, correct only for a lane this index owns alone (a shared lane needs the per-index cover of M03.09).
-- `BaseError::Cut` and the Swept paths have no test. `Serving` owns the `Replay` cursor now; moving the published reader onto `Readers` and the resolver, and keeping the published reader when a refresh fails, stay with M06.17.
+- `BaseError::Cut`, a head CAS lost between publish and activate, and the recovery pin's Swept have no test. `Serving` owns the `Replay` cursor now; moving the published reader onto `Readers` and the resolver, and keeping the published reader when a refresh fails, stay with M06.17.
 - Tests were written after the code, then mutated (disclosed departure from test-first).
