@@ -269,6 +269,7 @@ impl Host {
                         counters: &seen,
                         batches_since_base: 0,
                         attempts: 0,
+                        schema_unpublished: false,
                     };
                     // A recovered index with data is searchable at once.
                     let first = core.serving.refresh(engine).map(|_| ()).and_then(|()| {
@@ -440,6 +441,8 @@ struct Core<'a, 'e, S: MetadataStore, V: DependencyView, D> {
     counters: &'a Counters,
     batches_since_base: u64,
     attempts: u64,
+    /// A schema change took effect but the reader under it could not be published yet.
+    schema_unpublished: bool,
 }
 
 fn value(field: &Field) -> Option<Value<'_>> {
@@ -565,15 +568,14 @@ where
                         .engine
                         .evolve_schema((*schema).clone())
                         .map_err(HostError::Refused);
-                    let mut result = result;
                     if result.is_ok() {
                         self.schema = *schema;
                         self.serving.set_deps(deps);
                         // Readers published from here on carry the new schema; a refresh that
                         // finds nothing new would keep serving the old one.
-                        if self.serving.republish(self.engine).is_err() {
-                            result = Err(HostError::Refresh);
-                        }
+                        // The change has taken effect either way; a reader that could not be
+                        // published now is published by the next refresh.
+                        self.schema_unpublished = self.serving.republish(self.engine).is_err();
                     }
                     let _ = reply.send(result);
                 }
@@ -586,16 +588,21 @@ where
     }
 
     fn refresh(&mut self) -> Result<(), HostError> {
-        self.serving
-            .refresh(self.engine)
-            .map(|_| ())
-            .map_err(|e| match e {
-                RefreshError::Cut => {
-                    self.counters.broken.store(1, Ordering::Release);
-                    HostError::Broken
-                }
-                RefreshError::Engine(_) | RefreshError::Refused(_) => HostError::Refresh,
-            })
+        let published = if self.schema_unpublished {
+            self.serving.republish(self.engine)
+        } else {
+            self.serving.refresh(self.engine).map(|_| ())
+        };
+        if published.is_ok() {
+            self.schema_unpublished = false;
+        }
+        published.map_err(|e| match e {
+            RefreshError::Cut => {
+                self.counters.broken.store(1, Ordering::Release);
+                HostError::Broken
+            }
+            RefreshError::Engine(_) | RefreshError::Refused(_) => HostError::Refresh,
+        })
     }
 
     fn token(&mut self) -> CommitToken {
@@ -847,7 +854,32 @@ where
             Err(HostError::Refused(_)) if run.len() > 1 => {
                 let (head, tail) = run.split_at(run.len() / 2);
                 let mut items = self.write_split(group, head)?;
-                items.extend(self.write_split(group, tail)?);
+                // A strict bulk stops at its first refusal: nothing of it after the refused
+                // operation is written, whichever half it falls in.
+                let stopped: std::collections::HashMap<usize, EngineError> = head
+                    .iter()
+                    .zip(&items)
+                    .filter_map(|((b, _), item)| match item {
+                        Err(e) if group[*b].strict => Some((*b, *e)),
+                        _ => None,
+                    })
+                    .collect();
+                let rest: Vec<(usize, usize)> = tail
+                    .iter()
+                    .copied()
+                    .filter(|(b, _)| !stopped.contains_key(b))
+                    .collect();
+                let mut written = if rest.is_empty() {
+                    Vec::new().into_iter()
+                } else {
+                    self.write_split(group, &rest)?.into_iter()
+                };
+                for (b, _) in tail {
+                    match stopped.get(b) {
+                        Some(e) => items.push(Err(*e)),
+                        None => items.extend(written.next()),
+                    }
+                }
                 Ok(items)
             }
             Err(HostError::Refused(refusal)) => Ok(vec![Err(refusal)]),

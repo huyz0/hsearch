@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use history::*;
 use hsearch_commit::Dependencies;
-use hsearch_engine::{Outcome, StoredValue};
+use hsearch_engine::{Kind, Outcome, StoredValue};
 use hsearch_index::{Field, ItemResult, Op, Wait};
 use hsearch_lane::{block_on, read_head};
 use hsearch_store::host::{Config, Host, HostError, OpenArgs};
@@ -585,4 +585,39 @@ fn a_refusal_in_the_middle_of_a_packed_run_leaves_the_runs_around_it_written() {
     host.stop();
     let again = open_packing(&store, lane, 64, "middle-again");
     assert_eq!(tag(&again, "id0063").as_deref(), Some("t63"));
+}
+
+#[test]
+fn a_strict_bulk_writes_nothing_after_the_operation_the_engine_refuses() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("strict", 0, 0, 1));
+    let huge = "h".repeat(200_000);
+    // All three share one run: it is split to find the refused one, and the third must not be
+    // written beside it.
+    let got = host.bulk(
+        vec![put("a", "1"), put("b", &huge), put("c", "3")],
+        Wait::Searchable,
+    );
+    assert!(matches!(got, Err(HostError::Refused(_))), "{got:?}");
+    host.refresh().unwrap();
+    assert_eq!(tag(&host, "a").as_deref(), Some("1"));
+    assert_eq!(tag(&host, "b"), None);
+    assert_eq!(tag(&host, "c"), None);
+}
+
+#[test]
+fn an_evolve_that_cannot_publish_its_reader_yet_still_succeeds() {
+    let (store, lane) = new_lane();
+    let host = open(&store, lane, config("evolve-pinned", 0, 0, 1));
+    let mut held = Vec::new();
+    for i in 0..2 {
+        host.bulk(vec![put(&format!("k{i}"), "x")], Wait::Searchable)
+            .unwrap();
+        held.extend(host.reader());
+    }
+    let evolved = schema().evolve(2, &[("extra", Kind::Keyword)]).unwrap();
+    host.evolve(evolved, deps()).unwrap();
+    drop(held);
+    host.refresh().unwrap();
+    assert!(host.reader().is_some());
 }
