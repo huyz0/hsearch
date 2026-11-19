@@ -9,6 +9,7 @@ pub mod pins;
 pub mod publish;
 pub mod rebuild;
 pub mod recover;
+pub mod snapshot;
 pub mod sweep;
 
 pub use io::Requests;

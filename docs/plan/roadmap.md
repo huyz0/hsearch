@@ -24,7 +24,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | [M05: mTLS, tenant policy and BYOK](milestones/M05.md) | done | 8/8 | M03 |
 | [M06: Object-durable search store on RustFS](milestones/M06.md) | planned | 7/13 | M04, M05 |
 | [M21: Document and mapping semantics](milestones/M21.md) | planned | 6/10 | M06 |
-| [M22: Pinned views, index management and background jobs](milestones/M22.md) | planned | 0/5 | M21 |
+| [M22: Pinned views, index management and background jobs](milestones/M22.md) | planned | 1/5 | M21 |
 | [M23: Vector search: HNSW and IVF with quantization and disk variants](milestones/M23.md) | done | 6/6 | M04 |
 | [M07: Distributed routing and query serving](milestones/M07.md) | planned | 1/15 | M06 |
 | [M08: Telemetry and AI-readable diagnostics](milestones/M08.md) | in_progress | 1/7 | M07 |

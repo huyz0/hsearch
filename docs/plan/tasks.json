@@ -3336,8 +3336,13 @@
             "M03.05"
           ],
           "owner": "engine/api",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m22-05-shallow-snapshots.md",
+              "result": "Provisional (in-memory store, one host, no RustFS). Snapshots (store-local records) pin each shard's live root through the M06.04 pin API with a non-expiring pin before the record is written; create costs 8 requests per shard (6 reads, 2 writes), no LIST, and never touches a page or payload, identical for a 4-document and a 128-document index. Same-store restore registers a holder on the snapshot and writes an origin record (5 requests, one new object, copies nothing) and reads files through the source's keys, byte-identical after two compactions and a sweep; a sweep suspended across creation, exclusive versus shared deletes, a delete stopped midway, a revoked key (refused with zero requests) and 64-holder and 4,096-shard bounds are tested (15 tests, written first and seen failing). Not done: serving an engine from a restored index (needs publish.rs and recover.rs after PR 139), detach, HTTP endpoints (M06.05), portable form (M11.06), a RustFS run."
+            }
+          ]
         }
       ]
     },
