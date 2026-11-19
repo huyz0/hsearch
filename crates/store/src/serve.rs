@@ -21,8 +21,8 @@ use hsearch_commit::{
     Committer, Dependencies, DependencyView, Outcome, Receipt as Committed, Reject, Request,
 };
 use hsearch_engine::{
-    Checked, Engine, Error as EngineError, LocalFiles, Mutation, Receipt, Schema, Snapshot,
-    encode_batch,
+    Checked, Engine, Error as EngineError, LocalFiles, Mutation, PreparedBatch, Receipt, Schema,
+    Snapshot, encode_batch,
 };
 use hsearch_format::{CommitToken, Digest, Id, ManifestRoot};
 use hsearch_index::barrier::{Gen, Readers, Refuse, Replay};
@@ -59,6 +59,35 @@ pub struct Written {
     pub receipts: Vec<Receipt>,
     /// The log's receipt for the record.
     pub committed: Option<Committed>,
+}
+
+/// One batch of a chain: the request identity it is logged under and its mutations.
+pub struct ChainBatch<'a> {
+    /// The request identity, unique among the batches the engine has applied.
+    pub request: &'a str,
+    /// The mutations, versioned as they must be applied.
+    pub mutations: &'a [Mutation<'a>],
+}
+
+/// Why a chain stopped before its last batch.
+#[derive(Debug, Eq, PartialEq)]
+pub enum ChainStop {
+    /// The batch after the ones written was refused; nothing was written for it or any later one.
+    Refused(EngineError),
+    /// The batch after the ones written was applied before; it is not written again, and nothing
+    /// was written for any later one.
+    Recognised,
+    /// The write failed; see [`ServeError`] for what is certain about the records.
+    Failed(ServeError),
+}
+
+/// What [`Serving::write_chain`] wrote.
+#[derive(Debug, Default, PartialEq)]
+pub struct Chained {
+    /// The receipts of the leading batches that were written and applied, one list per batch.
+    pub receipts: Vec<Vec<Receipt>>,
+    /// Why the batches after those were not written, if they were not.
+    pub stop: Option<ChainStop>,
 }
 
 /// One index's serving writer.
@@ -224,11 +253,44 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
         if !self.refresh_due() {
             return Ok(self.readers.pin());
         }
+        self.publish_now(engine)
+    }
+
+    /// Publish a reader over the engine as it is, whether or not more has been applied since the
+    /// last one: readers opened after a schema change must know the schema.
+    ///
+    /// # Errors
+    /// [`RefreshError`] naming the step that failed; nothing was published.
+    pub fn republish(&mut self, engine: &Engine<'_>) -> Result<(), RefreshError> {
+        self.publish_now(engine).map(|_| ())
+    }
+
+    fn publish_now(
+        &mut self,
+        engine: &Engine<'_>,
+    ) -> Result<Option<Arc<Gen<Snapshot>>>, RefreshError> {
         let cut = self.replay.cut().map_err(|_| RefreshError::Cut)?;
         let snapshot = engine.refresh().map_err(RefreshError::Engine)?;
         self.readers
             .publish(snapshot, cut)
             .map(Some)
+            .map_err(|refused| RefreshError::Refused(refused.reason))
+    }
+
+    /// Publish a reader over the engine as it is when none has been published: an index with
+    /// nothing in it can be searched and answers with no hits. Does nothing if a reader serves.
+    ///
+    /// # Errors
+    /// [`RefreshError`] naming the step that failed; nothing was published.
+    pub fn publish_empty(&mut self, engine: &Engine<'_>) -> Result<(), RefreshError> {
+        if self.readers.pin().is_some() {
+            return Ok(());
+        }
+        let cut = self.replay.cut().map_err(|_| RefreshError::Cut)?;
+        let snapshot = engine.refresh().map_err(RefreshError::Engine)?;
+        self.readers
+            .publish(snapshot, cut)
+            .map(|_| ())
             .map_err(|refused| RefreshError::Refused(refused.reason))
     }
 
@@ -302,6 +364,137 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
                 Err(ServeError::Broken)
             }
         }
+    }
+
+    /// Write a run of batches as one commit and apply them in order: they share a lane slot (or
+    /// as few as the slot bounds allow), so the cost is a request per slot and not per batch. The
+    /// engine decides all of them together ([`Engine::admit_chain`]) before anything is logged,
+    /// so a logged batch is one the engine will take when it is applied after the ones before it.
+    ///
+    /// Batches are written up to the first one that is refused, already applied, or whose
+    /// records could not be written; that one and the rest are not written, and the writer says
+    /// why in `stop`. Each record takes the next sequence, so a caller must version batch `i`
+    /// as if it were record `next_seq() + i`.
+    pub fn write_chain(
+        &mut self,
+        schema: &Schema,
+        engine: &Engine<'_>,
+        batches: &[ChainBatch<'_>],
+    ) -> Chained {
+        let mut out = Chained::default();
+        if self.broken {
+            out.stop = Some(ChainStop::Failed(ServeError::Broken));
+            return out;
+        }
+        let mut prepared = Vec::with_capacity(batches.len());
+        let mut bodies = Vec::with_capacity(batches.len());
+        for batch in batches {
+            let made = schema
+                .prepare(batch.request, batch.mutations)
+                .and_then(|p| encode_batch(batch.request, batch.mutations).map(|b| (p, b)));
+            match made {
+                Ok((p, body)) => {
+                    prepared.push(p);
+                    bodies.push(body);
+                }
+                Err(e) => {
+                    out.stop = Some(ChainStop::Refused(e));
+                    break;
+                }
+            }
+        }
+        let decisions = {
+            let refs: Vec<&PreparedBatch> = prepared.iter().collect();
+            engine.admit_chain(&refs)
+        };
+        let decisions = match decisions {
+            Ok(decisions) => decisions,
+            Err(_) => {
+                // The engine is poisoned: that is a writer to replace, not a refusal.
+                self.broken = true;
+                out.stop = Some(ChainStop::Failed(ServeError::Broken));
+                return out;
+            }
+        };
+        let mut fresh = prepared.len();
+        for (i, decision) in decisions.into_iter().enumerate() {
+            let stop = match decision {
+                Ok(Checked::Fresh) => continue,
+                Ok(Checked::Recognised(_)) => ChainStop::Recognised,
+                Err(EngineError::Poisoned | EngineError::Native) => {
+                    self.broken = true;
+                    ChainStop::Failed(ServeError::Broken)
+                }
+                Err(e) => ChainStop::Refused(e),
+            };
+            fresh = i;
+            out.stop = Some(stop);
+            break;
+        }
+        prepared.truncate(fresh);
+        bodies.truncate(fresh);
+        if prepared.is_empty() {
+            return out;
+        }
+        let requests: Vec<Request> = bodies
+            .into_iter()
+            .enumerate()
+            .map(|(j, body)| Request {
+                index: self.index,
+                seq: self.next + j as u64,
+                body,
+                delete: false,
+                deps: self.deps,
+            })
+            .collect();
+        let outcomes = block_on(self.committer.commit(requests));
+        let mut pending = prepared.into_iter();
+        let mut failure: Option<ServeError> = None;
+        for outcome in outcomes {
+            let Some(batch) = pending.next() else { break };
+            if failure.is_some() {
+                // A record after a failed one that is in the log leaves the engine behind it.
+                if matches!(outcome, Outcome::Committed(_) | Outcome::Unknown { .. }) {
+                    self.broken = true;
+                    failure = Some(ServeError::Broken);
+                }
+                continue;
+            }
+            match outcome {
+                Outcome::Committed(committed) => {
+                    self.next += 1;
+                    self.cover = committed.ordinal + 1;
+                    // The watermark only rises (`next` only does), so this cannot be refused.
+                    let _ = self.readers.commit(self.next);
+                    let in_flight = self.replay.begin(committed.seq).is_ok();
+                    match engine.apply(batch) {
+                        Ok(receipts) if in_flight && self.replay.done(committed.seq).is_ok() => {
+                            out.receipts.push(receipts);
+                        }
+                        _ => {
+                            self.replay.fail();
+                            self.broken = true;
+                            failure = Some(ServeError::Broken);
+                        }
+                    }
+                }
+                // A taken slot position may be our own accepted slot (see `Reject::Fenced`).
+                Outcome::Rejected(Reject::Fenced) => {
+                    self.broken = true;
+                    failure = Some(ServeError::Broken);
+                }
+                Outcome::Rejected(reason) => failure = Some(ServeError::Rejected(reason)),
+                Outcome::NotAttempted => failure = Some(ServeError::Rejected(Reject::Poisoned)),
+                Outcome::Unknown { ordinal } => {
+                    self.broken = true;
+                    failure = Some(ServeError::Unknown { ordinal });
+                }
+            }
+        }
+        if let Some(failure) = failure {
+            out.stop = Some(ChainStop::Failed(failure));
+        }
+        out
     }
 
     /// Commit the engine's files and publish them with the tombstone list as a base covering every

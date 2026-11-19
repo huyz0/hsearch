@@ -10,7 +10,7 @@ use hsearch_engine::{Error as EngineError, Mutation, StoredValue, Value, with_lo
 use hsearch_store::publish::AnyDependencies;
 use hsearch_store::rebuild::rebuild;
 use hsearch_store::recover::Expect;
-use hsearch_store::serve::{ServeError, Serving};
+use hsearch_store::serve::{ChainBatch, ChainStop, ServeError, Serving};
 use std::sync::atomic::Ordering;
 use support::*;
 
@@ -261,4 +261,53 @@ fn a_batch_the_engine_refuses_after_its_commit_breaks_the_writer_and_recovery_se
     let (applied, got) = recovered(&store, &lane, "post", &["a", "b"]);
     assert_eq!(applied, 1);
     assert_eq!(got, vec![Some((1, "x".into())), None]);
+}
+
+#[test]
+fn a_chain_logs_the_batches_before_the_first_the_engine_refuses_and_none_after_it() {
+    let store = Crash::new();
+    let (lane, committer) = open_lane(&store);
+    let schema = schema();
+    let dir = std::env::temp_dir().join(format!("hsearch-serve-chain-{}", std::process::id()));
+    let before = store.writes();
+    with_local_engine(&dir, schema.clone(), |engine, _| {
+        let mut writer = Serving::new(committer, INDEX, 0, deps());
+        let first = [put("a", 1, "x")];
+        // Not above the version the chain's first batch gives "a": refused.
+        let stale = [put("a", 1, "y")];
+        // Fresh on its own, but it comes after the refused one.
+        let later = [put("b", 1, "z")];
+        let chained = writer.write_chain(
+            &schema,
+            engine,
+            &[
+                ChainBatch {
+                    request: "c1",
+                    mutations: &first,
+                },
+                ChainBatch {
+                    request: "c2",
+                    mutations: &stale,
+                },
+                ChainBatch {
+                    request: "c3",
+                    mutations: &later,
+                },
+            ],
+        );
+        assert_eq!(chained.receipts.len(), 1);
+        assert_eq!(
+            chained.stop,
+            Some(ChainStop::Refused(EngineError::Conflict))
+        );
+        assert_eq!(writer.next_seq(), 1);
+        assert_eq!(tag_of(engine, "b"), None);
+    })
+    .unwrap();
+    // One record is one write, and a recovery finds exactly the batch that was logged.
+    assert_eq!(store.writes() - before, 1);
+    let (applied, found) = recovered(&store, &lane, "chain", &["a", "b"]);
+    assert_eq!(applied, 1);
+    assert_eq!(found[0], Some((1, "x".into())));
+    assert_eq!(found[1], None);
 }

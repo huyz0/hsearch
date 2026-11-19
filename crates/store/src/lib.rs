@@ -11,6 +11,7 @@ pub mod publish;
 pub mod rebuild;
 pub mod recover;
 pub mod serve;
+pub mod served;
 pub mod snapshot;
 pub mod sweep;
 

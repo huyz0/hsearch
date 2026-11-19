@@ -1,5 +1,5 @@
 //! Serialized admission around a caller-owned directory and native writer.
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::sync::{
     Arc, Mutex, MutexGuard, RwLock, TryLockError,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -182,6 +182,38 @@ pub enum Checked {
     Fresh,
     /// The same request with the same operations was applied before: these were its receipts.
     Recognised(Vec<Receipt>),
+}
+
+/// What batches admitted ahead of the one being decided will have added to the engine's state.
+#[derive(Default)]
+struct Chain {
+    operations: usize,
+    documents: usize,
+    bytes: usize,
+    /// Identities in the chain that the engine does not hold yet.
+    new_ids: usize,
+    requests: HashSet<String>,
+    current: BTreeMap<String, Live>,
+}
+
+impl Chain {
+    fn add(&mut self, state: &State, batch: &PreparedBatch) {
+        self.operations += batch.operations.len();
+        self.documents += batch
+            .documents
+            .iter()
+            .flatten()
+            .map(Vec::len)
+            .sum::<usize>();
+        self.bytes += batch.bytes;
+        self.requests.insert(batch.request.clone());
+        for op in &batch.operations {
+            if !state.current.contains_key(&op.id) && !self.current.contains_key(&op.id) {
+                self.new_ids += 1;
+            }
+            self.current.insert(op.id.clone(), op.live());
+        }
+    }
 }
 
 /// Validated private preparation. Dropping it has no writer effects.
@@ -828,8 +860,9 @@ impl<'d> Engine<'d> {
     }
 
     /// Every refusal [`Engine::apply`] can make before it changes anything, decided against the
-    /// state held in `state`, without changing it.
-    fn precheck(&self, state: &State, batch: &PreparedBatch) -> Result<Checked> {
+    /// state held in `state` and what `chain` says earlier batches will have added, without
+    /// changing either.
+    fn precheck(&self, state: &State, chain: &Chain, batch: &PreparedBatch) -> Result<Checked> {
         let limits = {
             let held = self.schema.read().map_err(|_| Error::Poisoned)?;
             if batch.schema != *held {
@@ -837,6 +870,9 @@ impl<'d> Engine<'d> {
             }
             held.limits
         };
+        if chain.requests.contains(&batch.request) {
+            return Err(Error::Conflict);
+        }
         if let Some(old) = state.history.iter().find(|h| h.request == batch.request) {
             return if old.operations == batch.operations {
                 Ok(Checked::Recognised(old.receipts.clone()))
@@ -845,38 +881,32 @@ impl<'d> Engine<'d> {
             };
         }
         let additions: usize = batch.documents.iter().flatten().map(Vec::len).sum();
+        let held_now = |id: &String| chain.current.get(id).or_else(|| state.current.get(id));
         let new_ids = batch
             .operations
             .iter()
-            .filter(|op| !state.current.contains_key(&op.id))
+            .filter(|op| held_now(&op.id).is_none())
             .count();
-        if state.operations + batch.operations.len() > limits.operations
-            || state.physical_documents + additions > limits.documents
-            || state.current.len() + new_ids > limits.documents
-            || (!limits.window && state.history_bytes + batch.bytes > limits.history_bytes)
+        if state.operations + chain.operations + batch.operations.len() > limits.operations
+            || state.physical_documents + chain.documents + additions > limits.documents
+            || state.current.len() + chain.new_ids + new_ids > limits.documents
+            || (!limits.window
+                && state.history_bytes + chain.bytes + batch.bytes > limits.history_bytes)
         {
             return Err(Error::Limit);
         }
         for op in &batch.operations {
-            if op.create_only
-                && state
-                    .current
-                    .get(&op.id)
-                    .is_some_and(|old| old.digest.is_some())
-            {
+            if op.create_only && held_now(&op.id).is_some_and(|old| old.digest.is_some()) {
                 return Err(Error::Conflict);
             }
-            if state
-                .current
-                .get(&op.id)
-                .is_some_and(|old| old.version >= op.version)
-            {
+            if held_now(&op.id).is_some_and(|old| old.version >= op.version) {
                 return Err(Error::Conflict);
             }
         }
-        let additions: usize = batch.documents.iter().flatten().map(Vec::len).sum();
         let mut held = self.writer.hold()?;
-        if held.segment_count() + additions / limits.buffered_documents + 2 > limits.segments {
+        if held.segment_count() + (chain.documents + additions) / limits.buffered_documents + 2
+            > limits.segments
+        {
             return Err(Error::Limit);
         }
         Ok(Checked::Fresh)
@@ -890,7 +920,27 @@ impl<'d> Engine<'d> {
     pub fn admit(&self, batch: &PreparedBatch) -> Result<Checked> {
         let state = gate(&self.state)?;
         live(&state)?;
-        self.precheck(&state, batch)
+        self.precheck(&state, &Chain::default(), batch)
+    }
+
+    /// [`Engine::admit`] for batches applied one after another: each is decided as if every
+    /// earlier batch in `batches` that is `Fresh` had been applied first. A refused batch leaves
+    /// no trace, so a later batch is decided as if it had not been sent. The decisions hold if
+    /// the batches are applied in this order with nothing else applied between them (a flush in
+    /// between can still cross the segment bound, as for a single batch).
+    pub fn admit_chain(&self, batches: &[&PreparedBatch]) -> Result<Vec<Result<Checked>>> {
+        let state = gate(&self.state)?;
+        live(&state)?;
+        let mut chain = Chain::default();
+        let mut decisions = Vec::with_capacity(batches.len());
+        for batch in batches {
+            let decision = self.precheck(&state, &chain, batch);
+            if matches!(decision, Ok(Checked::Fresh)) {
+                chain.add(&state, batch);
+            }
+            decisions.push(decision);
+        }
+        Ok(decisions)
     }
 
     /// Apply a caller-accepted preparation. Refusal is represented by dropping
@@ -899,7 +949,7 @@ impl<'d> Engine<'d> {
     pub fn apply(&self, batch: PreparedBatch) -> Result<Vec<Receipt>> {
         let mut state = gate(&self.state)?;
         live(&state)?;
-        if let Checked::Recognised(receipts) = self.precheck(&state, &batch)? {
+        if let Checked::Recognised(receipts) = self.precheck(&state, &Chain::default(), &batch)? {
             return Ok(receipts);
         }
         let limits = self.schema.read().map_err(|_| Error::Poisoned)?.limits;
