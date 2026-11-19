@@ -3136,6 +3136,35 @@
           "owner": "storage/runtime",
           "status": "planned",
           "evidence": []
+        },
+        {
+          "id": "M06.22",
+          "title": "Serve an index by name, writing a group's runs as one commit",
+          "goal": "A node-facing handle that creates, opens, writes, evolves and reads one index by its name over the serving host, and a host that logs a group's runs together so requests scale with slots, not with sixteen-operation records.",
+          "deliverables": [
+            "`Engine::admit_chain`: decide a run of batches as if applied one after another, so a batch logged after another is one the engine will take when its turn comes",
+            "`Serving::write_chain` and a host that writes up to 64 runs of a group as one commit, stopping at the first refused run, writing it alone and going round again so versions still rise with the records written",
+            "`store::served::ServedIndex`: create and open by name (lane and head derived from the name, a creation that stopped between lane and head is finished), bulk with a refused document failing alone, refresh, evolve (republishing the reader under the new schema), snapshot and read by id with a real-time view; an empty index is searchable"
+          ],
+          "validation": [
+            "Admit-chain decisions equal one-by-one apply for order, version, request identity and bound crossings, and asking changes nothing",
+            "112 identities are 7 records and one write when a slot takes them; a restart after packed slots serves every document and the next version is above all of them; a refusal in the middle of a packed run leaves the runs around it written and rising versions",
+            "A restart serves every acknowledged write; a second open fences the first; names never share a log"
+          ],
+          "definition_of_done": [
+            "A group's runs share slots, a bad document fails alone, and an index is found by name and recovered from the store"
+          ],
+          "depends_on": [
+            "M06.16"
+          ],
+          "owner": "storage/runtime",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-22-served-index.md",
+              "result": "Engine::admit_chain (3 tests, 2 mutations seen red), Serving::write_chain and the host packing a group's runs into one commit (112 identities: 7 records, 1 write; restart after packed slots; refusal in the middle leaves the runs around it written; 3 mutations seen red), ServedIndex create/open/bulk/evolve/snapshot/get by name (7 tests: Exists, NotFound, restart, fencing, names apart, a half-created index finished, a document refused alone). Provisional: in-memory store; no RustFS measurement here."
+            }
+          ]
         }
       ]
     },
