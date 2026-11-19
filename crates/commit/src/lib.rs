@@ -26,7 +26,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hsearch_format::{
-    Id, Layout, MAX_INLINE_RECORD_BYTES, PayloadRef, RecordOp, SlotKind, SlotView,
+    Digest as PayloadDigest, Id, Layout, MAX_DOCUMENT_BYTES, MAX_INLINE_RECORD_BYTES, PayloadRef,
+    RecordOp, SlotKind, SlotView,
 };
 use hsearch_lane::batch::{BatchPolicy, Batcher, OwnedPayload, OwnedRecord};
 use hsearch_lane::{Error as LaneError, LaneId, LaneWriter, OpenReport};
@@ -97,6 +98,36 @@ impl Request {
     #[must_use]
     pub fn digest(&self) -> Fingerprint {
         digest_of(&self.index, self.seq, self.delete, &self.body)
+    }
+}
+
+/// A document that was written to its own object before the commit: the record names it instead of
+/// carrying the bytes (M06.18). The caller owns that write, and an object that is absent or
+/// different makes recovery refuse the record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct External {
+    /// The payload object.
+    pub object: Id,
+    /// Its length in bytes, from 1 to [`MAX_DOCUMENT_BYTES`].
+    pub length: u64,
+    /// SHA-256 of its bytes.
+    pub digest: PayloadDigest,
+}
+
+impl External {
+    /// The digest receipts and resolution match on for an external record: index, sequence, and the
+    /// payload's length and digest, which is everything the log holds of it. The object's name is
+    /// left out on purpose: each attempt stages under a fresh name, and a record that carries the
+    /// same length and digest is the same request.
+    #[must_use]
+    pub fn fingerprint(&self, index: &Id, seq: u64) -> Fingerprint {
+        let mut h = Sha256::new();
+        h.update(b"hs-commit-request-external\x01");
+        h.update(index);
+        h.update(seq.to_le_bytes());
+        h.update(self.length.to_le_bytes());
+        h.update(self.digest);
+        h.finalize().into()
     }
 }
 
@@ -195,6 +226,16 @@ impl Pending {
             request_digest: request.digest(),
         }
     }
+
+    /// The pending identity of a request committed through [`Committer::commit_external`].
+    #[must_use]
+    pub fn of_external(request: &Request, external: &External) -> Self {
+        Self {
+            index: request.index,
+            seq: request.seq,
+            request_digest: external.fingerprint(&request.index, request.seq),
+        }
+    }
 }
 
 /// How an unknown outcome was settled by the reopened log.
@@ -213,7 +254,19 @@ pub struct Committer<S: MetadataStore, D: DependencyView> {
     policy: BatchPolicy,
 }
 
-fn owned(request: &Request) -> OwnedRecord {
+fn owned(request: &Request, external: Option<&External>) -> OwnedRecord {
+    if let Some(e) = external {
+        return OwnedRecord {
+            index: request.index,
+            seq: request.seq,
+            op: RecordOp::Put,
+            payload: OwnedPayload::External {
+                object: e.object,
+                length: e.length,
+                digest: e.digest,
+            },
+        };
+    }
     OwnedRecord {
         index: request.index,
         seq: request.seq,
@@ -257,6 +310,25 @@ impl<S: MetadataStore, D: DependencyView> Committer<S, D> {
     /// Commit `requests` in order, one outcome per request, same order. An empty call makes no
     /// request of any kind.
     pub async fn commit(&mut self, requests: Vec<Request>) -> Vec<Outcome> {
+        let externals = vec![None; requests.len()];
+        self.commit_each(requests, &externals).await
+    }
+
+    /// Commit one put whose document is already in its own object (M06.18): the record names
+    /// `external` and carries no bytes, so `request.body` must be empty. Checked and ordered like any
+    /// other request; nothing is read or written for the payload here. The outcome's receipt digest
+    /// is [`External::fingerprint`], and [`Pending::of_external`] is its pending identity.
+    pub async fn commit_external(&mut self, request: Request, external: External) -> Outcome {
+        self.commit_each(vec![request], &[Some(external)])
+            .await
+            .remove(0)
+    }
+
+    async fn commit_each(
+        &mut self,
+        requests: Vec<Request>,
+        externals: &[Option<External>],
+    ) -> Vec<Outcome> {
         let mut out: Vec<Option<Outcome>> = vec![None; requests.len()];
         let mut batcher = match Batcher::new(self.policy) {
             Ok(b) => b,
@@ -271,9 +343,19 @@ impl<S: MetadataStore, D: DependencyView> Committer<S, D> {
                 out[i] = Some(Outcome::Rejected(Reject::Poisoned));
                 continue;
             }
-            if request.delete == !request.body.is_empty()
-                || request.body.len() > MAX_INLINE_RECORD_BYTES
-            {
+            let external = externals[i].as_ref();
+            let bad_body = match external {
+                Some(e) => {
+                    request.delete
+                        || !request.body.is_empty()
+                        || !(1..=MAX_DOCUMENT_BYTES).contains(&e.length)
+                }
+                None => {
+                    request.delete == !request.body.is_empty()
+                        || request.body.len() > MAX_INLINE_RECORD_BYTES
+                }
+            };
+            if bad_body {
                 out[i] = Some(Outcome::Rejected(Reject::BadBody));
                 continue;
             }
@@ -306,7 +388,7 @@ impl<S: MetadataStore, D: DependencyView> Committer<S, D> {
                     continue;
                 }
             }
-            match batcher.push(owned(request), Duration::ZERO) {
+            match batcher.push(owned(request, external), Duration::ZERO) {
                 Ok(closed) => batches.extend(closed),
                 Err(_) => {
                     out[i] = Some(Outcome::Rejected(Reject::BadBody));
@@ -336,7 +418,10 @@ impl<S: MetadataStore, D: DependencyView> Committer<S, D> {
                         out[i] = Some(Outcome::Committed(Receipt {
                             index: request.index,
                             seq: request.seq,
-                            request_digest: request.digest(),
+                            request_digest: match &externals[i] {
+                                Some(e) => e.fingerprint(&request.index, request.seq),
+                                None => request.digest(),
+                            },
                             activation: self.writer.id().activation,
                             ordinal: ack.ordinal,
                             batch_position: position as u32,
@@ -405,15 +490,24 @@ impl<S: MetadataStore, D: DependencyView> Committer<S, D> {
                         continue;
                     }
                     if wanted.contains_key(&(record.index, record.seq)) {
-                        let (delete, body): (bool, &[u8]) = match record.payload {
-                            PayloadRef::None => (true, &[]),
-                            PayloadRef::Inline(b) => (false, b),
-                            PayloadRef::External { .. } => continue,
+                        let digest = match record.payload {
+                            PayloadRef::None => digest_of(&record.index, record.seq, true, &[]),
+                            PayloadRef::Inline(b) => digest_of(&record.index, record.seq, false, b),
+                            PayloadRef::External {
+                                object,
+                                length,
+                                digest,
+                            } => External {
+                                object,
+                                length,
+                                digest,
+                            }
+                            .fingerprint(&record.index, record.seq),
                         };
                         found.entry((record.index, record.seq)).or_default().push((
                             view.position.ordinal,
                             position as u32,
-                            digest_of(&record.index, record.seq, delete, body),
+                            digest,
                         ));
                     }
                 }

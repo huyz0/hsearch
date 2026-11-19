@@ -28,7 +28,7 @@ pub use upload::ObjectUploadSink;
 mod tombstones;
 pub use tombstones::{MAX_TOMBSTONES, TOMBSTONES_FILE};
 mod wal;
-pub use wal::{apply_batch, encode_batch};
+pub use wal::{apply_batch, batch_len, encode_batch};
 mod schema;
 pub use aggregations::{Bucket, Metrics};
 mod adapter;

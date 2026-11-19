@@ -100,9 +100,61 @@ fn put_fields(out: &mut Vec<u8>, fields: &[(&str, Value<'_>)], nested_ok: bool) 
     Ok(())
 }
 
+fn value_len(value: &Value<'_>) -> usize {
+    1 + match value {
+        Value::String(s) => 4 + s.len(),
+        Value::Shared(s) => 4 + s.len(),
+        Value::Integer(_) | Value::Date(_) => 8,
+        Value::Boolean(_) => 1,
+        Value::Vector(v) => 4 + 4 * v.len(),
+        Value::Nested(objects) => 4 + objects.iter().map(|o| fields_len(o)).sum::<usize>(),
+        Value::Join { relation, parent } => {
+            4 + relation.len() + 1 + parent.map_or(0, |p| 4 + p.len())
+        }
+    }
+}
+
+fn fields_len(fields: &[(&str, Value<'_>)]) -> usize {
+    4 + fields
+        .iter()
+        .map(|(name, value)| 4 + name.len() + value_len(value))
+        .sum::<usize>()
+}
+
+/// The exact length of [`encode_batch`]'s body, from the lengths of the pieces alone: no byte of a
+/// value is read, so it costs the number of fields, not the size of the document. The body is then
+/// written into one allocation of this size. A buffer grown as it fills can instead be
+/// reallocated when a field follows a large one, and where the allocator cannot extend it in place
+/// that copies the document; the exact size also lets a caller decide inline or external
+/// before encoding.
+#[must_use]
+pub fn batch_len(request: &str, mutations: &[Mutation<'_>]) -> usize {
+    1 + 4
+        + request.len()
+        + 4
+        + mutations
+            .iter()
+            .map(|mutation| match mutation {
+                Mutation::Put {
+                    id,
+                    version: _,
+                    fields,
+                }
+                | Mutation::Create {
+                    id,
+                    version: _,
+                    fields,
+                } => 1 + 4 + id.len() + 8 + fields_len(fields),
+                Mutation::Delete { id, version: _ } => 1 + 4 + id.len() + 8,
+            })
+            .sum::<usize>()
+}
+
 /// The record body for one batch: `request` and `mutations` as `Schema::prepare` takes them.
 pub fn encode_batch(request: &str, mutations: &[Mutation<'_>]) -> Result<Vec<u8>> {
-    let mut out = vec![VERSION];
+    let size = batch_len(request, mutations);
+    let mut out = Vec::with_capacity(size);
+    out.push(VERSION);
     put_str(&mut out, request)?;
     let n = u32::try_from(mutations.len()).map_err(|_| Error::Limit)?;
     out.extend_from_slice(&n.to_le_bytes());
@@ -134,6 +186,7 @@ pub fn encode_batch(request: &str, mutations: &[Mutation<'_>]) -> Result<Vec<u8>
             }
         }
     }
+    debug_assert_eq!(out.len(), size, "batch_len is the encoded length");
     Ok(out)
 }
 

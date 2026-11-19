@@ -1,7 +1,7 @@
 //! The commit-log batch body: a replayed batch is the batch that was written.
 use hsearch_engine::{
-    Error, Kind, Mutation, Query, Schema, Similarity, Value, VectorSpec, apply_batch, encode_batch,
-    with_local_engine,
+    Error, Kind, Mutation, Query, Schema, Similarity, Value, VectorSpec, apply_batch, batch_len,
+    encode_batch, with_local_engine,
 };
 
 fn schema() -> Schema {
@@ -304,4 +304,74 @@ fn vector_join_and_shared_values_replay_and_a_nested_in_nested_is_not_encoded() 
         );
     })
     .unwrap();
+}
+
+#[test]
+fn batch_len_is_the_encoded_length_of_every_value_kind() {
+    let shared = std::sync::Arc::new(String::from("shared text"));
+    let a = [
+        ("author", Value::String("amy")),
+        ("stars", Value::Integer(5)),
+    ];
+    let objects: [&[(&str, Value<'_>)]; 2] = [&a, &[]];
+    let vector = [0.5f32, -1.0, 2.0];
+    let fields = [
+        ("tag", Value::String("t")),
+        ("shared", Value::Shared(&shared)),
+        ("body", Value::String(&"x".repeat(70_000))),
+        ("n", Value::Integer(-7)),
+        ("ok", Value::Boolean(true)),
+        ("at", Value::Date(1)),
+        ("v", Value::Vector(&vector)),
+        ("reviews", Value::Nested(&objects)),
+        (
+            "j1",
+            Value::Join {
+                relation: "child",
+                parent: Some("p1"),
+            },
+        ),
+        (
+            "j2",
+            Value::Join {
+                relation: "parent",
+                parent: None,
+            },
+        ),
+    ];
+    let batches: [Vec<Mutation<'_>>; 4] = [
+        vec![],
+        vec![Mutation::Delete {
+            id: "identity",
+            version: 3,
+        }],
+        vec![Mutation::Put {
+            id: "a",
+            version: 1,
+            fields: &[],
+        }],
+        vec![
+            Mutation::Create {
+                id: "b",
+                version: 1,
+                fields: &fields,
+            },
+            Mutation::Put {
+                id: "c",
+                version: 2,
+                fields: &fields,
+            },
+            Mutation::Delete {
+                id: "d",
+                version: 9,
+            },
+        ],
+    ];
+    for (i, mutations) in batches.iter().enumerate() {
+        let request = format!("request-{i}");
+        let body = encode_batch(&request, mutations).unwrap();
+        assert_eq!(batch_len(&request, mutations), body.len(), "batch {i}");
+        // The body is allocated once at its size: nothing grew it.
+        assert_eq!(body.capacity(), body.len(), "batch {i}");
+    }
 }
