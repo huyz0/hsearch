@@ -331,17 +331,26 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
     }
 
     fn refresh(&mut self) -> Result<()> {
-        // The overlay first, then the snapshot: readers take them in this order, so
-        // the swap below is one step to them, and the record is emptied in the same
-        // step as the snapshot that covers it replaces the old one.
-        let mut recent = live::lock(&self.overlay)?;
-        let mut shared = self.shared.lock().map_err(|_| Error::Poisoned)?;
-        // The previous snapshot's slot must be free before a new one is taken.
-        shared.take();
-        let snapshot = self.engine.refresh().map_err(|error| match error {
+        // Build the new snapshot before any lock is taken, so reads are not held
+        // up by the flush. The old one stays in place unless every engine slot is
+        // in use, in which case it is released and the build retried once.
+        let snapshot = match self.engine.refresh() {
+            Err(hsearch_engine::Error::Limit) => {
+                self.shared.lock().map_err(|_| Error::Poisoned)?.take();
+                self.engine.refresh()
+            }
+            other => other,
+        }
+        .map_err(|error| match error {
             hsearch_engine::Error::Limit => Error::Busy,
             other => Error::Engine(other),
         })?;
+        // The overlay first, then the snapshot: readers take them in this order, so
+        // the swap is one step to them, and the record is emptied in the same step
+        // as the snapshot that covers it replaces the old one. Only the writer
+        // thread adds to the record, so nothing recorded is missing from `snapshot`.
+        let mut recent = live::lock(&self.overlay)?;
+        let mut shared = self.shared.lock().map_err(|_| Error::Poisoned)?;
         *shared = Some(Arc::new(snapshot));
         recent.clear();
         Ok(())

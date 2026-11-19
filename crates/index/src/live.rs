@@ -21,6 +21,8 @@ use crate::{Error, Result};
 
 /// Most ids recorded between refreshes.
 pub(crate) const MAX_ENTRIES: usize = 16_384;
+/// A recorded document above this many bytes is kept as [`Entry::Stale`].
+pub(crate) const MAX_HELD_DOC: usize = 256 << 10;
 /// Ids past which the writer refuses new work until a refresh can be taken.
 pub(crate) const HARD_ENTRIES: usize = 4 * MAX_ENTRIES;
 /// Most bytes of field data recorded between refreshes.
@@ -78,6 +80,12 @@ fn weight(id: &str, fields: &[Field]) -> usize {
 impl Recent {
     /// Record `entry` as the latest state of `id`.
     pub(crate) fn record(&mut self, id: &str, entry: Entry) {
+        // A document too large to be worth holding is not held: a read of it
+        // refreshes first, and a write of it never forces a refresh.
+        let entry = match entry {
+            Entry::Doc { fields, .. } if weight(id, &fields) > MAX_HELD_DOC => Entry::Stale,
+            other => other,
+        };
         let add = match &entry {
             Entry::Doc { fields, .. } => weight(id, fields),
             _ => 64 + id.len(),
@@ -180,5 +188,40 @@ pub(crate) fn hit(
         id: id.to_string(),
         version,
         fields: out,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn a_large_document_is_recorded_as_stale_and_a_small_one_is_held() {
+        let schema = Schema::new(1, &[("a", Kind::Text)]).unwrap();
+        let mut recent = Recent {
+            map: HashMap::new(),
+            bytes: 0,
+            schema,
+            poisoned: false,
+        };
+        let big = Field::Str(Arc::new("x".repeat(MAX_HELD_DOC)));
+        recent.record(
+            "big",
+            Entry::Doc {
+                version: 1,
+                fields: vec![big],
+            },
+        );
+        recent.record(
+            "small",
+            Entry::Doc {
+                version: 2,
+                fields: vec![Field::text("x")],
+            },
+        );
+        assert!(matches!(recent.get("big"), Some(Entry::Stale)));
+        assert!(matches!(recent.get("small"), Some(Entry::Doc { .. })));
+        assert!(recent.bytes < MAX_HELD_DOC);
     }
 }
