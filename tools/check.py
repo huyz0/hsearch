@@ -29,6 +29,10 @@ CHECKS = [
 
 def main():
     checks = CHECKS
+    unknown = [a for a in sys.argv[1:] if a != "--skip-cargo-test"]
+    if unknown:
+        print("usage: check.py [--skip-cargo-test]", file=sys.stderr)
+        return 2
     if "--skip-cargo-test" in sys.argv[1:]:
         checks = [c for c in CHECKS if c[:2] != ["cargo", "test"]]
     for command in checks:

@@ -43,7 +43,7 @@ case "${1:-}" in
   up)
     docker rm -f "$NAME" >/dev/null 2>&1 || true
     data="$(mktemp -d)"; chmod 777 "$data"
-    docker run -d --name "$NAME" --restart on-failure:3 -p 127.0.0.1:9000:9000 \
+    docker run -d --name "$NAME" -p 127.0.0.1:9000:9000 \
       -e RUSTFS_ACCESS_KEY="$ACCESS" -e RUSTFS_SECRET_KEY="$SECRET" -e RUSTFS_CONSOLE_ENABLE=false \
       -v "$data:/data" "$IMAGE" /data >/dev/null
     wait_ready
