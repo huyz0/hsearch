@@ -22,6 +22,7 @@ use crate::format::{
     decode_fence, decode_intent, decode_root, decode_slot_with, encode_fence, encode_intent,
     encode_root, encode_slot_with, encoded_len, is_fence, slot_text_cap, text_fits, text_len,
 };
+use crate::live::{self, Entry, Overlay};
 use crate::store::{
     Written, blob_key, block, context, intent_key, key, mutation, read_all, read_version, root_key,
     segment_key, slot_key, write,
@@ -219,6 +220,8 @@ struct Core<'e, 'd, S> {
     files: &'e LocalFiles,
     hooks: Arc<dyn Hooks>,
     shared: Shared,
+    /// What a real-time read sees beyond the snapshot in `shared`.
+    overlay: Overlay,
     seq: u64,
     next_version: i64,
     ids: HashMap<String, bool>,
@@ -328,6 +331,10 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
     }
 
     fn refresh(&mut self) -> Result<()> {
+        // The overlay first, then the snapshot: readers take them in this order, so
+        // the swap below is one step to them, and the record is emptied in the same
+        // step as the snapshot that covers it replaces the old one.
+        let mut recent = live::lock(&self.overlay)?;
         let mut shared = self.shared.lock().map_err(|_| Error::Poisoned)?;
         // The previous snapshot's slot must be free before a new one is taken.
         shared.take();
@@ -336,6 +343,39 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             other => Error::Engine(other),
         })?;
         *shared = Some(Arc::new(snapshot));
+        recent.clear();
+        Ok(())
+    }
+
+    /// Record a durable slot for real-time reads. Done before anyone is told the
+    /// write is durable: a read after an acknowledgement must find it.
+    fn remember(&self, slot: &Slot) -> Result<()> {
+        let mut recent = live::lock(&self.overlay)?;
+        for (i, op) in slot.ops.iter().enumerate() {
+            let entry = match op {
+                Op::Put { fields, .. } => Entry::Doc {
+                    version: slot.first_version + i as i64,
+                    fields: fields.clone(),
+                },
+                Op::Delete { .. } => Entry::Gone,
+            };
+            recent.record(op.id(), entry);
+        }
+        Ok(())
+    }
+
+    /// Keep the record inside its bounds by refreshing, which empties it. When the
+    /// refresh cannot be taken the payloads are dropped instead, and past the hard
+    /// bound on ids the caller is told to retry.
+    fn make_room(&mut self) -> Result<()> {
+        let over = live::lock(&self.overlay)?.over();
+        if over && self.refresh().is_err() {
+            let mut recent = live::lock(&self.overlay)?;
+            recent.shed();
+            if recent.len() > live::HARD_ENTRIES {
+                return Err(Error::Busy);
+            }
+        }
         Ok(())
     }
 
@@ -348,12 +388,16 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             return Err(Error::Poisoned);
         }
         self.engine.evolve_schema(schema.clone())?;
+        live::lock(&self.overlay)?.set_schema(schema.clone());
         self.schema = schema;
         self.refresh()
     }
 
     fn poison(&mut self) {
         self.poisoned = true;
+        if let Ok(mut recent) = live::lock(&self.overlay) {
+            recent.poison();
+        }
     }
 
     /// Validate a request alone, so one bad bulk cannot fail a group.
@@ -379,6 +423,12 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
         if self.poisoned {
             for bulk in group {
                 let _ = bulk.reply.send(Err(Error::Poisoned));
+            }
+            return;
+        }
+        if let Err(error) = self.make_room() {
+            for bulk in group {
+                let _ = bulk.reply.send(Err(error));
             }
             return;
         }
@@ -463,7 +513,11 @@ impl<S: MetadataStore + 'static> Core<'_, '_, S> {
             return;
         }
         self.hooks.at(Point::AfterSlot);
-        // Durable. Acknowledge the ones that only wanted durability.
+        // Durable. Record it for real-time reads before anyone is told.
+        if self.remember(&slot).is_err() {
+            self.poison();
+        }
+        // Acknowledge the ones that only wanted durability.
         let mut offset = 0;
         let mut searchable = Vec::new();
         for (bulk, n) in accepted {
@@ -897,6 +951,7 @@ pub(crate) fn run<S: MetadataStore + 'static>(
     hooks: Arc<dyn Hooks>,
     mode: hsearch_engine::MergeMode,
     shared: Shared,
+    overlay: Overlay,
     init: Sender<Result<()>>,
     commands: Receiver<Command>,
 ) {
@@ -906,7 +961,7 @@ pub(crate) fn run<S: MetadataStore + 'static>(
         schema.clone(),
         mode,
         |engine, files| {
-            let mut core = match start(store, name, schema, engine, files, hooks, shared) {
+            let mut core = match start(store, name, schema, engine, files, hooks, shared, overlay) {
                 Ok(core) => core,
                 Err(error) => {
                     let _ = init.send(Err(error));
@@ -922,6 +977,7 @@ pub(crate) fn run<S: MetadataStore + 'static>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn start<'e, 'd, S: MetadataStore + 'static>(
     store: Arc<S>,
     name: String,
@@ -930,6 +986,7 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
     files: &'e LocalFiles,
     hooks: Arc<dyn Hooks>,
     shared: Shared,
+    overlay: Overlay,
 ) -> Result<Core<'e, 'd, S>> {
     let (root, token) = read_root(&*store, &name)?;
     // The attempts a crashed writer may have left chunks for. Read before the
@@ -945,6 +1002,7 @@ fn start<'e, 'd, S: MetadataStore + 'static>(
         files,
         hooks,
         shared,
+        overlay,
         seq: 0,
         next_version: 1,
         ids: HashMap::new(),
