@@ -231,6 +231,10 @@ impl ServedIndex {
         S: MetadataStore + LargeObjectWriter + 'static,
     {
         let (lane, _) = lane_of(settings, name);
+        // The scratch directory is rebuilt at open, but its parent is the caller's to keep.
+        if let Some(parent) = scratch.parent() {
+            std::fs::create_dir_all(parent).map_err(|_| Error::Store(StoreError::Unavailable))?;
+        }
         // A head that is not there is an index that was never created; say so before fencing.
         block_on(read_head(&**store, &settings.layout, &lane)).map_err(lane_error)?;
         let (writer, _) = block_on(LaneWriter::open_with_head(
@@ -263,6 +267,7 @@ impl ServedIndex {
             token_seed: token_seed(name),
             pin: None,
             merge: settings.merge,
+            searchable_when_empty: true,
         };
         let host = Host::open(
             OpenArgs {
@@ -279,12 +284,20 @@ impl ServedIndex {
         Ok(Self { host })
     }
 
-    /// Write `ops` and wait as `wait` says. Results are in submission order.
+    /// Write `ops` and wait as `wait` says. Results are in submission order; an operation the
+    /// engine refuses carries its refusal alone and the others are written.
     ///
     /// # Errors
-    /// [`Error`]: [`Error::Unknown`] means the write may or may not be durable.
-    pub fn bulk(&self, ops: Vec<Op>, wait: Wait) -> Result<Vec<ItemResult>> {
-        self.host.bulk(ops, wait).map_err(host_error)
+    /// [`Error`] when the write as a whole failed: [`Error::Unknown`] means it may or may not be
+    /// durable.
+    pub fn bulk(&self, ops: Vec<Op>, wait: Wait) -> Result<Vec<Result<ItemResult>>> {
+        Ok(self
+            .host
+            .bulk_items(ops, wait)
+            .map_err(host_error)?
+            .into_iter()
+            .map(|item| item.map_err(Error::Engine))
+            .collect())
     }
 
     /// Extend the schema; later writes are prepared against `mapping`.

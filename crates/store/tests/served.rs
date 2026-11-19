@@ -74,7 +74,8 @@ fn an_index_is_created_once_and_a_missing_one_is_not_found() {
         Err(Error::NotFound)
     ));
     let books = create(&store, "books", "once").unwrap();
-    assert!(matches!(books.snapshot(), Err(Error::Busy)));
+    // Nothing is in it, and it can still be searched.
+    assert!(books.snapshot().is_ok());
     assert!(matches!(
         create(&store, "books", "twice"),
         Err(Error::Exists)
@@ -164,4 +165,22 @@ fn a_creation_that_stopped_after_the_lane_is_finished() {
         create(&store, "books", "again"),
         Err(Error::Exists)
     ));
+}
+
+#[test]
+fn a_document_the_engine_refuses_fails_alone() {
+    let store = Crash::new();
+    let books = create(&store, "books", "refused").unwrap();
+    let huge = "h".repeat(200_000);
+    let items = books
+        .bulk(
+            vec![put("a", "1"), put("b", &huge), put("c", "3")],
+            Wait::Searchable,
+        )
+        .unwrap();
+    assert!(items[0].is_ok() && items[2].is_ok(), "{items:?}");
+    assert!(matches!(items[1], Err(Error::Engine(_))), "{items:?}");
+    assert_eq!(tag(&books, "a", false).as_deref(), Some("1"));
+    assert_eq!(tag(&books, "b", false), None);
+    assert_eq!(tag(&books, "c", false).as_deref(), Some("3"));
 }

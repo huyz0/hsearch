@@ -46,11 +46,13 @@ use crate::pins::Pins;
 use crate::publish::{self, Publisher};
 use crate::rebuild::{Hold, RebuildError, recover_writer_merging};
 use crate::recover::{Expect, ReplayLimits, Target};
-use crate::serve::{BaseTarget, RefreshError, ServeError, Serving};
+use crate::serve::{BaseTarget, ChainBatch, ChainStop, RefreshError, ServeError, Serving};
 
 /// Most operations in one bulk (the slot bound of the v0 log).
 pub const MAX_BATCH_OPS: usize = 4096;
 const VERSION_SHIFT: u32 = 20;
+/// Most runs written to the log in one commit.
+const CHAIN_RUNS: usize = 64;
 
 /// Why a host call did not complete.
 #[derive(Debug, Eq, PartialEq)]
@@ -71,6 +73,9 @@ pub enum HostError {
     /// The host has stopped.
     Stopped,
 }
+
+/// What became of one operation of a bulk: its result, or the engine's refusal of it.
+pub type Item = Result<ItemResult, EngineError>;
 
 /// A pin held on the base while its files are fetched at open.
 pub struct PinConfig {
@@ -117,6 +122,9 @@ pub struct Config {
     /// How the engine's automatic merges run: [`MergeMode::Background`] keeps them off the
     /// writer's refresh.
     pub merge: MergeMode,
+    /// Publish a reader over an index with nothing in it at open, so it can be searched and
+    /// answers with no hits; otherwise there is no reader until something is searchable.
+    pub searchable_when_empty: bool,
 }
 
 /// Everything `open` needs besides the configuration.
@@ -136,7 +144,7 @@ pub struct OpenArgs<S: MetadataStore, V: DependencyView, D> {
 }
 
 enum Command {
-    Bulk(Vec<Op>, Wait, Sender<Result<Vec<ItemResult>, HostError>>),
+    Bulk(Vec<Op>, Wait, bool, Sender<Result<Vec<Item>, HostError>>),
     Refresh(Sender<Result<(), HostError>>),
     Publish(Sender<Result<publish::Published, HostError>>),
     Evolve(Box<Schema>, Dependencies, Sender<Result<(), HostError>>),
@@ -263,7 +271,13 @@ impl Host {
                         attempts: 0,
                     };
                     // A recovered index with data is searchable at once.
-                    let first = core.serving.refresh(engine);
+                    let first = core.serving.refresh(engine).map(|_| ()).and_then(|()| {
+                        if config.searchable_when_empty {
+                            core.serving.publish_empty(engine)
+                        } else {
+                            Ok(())
+                        }
+                    });
                     if first.is_err() {
                         let _ = ready.send(Err(OpenError::Refresh));
                         return;
@@ -316,7 +330,19 @@ impl Host {
     /// # Errors
     /// [`HostError`]; see its variants for what is certain about the write.
     pub fn bulk(&self, ops: Vec<Op>, wait: Wait) -> Result<Vec<ItemResult>, HostError> {
-        self.send(|reply| Command::Bulk(ops, wait, reply))
+        self.send(|reply| Command::Bulk(ops, wait, true, reply))?
+            .into_iter()
+            .map(|item| item.map_err(HostError::Refused))
+            .collect()
+    }
+
+    /// [`Host::bulk`], with an operation the engine refuses answered alone: every other operation
+    /// is written as if it had been sent without it, and the refused one carries the refusal.
+    ///
+    /// # Errors
+    /// [`HostError`]; see its variants for what is certain about the write.
+    pub fn bulk_items(&self, ops: Vec<Op>, wait: Wait) -> Result<Vec<Item>, HostError> {
+        self.send(|reply| Command::Bulk(ops, wait, false, reply))
     }
 
     /// Publish a reader over everything applied so far.
@@ -394,8 +420,11 @@ impl Drop for Host {
 struct Bulk {
     ops: Vec<Op>,
     wait: Wait,
-    reply: Sender<Result<Vec<ItemResult>, HostError>>,
-    results: Vec<Option<ItemResult>>,
+    /// A refused operation stops this bulk: nothing after it is written, so a durable prefix is
+    /// all that is left.
+    strict: bool,
+    reply: Sender<Result<Vec<Item>, HostError>>,
+    results: Vec<Option<Item>>,
     failed: Option<HostError>,
 }
 
@@ -422,6 +451,56 @@ fn value(field: &Field) -> Option<Value<'_>> {
         Field::Vector(v) => Value::Vector(v),
         Field::Absent => return None,
     })
+}
+
+/// The version of the first operation of the record at `sequence`; later operations of the record
+/// rise by one. Rises with the sequence, so a replayed log never puts a version backwards (the
+/// sequence cannot reach the point where this saturates).
+fn record_version(sequence: u64) -> i64 {
+    i64::try_from((sequence + 1) << VERSION_SHIFT).unwrap_or(i64::MAX)
+}
+
+/// The field values of each operation of `run`, in schema order.
+fn run_rows<'a>(
+    names: &[&'a str],
+    group: &'a [Bulk],
+    run: &[(usize, usize)],
+) -> Vec<Vec<(&'a str, Value<'a>)>> {
+    run.iter()
+        .map(|(b, o)| match &group[*b].ops[*o] {
+            Op::Put { fields, .. } => names
+                .iter()
+                .copied()
+                .zip(fields.iter())
+                .filter_map(|(name, field)| Some((name, value(field)?)))
+                .collect(),
+            Op::Delete { .. } => Vec::new(),
+        })
+        .collect()
+}
+
+/// The mutations of `run`, versioned from `first`.
+fn run_mutations<'a>(
+    group: &'a [Bulk],
+    run: &[(usize, usize)],
+    rows: &'a [Vec<(&'a str, Value<'a>)>],
+    first: i64,
+) -> Vec<Mutation<'a>> {
+    run.iter()
+        .zip(rows)
+        .enumerate()
+        .map(|(p, ((b, o), row))| {
+            let version = first + p as i64;
+            match &group[*b].ops[*o] {
+                Op::Put { id, .. } => Mutation::Put {
+                    id,
+                    version,
+                    fields: row,
+                },
+                Op::Delete { id } => Mutation::Delete { id, version },
+            }
+        })
+        .collect()
 }
 
 fn serve_error(e: ServeError) -> HostError {
@@ -451,8 +530,8 @@ where
             };
             match command {
                 Command::Stop => return,
-                Command::Bulk(ops, wait, reply) => {
-                    let mut group = vec![Bulk::new(ops, wait, reply)];
+                Command::Bulk(ops, wait, strict, reply) => {
+                    let mut group = vec![Bulk::new(ops, wait, strict, reply)];
                     let mut count = group[0].ops.len();
                     // Others queued, or arriving inside the window, share this group's records.
                     // The window is one deadline for the group, not a wait after each arrival.
@@ -460,9 +539,9 @@ where
                     while count < MAX_BATCH_OPS {
                         let left = deadline.saturating_duration_since(std::time::Instant::now());
                         match inbox.recv_timeout(left) {
-                            Ok(Command::Bulk(ops, wait, reply)) => {
+                            Ok(Command::Bulk(ops, wait, strict, reply)) => {
                                 count += ops.len();
-                                group.push(Bulk::new(ops, wait, reply));
+                                group.push(Bulk::new(ops, wait, strict, reply));
                             }
                             Ok(other) => {
                                 pending = Some(other);
@@ -486,9 +565,15 @@ where
                         .engine
                         .evolve_schema((*schema).clone())
                         .map_err(HostError::Refused);
+                    let mut result = result;
                     if result.is_ok() {
                         self.schema = *schema;
                         self.serving.set_deps(deps);
+                        // Readers published from here on carry the new schema; a refresh that
+                        // finds nothing new would keep serving the old one.
+                        if self.serving.republish(self.engine).is_err() {
+                            result = Err(HostError::Refresh);
+                        }
                     }
                     let _ = reply.send(result);
                 }
@@ -604,36 +689,66 @@ where
         if !run.is_empty() {
             runs.push(run);
         }
-        for run in runs {
-            // A bulk that has failed writes nothing more, so it leaves a durable prefix.
-            let run: Vec<(usize, usize)> = run
-                .into_iter()
-                .filter(|(b, _)| group[*b].failed.is_none())
-                .collect();
-            if run.is_empty() {
+        let mut queue: std::collections::VecDeque<Vec<(usize, usize)>> = runs.into();
+        while !queue.is_empty() {
+            // Up to a slot's worth of runs go to the log together; a bulk that has failed writes
+            // nothing more, so it leaves a durable prefix.
+            let mut chunk: Vec<Vec<(usize, usize)>> = Vec::new();
+            while chunk.len() < CHAIN_RUNS {
+                let Some(run) = queue.pop_front() else { break };
+                let run: Vec<(usize, usize)> = run
+                    .into_iter()
+                    .filter(|(b, _)| group[*b].failed.is_none())
+                    .collect();
+                if !run.is_empty() {
+                    chunk.push(run);
+                }
+            }
+            if chunk.is_empty() {
                 continue;
             }
-            let result = self.write_split(&group, &run);
-            match result {
-                Ok(receipts) => {
-                    for ((b, o), receipt) in run.iter().zip(receipts) {
-                        let bulk = &mut group[*b];
-                        bulk.results[*o] = Some(ItemResult {
-                            id: receipt.id,
-                            version: receipt.version,
-                            outcome: receipt.outcome,
-                        });
+            let (done, stop) = self.write_chain(&group, &chunk);
+            let written = done.len();
+            for (run, receipts) in chunk.iter().zip(done) {
+                Self::settle(&mut group, run, receipts.into_iter().map(Ok).collect());
+            }
+            match stop {
+                None => {}
+                Some(ChainStop::Refused(_) | ChainStop::Recognised) => {
+                    // The run the log stopped at is written alone, split until the operations the
+                    // engine refuses are told apart from the ones it takes; the rest go round again.
+                    let run = chunk[written].clone();
+                    match self.write_split(&group, &run) {
+                        Ok(items) => Self::settle(&mut group, &run, items),
+                        Err(e) => {
+                            if matches!(e, HostError::Broken | HostError::Unknown) {
+                                self.mark_broken();
+                                for bulk in &mut group {
+                                    bulk.failed.get_or_insert(HostError::Broken);
+                                }
+                                break;
+                            }
+                            for (b, _) in &run {
+                                group[*b].failed.get_or_insert_with(|| clone_error(&e));
+                            }
+                        }
+                    }
+                    for rest in chunk.drain(written + 1..).rev() {
+                        queue.push_front(rest);
                     }
                 }
-                Err(e) => {
-                    if matches!(e, HostError::Broken | HostError::Unknown) {
+                Some(ChainStop::Failed(e)) => {
+                    let e = serve_error(e);
+                    let broken = matches!(e, HostError::Broken | HostError::Unknown);
+                    if broken {
                         self.mark_broken();
                     }
-                    // Every bulk with an operation in this run fails with the cause; a broken
-                    // host fails everything after it the same way.
-                    let broken = matches!(e, HostError::Broken | HostError::Unknown);
-                    for (b, _) in &run {
-                        group[*b].failed.get_or_insert_with(|| clone_error(&e));
+                    // Every bulk with an operation in the runs that were not written fails with
+                    // the cause; a broken host fails everything after it the same way.
+                    for run in &chunk[written..] {
+                        for (b, _) in run {
+                            group[*b].failed.get_or_insert_with(|| clone_error(&e));
+                        }
                     }
                     if broken {
                         for bulk in &mut group {
@@ -660,21 +775,83 @@ where
         }
     }
 
-    /// Write `run` as one record, or as halves if the engine finds it too large (a run of
-    /// documents over its byte bound). Deterministic, so replay sees the same records.
+    /// Record what became of each operation of `run`.
+    fn settle(
+        group: &mut [Bulk],
+        run: &[(usize, usize)],
+        items: Vec<Result<Receipt, EngineError>>,
+    ) {
+        for ((b, o), receipt) in run.iter().zip(items) {
+            let bulk = &mut group[*b];
+            if bulk.strict
+                && let Err(refusal) = &receipt
+            {
+                bulk.failed.get_or_insert(HostError::Refused(*refusal));
+            }
+            bulk.results[*o] = Some(receipt.map(|receipt| ItemResult {
+                id: receipt.id,
+                version: receipt.version,
+                outcome: receipt.outcome,
+            }));
+        }
+    }
+
+    /// Write `chunk`, a run of runs, as records of one commit: the leading runs the log took,
+    /// and why it stopped before the rest if it did.
+    fn write_chain(
+        &mut self,
+        group: &[Bulk],
+        chunk: &[Vec<(usize, usize)>],
+    ) -> (Vec<Vec<Receipt>>, Option<ChainStop>) {
+        let first_sequence = self.serving.next_seq();
+        let names: Vec<&str> = self.schema.fields().map(|(n, _)| n).collect();
+        let rows: Vec<Vec<Vec<(&str, Value<'_>)>>> = chunk
+            .iter()
+            .map(|run| run_rows(&names, group, run))
+            .collect();
+        let mutations: Vec<Vec<Mutation<'_>>> = chunk
+            .iter()
+            .zip(&rows)
+            .enumerate()
+            .map(|(s, (run, rows))| {
+                run_mutations(group, run, rows, record_version(first_sequence + s as u64))
+            })
+            .collect();
+        let requests: Vec<String> = (0..chunk.len())
+            .map(|s| format!("h{}", first_sequence + s as u64))
+            .collect();
+        let batches: Vec<ChainBatch<'_>> = requests
+            .iter()
+            .zip(&mutations)
+            .map(|(request, mutations)| ChainBatch { request, mutations })
+            .collect();
+        let schema = self.schema.clone();
+        let chained = self.serving.write_chain(&schema, self.engine, &batches);
+        let records = chained.receipts.len() as u64;
+        self.counters.records.fetch_add(records, Ordering::Relaxed);
+        self.batches_since_base += records;
+        (chained.receipts, chained.stop)
+    }
+
+    /// Write `run` as one record. A run the engine refuses is written as halves, down to a single
+    /// operation, so the operations it refuses are told apart from the ones it takes: a refused
+    /// operation was never written and carries its refusal. Deterministic, so replay sees the
+    /// same records.
     fn write_split(
         &mut self,
         group: &[Bulk],
         run: &[(usize, usize)],
-    ) -> Result<Vec<Receipt>, HostError> {
+    ) -> Result<Vec<Result<Receipt, EngineError>>, HostError> {
         match self.write_run(group, run) {
-            Err(HostError::Refused(EngineError::Limit)) if run.len() > 1 => {
+            Ok(receipts) => Ok(receipts.into_iter().map(Ok).collect()),
+            Err(HostError::Refused(_)) if run.len() > 1 => {
                 let (head, tail) = run.split_at(run.len() / 2);
-                let mut receipts = self.write_split(group, head)?;
-                receipts.extend(self.write_split(group, tail)?);
-                Ok(receipts)
+                let mut items = self.write_split(group, head)?;
+                items.extend(self.write_split(group, tail)?);
+                Ok(items)
             }
-            other => other,
+            Err(HostError::Refused(refusal)) => Ok(vec![Err(refusal)]),
+            Err(other) => Err(other),
         }
     }
 
@@ -684,37 +861,9 @@ where
         run: &[(usize, usize)],
     ) -> Result<Vec<Receipt>, HostError> {
         let sequence = self.serving.next_seq();
-        let first =
-            i64::try_from((sequence + 1) << VERSION_SHIFT).map_err(|_| HostError::Invalid)?;
         let names: Vec<&str> = self.schema.fields().map(|(n, _)| n).collect();
-        let rows: Vec<Vec<(&str, Value<'_>)>> = run
-            .iter()
-            .map(|(b, o)| match &group[*b].ops[*o] {
-                Op::Put { fields, .. } => names
-                    .iter()
-                    .copied()
-                    .zip(fields.iter())
-                    .filter_map(|(name, field)| Some((name, value(field)?)))
-                    .collect(),
-                Op::Delete { .. } => Vec::new(),
-            })
-            .collect();
-        let mutations: Vec<Mutation<'_>> = run
-            .iter()
-            .zip(&rows)
-            .enumerate()
-            .map(|(p, ((b, o), row))| {
-                let version = first + p as i64;
-                match &group[*b].ops[*o] {
-                    Op::Put { id, .. } => Mutation::Put {
-                        id,
-                        version,
-                        fields: row,
-                    },
-                    Op::Delete { id } => Mutation::Delete { id, version },
-                }
-            })
-            .collect();
+        let rows = run_rows(&names, group, run);
+        let mutations = run_mutations(group, run, &rows, record_version(sequence));
         let request = format!("h{sequence}");
         let schema = self.schema.clone();
         let written = self
@@ -730,11 +879,17 @@ where
 }
 
 impl Bulk {
-    fn new(ops: Vec<Op>, wait: Wait, reply: Sender<Result<Vec<ItemResult>, HostError>>) -> Self {
+    fn new(
+        ops: Vec<Op>,
+        wait: Wait,
+        strict: bool,
+        reply: Sender<Result<Vec<Item>, HostError>>,
+    ) -> Self {
         let results = vec![None; ops.len()];
         Self {
             ops,
             wait,
+            strict,
             reply,
             results,
             failed: None,

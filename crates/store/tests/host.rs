@@ -52,6 +52,7 @@ fn config(label: &str, window_ms: u64, base_every: u64, seed: u8) -> Config {
         base_every_batches: base_every,
         token_seed: [seed; 8],
         merge: hsearch_engine::MergeMode::Inline,
+        searchable_when_empty: false,
         pin: None,
     }
 }
@@ -457,4 +458,131 @@ fn the_batching_window_is_a_deadline_not_a_wait_after_each_arrival() {
         waited < Duration::from_millis(500),
         "the first bulk waited {waited:?} behind a stream"
     );
+}
+
+#[test]
+fn a_refused_operation_fails_alone_and_the_rest_of_its_run_is_written() {
+    let (store, lane) = new_lane();
+    let host = Arc::new(open(&store, lane, config("alone", 100, 0, 1)));
+    let huge = "h".repeat(200_000);
+    // Both bulks fall in one group, so their operations share one run.
+    let bad = {
+        let host = Arc::clone(&host);
+        let ops = vec![put("a", "1"), put("b", &huge), put("c", "3")];
+        std::thread::spawn(move || host.bulk_items(ops, Wait::Searchable))
+    };
+    let innocent = {
+        let host = Arc::clone(&host);
+        std::thread::spawn(move || host.bulk_items(vec![put("d", "4")], Wait::Searchable))
+    };
+    let bad = bad.join().unwrap().unwrap();
+    let innocent = innocent.join().unwrap().unwrap();
+    assert!(bad[0].is_ok() && bad[2].is_ok(), "{bad:?}");
+    assert!(bad[1].is_err(), "{bad:?}");
+    assert!(innocent[0].is_ok(), "{innocent:?}");
+    for (id, want) in [
+        ("a", Some("1")),
+        ("b", None),
+        ("c", Some("3")),
+        ("d", Some("4")),
+    ] {
+        assert_eq!(tag(&host, id).as_deref(), want, "{id}");
+    }
+}
+
+/// A host whose committer packs up to `records` records into one slot.
+fn open_packing(
+    store: &Arc<Crash>,
+    lane: hsearch_lane::LaneId,
+    records: usize,
+    label: &str,
+) -> Host {
+    let (w, _) = block_on(hsearch_lane::LaneWriter::open_with_head(
+        Arc::clone(store),
+        layout(),
+        lane,
+        |_| Ok(()),
+    ))
+    .unwrap();
+    let policy = hsearch_lane::batch::BatchPolicy {
+        max_records: records,
+        max_bytes: 4 << 20,
+        max_wait: Duration::from_millis(1),
+    };
+    let committer =
+        hsearch_commit::Committer::new(w, hsearch_commit::AnyDependencies, policy).unwrap();
+    Host::open(
+        OpenArgs {
+            store: Arc::clone(store),
+            publisher: publisher(store),
+            committer,
+            lane,
+            dependencies: AnyDependencies,
+            schema: schema(),
+        },
+        config(label, 0, 0, 1),
+    )
+    .unwrap()
+}
+
+fn many(n: usize) -> Vec<Op> {
+    (0..n)
+        .map(|i| put(&format!("id{i:04}"), &format!("t{i}")))
+        .collect()
+}
+
+#[test]
+fn runs_of_one_bulk_share_a_slot_and_recover_from_it() {
+    // 112 distinct identities are 7 records (the engine's bounded profile holds 128); a slot that
+    // takes 64 holds them all.
+    let cost = |records: usize, label: &str| {
+        let (store, lane) = new_lane();
+        let host = open_packing(&store, lane, records, label);
+        let before = store.writes();
+        let got = host.bulk(many(112), Wait::Durable).unwrap();
+        assert_eq!(got.len(), 112);
+        let cost = store.writes() - before;
+        host.stop();
+        let again = open_packing(&store, lane, records, &format!("{label}-again"));
+        for i in [0usize, 17, 60, 111] {
+            assert_eq!(
+                tag(&again, &format!("id{i:04}")),
+                Some(format!("t{i}")),
+                "{i}"
+            );
+        }
+        // Versions stay strictly above everything recovered.
+        let more = again
+            .bulk(vec![put("id0000", "new")], Wait::Searchable)
+            .unwrap();
+        assert!(more[0].version > got[0].version);
+        cost
+    };
+    let alone = cost(1, "alone");
+    let packed = cost(64, "packed");
+    assert_eq!(alone, 7, "a record to a slot");
+    assert_eq!(packed, 1, "the records share one slot");
+}
+
+#[test]
+fn a_refusal_in_the_middle_of_a_packed_run_leaves_the_runs_around_it_written() {
+    let (store, lane) = new_lane();
+    let host = open_packing(&store, lane, 64, "middle");
+    let huge = "h".repeat(200_000);
+    // Distinct identities cut into runs of 16; the bad document is in the third run.
+    let mut ops = many(64);
+    // (64 identities are four records: the bad one is in the third.)
+    ops[40] = put("bad", &huge);
+    let items = host.bulk_items(ops, Wait::Searchable).unwrap();
+    assert!(items[40].is_err());
+    assert_eq!(items.iter().filter(|i| i.is_ok()).count(), 63);
+    assert_eq!(tag(&host, "id0000").as_deref(), Some("t0"));
+    assert_eq!(tag(&host, "id0063").as_deref(), Some("t63"));
+    assert_eq!(tag(&host, "bad"), None);
+    // Versions rose with the records actually written.
+    let versions: Vec<i64> = items.iter().flatten().map(|r| r.version).collect();
+    assert!(versions.windows(2).all(|w| w[0] < w[1]), "{versions:?}");
+    host.stop();
+    let again = open_packing(&store, lane, 64, "middle-again");
+    assert_eq!(tag(&again, "id0063").as_deref(), Some("t63"));
 }
