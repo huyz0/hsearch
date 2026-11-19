@@ -2692,7 +2692,7 @@
           "title": "Deliver lifecycle and standalone API",
           "goal": "Make local end-to-end use operationally complete.",
           "deliverables": [
-            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls; the serving writer's durability wiring is M06.14 to M06.19",
+            "Index/schema/create/delete, bulk/get/search/refresh, health/readiness and durable job controls; the serving writer's durability wiring is M06.14 to M06.20",
             "Native /v1 capabilities/receipts and explicitly selected thin adapter routes; core request/response/queue/retention admission",
             "Early selected OpenSearch-reference and intentional-difference/unsupported conformance corpus; no broad SDK promise",
             "Refresh the core-v1 fixture corpus for the rows revised on 13 November 2026 (the refresh=true history, the partial `_update` example in A11, nested/join and kNN inputs, aliases, snapshots) together with the pinned engine differential bundle that hashes it; until then those native inputs predate the product requirements"
@@ -2718,7 +2718,8 @@
             "M06.16",
             "M06.17",
             "M06.18",
-            "M06.19"
+            "M06.19",
+            "M06.20"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -3016,24 +3017,29 @@
         },
         {
           "id": "M06.17",
-          "title": "Writer on the barrier and resolver",
-          "goal": "The serving writer reads through the M04.04 barrier (Replay, Readers, Cut) and the M04.03 resolver, and a failed refresh keeps the published reader.",
+          "title": "Serving writer publishes readers through the barrier",
+          "goal": "The serving writer publishes readers through the M04.04 barrier (Replay, Readers, Cut), and a failed refresh keeps the published reader.",
           "deliverables": [
-            "Move the published reader onto `hsearch_index::barrier::Readers` and the writer onto `resolve` (the serving writer already owns a `Replay` cursor from M06.15); both are unwired today (M04 milestone review)",
+            "Move the published reader onto `hsearch_index::barrier::Readers` on the serving writer (it already owns a `Replay` cursor from M06.15)",
             "A refresh that fails leaves the previously published reader serving"
           ],
           "validation": [
             "Refresh failure injected at each step leaves search results unchanged and the next refresh succeeds"
           ],
           "definition_of_done": [
-            "Both modules are used by the serving path and a failed refresh never withdraws a reader"
+            "The barrier is used by the serving path and a failed refresh never withdraws a reader"
           ],
           "depends_on": [
             "M06.14"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-17-readers.md",
+              "result": "Serving owns Readers<Snapshot>: the committed watermark rises with each committed batch, refresh opens a snapshot at the Replay cut and publishes it, and a reader covers exactly the prefix applied when it was published. Refresh failure injected at the cut (cursor failed), the engine (snapshot limit) and the publish (generations held by queries) each leaves the serving reader and the next refresh succeeds; 5 tests (4 in readers.rs, one from a recovered writer in base.rs), 2 mutations seen red. Provisional (in-memory store). The resolver (M04.03) is not wired here: it moved to M06.20."
+            }
+          ]
         },
         {
           "id": "M06.18",
@@ -3075,6 +3081,28 @@
           "depends_on": [
             "M06.16",
             "M06.18"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.20",
+          "title": "Resolve updates, upserts and conditions on the serving write path",
+          "goal": "The serving write path resolves partial updates, upserts, detect_noop and if_seq_no/if_primary_term conditions once against committed state (M04.03 resolver) and logs the resolved operation, so replay never calls the resolver.",
+          "deliverables": [
+            "Wire `hsearch_index::resolve::Resolver` into the serving writer over the committed real-time view, logging the resolved whole-document operations",
+            "Idempotent request outcomes through `OutcomeStore` for a retried request"
+          ],
+          "validation": [
+            "An update, an upsert, a condition that fails and a retried request give the same results live and after recovery from the log"
+          ],
+          "definition_of_done": [
+            "The resolver is used by the serving path and recovery replays resolved operations without it"
+          ],
+          "depends_on": [
+            "M06.14",
+            "M06.17"
           ],
           "owner": "storage/runtime",
           "status": "planned",

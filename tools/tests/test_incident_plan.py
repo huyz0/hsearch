@@ -65,6 +65,7 @@ class IncidentPlanTests(unittest.TestCase):
         self.tasks["M06.13"]["status"] = "planned"  # Depends on M06.10 above; keep the model pre-acceptance.
         self.tasks["M06.14"]["status"] = "planned"  # Depends on M06.12 above; keep the model pre-acceptance.
         self.tasks["M06.15"]["status"] = "planned"  # Depends on M06.14 above; keep the model pre-acceptance.
+        self.tasks["M06.17"]["status"] = "planned"  # Depends on M06.14 above; keep the model pre-acceptance.
         self.tasks["M05.01"]["status"] = "planned"  # Depends on M03.01 and M03.09 above; keep the model pre-acceptance.
         self.tasks["M05.02"]["status"] = "planned"  # Depends on M03.01 and M03.09 above; keep the model pre-acceptance.
         self.tasks["M05.03"]["status"] = "planned"  # Depends on M05.02 above; keep the model pre-acceptance.
