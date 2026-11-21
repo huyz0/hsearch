@@ -1,0 +1,484 @@
+{
+  "schema_version": 1,
+  "status": "incoming unqualified author code; requires complete final-source qualification",
+  "prototype_handoff_sha256": "99f1dd8f930d836de309d5bb5b17a79974b70001951378e9c67ca3bc70a29d76",
+  "prototype_author": "01a1ab9f-fde6-7952-9877-efb2fce35b9c",
+  "implementer": "01a1ad0c-a57c-7462-9adc-44dda960885a",
+  "inherited_authors": [
+    "01a1ab64-5beb-7431-b3f9-bea4a729c0d6",
+    "01a1ab64-1401-7740-9cd1-5320979e293b",
+    "01a1aca2-3b0e-7503-9b7c-a9a44b91aeb9"
+  ],
+  "author_inventory_limit": "Researcher and all other contributors remain excluded from self-review; this list does not certify exhaustiveness.",
+  "parent_head": "4199068d1665dbce9f47df66d0b6d422ba16de40",
+  "extracted_definitions": [
+    {
+      "source": "deps/sealed_operation.py",
+      "definition": "Refused",
+      "sha256": "34a0fb783aaf68f413ee1f1dea44203963c4f7b8ebd84cb85ac9585e4ddc0fd9",
+      "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+      "destination": "_bytes.py",
+      "integrated_body_sha256": "34a0fb783aaf68f413ee1f1dea44203963c4f7b8ebd84cb85ac9585e4ddc0fd9",
+      "body_changed": false
+    },
+    {
+      "source": "deps/sealed_operation.py",
+      "definition": "need",
+      "sha256": "50e9e65e6aafdea66476d16a887ff725517b979a13484a810e5d07e941868b9c",
+      "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+      "destination": "_bytes.py",
+      "integrated_body_sha256": "50e9e65e6aafdea66476d16a887ff725517b979a13484a810e5d07e941868b9c",
+      "body_changed": false
+    },
+    {
+      "source": "deps/sealed_operation.py",
+      "definition": "keys",
+      "sha256": "e9e2acabb9fac1ae27a20bd4d40e2e764f2e01443921afe80298db2ba8cad210",
+      "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+      "destination": "_bytes.py",
+      "integrated_body_sha256": "e9e2acabb9fac1ae27a20bd4d40e2e764f2e01443921afe80298db2ba8cad210",
+      "body_changed": false
+    },
+    {
+      "source": "deps/sealed_operation.py",
+      "definition": "sha",
+      "sha256": "578dfeddac96290c66ef1d843fd805406a1d57251fe83cc0536905b4c8f08213",
+      "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+      "destination": "_bytes.py",
+      "integrated_body_sha256": "578dfeddac96290c66ef1d843fd805406a1d57251fe83cc0536905b4c8f08213",
+      "body_changed": false
+    },
+    {
+      "source": "deps/sealed_operation.py",
+      "definition": "sid",
+      "sha256": "832019d5aeacc186ec62cb67c3f93bb940dc91e95ad42f987eb0454502c65a78",
+      "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+      "destination": "_bytes.py",
+      "integrated_body_sha256": "832019d5aeacc186ec62cb67c3f93bb940dc91e95ad42f987eb0454502c65a78",
+      "body_changed": false
+    },
+    {
+      "source": "deps/sealed_operation.py",
+      "definition": "integer",
+      "sha256": "093e25418c5669850ab87d03598e02e6185c1d9e0624dbe9af772c2c2f22f128",
+      "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+      "destination": "_bytes.py",
+      "integrated_body_sha256": "093e25418c5669850ab87d03598e02e6185c1d9e0624dbe9af772c2c2f22f128",
+      "body_changed": false
+    },
+    {
+      "source": "deps/sealed_operation.py",
+      "definition": "encoded",
+      "sha256": "064d94b774ddf35b46ffec56d0d808aa1ad79e948a342e4fd6aa6cb49cd301c0",
+      "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+      "destination": "_bytes.py",
+      "integrated_body_sha256": "064d94b774ddf35b46ffec56d0d808aa1ad79e948a342e4fd6aa6cb49cd301c0",
+      "body_changed": false
+    },
+    {
+      "source": "deps/sealed_operation.py",
+      "definition": "digest",
+      "sha256": "4a435e3d31281672ea620f80b4d1f547182ef6e909be47d666072a009233b46b",
+      "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+      "destination": "_bytes.py",
+      "integrated_body_sha256": "4a435e3d31281672ea620f80b4d1f547182ef6e909be47d666072a009233b46b",
+      "body_changed": false
+    },
+    {
+      "source": "deps/sealed_operation.py",
+      "definition": "regular",
+      "sha256": "51dcfad5734faedc96c568b73831a38cc826f1b81badc7552b1b65122953db9b",
+      "original_file_sha256": "992f9e662538f78eead0adf10106bdc96bffc1d1ee6c7190581650adcc0f862f",
+      "destination": "_bytes.py",
+      "integrated_body_sha256": "51dcfad5734faedc96c568b73831a38cc826f1b81badc7552b1b65122953db9b",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "bounded",
+      "sha256": "e841389c2d2f235e962b4ba54cb5e27f3ab38c0a9c486ba39b25e04d80325e3c",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "e841389c2d2f235e962b4ba54cb5e27f3ab38c0a9c486ba39b25e04d80325e3c",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "logical",
+      "sha256": "76e5255fe53e41ae37726861ee63b12308bd43a34661c621d1d1fe6d500f0ebf",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "76e5255fe53e41ae37726861ee63b12308bd43a34661c621d1d1fe6d500f0ebf",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "metadata",
+      "sha256": "e1771432d645a89185cc385164a72edba91c61a1bd949aec680d7db7c53a272a",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "e1771432d645a89185cc385164a72edba91c61a1bd949aec680d7db7c53a272a",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "scan",
+      "sha256": "bfe724dd66a9d319b325f1400d389fe1da096a36c5c786af7fdfda0ecd975197",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "bfe724dd66a9d319b325f1400d389fe1da096a36c5c786af7fdfda0ecd975197",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "list_bounded",
+      "sha256": "2e6df09592748e26400a8d440a3de0d7a1904c134a5eb1008ce248d6e22d74c2",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "2e6df09592748e26400a8d440a3de0d7a1904c134a5eb1008ce248d6e22d74c2",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "header",
+      "sha256": "fb15466421543c5cbf7b3b83186c3031a355185be7cbb5c66cad58f34e6b651c",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "fb15466421543c5cbf7b3b83186c3031a355185be7cbb5c66cad58f34e6b651c",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "align",
+      "sha256": "44b6a170e695cc9878aa0337804c8ff99d49f61bd34c510ea421b56388af85f6",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "44b6a170e695cc9878aa0337804c8ff99d49f61bd34c510ea421b56388af85f6",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "validate_plan",
+      "sha256": "94fb13fea75f6992fe934c6eb24cd476357f434f2e7249d31eb5bd73e58d054c",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "94fb13fea75f6992fe934c6eb24cd476357f434f2e7249d31eb5bd73e58d054c",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "AuditBudget",
+      "sha256": "86a5b5051c0c7d4e6cb03b577eba617a9b474f8a412fe2953fafb9850a888bbb",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "86a5b5051c0c7d4e6cb03b577eba617a9b474f8a412fe2953fafb9850a888bbb",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "RetainedMemberView",
+      "sha256": "5e78fd061b40f6e23aef7e95704387ee70ae2fba9b5ae36f190edf01a634cae4",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "5e78fd061b40f6e23aef7e95704387ee70ae2fba9b5ae36f190edf01a634cae4",
+      "body_changed": false
+    },
+    {
+      "source": "deps/retention_pack.py",
+      "definition": "VerifiedPack",
+      "sha256": "ecc5e45fd353d854ace6c59d9a8af9ce5581a1a46cb3a14763728c61105f01a4",
+      "original_file_sha256": "95a477a33ef30cc083f97f71e9868c4c5e249585a48e625895b4ca23b33b5968",
+      "destination": "_pack.py",
+      "integrated_body_sha256": "ecc5e45fd353d854ace6c59d9a8af9ce5581a1a46cb3a14763728c61105f01a4",
+      "body_changed": false
+    },
+    {
+      "source": "deps/directory_sync.py",
+      "definition": "sync_directory",
+      "sha256": "0dab442f78bea833d8f4df0474abe21e3fada0f29c05630a2b1363788935e703",
+      "original_file_sha256": "ded4a8f0a1c584f5589c536ea9f8379287384d1e0cac356bfc2255412810afc2",
+      "destination": "_sync.py",
+      "integrated_body_sha256": "692c9676611548349b1b7c34b45276c7d13772877d7c53cad09528b2d9001ecb",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "enc",
+      "sha256": "cdac8935da06f3e1b70d223d581a69848f82ef4d8bb866ccc81e343f751056d8",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "9bb1aba5781bf7fcd0914adc94ddab2143d8d085c9935ad5af8d176b07c93062",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "digest",
+      "sha256": "cd201b808d2b3879f6d3e83e3662b2304f838b9ad5b7c16aacba0a0ae4cc9f1a",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "0fb5773c944ae945a8a54b8afa39d8be8544adcdcc1f517430f13e38a6d7b4cd",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "sha",
+      "sha256": "f9b071abb3538be7339e409f9c8fb6745d0cf4c8c85dab91c9525df618973e1a",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "5bcda7df306aba00d27df7486b9d95fc3e30ac05f26ec46da40561e9581e7ca2",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "integer",
+      "sha256": "c79537e43157a84d124726d64849c6c0639348f3a3802bbb302574010507fd3e",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "fd30ba825623c0ff496fe591a554690ce5c6a21015cf26b149407c1985b18936",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "keys",
+      "sha256": "801530653d7de1dfaf59575a55bbb3acddd489dc208ed8ea042acbadeac6329f",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "21f8ada928071575ed987adb80c4eaa848b9f6b39d5d5126c32b2ef339fbf498",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "source",
+      "sha256": "4df6292864eab6d8714ab8d7906c9ad1cd30a5a7647557b4d1dd8de468345f61",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "edf1a22b8db8f7bc40e652db5d76e90fab18b938766cdf4243c250597e663028",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "audit_cost_bound",
+      "sha256": "935fef570fd1fd75be8238493970104df7eb1131b4b04b10f8b20f289ad2baad",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "dee99e90094d0b2e9dc4f1b9aa69787001e94b56a4ee1c53e6bce09a338c99de",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "closure",
+      "sha256": "e7d779005f9c22710540835881c59f16c9839e1f54f395c1e88fa48d9ea0c95c",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "13b5b08d9a3caf1caccfaff7b10a9caebaaf89e6db7a033c7f5d4619fefaa9c5",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "manifest",
+      "sha256": "00c9a98ff67d1470a61e8f48018724ce296ebfa0fff9e612ca45f38a263ece33",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "739e8bcda85ebf1d21de1df00902562f9af8ea224c9a981f41b24fabf1831595",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "validate",
+      "sha256": "0bdcd8da2d73def0232edb1aca7aee4c135fbb449c8431cf8957631cc0217c5d",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "559236b30008c9ee9162ce1cdd9c242fa624f375ade0702e4051e0279580bc24",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "request",
+      "sha256": "17ffe466114852f73b5c3cd3e9239dde9f0b3e4f2f7df61a96409cf0e2b6bde1",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "ee825c6d8777af34d66f434dbb563507013b6f91ac261b4f8f1abf4b4857d300",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "authorization",
+      "sha256": "bf99e119d585f6cfc3e303e048108a2362eb24a300ff05ea2d1dd69cd5ce679a",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "846f779c9d3e5a57efc51b3612c8409283c3979cc5b21f965005ab60df004b6c",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "admission",
+      "sha256": "553018faa39824d5af94d073ee11618ee1b49fadb07afa5186c878f98d98807a",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "ce26bbd0c22f33ffec32d6c284637fd37922d5f49fc886ba17868eeb2a38f2b3",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "Meter",
+      "sha256": "c4d10e76d9153cffae5a250eca1ff5cdfc5e19b16f0ce4552835101ddcd2c77d",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "92ef1772a76e84831484d9d03106f227765d668fd9b6b04e8fb3033463512966",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "audit_for",
+      "sha256": "74b506176f8fdfd4646e22e292e19c99e26868b877f2b904898d46d11dac1b62",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "8710a6dd3eea33d113f157583e58d39fa80b199282dfb68d7d09078aeb00c1fd",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "composite",
+      "sha256": "519540b02afdb6b4aba62b569193320079335eccfef4b2c45a71827b85300461",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "e469a4c3a18110687ebaa01546f4c6193be007ee6a58e5a5ecdedf0fd38a5d28",
+      "body_changed": true
+    },
+    {
+      "source": "failed_forensic_retention_v1.py",
+      "definition": "semantic_reader",
+      "sha256": "ea65716c6641424bd948384c80740a6e970a5d3163ff2d4c7a96cc9e0dc3c712",
+      "original_file_sha256": "f43cf1802e4017338040360a3aa07a1371c34534644a317c0707629d22a88cf4",
+      "destination": "protocol.py",
+      "integrated_body_sha256": "aa45c66171022a94f1df68dc4a33e68ce50b93443e1eb6f0eb6dffea4eb80cfd",
+      "body_changed": true
+    }
+  ],
+  "retained_failure": "External attempt02 IndentationError, no tests run. Original controller-source-failed-attempt02.py.txt and source-check-attempt02-failure.log remain at the immutable prototype location; not repaired or relabeled.",
+  "excluded": [
+    "prototype FakeStore/FakeDocker/FakeLifecycle/SyntheticArchive",
+    "semantic evaluators, parent controllers, original author admission",
+    "retirement-blocked prototype Controller"
+  ],
+  "import_closure": "Only Python stdlib and same-package extracted primitives. TaskStore adapter loads current same-checkout tools/task.py explicitly; no parent admission override.",
+  "research_design_author": "01a1ab4c-4786-7472-bdb7-59c35c310347",
+  "review_history": {
+    "original_base": "2b2fd47febdbd18dc087457781b6c146d3671f26",
+    "R1_packet": "b92a03691b797c7bf295e7082f71237e31780f675ef5b4c8a07f636a44103803",
+    "planned": 2,
+    "hard_ceiling": 3,
+    "implementation_review": "R3 not issued by this source artifact; coordinator verification required first",
+    "R2_packet": "bf6b0145418bf244205ecb302a52dc896c0b7e0afb293f0480d85b89da278696",
+    "R2_source": "1101dda0337c225b0befb7d14310ab0acab96ded",
+    "R2_result": "both nonauthor reports blocked; all eight finding keys retained; combined author corrections pending final-tree qualification and independent review",
+    "issued": 2
+  },
+  "test_support": {
+    "handoff_sha256": "82f57a92d10f56b42527a30d96b13170439c24100883f494bf06523d1c4f5370",
+    "source": "forensic_fault_oracles.py",
+    "source_sha256": "08fc8f5ac6c11d1c5f19114d5777c5e04109d9dd21263c74a101ed7f6efe0334",
+    "definitions": [
+      {
+        "name": "snapshot",
+        "sha256": "c645537e61683fb20e803bb0e4ae796d42d94bee5fe4436a4fea5dc66e373890"
+      },
+      {
+        "name": "assert_reachable",
+        "sha256": "6f768fc207851467fb136fd089599130018972127c74572b6e0253420455b396"
+      }
+    ],
+    "status": "Author-supplied independent byte/metadata oracle; subject qualification is separate."
+  },
+  "local_adaptations": [
+    "Same-package imports replace external prototype runpy loader; only explicit primitive definition closure is imported.",
+    "Protocol adds complete parent-directory closure, sticky deadline refusal, complete-operation I/O estimate and explicit M01.17 versioned component admission.",
+    "Controller, actual filesystem/metadata store, genuine TaskStore lifecycle, production Docker transport, fixed worker and coordinator loader are new implementation; prototype fake controllers/stores/backends are not imported.",
+    "Author-local oracle definitions are embedded in the single owned test file; external self-controls are not counted as subject qualification."
+  ],
+  "integrated_source_inventory": [
+    {
+      "path": "tools/forensic_retention_v1/__init__.py",
+      "bytes": 81,
+      "sha256": "f14bdddaa973f1371de4286dede623fdd318aaddcd269a91a9300a3113fcb5ec"
+    },
+    {
+      "path": "tools/forensic_retention_v1/__main__.py",
+      "bytes": 6457,
+      "sha256": "bbf6593269191c4650ecc0310028afa9a5bdea9650b37e8c3ab713ebad259637"
+    },
+    {
+      "path": "tools/forensic_retention_v1/_bytes.py",
+      "bytes": 2481,
+      "sha256": "67ae6465ed4ee78ad99881b98b763f5de7bd9920bf337173aeb0cee1e6670df5"
+    },
+    {
+      "path": "tools/forensic_retention_v1/_pack.py",
+      "bytes": 15405,
+      "sha256": "ea4d0914fca2fde81524b2ff596ad093df418cb26311e31922543702d71c6f6f"
+    },
+    {
+      "path": "tools/forensic_retention_v1/_sync.py",
+      "bytes": 1512,
+      "sha256": "d406dade98d157fb3c4989709d26bea40777ed25e2199e4866c688075630959c"
+    },
+    {
+      "path": "tools/forensic_retention_v1/backend.py",
+      "bytes": 8430,
+      "sha256": "bca0cabe5216590081a3e593cd8985642200d90d3405eb9f4c767eecdf5ddbc7"
+    },
+    {
+      "path": "tools/forensic_retention_v1/capture.py",
+      "bytes": 2302,
+      "sha256": "2d76ab2dde4a69f0e9ab0712637f2e5846920209e4ec50a69a9aeb96b443bf58"
+    },
+    {
+      "path": "tools/forensic_retention_v1/controller.py",
+      "bytes": 22782,
+      "sha256": "a8bc079b2496a4a6641cb67d60927bfceb5959aced34b7e5271dfebdebd70033"
+    },
+    {
+      "path": "tools/forensic_retention_v1/lifecycle.py",
+      "bytes": 14564,
+      "sha256": "083cd72310df6480aea023f18810addeea60d352ca0db5d6024e8c3471833340"
+    },
+    {
+      "path": "tools/forensic_retention_v1/protocol.py",
+      "bytes": 9237,
+      "sha256": "d975b535a556e80f9c643d19ee0a015573b43c9b0e94bf385e9e8c1cf48247f8"
+    },
+    {
+      "path": "tools/forensic_retention_v1/storage.py",
+      "bytes": 12765,
+      "sha256": "aa529f75fdcc4cce2711db19f0f8f28283a861549ddf124d1a85b8d8973a5941"
+    },
+    {
+      "path": "tools/forensic_retention_v1/worker.py",
+      "bytes": 2261,
+      "sha256": "bf95a7db43121a64c72e45f044c8e0e7d6461a1c7860a3da15746f26a4708030"
+    },
+    {
+      "path": "tools/forensic_retention_v1/README.md",
+      "bytes": 12938,
+      "sha256": "5969a6181f65b9cc4cbfe7471c2b4abe319e79a0787e91146878dca2e5711e4c"
+    },
+    {
+      "path": "tools/tests/test_forensic_retention_v1.py",
+      "bytes": 59591,
+      "sha256": "165933cca9640ff53b7dc92f55e947b18e22dce4e5ec37a4922720e9ff415700"
+    }
+  ],
+  "inventory_scope": "All component Python, README and owned test bytes; PROVENANCE.json itself is bound by the frozen Git tree, avoiding a self-hash cycle.",
+  "r2_regression_support": {
+    "handoff_sha256": "1498ccfccead64b3c9c87bf7760844979e5d39acb9a2b01b2f6c0dbec53170ab",
+    "author": "01a1ab9f-fde6-7952-9877-efb2fce35b9c",
+    "scope": "Author support only; independently adapted controls, not counted as external qualification; contributor excluded from self-review."
+  },
+  "combined_r2_corrections": [
+    "Bind executing package, admitted task API, controller and worker mount to one clean checkout, including loaded module origins.",
+    "Reaffirm surviving affected parent directories before acknowledging recovered deletion prefixes or completing.",
+    "Stream bounded preparation publication enumeration under the original preparation deadline.",
+    "Reserve combined stdout/stderr reads durably in the existing TaskStore claim before consumption; retain failed/unknown/recovery debt.",
+    "Keep durable completion tentative and require deadline observations after terminal publication and lifecycle finalization before returning success."
+  ]
+}
