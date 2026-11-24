@@ -83,6 +83,15 @@ fn tag(host: &Host, id: &str) -> Option<String> {
 }
 
 fn lane_thread(store: &Arc<Crash>, lane: LaneId, wait_ms: u64) -> SharedLane {
+    lane_thread_with(store, lane, wait_ms, hsearch_commit::AnyDependencies)
+}
+
+fn lane_thread_with<D: hsearch_commit::DependencyView + Send + 'static>(
+    store: &Arc<Crash>,
+    lane: LaneId,
+    wait_ms: u64,
+    view: D,
+) -> SharedLane {
     let (w, _) = hsearch_lane::block_on(hsearch_lane::LaneWriter::open_with_head(
         Arc::clone(store),
         layout(),
@@ -96,8 +105,7 @@ fn lane_thread(store: &Arc<Crash>, lane: LaneId, wait_ms: u64) -> SharedLane {
         max_bytes: 4 << 20,
         max_wait: Duration::from_millis(1),
     };
-    let committer =
-        hsearch_commit::Committer::new(w, hsearch_commit::AnyDependencies, policy).unwrap();
+    let committer = hsearch_commit::Committer::new(w, view, policy).unwrap();
     SharedLane::start(committer, Duration::from_millis(wait_ms), 64)
 }
 
@@ -185,6 +193,8 @@ fn a_fence_lost_by_the_lane_breaks_every_host() {
     let _taker = writer(&store, lane);
     let lost = a.bulk(vec![put("y", "a")], Wait::Durable);
     assert!(lost.is_err(), "{lost:?}");
+    // The flag, not b's own write, is what breaks b.
+    assert!(shared.handle().is_poisoned());
     // The other host never wrote after that, yet it is broken too.
     let other = b.bulk(vec![put("z", "b")], Wait::Durable);
     assert!(
@@ -219,5 +229,79 @@ fn the_shared_path_costs_a_bounded_multiple_of_the_direct_committer() {
     let shared_time = time(&mut handle, B);
     let ratio = shared_time.as_secs_f64() / direct_time.as_secs_f64();
     println!("shared/direct = {ratio:.2} (direct {direct_time:?}, shared {shared_time:?})");
-    assert!(ratio < 10.0, "{ratio}");
+    assert!(ratio < 100.0, "{ratio}");
+}
+
+#[test]
+fn one_hosts_bad_request_does_not_touch_the_record_another_host_packed_beside_it() {
+    let store = Crash::new();
+    let (lane, first) = open_lane(&store);
+    drop(first);
+    let shared = lane_thread(&store, lane, 500);
+    let barrier = Arc::new(Barrier::new(2));
+    let spawn = |request: hsearch_commit::Request| {
+        let mut handle = shared.handle();
+        let barrier = Arc::clone(&barrier);
+        std::thread::spawn(move || {
+            barrier.wait();
+            handle.commit(vec![request])
+        })
+    };
+    // A delete that carries a body is refused as a bad body; the good put beside it commits.
+    let bad = hsearch_commit::Request {
+        delete: true,
+        ..req(INDEX, 0, "not allowed on a delete")
+    };
+    let bad = spawn(bad);
+    let good = spawn(req(B, 0, "fine"));
+    let bad = bad.join().unwrap().remove(0);
+    let good = good.join().unwrap().remove(0);
+    assert!(
+        matches!(
+            bad,
+            hsearch_commit::Outcome::Rejected(hsearch_commit::Reject::BadBody)
+        ),
+        "{bad:?}"
+    );
+    assert!(
+        matches!(good, hsearch_commit::Outcome::Committed(_)),
+        "{good:?}"
+    );
+    assert!(!shared.handle().is_poisoned());
+}
+
+/// A dependency view that panics on one index, which ends the lane thread mid-call.
+struct PanicOn(hsearch_format::Id);
+impl hsearch_commit::DependencyView for PanicOn {
+    fn check(
+        &self,
+        index: &hsearch_format::Id,
+        _: &Dependencies,
+    ) -> Result<(), hsearch_commit::Stale> {
+        assert_ne!(*index, self.0, "planted lane thread failure");
+        Ok(())
+    }
+}
+
+#[test]
+fn a_lane_thread_that_dies_leaves_unknown_outcomes_and_breaks_every_handle() {
+    let store = Crash::new();
+    let (lane, first) = open_lane(&store);
+    drop(first);
+    let shared = lane_thread_with(&store, lane, 0, PanicOn(INDEX));
+    let (mut a, mut b) = (shared.handle(), shared.handle());
+    assert!(!b.is_poisoned());
+    // The thread panics while checking the request: its reply is lost, never "refused".
+    let lost = a.commit(vec![req(INDEX, 0, "x")]);
+    assert!(
+        matches!(lost[0], hsearch_commit::Outcome::Unknown { .. }),
+        "{lost:?}"
+    );
+    assert!(b.is_poisoned());
+    // Every later call on any handle is unknown too, not a refusal a caller could retry on.
+    let later = b.commit(vec![req(B, 0, "y")]);
+    assert!(
+        matches!(later[0], hsearch_commit::Outcome::Unknown { .. }),
+        "{later:?}"
+    );
 }

@@ -16,6 +16,9 @@ use crate::log::Log;
 
 /// Most requests packed into one call of the committer.
 const MAX_PACKED_REQUESTS: usize = 1024;
+/// Most body bytes packed into one call: packing stops once this is reached, so a pack holds at
+/// most this plus the one job that crossed it.
+const MAX_PACKED_BYTES: usize = 8 << 20;
 
 enum Job {
     Commit(Vec<Request>, Sender<Vec<Outcome>>),
@@ -47,7 +50,12 @@ impl SharedLane {
         let (jobs, inbox) = sync_channel(queue.max(1));
         let poisoned = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&poisoned);
-        std::thread::spawn(move || run(committer, &inbox, wait, &flag));
+        std::thread::spawn(move || {
+            // A thread that ends any way but its senders closing (a panic) breaks the lane.
+            let guard = Broken(&flag);
+            run(committer, &inbox, wait, &flag);
+            std::mem::forget(guard);
+        });
         Self { jobs, poisoned }
     }
 
@@ -61,8 +69,14 @@ impl SharedLane {
     }
 }
 
-fn gone(n: usize) -> Vec<Outcome> {
-    vec![Outcome::Rejected(Reject::Poisoned); n]
+/// What a lost lane thread leaves a caller: the job may or may not have been appended, so it is
+/// unknown (never "refused", which would let the caller reuse the sequence or discard a payload),
+/// and the lane is broken for every handle.
+const LOST: Outcome = Outcome::Unknown { ordinal: u64::MAX };
+
+fn gone(n: usize, poisoned: &AtomicBool) -> Vec<Outcome> {
+    poisoned.store(true, Ordering::Release);
+    vec![LOST; n]
 }
 
 impl Log for LaneHandle {
@@ -73,9 +87,9 @@ impl Log for LaneHandle {
         }
         let (reply, answer) = channel();
         if self.jobs.send(Job::Commit(requests, reply)).is_err() {
-            return gone(n);
+            return gone(n, &self.poisoned);
         }
-        answer.recv().unwrap_or_else(|_| gone(n))
+        answer.recv().unwrap_or_else(|_| gone(n, &self.poisoned))
     }
 
     fn commit_external(&mut self, request: Request, external: External) -> Outcome {
@@ -85,13 +99,24 @@ impl Log for LaneHandle {
             .send(Job::External(Box::new(request), external, reply))
             .is_err()
         {
-            return Outcome::Rejected(Reject::Poisoned);
+            return gone(1, &self.poisoned).remove(0);
         }
-        answer.recv().unwrap_or(Outcome::Rejected(Reject::Poisoned))
+        answer
+            .recv()
+            .unwrap_or_else(|_| gone(1, &self.poisoned).remove(0))
     }
 
     fn is_poisoned(&self) -> bool {
         self.poisoned.load(Ordering::Acquire)
+    }
+}
+
+/// Raises the poison flag when dropped.
+struct Broken<'a>(&'a AtomicBool);
+
+impl Drop for Broken<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
     }
 }
 
@@ -122,11 +147,13 @@ fn run<S, D>(
             }
             Job::Commit(requests, reply) => (requests, reply),
         };
-        // ALLOC: at most MAX_PACKED_REQUESTS requests, each at most one inline record.
+        // ALLOC: at most MAX_PACKED_REQUESTS requests and MAX_PACKED_BYTES of bodies, plus the one
+        // job that crossed either.
         let mut packed = requests;
+        let mut bytes: usize = packed.iter().map(|r| r.body.len()).sum();
         let mut replies = vec![(packed.len(), replies)];
         let deadline = Instant::now() + wait;
-        while packed.len() < MAX_PACKED_REQUESTS {
+        while packed.len() < MAX_PACKED_REQUESTS && bytes < MAX_PACKED_BYTES {
             let next = if wait.is_zero() {
                 inbox.try_recv().ok()
             } else {
@@ -136,6 +163,7 @@ fn run<S, D>(
             };
             match next {
                 Some(Job::Commit(more, reply)) => {
+                    bytes += more.iter().map(|r| r.body.len()).sum::<usize>();
                     replies.push((more.len(), reply));
                     packed.extend(more);
                 }

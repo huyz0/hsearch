@@ -23,9 +23,19 @@
 - a second writer taking the lane fences it: the host that wrote gets an error, the other host's
   next write is refused, and the shared flag is set;
 - latency: 200 sequential single-record commits take 5.6 ms direct and 18.2 ms through the shared
-  handle (ratio 3.3, one run, relative only), bounded by a 10x assertion.
+  handle (ratio 3.3, one run, relative only), bounded by a 100x assertion (a guard, not a target).
 
-Mutations seen red: the packing loop, the reply split, the poison flag (both conditions together;
+- one host's bad body beside another's good record in one packed call: each gets its own outcome;
+- a lane thread that dies (a planted panic) leaves `Unknown` to the caller and every later caller,
+  never a refusal, and raises the shared flag for every handle.
+
+Added after independent review: a lost reply is `Unknown` (a refusal would let the caller reuse the
+sequence or delete a staged payload the log may name), the thread's death breaks the lane, and
+packing stops at 8 MiB of bodies as well as 1,024 requests. Not covered: `commit_external` through
+the lane thread (the held-job path) has no test of its own; the payload path is covered through the
+direct committer.
+
+Mutations seen red: the packing loop, the reply split, the lost-reply outcome (the flag set in `gone` is redundant with the thread guard, so removing it alone stays green), the poison flag (both conditions together;
 either alone is enough for the fence test, so the other is defence in depth).
 Existing store and node suites pass with the trait in place.
 
