@@ -135,6 +135,9 @@ pub struct Recovered {
     pub replayed: u64,
     /// Slots read.
     pub slots: u64,
+    /// The first slot of the lane the replay read: the position a host is pinned from until it
+    /// publishes a base (the lane's cover, or the pointer's lane cover above it).
+    pub scan_from: u64,
     /// The first absent position of the lane recovery started in (not of a successor lane it
     /// followed: `followed > 0` means the history ends elsewhere).
     pub tail: u64,
@@ -755,6 +758,7 @@ where
         replayed: run.replayed,
         slots: run.slots,
         tail: first_tail,
+        scan_from,
         head_generation,
         followed,
         spilled,

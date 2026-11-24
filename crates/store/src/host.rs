@@ -31,6 +31,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use crate::cover::SharedCover;
 use crate::log::Log;
 use hsearch_commit::{Committer, Dependencies, DependencyView, Reject};
 use hsearch_engine::{
@@ -155,6 +156,9 @@ pub struct Config {
     /// Where the base comes from at open and where a published base is named: the lane head's
     /// checkpoint, or the shard's own pointer (a lane shared by several indexes).
     pub base: BaseSource,
+    /// The pinned set of the lane when it is shared: the host pins the lane's cover until it
+    /// publishes a base, publishes one when its pin has held too long, and on stop.
+    pub cover: Option<Arc<SharedCover>>,
 }
 
 /// Everything `open_log` needs besides the configuration: [`OpenArgs`] with any [`Log`].
@@ -352,6 +356,16 @@ impl Host {
                         &rebuilt.recovered,
                         config.deps,
                     );
+                    let serving = match config
+                        .cover
+                        .as_ref()
+                        .filter(|_| rebuilt.recovered.followed == 0)
+                    {
+                        Some(pins) => {
+                            serving.with_cover(Arc::clone(pins), rebuilt.recovered.scan_from)
+                        }
+                        None => serving,
+                    };
                     let serving = match payloads {
                         Some(sink) => serving.with_payloads(sink),
                         None => serving,
@@ -723,7 +737,16 @@ where
                 },
             };
             match command {
-                Command::Stop => return,
+                Command::Stop => {
+                    // Closing publishes, so this host stops pinning the lane's cover.
+                    if self.config.cover.is_some()
+                        && self.batches_since_base > 0
+                        && !self.serving.is_broken()
+                    {
+                        let _ = self.publish_base();
+                    }
+                    return;
+                }
                 Command::Bulk(ops, wait, strict, reply) => {
                     let mut group = vec![Bulk::new(ops, wait, strict, reply)];
                     let mut count = group[0].ops.len();
@@ -960,12 +983,21 @@ where
             })?;
         self.batches_since_base = 0;
         self.counters.bases.fetch_add(1, Ordering::Relaxed);
+        if let Some(pins) = &self.config.cover {
+            // Best effort: a lost race or a store failure leaves the cover where it was.
+            let _ = self.publisher.advance_cover(pins);
+        }
         Ok(published)
     }
 
     fn scheduled_base(&mut self) {
         let every = self.config.base_every_batches;
-        if every == 0 || self.batches_since_base < every || self.serving.is_broken() {
+        let due = self
+            .config
+            .cover
+            .as_ref()
+            .is_some_and(|pins| pins.due(&self.config.index));
+        if self.serving.is_broken() || !due && (every == 0 || self.batches_since_base < every) {
             return;
         }
         if self.publish_base().is_err() {

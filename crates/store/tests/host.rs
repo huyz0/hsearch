@@ -54,6 +54,7 @@ fn config(label: &str, window_ms: u64, base_every: u64, seed: u8) -> Config {
         merge: hsearch_engine::MergeMode::Inline,
         searchable_when_empty: false,
         base: hsearch_store::pointer::BaseSource::Head,
+        cover: None,
         pin: None,
     }
 }
@@ -309,6 +310,7 @@ fn a_host_on_a_pointer_names_its_bases_there_and_a_restart_serves_what_was_ackno
     let (store, lane) = new_lane();
     let pointer = |label: &str, seed: u8| Config {
         base: hsearch_store::pointer::BaseSource::Pointer,
+        cover: None,
         ..config(label, 0, 2, seed)
     };
     let host = open(&store, lane, pointer("ptr", 1));

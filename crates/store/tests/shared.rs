@@ -52,6 +52,7 @@ fn config(label: &str, index: hsearch_format::Id, base_every: u64, seed: u8) -> 
         merge: hsearch_engine::MergeMode::Inline,
         searchable_when_empty: false,
         base: hsearch_store::pointer::BaseSource::Pointer,
+        cover: None,
         pin: None,
     }
 }
@@ -304,4 +305,100 @@ fn a_lane_thread_that_dies_leaves_unknown_outcomes_and_breaks_every_handle() {
         matches!(later[0], hsearch_commit::Outcome::Unknown { .. }),
         "{later:?}"
     );
+}
+
+#[test]
+fn hosts_pin_the_cover_until_each_publishes_and_the_restart_serves_what_was_acknowledged() {
+    use hsearch_store::cover::SharedCover;
+    let store = Crash::new();
+    let (lane, first) = open_lane(&store);
+    drop(first);
+    let shared = lane_thread(&store, lane, 0);
+    let (h, _) =
+        hsearch_lane::block_on(hsearch_lane::read_head(store.inner_ref(), &layout(), &lane))
+            .unwrap();
+    let pins = Arc::new(SharedCover::new(lane, h.writer_epoch, 1000));
+    let with = |label: &str, index, seed| Config {
+        cover: Some(Arc::clone(&pins)),
+        ..config(label, index, 0, seed)
+    };
+    let a = open(&store, lane, &shared, with("ca", INDEX, 1));
+    let b = open(&store, lane, &shared, with("cb", B, 2));
+    for i in 0..4 {
+        a.bulk(vec![put(&format!("a{i}"), "a")], Wait::Durable)
+            .unwrap();
+    }
+    b.bulk(vec![put("b0", "b")], Wait::Durable).unwrap();
+    let p = publisher(&store);
+    // Both are pinned from their open: the cover cannot move.
+    assert_eq!(pins.allowed(), 0);
+    assert!(p.advance_cover(&pins).unwrap().is_none());
+    // A publishes a base covering what it wrote; B has not, so B's pin still holds the cover.
+    a.publish().unwrap();
+    assert_eq!(pins.allowed(), 0);
+    assert!(p.advance_cover(&pins).unwrap().is_none());
+    // B publishes too: nothing is pinned and the cover goes to the end of what was written.
+    b.publish().unwrap();
+    let end = pins.allowed();
+    assert!(end > 4);
+    // The host moved it itself when its base was named: one head read, no further move.
+    assert!(p.advance_cover(&pins).unwrap().is_none());
+    let (moved, _) =
+        hsearch_lane::block_on(hsearch_lane::read_head(store.inner_ref(), &layout(), &lane))
+            .unwrap();
+    assert_eq!(moved.cover, end);
+    // A base after the cover passed everything A wrote is still valid: nothing of A lies below it.
+    a.publish().unwrap();
+    // A write after its base pins its record again, and only from that record.
+    a.bulk(vec![put("a4", "a")], Wait::Durable).unwrap();
+    assert_eq!(pins.allowed(), end);
+    let sequence = |index| {
+        let spec = hsearch_store::publish::BaseSpec {
+            index,
+            ..spec(cut(1), 1, 1)
+        };
+        p.read_pointer(&spec).unwrap().unwrap().0.sequence
+    };
+    let before = (sequence(INDEX), sequence(B));
+    b.stop();
+    a.stop();
+    // Stopping publishes only what is unpublished: B had nothing new, A had one write.
+    assert_eq!((sequence(INDEX), sequence(B)), (before.0 + 1, before.1));
+    // Stopping published A's last write: it no longer pins anything.
+    assert!(pins.allowed() > end);
+    let shared = lane_thread(&store, lane, 0);
+    let a = open(&store, lane, &shared, config("ca2", INDEX, 0, 3));
+    let b = open(&store, lane, &shared, config("cb2", B, 0, 4));
+    for i in 0..5 {
+        assert_eq!(tag(&a, &format!("a{i}")).as_deref(), Some("a"));
+    }
+    assert_eq!(tag(&b, "b0").as_deref(), Some("b"));
+    assert_eq!(tag(&a, "b0"), None);
+}
+
+#[test]
+fn a_host_whose_pin_has_held_its_bound_publishes_without_a_schedule() {
+    use hsearch_store::cover::SharedCover;
+    let store = Crash::new();
+    let (lane, first) = open_lane(&store);
+    drop(first);
+    let shared = lane_thread(&store, lane, 0);
+    let pins = Arc::new(SharedCover::new(lane, 1, 3));
+    let a = open(
+        &store,
+        lane,
+        &shared,
+        Config {
+            cover: Some(Arc::clone(&pins)),
+            ..config("span", INDEX, 0, 1)
+        },
+    );
+    // No schedule (base_every_batches is 0), yet the pin from slot 0 reaches the bound of 3.
+    for i in 0..5 {
+        a.bulk(vec![put(&format!("s{i}"), "s")], Wait::Durable)
+            .unwrap();
+    }
+    a.refresh().unwrap();
+    assert!(a.stats().bases >= 1, "{:?}", a.stats());
+    assert_eq!(a.stats().base_failures, 0);
 }
