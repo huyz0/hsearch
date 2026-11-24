@@ -96,13 +96,17 @@ pub fn create<S: MetadataStore>(
     Ok(member)
 }
 
-/// Delete the index bound to `name`: its lane seals it at `last_seq` (the last sequence the lane
-/// holds for it) and drops its membership, the pins forget it, and the catalog leaves the
-/// tombstone. The seal comes first, so no record of the index is accepted once it is gone.
+/// Delete the index bound to `name`: the catalog leaves the tombstone first, so a create of the
+/// name from then on is another identity, and then the lane seals the index at `last_seq` (the
+/// last sequence the lane holds for it) and drops its membership, and the pins forget it. Calling
+/// it again for a name that is deleted finishes whatever stopped; a delete whose lane step is
+/// repeated keeps the seal it already made, so `last_seq` of the first attempt that sealed is the
+/// one that stands.
 ///
 /// # Errors
-/// [`Error::NotFound`] if no index is bound to the name; otherwise what stopped a step. The call
-/// may be repeated.
+/// [`Error::NotFound`] if no index was ever bound to the name; otherwise what stopped a step. The
+/// call may be repeated. Until the lane step finishes the index still pins the cover, and a node
+/// that restarts in between finds it in the tail and settles it.
 pub fn delete<S: MetadataStore, L: Log>(
     store: &S,
     layout: &Layout,
@@ -112,12 +116,16 @@ pub fn delete<S: MetadataStore, L: Log>(
     name: &str,
     last_seq: u64,
 ) -> Result<(), Error> {
-    let Resolution::Live { index, .. } = block_on(catalog.resolve(store, layout, name))? else {
-        return Err(Error::NotFound);
+    let index = match block_on(catalog.resolve(store, layout, name))? {
+        Resolution::Live { index, .. } => {
+            block_on(catalog.delete(store, layout, name, &index))?;
+            index
+        }
+        Resolution::Deleted { last, .. } => last,
+        Resolution::Absent => return Err(Error::NotFound),
     };
     log.leave(index, last_seq)?;
     pins.forget(&index);
-    block_on(catalog.delete(store, layout, name, &index))?;
     Ok(())
 }
 

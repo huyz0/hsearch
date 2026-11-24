@@ -3260,7 +3260,7 @@
           "evidence": [
             {
               "path": "evidence/m06-27-lane-membership.md",
-              "result": "Create binds the incarnation in the catalog and joins the lane in one CAS; delete seals, leaves, unpins and tombstones, and a recreate is another identity that replays none of the old records; reclaim raises the cover by the pins and removes slots below it with no per-index request; leave and reclaim run on the lane thread for every handle; a tail index that does not publish stays pinned. 5 tests, 5 mutations seen red. Provisional: in-memory store. Gap: the node's own call sites are the M06.21 integration."
+              "result": "Create binds the incarnation in the catalog and joins the lane in one CAS; delete seals, leaves, unpins and tombstones, and a recreate is another identity that replays none of the old records; reclaim raises the cover by the pins and removes slots below it with no per-index request; leave and reclaim run on the lane thread for every handle; a tail index that does not publish stays pinned. 7 tests, 5 mutations seen red; a delete stopped after the tombstone is finished by repeating it. Provisional: in-memory store. Gap: the node's own call sites are the M06.21 integration."
             }
           ]
         },

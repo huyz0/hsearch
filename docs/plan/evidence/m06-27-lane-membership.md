@@ -8,9 +8,11 @@
   `index_id_in(name, incarnation)` (the incarnation is the catalog's name generation, which rises
   with every bind and every delete), then joins the index to the lane in one descriptor CAS. A
   repeated create returns the same member and finishes a join that stopped short.
-- **`member::delete`**: the lane seals the index at its last sequence and drops its membership
-  (`Committer::leave`, repeatable after a lost reply), the pins forget it, and the catalog leaves
-  the tombstone that keeps the old identity from being bound again.
+- **`member::delete`**: the catalog leaves the tombstone first (so a create from then on is another
+  identity and never rejoins the old one), then the lane seals the index at its last sequence and
+  drops its membership (`Committer::leave`, repeatable), and the pins forget it. Repeating a delete
+  for a deleted name finishes the lane step; until it does the index still pins the cover. A seal
+  made by an earlier attempt keeps its `last_seq`.
 - **`member::reclaim`**: raises the head's cover to what the pins allow (one head read, one CAS when
   it moves), then the lane writer removes the slots below it. No request names an index.
 - **`member::settle_tail` / `settle_overdue`**: publish the indexes a lane's tail left pinned when it
@@ -21,8 +23,8 @@
 
 ## Evidence
 
-`crates/store/tests/member.rs` (5): create binds incarnation and membership and repeats to the same
-member; a deleted index stops pinning, leaves the members, is refused writes and cannot be deleted
+`crates/store/tests/member.rs` (7): create binds incarnation and membership and repeats to the same
+member; a delete stopped after the tombstone is finished by repeating it, and a create beside it never touches the old member; a deleted index stops pinning, leaves the members, is refused writes and cannot be deleted
 twice, and its recreate is a new identity that replays none of the old records and repeats stably;
 reclaim removes nothing while the first records are pinned and removes what the cover passed once
 published; leave and reclaim through the lane thread are seen by every handle; a tail index that does

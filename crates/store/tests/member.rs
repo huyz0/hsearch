@@ -95,8 +95,9 @@ fn a_deleted_index_stops_pinning_and_its_recreate_replays_none_of_its_records() 
     assert!(!pins.is_pinned(&old.index));
     assert!(c.writer().members().binary_search(&old.index).is_err());
     // A deleted name cannot be deleted again and its writes are refused.
+    member::delete(io, &layout(), &catalog, &mut c, &pins, "logs", 1).unwrap();
     assert!(matches!(
-        member::delete(io, &layout(), &catalog, &mut c, &pins, "logs", 1),
+        member::delete(io, &layout(), &catalog, &mut c, &pins, "never", 0),
         Err(Error::NotFound)
     ));
     let late = block_on(c.commit(vec![req(old.index, 2, "z")]));
@@ -117,6 +118,7 @@ fn a_deleted_index_stops_pinning_and_its_recreate_replays_none_of_its_records() 
         member::create(io, &layout(), &catalog, &lane, &policy(), "logs").unwrap(),
         again
     );
+    assert_eq!(again.incarnation, 3);
     assert!(replayed(&store, &lane, again.index).is_empty());
     commit(&mut c, req(again.index, 0, "n"));
     assert_eq!(replayed(&store, &lane, again.index), vec![0]);
@@ -139,6 +141,7 @@ fn reclaim_removes_what_the_cover_passed_and_never_what_a_pinned_index_needs() {
     // Both pinned: the cover cannot pass the first record, so nothing is removed.
     let none = member::reclaim(&p, &pins, &mut c).unwrap();
     assert_eq!(none.removed, 0);
+    assert_eq!(replayed(&store, &lane, m.index), vec![0]);
     // Both published: the cover reaches the end and everything below it goes.
     pins.published(&m.index, b.ordinal + 3);
     pins.published(&B, b.ordinal + 3);
@@ -215,4 +218,48 @@ fn a_tail_index_that_does_not_publish_stays_pinned_and_holds_the_cover() {
     });
     assert_eq!(n, 1);
     assert!(!late.is_pinned(&m.index));
+}
+
+#[test]
+fn a_delete_that_stopped_after_the_catalog_is_finished_by_repeating_it_and_a_create_never_rejoins()
+{
+    let store = Crash::new();
+    let (lane, catalog, mut c) = world(&store);
+    let io = store.inner_ref();
+    let old = member::create(io, &layout(), &catalog, &lane, &policy(), "logs").unwrap();
+    commit(&mut c, req(old.index, 0, "x"));
+    let (h, _) = block_on(read_head(io, &layout(), &lane)).unwrap();
+    let pins = SharedCover::new(lane, h.writer_epoch, 1000);
+    pins.wrote(old.index, 1);
+    // The delete stopped after the tombstone: the lane still holds the member and the pin stays.
+    block_on(catalog.delete(io, &layout(), "logs", &old.index)).unwrap();
+    assert!(pins.is_pinned(&old.index));
+    // A create now is another identity; it does not touch the old member.
+    let again = member::create(io, &layout(), &catalog, &lane, &policy(), "logs").unwrap();
+    assert_ne!(again.index, old.index);
+    assert!(c.writer().members().binary_search(&old.index).is_ok());
+    // Repeating the delete of the old identity's name is not possible once the name is live again,
+    // so the lane step is finished through the leave the delete would have made.
+    block_on(c.leave(old.index, 0)).unwrap();
+    pins.forget(&old.index);
+    assert!(c.writer().members().binary_search(&old.index).is_err());
+    assert!(c.writer().members().binary_search(&again.index).is_ok());
+    // The same leave repeated after it finished changes nothing.
+    block_on(c.leave(old.index, 0)).unwrap();
+}
+
+#[test]
+fn a_repeated_delete_after_the_tombstone_finishes_the_lane_step() {
+    let store = Crash::new();
+    let (lane, catalog, mut c) = world(&store);
+    let io = store.inner_ref();
+    let old = member::create(io, &layout(), &catalog, &lane, &policy(), "logs").unwrap();
+    commit(&mut c, req(old.index, 0, "x"));
+    let (h, _) = block_on(read_head(io, &layout(), &lane)).unwrap();
+    let pins = SharedCover::new(lane, h.writer_epoch, 1000);
+    pins.wrote(old.index, 1);
+    block_on(catalog.delete(io, &layout(), "logs", &old.index)).unwrap();
+    member::delete(io, &layout(), &catalog, &mut c, &pins, "logs", 0).unwrap();
+    assert!(!pins.is_pinned(&old.index));
+    assert!(c.writer().members().binary_search(&old.index).is_err());
 }
