@@ -39,7 +39,7 @@ fn seen(reader: &Gen<hsearch_engine::Snapshot>, id: &str) -> Option<String> {
     })
 }
 
-fn write<S, D>(w: &mut Serving<S, D>, engine: &Engine<'_>, n: u32)
+fn write<S, D>(w: &mut Serving<hsearch_commit::Committer<S, D>>, engine: &Engine<'_>, n: u32)
 where
     S: hsearch_object::MetadataStore,
     D: hsearch_commit::DependencyView,
