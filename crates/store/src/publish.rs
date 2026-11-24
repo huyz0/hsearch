@@ -667,6 +667,28 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
         Ok(())
     }
 
+    /// One head transition by compare-and-swap on the version read.
+    pub(crate) fn advance(
+        &self,
+        at: &HeadRead<'_>,
+        change: Change,
+    ) -> Result<(StructuralHead, VersionToken), Error> {
+        match block_on(advance_head(
+            &*self.store,
+            &self.layout,
+            at.lane,
+            at.head,
+            at.version,
+            change,
+        )) {
+            Ok(Advance::Done(next, version)) => Ok((next, version)),
+            Ok(Advance::Lost) => Err(Error::Lost),
+            Err(hsearch_lane::Error::Contended) => Err(Error::Unknown),
+            Err(hsearch_lane::Error::Store(e)) => Err(Error::Store(e)),
+            Err(e) => Err(Error::Head(format!("{e:?}"))),
+        }
+    }
+
     fn transition(
         &self,
         at: &HeadRead<'_>,

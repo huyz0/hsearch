@@ -17,6 +17,7 @@
 //! the log (`recover_writer`), which replays it. An outcome the store could not settle
 //! ([`ServeError::Unknown`]) breaks the writer the same way: the next recovery shows whether the
 //! batch is in the log.
+use crate::cover::SharedCover;
 use crate::log::Log;
 use crate::pointer::BaseSource;
 use hsearch_commit::{Dependencies, Outcome, Receipt as Committed, Reject, Request};
@@ -112,6 +113,8 @@ pub struct Serving<L: Log> {
     readers: Arc<Readers<Snapshot>>,
     /// Where a batch too large for a record is written first; without one it is refused.
     payloads: Option<Box<dyn PayloadSink>>,
+    /// The lane's pinned set when the lane is shared: every record this writer commits pins it.
+    pins: Option<Arc<SharedCover>>,
 }
 
 /// Generations a query may hold at once besides the newest. The engine allows four open
@@ -187,6 +190,7 @@ impl<L: Log> Serving<L> {
             base: None,
             readers,
             payloads: None,
+            pins: None,
         }
     }
 
@@ -209,6 +213,32 @@ impl<L: Log> Serving<L> {
             writer.cover = recovered.tail;
         }
         writer
+    }
+
+    /// Pin the lane's cover for this index from slot `from` (where recovery started, given only when
+    /// it replayed a tail) until a base covering what it wrote is published, and on every record it
+    /// commits after.
+    #[must_use]
+    pub fn with_cover(mut self, pins: Arc<SharedCover>, from: Option<u64>) -> Self {
+        if let Some(from) = from {
+            pins.pin(self.index, from);
+        }
+        self.pins = Some(pins);
+        self
+    }
+
+    /// Pin before an append: the cover another host raises while this record is in flight must not
+    /// pass it.
+    fn reserve(&self) {
+        if let Some(pins) = &self.pins {
+            pins.reserve(self.index);
+        }
+    }
+
+    fn note_write(&self, slot: u64) {
+        if let Some(pins) = &self.pins {
+            pins.wrote(self.index, slot);
+        }
     }
 
     /// The sequence the next record will take.
@@ -344,6 +374,7 @@ impl<L: Log> Serving<L> {
             delete: false,
             deps: self.deps,
         };
+        self.reserve();
         let outcome = payload::commit(&mut self.committer, self.payloads.as_deref(), record)?;
         let committed = match outcome {
             Outcome::Committed(receipt) => receipt,
@@ -362,6 +393,7 @@ impl<L: Log> Serving<L> {
         };
         self.next += 1;
         self.cover = committed.ordinal + 1;
+        self.note_write(committed.ordinal);
         // The watermark only rises (`next` only does), so this cannot be refused.
         let _ = self.readers.commit(self.next);
         // The record is durable: the cursor follows the engine through the apply.
@@ -464,6 +496,7 @@ impl<L: Log> Serving<L> {
                 deps: self.deps,
             })
             .collect();
+        self.reserve();
         let outcomes = self.committer.commit(requests);
         let mut pending = prepared.into_iter();
         let mut failure: Option<ServeError> = None;
@@ -481,6 +514,7 @@ impl<L: Log> Serving<L> {
                 Outcome::Committed(committed) => {
                     self.next += 1;
                     self.cover = committed.ordinal + 1;
+                    self.note_write(committed.ordinal);
                     // The watermark only rises (`next` only does), so this cannot be refused.
                     let _ = self.readers.commit(self.next);
                     let in_flight = self.replay.begin(committed.seq).is_ok();
@@ -590,12 +624,15 @@ impl<L: Log> Serving<L> {
             {
                 return Err(BaseError::Publish(publish::Error::Lost));
             }
+            let lane_cover = self.cover.max(head.cover);
             publisher
                 .activate_pointer(
                     current.as_ref(),
                     &publish::LogStart {
                         lane: target.lane,
-                        lane_cover: self.cover,
+                        // The head's cover may have passed this index's last record (an earlier
+                        // base covered it and unpinned the index): nothing of it lies below.
+                        lane_cover,
                         head_cover: head.cover,
                     },
                     &published,
@@ -604,6 +641,9 @@ impl<L: Log> Serving<L> {
                 )
                 .map_err(BaseError::Publish)?;
             self.base = Some(published.root.clone());
+            if let Some(pins) = &self.pins {
+                pins.published(&self.index, lane_cover);
+            }
             return Ok(published);
         }
         publisher

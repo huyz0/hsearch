@@ -153,6 +153,7 @@ fn open(store: &Arc<S3Store>, lane: LaneId, label: &str, seed: u8) -> Host {
             merge: hsearch_engine::MergeMode::Inline,
             searchable_when_empty: false,
             base: hsearch_store::pointer::BaseSource::Head,
+            cover: None,
             pin: None,
         },
     )

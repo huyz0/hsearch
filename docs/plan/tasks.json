@@ -3150,7 +3150,8 @@
             "M03.09",
             "M06.24",
             "M06.25",
-            "M06.26"
+            "M06.26",
+            "M06.27"
           ],
           "owner": "storage/runtime",
           "status": "planned",
@@ -3210,12 +3211,12 @@
         },
         {
           "id": "M06.26",
-          "title": "Lane membership, seal on open and lane cover",
-          "goal": "Indexes join and leave the node's lane, the node scans the tail when it opens a lane, and the lane head's cover advances only to what every member that can hold an uncovered record allows (decision M06.21).",
+          "title": "Lane cover from a pinned set and seal on open",
+          "goal": "The lane head's cover advances only to what every member that can hold an uncovered record allows, a node scanning a lane's tail knows which indexes to recover first, and a reused name has a new identity (decision M06.21).",
           "deliverables": [
-            "Create joins the lane (membership epoch) and delete seals and leaves it with a route tombstone; the index id derives from the name and a durably bound incarnation, so a reused name never reuses authority or history",
-            "Seal on open: the tail scan builds the tail set, each tail-set index is recovered and publishes a base before open completes; a resident host publishes once its uncovered lane span passes a byte bound; hosts are pinned until they publish, and a sealed-by-promotion index stays pinned on its source lane until its new-lane base covers its seal",
-            "The lane head's cover is the minimum over the pinned set, carrying the writer epoch"
+            "A pinned set per shared lane (hosts pinned from open and each record until a published base covers them, a promoted index pinned until its new-lane base covers its seal) and a head cover raised to its minimum by a witness-root checkpoint under the writer epoch it was computed under",
+            "Seal on open: the tail scan finds the indexes with records their pointer's base does not cover; a host publishes a base once its pin has held a span bound, and on stop",
+            "The index id derives from the name and an incarnation, so a reused name never meets its old records"
           ],
           "validation": [
             "Each history fails without its rule: an idle index restarted after the cover passed its pointer; an evicted or closed host (closing publishes); a promoted index whose source lane is reclaimed before its new-lane base covers its seal; a deleted index not pinning the cover and its recreate not replaying old records; a lightly written index not pinning the cover beyond the byte bound; the cover never passing a pinned record",
@@ -3227,6 +3228,32 @@
           "depends_on": [
             "M06.24",
             "M06.25"
+          ],
+          "owner": "storage/runtime",
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-26-lane-cover.md",
+              "result": "A shared lane's cover follows its members: SharedCover pins a host from its open and each record until a published base covers it; the head's cover is raised to the lowest pin by a witness-root checkpoint refused under another writer epoch; hosts publish by span bound and on stop; the tail scan finds the indexes with uncovered records (members and promoted, not deleted); a reused name gets a new identity. Tests fail without each rule (13 mutations seen red); one commit is one lane write at 1, 100 and 1,000 members. Provisional: in-memory store. Gaps (M06.27): create/delete membership, the catalog incarnation binding and the lane thread reclaim; the span bound is in slots."
+            }
+          ]
+        },
+        {
+          "id": "M06.27",
+          "title": "Lane membership and reclaim wiring",
+          "goal": "The node joins an index to its lane at create, seals and leaves it at delete, binds the incarnation durably, recovers the tail set before a lane opens, and reclaims slots below the raised cover (decision M06.21).",
+          "deliverables": [
+            "Create joins the lane (membership epoch) and delete seals and leaves it with a route tombstone; the catalog binds the incarnation at create and records it durably",
+            "Opening a lane scans its tail, recovers each tail-set index and publishes its base before the open completes; after a commit the node asks for overdue pins and publishes them; the lane thread reclaims slots below the head's cover"
+          ],
+          "validation": [
+            "A deleted index does not pin the cover and its recreate does not replay old records, through the node; an evicted or failed host stays pinned; a lane thread reclaim never removes a slot a pinned index needs; requests per restart follow the tail and are constant with every index idle and published"
+          ],
+          "definition_of_done": [
+            "A lane's reclaim follows its members without any per-index request, through the node"
+          ],
+          "depends_on": [
+            "M06.26"
           ],
           "owner": "storage/runtime",
           "status": "planned",

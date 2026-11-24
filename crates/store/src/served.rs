@@ -113,6 +113,24 @@ pub fn index_id(name: &str) -> Id {
     id_of("index", name)
 }
 
+/// The identity of the index called `name` in its `incarnation`, which the catalog binds at create
+/// and records durably: a name reused after a delete has another identity, so it never finds the
+/// old pointer, base or lane records.
+#[must_use]
+pub fn index_id_in(name: &str, incarnation: u64) -> Id {
+    let mut tagged = Vec::with_capacity(name.len() + 9);
+    tagged.extend_from_slice(&incarnation.to_le_bytes());
+    tagged.push(0);
+    tagged.extend_from_slice(name.as_bytes());
+    let mut id = [0u8; 16];
+    id.copy_from_slice(
+        digest_of("index-incarnation", &tagged)
+            .get(..16)
+            .unwrap_or(&[0; 16]),
+    );
+    id
+}
+
 fn lane_of(settings: &Settings, name: &str) -> (LaneId, Id) {
     let (domain, group) = dedicated_group(&settings.policy, &index_id(name), ORIGIN);
     (LaneId::new(domain), group)
@@ -271,6 +289,7 @@ impl ServedIndex {
             merge: settings.merge,
             searchable_when_empty: true,
             base: crate::pointer::BaseSource::Head,
+            cover: None,
         };
         let host = Host::open(
             OpenArgs {
