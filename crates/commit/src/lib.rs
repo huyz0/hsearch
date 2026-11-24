@@ -307,6 +307,37 @@ impl<S: MetadataStore, D: DependencyView> Committer<S, D> {
         &self.writer
     }
 
+    /// Remove `index` from the lane: seal it at `last_seq` unless it is sealed already, then free
+    /// its membership. Repeating a leave that finished is a no-op, which is how a lost reply or a
+    /// crash between the seal and the removal is settled.
+    ///
+    /// # Errors
+    /// [`LaneError`] when the seal or the descriptor change failed; the call may be repeated.
+    pub async fn leave(
+        &mut self,
+        index: hsearch_format::Id,
+        last_seq: u64,
+    ) -> Result<(), LaneError> {
+        if self.writer.sealed_at(&index).is_none() {
+            match self.writer.seal_index(index, last_seq).await {
+                Ok(_) => {}
+                // Not a member: it left (or never joined) and there is nothing to seal.
+                Err(LaneError::NotMember(_)) => return Ok(()),
+                Err(e) => return Err(e),
+            }
+        }
+        self.writer.remove_member(&index).await
+    }
+
+    /// Remove the slots below the head's cover this writer has not removed yet.
+    ///
+    /// # Errors
+    /// [`LaneError`] when the head cannot be read, a slot cannot be removed, or the lane is
+    /// marker-driven.
+    pub async fn reclaim(&mut self) -> Result<hsearch_lane::Reclaimed, LaneError> {
+        self.writer.reclaim_to_checkpoint().await
+    }
+
     /// Commit `requests` in order, one outcome per request, same order. An empty call makes no
     /// request of any kind.
     pub async fn commit(&mut self, requests: Vec<Request>) -> Vec<Outcome> {

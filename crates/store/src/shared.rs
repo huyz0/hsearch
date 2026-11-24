@@ -10,6 +10,8 @@ use std::sync::mpsc::{Receiver, Sender, SyncSender, channel, sync_channel};
 use std::time::{Duration, Instant};
 
 use hsearch_commit::{Committer, DependencyView, External, Outcome, Reject, Request};
+use hsearch_format::Id;
+use hsearch_lane::{Error as LaneError, Reclaimed};
 use hsearch_object::MetadataStore;
 
 use crate::log::Log;
@@ -23,6 +25,8 @@ const MAX_PACKED_BYTES: usize = 8 << 20;
 enum Job {
     Commit(Vec<Request>, Sender<Vec<Outcome>>),
     External(Box<Request>, External, Sender<Outcome>),
+    Leave(Id, u64, Sender<Result<(), LaneError>>),
+    Reclaim(Sender<Result<Reclaimed, LaneError>>),
 }
 
 /// The lane thread's owner. The thread ends when this and every handle are dropped.
@@ -79,6 +83,14 @@ fn gone(n: usize, poisoned: &AtomicBool) -> Vec<Outcome> {
     vec![LOST; n]
 }
 
+impl LaneHandle {
+    /// The lane thread is gone: every handle is broken.
+    fn lost(&self) -> LaneError {
+        self.poisoned.store(true, Ordering::Release);
+        LaneError::Poisoned
+    }
+}
+
 impl Log for LaneHandle {
     fn commit(&mut self, requests: Vec<Request>) -> Vec<Outcome> {
         let n = requests.len();
@@ -104,6 +116,22 @@ impl Log for LaneHandle {
         answer
             .recv()
             .unwrap_or_else(|_| gone(1, &self.poisoned).remove(0))
+    }
+
+    fn leave(&mut self, index: Id, last_seq: u64) -> Result<(), LaneError> {
+        let (reply, answer) = channel();
+        if self.jobs.send(Job::Leave(index, last_seq, reply)).is_err() {
+            return Err(self.lost());
+        }
+        answer.recv().unwrap_or_else(|_| Err(self.lost()))
+    }
+
+    fn reclaim(&mut self) -> Result<Reclaimed, LaneError> {
+        let (reply, answer) = channel();
+        if self.jobs.send(Job::Reclaim(reply)).is_err() {
+            return Err(self.lost());
+        }
+        answer.recv().unwrap_or_else(|_| Err(self.lost()))
     }
 
     fn is_poisoned(&self) -> bool {
@@ -145,6 +173,18 @@ fn run<S, D>(
                 let _ = reply.send(outcome);
                 continue;
             }
+            Job::Leave(index, last_seq, reply) => {
+                let outcome = Log::leave(&mut committer, index, last_seq);
+                note_poison(&committer, poisoned);
+                let _ = reply.send(outcome);
+                continue;
+            }
+            Job::Reclaim(reply) => {
+                let outcome = Log::reclaim(&mut committer);
+                note_poison(&committer, poisoned);
+                let _ = reply.send(outcome);
+                continue;
+            }
             Job::Commit(requests, reply) => (requests, reply),
         };
         // ALLOC: at most MAX_PACKED_REQUESTS requests and MAX_PACKED_BYTES of bodies, plus the one
@@ -167,8 +207,8 @@ fn run<S, D>(
                     replies.push((more.len(), reply));
                     packed.extend(more);
                 }
-                Some(external @ Job::External(..)) => {
-                    held = Some(external);
+                Some(other @ (Job::External(..) | Job::Leave(..) | Job::Reclaim(..))) => {
+                    held = Some(other);
                     break;
                 }
                 None => break,
@@ -180,6 +220,16 @@ fn run<S, D>(
         for (n, reply) in replies {
             let _ = reply.send(outcomes.by_ref().take(n).collect());
         }
+    }
+}
+
+fn note_poison<S, D>(committer: &Committer<S, D>, poisoned: &AtomicBool)
+where
+    S: MetadataStore,
+    D: DependencyView,
+{
+    if committer.is_poisoned() {
+        poisoned.store(true, Ordering::Release);
     }
 }
 

@@ -154,6 +154,12 @@ impl LaneCover {
         self.seen = self.seen.max(tail);
     }
 
+    /// The pinned indexes.
+    #[must_use]
+    pub fn pinned_ids(&self) -> Vec<Id> {
+        self.pins.keys().copied().collect()
+    }
+
     /// How many indexes are pinned.
     #[must_use]
     pub fn pinned(&self) -> usize {
@@ -344,6 +350,13 @@ impl SharedCover {
     #[must_use]
     pub fn overdue(&self) -> Vec<Id> {
         self.with(|c| c.overdue(self.span_bound))
+    }
+
+    /// Every pinned index: after a lane opens, these are the ones whose tail must be recovered and
+    /// published before the lane serves.
+    #[must_use]
+    pub fn pinned_indexes(&self) -> Vec<Id> {
+        self.with(|c| c.pinned_ids())
     }
 
     /// The lane these pins belong to.
