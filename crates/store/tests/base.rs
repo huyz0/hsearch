@@ -29,7 +29,7 @@ fn deps() -> Dependencies {
 
 /// Write batch `i` of the history through the serving writer.
 fn write_batch<S, D>(
-    writer: &mut Serving<S, D>,
+    writer: &mut Serving<hsearch_commit::Committer<S, D>>,
     engine: &Engine<'_>,
     i: usize,
     steps: &[Step],
@@ -541,7 +541,7 @@ fn a_recovered_writer_can_publish_before_it_writes_and_replaces_the_base_it_reco
         |engine, local, rebuilt| {
             let mut serving = Serving::recovered(committer, INDEX, &rebuilt.recovered, deps());
             assert_eq!(serving.next_seq(), 3);
-            let publish = |serving: &mut Serving<_, _>, n| {
+            let publish = |serving: &mut Serving<_>, n| {
                 serving
                     .publish_base(
                         engine,

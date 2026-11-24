@@ -31,6 +31,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use crate::log::Log;
 use hsearch_commit::{Committer, Dependencies, DependencyView, Reject};
 use hsearch_engine::{
     Engine, Error as EngineError, MAX_BATCH_OPERATIONS, MergeMode, Mutation, Receipt, Schema,
@@ -156,6 +157,24 @@ pub struct Config {
     pub base: BaseSource,
 }
 
+/// Everything `open_log` needs besides the configuration: [`OpenArgs`] with any [`Log`].
+pub struct LogArgs<S: MetadataStore, L, D> {
+    /// The store the lane and the bases are in.
+    pub store: Arc<S>,
+    /// Publishes bases and reads the head.
+    pub publisher: Publisher<S>,
+    /// The log of the index's lane, opened (and so sealing) before recovery.
+    pub log: L,
+    /// The lane the index belongs to.
+    pub lane: LaneId,
+    /// What a base is checked against.
+    pub dependencies: D,
+    /// The index's schema.
+    pub schema: Schema,
+    /// Where a batch too large for a lane record is written first; without one it is refused.
+    pub payloads: Option<Box<dyn PayloadSink>>,
+}
+
 /// Everything `open` needs besides the configuration.
 pub struct OpenArgs<S: MetadataStore, V: DependencyView, D> {
     /// The store the lane and the bases are in.
@@ -241,15 +260,49 @@ impl Host {
         V: DependencyView + Send + 'static,
         D: publish::Dependencies + Send + 'static,
     {
+        let OpenArgs {
+            store,
+            publisher,
+            committer,
+            lane,
+            dependencies,
+            schema,
+            payloads,
+        } = args;
+        Self::open_log(
+            LogArgs {
+                store,
+                publisher,
+                log: committer,
+                lane,
+                dependencies,
+                schema,
+                payloads,
+            },
+            config,
+        )
+    }
+
+    /// [`Host::open`] over any [`Log`]: the direct committer of the lane, or a handle to a lane
+    /// shared with other indexes.
+    ///
+    /// # Errors
+    /// [`OpenError`] if the index could not be made ready; nothing is left running.
+    pub fn open_log<S, L, D>(args: LogArgs<S, L, D>, config: Config) -> Result<Self, OpenError>
+    where
+        S: MetadataStore + LargeObjectWriter + 'static,
+        L: Log + Send + 'static,
+        D: publish::Dependencies + Send + 'static,
+    {
         let (commands, inbox) = channel();
         let (ready, started) = channel();
         let counters = Arc::new(Counters::default());
         let seen = Arc::clone(&counters);
         let thread = std::thread::spawn(move || {
-            let OpenArgs {
+            let LogArgs {
                 store,
                 publisher,
-                committer,
+                log: committer,
                 lane,
                 dependencies,
                 schema,
@@ -566,8 +619,8 @@ struct Bulk {
     failed: Option<HostError>,
 }
 
-struct Core<'a, 'e, S: MetadataStore, V: DependencyView, D> {
-    serving: Serving<S, V>,
+struct Core<'a, 'e, S: MetadataStore, L: Log, D> {
+    serving: Serving<L>,
     engine: &'a Engine<'e>,
     local: &'a hsearch_engine::LocalFiles,
     publisher: &'a Publisher<S>,
@@ -653,10 +706,10 @@ fn serve_error(e: ServeError) -> HostError {
     }
 }
 
-impl<S, V, D> Core<'_, '_, S, V, D>
+impl<S, L, D> Core<'_, '_, S, L, D>
 where
     S: MetadataStore + LargeObjectWriter + 'static,
-    V: DependencyView,
+    L: Log,
     D: publish::Dependencies,
 {
     fn run(&mut self, inbox: &Receiver<Command>) {

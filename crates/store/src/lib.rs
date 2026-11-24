@@ -6,6 +6,7 @@ mod boundary;
 pub mod compact;
 pub mod host;
 mod io;
+pub mod log;
 pub mod payload;
 pub mod pins;
 pub mod pointer;
@@ -14,6 +15,7 @@ pub mod rebuild;
 pub mod recover;
 pub mod serve;
 pub mod served;
+pub mod shared;
 pub mod snapshot;
 pub mod sweep;
 

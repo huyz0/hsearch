@@ -30,7 +30,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use hsearch_commit::{Committer, DependencyView, External, Outcome, Reject, Request};
+use crate::log::Log;
+use hsearch_commit::{External, Outcome, Reject, Request};
 use hsearch_engine::Error as EngineError;
 use hsearch_format::{Id, Layout, MAX_DOCUMENT_BYTES, MAX_INLINE_RECORD_BYTES};
 use hsearch_lane::block_on;
@@ -240,13 +241,13 @@ fn hex(bytes: &[u8]) -> String {
 /// Commit `request` as the lane record of one batch: inline when its body fits a record, otherwise
 /// as an external payload staged through `sink` first. Without a sink a body over the inline bound
 /// is [`Reject::BadBody`], as it was before payloads were written.
-pub(crate) fn commit<S: MetadataStore, D: DependencyView>(
-    committer: &mut Committer<S, D>,
+pub(crate) fn commit<L: Log>(
+    committer: &mut L,
     sink: Option<&dyn PayloadSink>,
     request: Request,
 ) -> Result<Outcome, ServeError> {
     let Some(sink) = sink.filter(|_| request.body.len() > MAX_INLINE_RECORD_BYTES) else {
-        return Ok(block_on(committer.commit(vec![request])).remove(0));
+        return Ok(committer.commit(vec![request]).remove(0));
     };
     let external = sink
         .stage(&request.index, &request.body)
@@ -260,7 +261,7 @@ pub(crate) fn commit<S: MetadataStore, D: DependencyView>(
         ..request
     };
     let index = request.index;
-    let outcome = block_on(committer.commit_external(request, external));
+    let outcome = committer.commit_external(request, external);
     // A record the log certainly does not hold leaves an object nothing names: remove it rather
     // than leave it to a sweep (off by default). An unknown outcome or a taken slot may be our own
     // record, so those keep the object.

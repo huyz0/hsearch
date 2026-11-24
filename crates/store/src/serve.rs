@@ -17,10 +17,9 @@
 //! the log (`recover_writer`), which replays it. An outcome the store could not settle
 //! ([`ServeError::Unknown`]) breaks the writer the same way: the next recovery shows whether the
 //! batch is in the log.
+use crate::log::Log;
 use crate::pointer::BaseSource;
-use hsearch_commit::{
-    Committer, Dependencies, DependencyView, Outcome, Receipt as Committed, Reject, Request,
-};
+use hsearch_commit::{Dependencies, Outcome, Receipt as Committed, Reject, Request};
 use hsearch_engine::{
     Checked, Engine, Error as EngineError, LocalFiles, Mutation, PreparedBatch, Receipt, Schema,
     Snapshot, encode_batch,
@@ -97,8 +96,8 @@ pub struct Chained {
 }
 
 /// One index's serving writer.
-pub struct Serving<S: MetadataStore, D: DependencyView> {
-    committer: Committer<S, D>,
+pub struct Serving<L: Log> {
+    committer: L,
     index: Id,
     next: u64,
     deps: Dependencies,
@@ -168,12 +167,12 @@ pub enum BaseError {
     Publish(publish::Error),
 }
 
-impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
+impl<L: Log> Serving<L> {
     /// Serve `index` through `committer`, whose lane the index belongs to. `next` is the index's
     /// next sequence: `Recovered::applied` after a recovery, 0 for a new index. `deps` is what
     /// every record is prepared against; it is fixed for the writer's life, so after a dependency
     /// changes every write is `Rejected(Stale)` until the writer is rebuilt.
-    pub fn new(committer: Committer<S, D>, index: Id, next: u64, deps: Dependencies) -> Self {
+    pub fn new(committer: L, index: Id, next: u64, deps: Dependencies) -> Self {
         let readers = Arc::new(Readers::new(MAX_PINNED_READERS));
         // Everything before `next` is committed and applied; the watermark starts there.
         let _ = readers.commit(next);
@@ -203,12 +202,7 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
     /// first absent position recovery found (zero when recovery followed a seal to another lane,
     /// where the cover is known only after the first write). A writer made this way can publish a
     /// base before it writes.
-    pub fn recovered(
-        committer: Committer<S, D>,
-        index: Id,
-        recovered: &Recovered,
-        deps: Dependencies,
-    ) -> Self {
+    pub fn recovered(committer: L, index: Id, recovered: &Recovered, deps: Dependencies) -> Self {
         let mut writer = Self::new(committer, index, recovered.applied, deps);
         writer.base.clone_from(&recovered.base);
         if recovered.followed == 0 {
@@ -470,7 +464,7 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
                 deps: self.deps,
             })
             .collect();
-        let outcomes = block_on(self.committer.commit(requests));
+        let outcomes = self.committer.commit(requests);
         let mut pending = prepared.into_iter();
         let mut failure: Option<ServeError> = None;
         for outcome in outcomes {
