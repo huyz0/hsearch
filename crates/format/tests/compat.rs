@@ -5,7 +5,7 @@ use common::patch_header;
 use hsearch_format::{FormatError, Header, Kind, open, seal};
 
 /// Every kind. The `match` below stops compiling when a kind is added without being listed here.
-const ALL: [Kind; 12] = [
+const ALL: [Kind; 13] = [
     Kind::Fleet,
     Kind::LaneDescriptor,
     Kind::LaneSlot,
@@ -18,6 +18,7 @@ const ALL: [Kind; 12] = [
     Kind::CatalogRoot,
     Kind::CatalogPage,
     Kind::IdentityBinding,
+    Kind::BasePointer,
 ];
 
 fn listed(kind: Kind) -> bool {
@@ -33,7 +34,8 @@ fn listed(kind: Kind) -> bool {
         | Kind::StructuralHead
         | Kind::CatalogRoot
         | Kind::CatalogPage
-        | Kind::IdentityBinding => ALL.contains(&kind),
+        | Kind::IdentityBinding
+        | Kind::BasePointer => ALL.contains(&kind),
     }
 }
 
@@ -50,10 +52,10 @@ fn every_kind_is_listed_and_codes_are_dense() {
         assert_eq!(*kind as usize, i + 1, "codes are stable and never reused");
     }
     // The code after the last is unknown, so a new kind cannot arrive without a row here.
-    let next = patch_header(&sealed(Kind::Fleet, 1, 0), 6, &13u16.to_le_bytes());
+    let next = patch_header(&sealed(Kind::Fleet, 1, 0), 6, &14u16.to_le_bytes());
     assert_eq!(
         Header::parse(&next).unwrap_err(),
-        FormatError::UnknownKind(13)
+        FormatError::UnknownKind(14)
     );
 }
 

@@ -19,6 +19,7 @@ cannot ship without a row.
 | 10 | CatalogRoot | 1 | 256 |
 | 11 | CatalogPage | 1 | 576512 |
 | 12 | IdentityBinding | 1 | 512 |
+| 13 | BasePointer | 1 | 512 |
 
 ## What every row promises
 

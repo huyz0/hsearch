@@ -70,6 +70,7 @@ fn target_of(lane: &hsearch_lane::LaneId) -> BaseTarget<'_> {
         engine_format: "lucene-test",
         mapping: [5; 32],
         crypto_envelope: [6; 16],
+        base: hsearch_store::pointer::BaseSource::Head,
     }
 }
 
@@ -164,6 +165,138 @@ fn a_base_the_serving_writer_publishes_is_opened_by_recovery() {
         },
     )
     .unwrap();
+}
+
+#[test]
+fn a_base_named_by_the_pointer_is_opened_by_recovery_and_the_head_names_none() {
+    use hsearch_store::pointer::BaseSource;
+    let store = Crash::new();
+    let (lane, committer) = open_lane(&store);
+    let h = history();
+    let schema = schema();
+    let dir = std::env::temp_dir().join(format!("hsearch-base-ptr-{}", std::process::id()));
+    with_local_engine(&dir, schema.clone(), |engine, local| {
+        let mut writer = Serving::new(committer, INDEX, 0, deps());
+        let p = publisher(&store);
+        let pointer_target = BaseTarget {
+            base: BaseSource::Pointer,
+            ..target_of(&lane)
+        };
+        for (i, steps) in h.iter().enumerate().take(2) {
+            write_batch(&mut writer, engine, i, steps).unwrap();
+        }
+        let first = writer
+            .publish_base(
+                engine,
+                local,
+                &p,
+                &pointer_target,
+                token(2),
+                &AnyDependencies,
+            )
+            .unwrap();
+        for (i, steps) in h.iter().enumerate().skip(2) {
+            write_batch(&mut writer, engine, i, steps).unwrap();
+        }
+        // A second base replaces the first through the pointer, one sequence higher.
+        let second = writer
+            .publish_base(
+                engine,
+                local,
+                &p,
+                &pointer_target,
+                token(3),
+                &AnyDependencies,
+            )
+            .unwrap();
+        assert_eq!(second.root.generation, first.root.generation + 1);
+    })
+    .unwrap();
+    let (head, _) =
+        hsearch_lane::block_on(hsearch_lane::read_head(store.inner_ref(), &layout(), &lane))
+            .unwrap();
+    assert_eq!(head.checkpoint, None);
+    let scratch = std::env::temp_dir().join(format!("hsearch-base-ptr-r-{}", std::process::id()));
+    let t = hsearch_store::recover::Target {
+        base: BaseSource::Pointer,
+        ..target(&lane, big(), Expect::default())
+    };
+    recover_writer(
+        &publisher(&store),
+        &t,
+        &AnyDependencies,
+        &schema,
+        &scratch,
+        |engine, _, rebuilt| {
+            assert_eq!(rebuilt.recovered.from_seq, 5);
+            assert_eq!(rebuilt.recovered.replayed, 0);
+            assert_ledger(engine, &h);
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_writer_that_never_saw_the_pointers_base_cannot_overwrite_it() {
+    use hsearch_store::pointer::BaseSource;
+    let store = Crash::new();
+    let (lane, committer) = open_lane(&store);
+    let h = history();
+    let dir = std::env::temp_dir().join(format!("hsearch-base-two-{}", std::process::id()));
+    with_local_engine(&dir, schema(), |engine, local| {
+        let mut writer = Serving::new(committer, INDEX, 0, deps());
+        let p = publisher(&store);
+        let t = BaseTarget {
+            base: BaseSource::Pointer,
+            ..target_of(&lane)
+        };
+        write_batch(&mut writer, engine, 0, &h[0]).unwrap();
+        writer
+            .publish_base(engine, local, &p, &t, token(2), &AnyDependencies)
+            .unwrap();
+        let named = p
+            .read_pointer(&spec_for(cut(1)))
+            .unwrap()
+            .unwrap()
+            .0
+            .manifest;
+        // A second builder that recovered on no base builds from nothing: its fresh read of the
+        // pointer would pass the compare-and-swap, so the base it built on is compared instead.
+        let mut other = Serving::new(support::writer(&store, lane), INDEX, 1, deps());
+        write_batch(&mut other, engine, 1, &h[1]).unwrap();
+        let lost = other.publish_base(engine, local, &p, &t, token(3), &AnyDependencies);
+        assert!(
+            matches!(
+                lost,
+                Err(BaseError::Publish(hsearch_store::publish::Error::Lost))
+            ),
+            "{lost:?}"
+        );
+        assert_eq!(
+            p.read_pointer(&spec_for(cut(1)))
+                .unwrap()
+                .unwrap()
+                .0
+                .manifest,
+            named
+        );
+    })
+    .unwrap();
+}
+
+fn spec_for(cut: hsearch_index::barrier::Cut) -> hsearch_store::publish::BaseSpec<'static> {
+    hsearch_store::publish::BaseSpec {
+        index: INDEX,
+        shard: SHARD,
+        incarnation: 1,
+        engine_format: "lucene-test",
+        mapping: [5; 32],
+        crypto_envelope: [6; 16],
+        cut,
+        committed: 1,
+        previous: None,
+        attempt: token(9),
+    }
 }
 
 #[test]

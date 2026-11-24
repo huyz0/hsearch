@@ -12,11 +12,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hsearch_engine::LocalFiles;
-use hsearch_format::{Layout, ManifestRoot, StructuralHead};
+use hsearch_format::{BasePointer, Id, Layout, ManifestRoot, StructuralHead};
+use hsearch_lane::LaneId;
 use hsearch_object::{MetadataStore, VersionToken};
 
+use crate::pointer;
 use crate::publish::{
-    BaseSpec, Dependencies, Error as PublishError, HeadRead, Published, Publisher, manifest_id,
+    BaseSpec, Dependencies, Error as PublishError, HeadRead, LogStart, Published, Publisher,
+    manifest_id,
 };
 
 /// Why a compaction was refused.
@@ -67,10 +70,29 @@ impl<S: MetadataStore + hsearch_object::LargeObjectWriter + 'static> Compactor<S
         source: &ManifestRoot,
         dependencies: &dyn Dependencies,
     ) -> Result<(), Error> {
+        self.validate_named(at.head.checkpoint, spec, source, dependencies)
+    }
+
+    /// [`Compactor::validate_source`] for a source named by a pointer rather than a head.
+    pub fn validate_pointer_source(
+        &self,
+        current: &pointer::Read,
+        spec: &BaseSpec<'_>,
+        source: &ManifestRoot,
+        dependencies: &dyn Dependencies,
+    ) -> Result<(), Error> {
+        self.validate_named(Some(current.0.manifest), spec, source, dependencies)
+    }
+
+    fn validate_named(
+        &self,
+        held: Option<Id>,
+        spec: &BaseSpec<'_>,
+        source: &ManifestRoot,
+        dependencies: &dyn Dependencies,
+    ) -> Result<(), Error> {
         let named = manifest_id(&spec.index, &spec.shard, &source.token);
-        if at.head.checkpoint != Some(named)
-            || spec.previous.map(|p| &p.token) != Some(&source.token)
-        {
+        if held != Some(named) || spec.previous.map(|p| &p.token) != Some(&source.token) {
             return Err(Error::SourceMoved);
         }
         if spec.mapping != source.mapping || spec.crypto_envelope != source.crypto_envelope {
@@ -104,6 +126,47 @@ impl<S: MetadataStore + hsearch_object::LargeObjectWriter + 'static> Compactor<S
         let published = self.publisher.publish(files, names, spec, dependencies)?;
         let (head, version) = self.finish(at, &published, spec, dependencies)?;
         Ok((published, head, version))
+    }
+
+    /// [`Compactor::compact`] for a shard whose base is named by its pointer `current` (as read
+    /// before the source was fetched) rather than by the lane head. The replacement keeps the
+    /// pointer's lane cover; the pointer write is a compare-and-swap on the version read, so a base
+    /// published since refuses it with [`PublishError::Lost`]. `head_cover` is the lane head's cover.
+    pub fn compact_pointer(
+        &self,
+        files: &LocalFiles,
+        names: &[String],
+        spec: &BaseSpec<'_>,
+        current: &pointer::Read,
+        head_cover: u64,
+        dependencies: &dyn Dependencies,
+    ) -> Result<(Published, BasePointer), Error> {
+        let source = spec.previous.ok_or(Error::SourceMoved)?;
+        self.validate_pointer_source(current, spec, source, dependencies)?;
+        let published = self.publisher.publish(files, names, spec, dependencies)?;
+        let held = &current.0;
+        let lane = LaneId {
+            domain: held.lane_domain,
+            incarnation: held.lane_incarnation,
+            activation: held.lane_activation,
+            lane: held.lane_number,
+        };
+        let next = match self.publisher.activate_pointer(
+            Some(current),
+            &LogStart {
+                lane: &lane,
+                lane_cover: held.lane_cover,
+                head_cover,
+            },
+            &published,
+            spec,
+            dependencies,
+        ) {
+            Err(PublishError::Swept { boundary }) => return Err(Error::Swept { boundary }),
+            Err(PublishError::Boundary) => return Err(Error::Boundary),
+            other => other?,
+        };
+        Ok((published, next))
     }
 
     /// Name a replacement published by [`Publisher::publish`] in the head. This is the step a

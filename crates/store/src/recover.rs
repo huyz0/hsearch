@@ -32,6 +32,7 @@ use hsearch_object::{
 };
 use sha2::{Digest as _, Sha256};
 
+use crate::pointer::{self, BaseSource};
 use crate::publish::{Dependencies, Error as PublishError, Publisher};
 
 /// Bounds on one recovery's replay: a larger tail must be checkpointed instead of replayed.
@@ -69,6 +70,8 @@ pub struct Target<'a> {
     pub limits: ReplayLimits,
     /// What must be reached.
     pub expect: Expect,
+    /// Where the base comes from: the lane head's checkpoint or the shard's own pointer.
+    pub base: BaseSource,
 }
 
 /// One committed record handed to the caller, in sequence order.
@@ -585,7 +588,32 @@ where
     if head.activation != target.lane.activation {
         return Err(NotReady::Activation);
     }
-    let base = match head.checkpoint {
+    let io = publisher.io();
+    let named = pointer::named(
+        &io,
+        layout,
+        target.base,
+        &head,
+        &target.index,
+        &target.shard,
+        target.incarnation,
+    )
+    .map_err(|e| match e {
+        pointer::Error::Store(e) => NotReady::Store(format!("{e:?}")),
+        other => NotReady::Base(format!("{other:?}")),
+    })?;
+    // The log above a pointer's base starts at its lane cover when that is the lane scanned first.
+    let scan_from = named
+        .as_ref()
+        .and_then(|(_, p)| p.as_ref())
+        .filter(|p| {
+            p.lane_domain == target.lane.domain
+                && p.lane_incarnation == target.lane.incarnation
+                && p.lane_activation == target.lane.activation
+                && p.lane_number == target.lane.lane
+        })
+        .map_or(head.cover, |p| p.lane_cover.max(head.cover));
+    let base = match named.map(|(m, _)| m) {
         None => None,
         Some(manifest) => Some(
             publisher
@@ -645,7 +673,7 @@ where
             store,
             layout,
             &lane,
-            head.cover,
+            if followed == 0 { scan_from } else { head.cover },
             None,
             |view| match run.slot(view.kind, view.position.ordinal, view.records()) {
                 Ok(()) => Ok(()),

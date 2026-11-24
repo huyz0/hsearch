@@ -48,6 +48,7 @@ use hsearch_object::{LargeObjectWriter, MetadataStore};
 
 use crate::payload::PayloadSink;
 use crate::pins::Pins;
+use crate::pointer::BaseSource;
 use crate::publish::{self, Publisher};
 use crate::rebuild::{Hold, RebuildError, recover_writer_merging};
 use crate::recover::{Expect, ReplayLimits, Target};
@@ -150,6 +151,9 @@ pub struct Config {
     /// Publish a reader over an index with nothing in it at open, so it can be searched and
     /// answers with no hits; otherwise there is no reader until something is searchable.
     pub searchable_when_empty: bool,
+    /// Where the base comes from at open and where a published base is named: the lane head's
+    /// checkpoint, or the shard's own pointer (a lane shared by several indexes).
+    pub base: BaseSource,
 }
 
 /// Everything `open` needs besides the configuration.
@@ -258,6 +262,7 @@ impl Host {
                 incarnation: config.incarnation,
                 limits: config.limits,
                 expect: Expect::default(),
+                base: config.base,
             };
             let pins = config
                 .pin
@@ -883,6 +888,7 @@ where
             engine_format: &self.config.engine_format,
             mapping: self.config.mapping,
             crypto_envelope: self.config.crypto_envelope,
+            base: self.config.base,
         };
         let published = self
             .serving

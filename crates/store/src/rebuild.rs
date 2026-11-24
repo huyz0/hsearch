@@ -16,6 +16,7 @@ use hsearch_lane::{Error as LaneError, block_on, read_head};
 use hsearch_object::{LargeObjectWriter, MetadataStore};
 
 use crate::pins::{Error as PinError, Pins};
+use crate::pointer;
 use crate::publish::{Dependencies, Error as PublishError, Publisher};
 use crate::recover::{NotReady, Record, Recovered, Target, recover};
 
@@ -224,7 +225,22 @@ where
         Err(LaneError::Format(_)) => return Err(RebuildError::NotReady(NotReady::Corrupt)),
         Err(e) => return Err(RebuildError::NotReady(NotReady::Store(format!("{e:?}")))),
     };
-    let Some(manifest) = head.checkpoint else {
+    let named = pointer::named(
+        &publisher.io(),
+        publisher.layout(),
+        target.base,
+        &head,
+        &target.index,
+        &target.shard,
+        target.incarnation,
+    )
+    .map_err(|e| {
+        RebuildError::NotReady(match e {
+            pointer::Error::Store(e) => NotReady::Store(format!("{e:?}")),
+            other => NotReady::Base(format!("{other:?}")),
+        })
+    })?;
+    let Some((manifest, _)) = named else {
         claim_scratch(scratch)?;
         return with_local_engine_merging(scratch, schema.clone(), mode, |engine, local| {
             rebuild_onto(publisher, target, dependencies, schema, engine, None)

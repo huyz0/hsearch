@@ -173,6 +173,7 @@ fn recovered(store: &Arc<S3Store>, lane: &LaneId, expect: Expect) -> Vec<(u64, S
             bytes: 64 << 20,
         },
         expect,
+        base: hsearch_store::pointer::BaseSource::Head,
     };
     recover(&p, &target, &AnyDependencies, |r: &Record<'_>| {
         got.push((r.seq, String::from_utf8(r.body.to_vec()).unwrap()));
@@ -255,6 +256,7 @@ fn publish_recover_compact_and_sweep_on_a_real_store() {
             shard: SHARD,
             incarnation: 1,
             lane,
+            base: hsearch_store::pointer::BaseSource::Head,
         };
         let dry = sweeper(&store)
             .run(&INDEX, &[shard], &config(Mode::DryRun, now_ms()))
@@ -357,6 +359,7 @@ fn a_pin_holds_a_base_on_a_real_store_until_it_expires() {
             shard: SHARD,
             incarnation: 1,
             lane,
+            base: hsearch_store::pointer::BaseSource::Head,
         };
         let held = sweeper(&store)
             .run(&INDEX, &[shard], &config(Mode::Sweep, now))

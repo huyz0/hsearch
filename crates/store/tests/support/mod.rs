@@ -323,6 +323,7 @@ pub fn target(lane: &LaneId, limits: ReplayLimits, expect: Expect) -> Target<'_>
         incarnation: 1,
         limits,
         expect,
+        base: hsearch_store::pointer::BaseSource::Head,
     }
 }
 

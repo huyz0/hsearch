@@ -315,6 +315,7 @@ fn shard_ref() -> ShardRef {
         shard: SHARD,
         incarnation: 1,
         lane: lane(),
+        base: hsearch_store::pointer::BaseSource::Head,
     }
 }
 fn config(mode: Mode, now: u64) -> Config {
@@ -1110,5 +1111,44 @@ fn a_create_that_fails_while_registering_releases_that_shards_pin() {
         let failed = s.create(&INDEX, &SNAP, &[shard_ref()], &AnyKeys, 2_000);
         assert!(failed.is_err(), "{failed:?}");
         assert_eq!(w.store.keys(&layout().pin_prefix(&INDEX)).len(), 0);
+    });
+}
+
+#[test]
+fn a_snapshot_of_a_pointer_shard_pins_the_root_the_pointer_names() {
+    with_commit("pointer-snap", 4, |f, names| {
+        let w = World::new();
+        let s1 = spec(3, 1, None);
+        let b1 = w
+            .publisher
+            .publish(f, names, &s1, &AnyDependencies)
+            .unwrap();
+        w.publisher
+            .activate_pointer(
+                None,
+                &hsearch_store::publish::LogStart {
+                    lane: &lane(),
+                    lane_cover: 3,
+                    head_cover: 0,
+                },
+                &b1,
+                &s1,
+                &AnyDependencies,
+            )
+            .unwrap();
+        let shard = ShardRef {
+            base: hsearch_store::pointer::BaseSource::Pointer,
+            ..shard_ref()
+        };
+        let made = snaps(&w)
+            .create(&INDEX, &SNAP, &[shard], &AnyKeys, 2_000)
+            .unwrap();
+        let root = made.record.shards[0].root.unwrap();
+        assert_eq!((root.manifest, root.covered), (b1.manifest, 3));
+        // Read as a head shard, the same lane names no base, so nothing would have been pinned.
+        let none = snaps(&w)
+            .create(&INDEX, &SNAP_B, &[shard_ref()], &AnyKeys, 2_001)
+            .unwrap();
+        assert!(none.record.shards[0].root.is_none());
     });
 }

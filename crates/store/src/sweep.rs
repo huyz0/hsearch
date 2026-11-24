@@ -21,6 +21,7 @@ use hsearch_object::{Error as StoreError, Inventory, MetadataStore, VersionToken
 
 use crate::boundary::{self, Boundary};
 use crate::io::{Io, Requests};
+use crate::pointer::{self, BaseSource};
 
 /// One listed object, with its key as text.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,6 +40,8 @@ pub struct ShardRef {
     pub incarnation: u64,
     /// The lane whose structural head names its live root.
     pub lane: LaneId,
+    /// Whether the live root is the head's checkpoint or the shard's own pointer.
+    pub base: BaseSource,
 }
 
 /// Whether a run changes anything.
@@ -117,6 +120,15 @@ pub enum Error {
 impl From<StoreError> for Error {
     fn from(e: StoreError) -> Self {
         Self::Store(e)
+    }
+}
+impl From<pointer::Error> for Error {
+    fn from(e: pointer::Error) -> Self {
+        match e {
+            pointer::Error::Store(e) => Self::Store(e),
+            pointer::Error::Corrupt(e) => Self::Format(e),
+            pointer::Error::Refused(_) | pointer::Error::Lost => Self::Corrupt("base pointer"),
+        }
     }
 }
 impl From<FormatError> for Error {
@@ -251,7 +263,16 @@ impl<S: MetadataStore + Inventory> Sweeper<S> {
         for s in shards {
             let (head, _) = block_on(read_head(&*self.io.store, &self.layout, &s.lane))
                 .map_err(|e| Error::Head(format!("{e:?}")))?;
-            let Some(checkpoint) = head.checkpoint else {
+            let Some((checkpoint, _)) = pointer::named(
+                &self.io,
+                &self.layout,
+                s.base,
+                &head,
+                index,
+                &s.shard,
+                s.incarnation,
+            )?
+            else {
                 live.push(None);
                 continue;
             };

@@ -258,6 +258,7 @@ fn shard_ref() -> ShardRef {
         shard: SHARD,
         incarnation: 1,
         lane: lane(),
+        base: hsearch_store::pointer::BaseSource::Head,
     }
 }
 fn config(mode: Mode, now: u64) -> Config {
@@ -1046,5 +1047,65 @@ fn readers_pinning_while_compaction_and_sweeps_run_never_lose_their_base() {
             accepted.load(Ordering::SeqCst) > 0,
             "the race never exercised an accepted pin"
         );
+    });
+}
+
+#[test]
+fn a_pointer_shard_keeps_the_base_its_pointer_names_and_reclaims_the_replaced_one() {
+    with_commit("pointer-sweep", |f, names| {
+        let w = World::new();
+        let s1 = spec(3, 1, None);
+        let b1 = w
+            .publisher
+            .publish(f, names, &s1, &AnyDependencies)
+            .unwrap();
+        let (head, _) = head_of(&w.store);
+        w.publisher
+            .activate_pointer(
+                None,
+                &hsearch_store::publish::LogStart {
+                    lane: &lane(),
+                    lane_cover: 3,
+                    head_cover: head.cover,
+                },
+                &b1,
+                &s1,
+                &AnyDependencies,
+            )
+            .unwrap();
+        let first = w.publisher.read_pointer(&s1).unwrap().unwrap();
+        // The head never names a checkpoint: the pointer is the only record of the base.
+        assert_eq!(head_of(&w.store).0.checkpoint, None);
+        let s2 = spec(3, 2, Some(&b1.root));
+        let (b2, next) = w
+            .compactor
+            .compact_pointer(f, names, &s2, &first, head.cover, &AnyDependencies)
+            .unwrap();
+        assert_eq!((next.sequence, next.manifest), (2, b2.manifest));
+        // A source that is not what the pointer read names is refused before anything uploads.
+        let wrong = spec(3, 9, Some(&b2.root));
+        let moved =
+            w.compactor
+                .compact_pointer(f, names, &wrong, &first, head.cover, &AnyDependencies);
+        assert!(matches!(moved, Err(CompactError::SourceMoved)), "{moved:?}");
+        let pointer_shard = ShardRef {
+            base: hsearch_store::pointer::BaseSource::Pointer,
+            ..shard_ref()
+        };
+        let report = w
+            .sweeper()
+            .run(&INDEX, &[pointer_shard], &config(Mode::Sweep, 2_000))
+            .unwrap();
+        assert_eq!((report.roots_swept, report.roots_kept), (1, 1));
+        assert!(w.readable(&b1).is_err());
+        assert!(w.readable(&b2).is_ok());
+        // A compaction from the pointer read before the swap cannot name the swept source.
+        let s3 = spec(3, 3, Some(&b1.root));
+        let stale =
+            w.compactor
+                .compact_pointer(f, names, &s3, &first, head.cover, &AnyDependencies);
+        assert!(stale.is_err(), "{stale:?}");
+        let held = w.publisher.read_pointer(&s1).unwrap().unwrap();
+        assert_eq!(held.0, next);
     });
 }

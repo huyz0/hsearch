@@ -8,6 +8,7 @@ pub mod host;
 mod io;
 pub mod payload;
 pub mod pins;
+pub mod pointer;
 pub mod publish;
 pub mod rebuild;
 pub mod recover;

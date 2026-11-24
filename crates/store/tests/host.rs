@@ -53,6 +53,7 @@ fn config(label: &str, window_ms: u64, base_every: u64, seed: u8) -> Config {
         token_seed: [seed; 8],
         merge: hsearch_engine::MergeMode::Inline,
         searchable_when_empty: false,
+        base: hsearch_store::pointer::BaseSource::Head,
         pin: None,
     }
 }
@@ -301,6 +302,46 @@ fn a_base_on_a_schedule_bounds_what_a_restart_replays() {
     for i in 0..5 {
         assert_eq!(tag(&again, &format!("d{i}")).as_deref(), Some("v"));
     }
+}
+
+#[test]
+fn a_host_on_a_pointer_names_its_bases_there_and_a_restart_serves_what_was_acknowledged() {
+    let (store, lane) = new_lane();
+    let pointer = |label: &str, seed: u8| Config {
+        base: hsearch_store::pointer::BaseSource::Pointer,
+        ..config(label, 0, 2, seed)
+    };
+    let host = open(&store, lane, pointer("ptr", 1));
+    for i in 0..5 {
+        host.bulk(vec![put(&format!("d{i}"), "v")], Wait::Durable)
+            .unwrap();
+    }
+    host.refresh().unwrap();
+    assert_eq!(host.stats().bases, 2);
+    assert_eq!(host.stats().base_failures, 0);
+    // The lane head names no checkpoint: the bases are named by the shard's pointer.
+    let head = block_on(read_head(store.inner_ref(), &layout(), &lane))
+        .unwrap()
+        .0;
+    assert_eq!(head.checkpoint, None);
+    host.stop();
+    let again = open(&store, lane, pointer("ptr-2", 2));
+    for i in 0..5 {
+        assert_eq!(tag(&again, &format!("d{i}")).as_deref(), Some("v"));
+    }
+    again.stop();
+    // A recovery by the pointer starts above the second base; one by the head replays everything.
+    let by = |base| {
+        let t = hsearch_store::recover::Target {
+            base,
+            ..target(&lane, big(), hsearch_store::recover::Expect::default())
+        };
+        hsearch_store::recover::recover(&publisher(&store), &t, &AnyDependencies, |_| Ok(()))
+            .unwrap()
+            .from_seq
+    };
+    assert_eq!(by(hsearch_store::pointer::BaseSource::Pointer), 4);
+    assert_eq!(by(hsearch_store::pointer::BaseSource::Head), 0);
 }
 
 #[test]

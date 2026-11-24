@@ -201,6 +201,17 @@ impl Layout {
         ))
     }
 
+    /// The conditional base pointer of one shard incarnation: the one object that says which base
+    /// the shard recovers from and where on its lane (M06.24).
+    #[must_use]
+    pub fn base_pointer(&self, index: &Id, shard: &Id, incarnation: u64) -> String {
+        self.key(format_args!(
+            "indexes/{}/shards/{}/{incarnation:020}/base",
+            hex(index),
+            hex(shard)
+        ))
+    }
+
     /// The durable garbage-collection boundary of one shard incarnation: a generation that only rises.
     #[must_use]
     pub fn gc_boundary(&self, index: &Id, shard: &Id, incarnation: u64) -> String {
