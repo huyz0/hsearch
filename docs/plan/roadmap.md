@@ -22,7 +22,7 @@ Task dependencies permit parallel work; milestone prerequisites govern completio
 | [M03: Storage semantics, cost-aware formats and metadata](milestones/M03.md) | done | 14/14 | M01 |
 | [M04: Lucene Rust bridge and committed readers](milestones/M04.md) | done | 6/6 | M02, M03 |
 | [M05: mTLS, tenant policy and BYOK](milestones/M05.md) | done | 8/8 | M03 |
-| [M06: Object-durable search store on RustFS](milestones/M06.md) | planned | 16/26 | M04, M05 |
+| [M06: Object-durable search store on RustFS](milestones/M06.md) | planned | 17/26 | M04, M05 |
 | [M21: Document and mapping semantics](milestones/M21.md) | planned | 9/10 | M06 |
 | [M22: Pinned views, index management and background jobs](milestones/M22.md) | planned | 1/5 | M21 |
 | [M23: Vector search: HNSW and IVF with quantization and disk variants](milestones/M23.md) | done | 6/6 | M04 |

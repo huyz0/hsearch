@@ -22,11 +22,12 @@ use hsearch_lane::{
 use hsearch_object::{Error as StoreError, LargeObjectWriter, MetadataStore};
 use sha2::{Digest as _, Sha256};
 
-use crate::host::{Config, Host, HostError, OpenArgs, OpenError};
+use crate::host::{Config, Host, HostError, OpenArgs, OpenError, ResolvedItem, RetryKey};
 use crate::payload::ObjectPayloads;
 use crate::publish::{AnyDependencies, Publisher};
 use crate::rebuild::RebuildError;
 use crate::recover::{NotReady, ReplayLimits};
+use hsearch_index::resolve::Request;
 
 /// What the lane of a served index is for, so it differs from any other lane of the same index.
 const ORIGIN: &[u8] = b"served";
@@ -304,6 +305,20 @@ impl ServedIndex {
             .into_iter()
             .map(|item| item.map_err(Error::Engine))
             .collect())
+    }
+
+    /// Resolve and write `requests` (updates, upserts, creates, conditions); see
+    /// [`Host::resolve`]. One result per request, a refusal in its own item.
+    ///
+    /// # Errors
+    /// [`Error`] if the request is malformed as a whole, the writer stopped or the store failed.
+    pub fn resolve(
+        &self,
+        requests: Vec<Request>,
+        key: Option<RetryKey>,
+        wait: Wait,
+    ) -> Result<Vec<ResolvedItem>> {
+        self.host.resolve(requests, key, wait).map_err(host_error)
     }
 
     /// Extend the schema; later writes are prepared against `mapping`.
