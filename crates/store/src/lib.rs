@@ -8,6 +8,7 @@ pub mod cover;
 pub mod host;
 mod io;
 pub mod log;
+pub mod member;
 pub mod payload;
 pub mod pins;
 pub mod pointer;
