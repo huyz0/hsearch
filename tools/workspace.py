@@ -32,7 +32,7 @@ LAYERS = {
     # M06.02: the object-durable store publishes native commits through the engine and names them in the lane head.
     # M06.14: its serving writer commits each batch through the group committer before applying it.
     "hsearch-store": {"hsearch-object", "hsearch-format", "hsearch-lane", "hsearch-engine", "hsearch-index", "hsearch-commit"},
-    "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3", "hsearch-format"},
+    "hsearch-node": {"hsearch-object", "hsearch-engine", "hsearch-index", "hsearch-s3", "hsearch-format", "hsearch-store"},
     # M05: identity, authorization and the key-provider contract. Independent of every other crate for now:
     # the peer listener and the object-format encryption that use it come later and depend on it, not the reverse.
     "hsearch-security": set(),

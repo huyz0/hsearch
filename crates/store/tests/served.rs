@@ -94,6 +94,8 @@ fn acknowledged_writes_survive_a_restart() {
     assert_eq!(tag(&books, "b", false), None);
     assert_eq!(tag(&books, "b", true).as_deref(), Some("2"));
     assert_eq!(tag(&books, "missing", true), None);
+    // The real-time read published nothing.
+    assert_eq!(tag(&books, "b", false), None);
     drop(books);
     let books = open(&store, "books", "restart").unwrap();
     assert_eq!(tag(&books, "a", false).as_deref(), Some("1"));
@@ -183,4 +185,33 @@ fn a_document_the_engine_refuses_fails_alone() {
     assert_eq!(tag(&books, "a", false).as_deref(), Some("1"));
     assert_eq!(tag(&books, "b", false), None);
     assert_eq!(tag(&books, "c", false).as_deref(), Some("3"));
+}
+
+#[test]
+fn a_batch_over_the_record_bound_between_small_ones_survives_a_restart_unpublished() {
+    let store = Crash::new();
+    let big_schema = || {
+        Schema::new(1, &[("tag", Kind::Text)])
+            .unwrap()
+            .with_limits(hsearch_engine::Limits::scale().with_document_bytes(4 << 20))
+            .unwrap()
+    };
+    let dir = scratch("big");
+    let books =
+        ServedIndex::create(&store, &settings(), "big", big_schema(), &[3; 32], &dir).unwrap();
+    let big = "word ".repeat((hsearch_format::MAX_INLINE_RECORD_BYTES + 1024) / 5);
+    let results = books
+        .bulk(
+            vec![put("a", "1"), put("big", &big), put("c", "3")],
+            Wait::Durable,
+        )
+        .unwrap();
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    // Durable, never refreshed or closed: dropped as a kill would leave it.
+    drop(books);
+    let books =
+        ServedIndex::open(&store, &settings(), "big", big_schema(), &[3; 32], &dir).unwrap();
+    assert_eq!(tag(&books, "a", true).as_deref(), Some("1"));
+    assert_eq!(tag(&books, "big", true).as_deref(), Some(big.as_str()));
+    assert_eq!(tag(&books, "c", true).as_deref(), Some("3"));
 }

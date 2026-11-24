@@ -76,6 +76,7 @@ fn open_schema(
             lane,
             dependencies: AnyDependencies,
             schema,
+            payloads: None,
         },
         config,
     )
@@ -519,6 +520,7 @@ fn open_packing(
             lane,
             dependencies: AnyDependencies,
             schema: schema(),
+            payloads: None,
         },
         config(label, 0, 0, 1),
     )

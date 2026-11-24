@@ -126,6 +126,7 @@ fn open(store: &Arc<S3Store>, lane: LaneId, label: &str, seed: u8) -> Host {
             lane,
             dependencies: AnyDependencies,
             schema: schema(),
+            payloads: None,
         },
         Config {
             index: INDEX,

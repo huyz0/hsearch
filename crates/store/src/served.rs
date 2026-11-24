@@ -23,6 +23,7 @@ use hsearch_object::{Error as StoreError, LargeObjectWriter, MetadataStore};
 use sha2::{Digest as _, Sha256};
 
 use crate::host::{Config, Host, HostError, OpenArgs, OpenError};
+use crate::payload::ObjectPayloads;
 use crate::publish::{AnyDependencies, Publisher};
 use crate::rebuild::RebuildError;
 use crate::recover::{NotReady, ReplayLimits};
@@ -277,6 +278,11 @@ impl ServedIndex {
                 lane,
                 dependencies: AnyDependencies,
                 schema,
+                payloads: Some(Box::new(ObjectPayloads::new(
+                    Arc::clone(store),
+                    settings.layout.clone(),
+                    settings.deadline,
+                ))),
             },
             config,
         )
@@ -339,7 +345,7 @@ impl ServedIndex {
         realtime: bool,
     ) -> Result<Vec<Option<Hit>>> {
         if realtime {
-            self.refresh()?;
+            return self.host.read_latest(ids, projection).map_err(host_error);
         }
         let Some(reader) = self.host.reader() else {
             return Ok(vec![None; ids.len()]);

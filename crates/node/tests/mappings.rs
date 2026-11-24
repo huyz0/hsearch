@@ -43,7 +43,7 @@ fn create(node: &Node<Counting>, name: &str, body: &str) -> Result<Value, ApiErr
 
 #[test]
 fn a_thousand_indexes_from_a_hundred_mappings_store_a_hundred_mapping_objects() {
-    let (store, dir) = (Counting::new(), Scratch::new("share"));
+    let (store, dir) = (Counting::sharded(4), Scratch::new("share"));
     let node = Node::new(Arc::clone(&store), dir.0.clone());
     store.take();
     for i in 0..1000 {
@@ -190,10 +190,21 @@ fn a_mapping_an_earlier_node_wrote_inline_still_opens() {
     let (store, dir) = (Counting::new(), Scratch::new("legacy"));
     let body: Value = serde_json::from_str(&mapping(3, false)).unwrap();
     let parsed = Mapping::parse(&body).unwrap();
-    // The M20 layout: the index root, and the mapping bytes inline at `{index}/mapping`.
+    // The M20 layout for the mapping: the index's lane, and the mapping bytes inline at `{index}/mapping`.
     let schema = parsed.schema().unwrap();
     let scratch = dir.0.join("old");
-    hsearch_index::Index::create(Arc::clone(&store), "old", schema, &scratch).unwrap();
+    let settings =
+        hsearch_store::served::Settings::new(hsearch_format::Layout::new("local").unwrap());
+    hsearch_store::served::ServedIndex::create(
+        &store,
+        &settings,
+        "old",
+        schema,
+        &parsed.hash(),
+        &scratch,
+    )
+    .unwrap()
+    .close();
     hsearch_index::put_mapping(&*store, "old", &parsed.encode()).unwrap();
     let node = Node::new(Arc::clone(&store), dir.0.clone());
     assert!(node.search("old", &json!({"size": 0})).is_ok());

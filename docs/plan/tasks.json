@@ -3092,11 +3092,17 @@
           ],
           "depends_on": [
             "M06.16",
-            "M06.18"
+            "M06.18",
+            "M06.22"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-19-node-on-host.md",
+              "result": "The node serves every index through ServedIndex over the host (create, open, bulk with per-item refusals, refresh, evolve, snapshot, real-time get without publishing a reader), with the payload sink on so a field over the 1 MiB bound is a digest-verified external object. All node suites pass against the in-memory store (conformance, evolve, field_limits, http, large_fields, mappings, memory, realtime_get, vectors); store suites pass; clippy clean. Provisional: in-memory store only; the RustFS suites and the 100k-document kill -9 e2e run in CI, not here. v0 Index stays in hsearch-index because its own tests still use it."
+            }
+          ]
         },
         {
           "id": "M06.20",
@@ -3172,6 +3178,27 @@
               "result": "Engine::admit_chain (3 tests, 2 mutations seen red), Serving::write_chain and the host packing a group's runs into one commit (112 identities: 7 records, 1 write; restart after packed slots; refusal in the middle leaves the runs around it written; 3 mutations seen red), ServedIndex create/open/bulk/evolve/snapshot/get by name (7 tests: Exists, NotFound, restart, fencing, names apart, a half-created index finished, a document refused alone). Provisional: in-memory store; no RustFS measurement here."
             }
           ]
+        },
+        {
+          "id": "M06.23",
+          "title": "Sweep reads the log's payload references before it deletes",
+          "goal": "The orphan pass of sweep never deletes a payload object that a lane record still names, so turning orphan_grace_ms on is safe for an index written through the payload sink.",
+          "deliverables": [
+            "Sweep collects the payload digests named by lane records from the base cover and the log tail, and treats only objects outside that set and older than the grace as orphans"
+          ],
+          "validation": [
+            "A payload named only by the log survives an orphan pass with a zero grace; an unreferenced one is deleted after the grace; no LIST is added to a read or write path"
+          ],
+          "definition_of_done": [
+            "With orphan_grace_ms on, no object a recovery needs is ever deleted"
+          ],
+          "depends_on": [
+            "M06.18",
+            "M06.19"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
         }
       ]
     },

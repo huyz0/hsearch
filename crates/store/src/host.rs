@@ -42,6 +42,7 @@ use hsearch_index::{Field, ItemResult, Op, Wait};
 use hsearch_lane::LaneId;
 use hsearch_object::{LargeObjectWriter, MetadataStore};
 
+use crate::payload::PayloadSink;
 use crate::pins::Pins;
 use crate::publish::{self, Publisher};
 use crate::rebuild::{Hold, RebuildError, recover_writer_merging};
@@ -141,11 +142,18 @@ pub struct OpenArgs<S: MetadataStore, V: DependencyView, D> {
     pub dependencies: D,
     /// The index's schema.
     pub schema: Schema,
+    /// Where a batch too large for a lane record is written first; without one it is refused.
+    pub payloads: Option<Box<dyn PayloadSink>>,
 }
 
 enum Command {
     Bulk(Vec<Op>, Wait, bool, Sender<Result<Vec<Item>, HostError>>),
     Refresh(Sender<Result<(), HostError>>),
+    Read(
+        Vec<String>,
+        Vec<String>,
+        Sender<Result<Vec<Option<hsearch_engine::Hit>>, HostError>>,
+    ),
     Publish(Sender<Result<publish::Published, HostError>>),
     Evolve(Box<Schema>, Dependencies, Sender<Result<(), HostError>>),
     Stop,
@@ -213,6 +221,7 @@ impl Host {
                 lane,
                 dependencies,
                 schema,
+                payloads,
             } = args;
             let target = Target {
                 lane: &lane,
@@ -257,6 +266,10 @@ impl Host {
                         &rebuilt.recovered,
                         config.deps,
                     );
+                    let serving = match payloads {
+                        Some(sink) => serving.with_payloads(sink),
+                        None => serving,
+                    };
                     let mut core = Core {
                         serving,
                         engine,
@@ -352,6 +365,21 @@ impl Host {
     /// [`HostError::Refresh`] if it could not be published; the serving reader is unchanged.
     pub fn refresh(&self) -> Result<(), HostError> {
         self.send(Command::Refresh)
+    }
+
+    /// Read documents as of every write acknowledged before the call, searchable or not, without
+    /// publishing a reader: what `refresh` would make searchable stays unsearchable.
+    ///
+    /// # Errors
+    /// [`HostError::Refresh`] if a view of the engine could not be taken, or [`HostError::Broken`].
+    pub fn read_latest(
+        &self,
+        ids: &[&str],
+        projection: &[&str],
+    ) -> Result<Vec<Option<hsearch_engine::Hit>>, HostError> {
+        let ids = ids.iter().map(|s| (*s).to_owned()).collect();
+        let projection = projection.iter().map(|s| (*s).to_owned()).collect();
+        self.send(|reply| Command::Read(ids, projection, reply))
     }
 
     /// Publish a base now.
@@ -560,6 +588,23 @@ where
                 Command::Refresh(reply) => {
                     let _ = reply.send(self.refresh());
                 }
+                Command::Read(ids, projection, reply) => {
+                    if self.serving.is_broken() {
+                        let _ = reply.send(Err(HostError::Broken));
+                        continue;
+                    }
+                    let projection: Vec<&str> = projection.iter().map(String::as_str).collect();
+                    let answer = self
+                        .engine
+                        .refresh()
+                        .map_err(|_| HostError::Refresh)
+                        .and_then(|view| {
+                            ids.iter()
+                                .map(|id| view.get(id, &projection).map_err(|_| HostError::Refresh))
+                                .collect()
+                        });
+                    let _ = reply.send(answer);
+                }
                 Command::Publish(reply) => {
                     let _ = reply.send(self.publish_base());
                 }
@@ -721,7 +766,7 @@ where
             }
             match stop {
                 None => {}
-                Some(ChainStop::Refused(_) | ChainStop::Recognised) => {
+                Some(ChainStop::Refused(_) | ChainStop::Recognised | ChainStop::Alone) => {
                     // The run the log stopped at is written alone, split until the operations the
                     // engine refuses are told apart from the ones it takes; the rest go round again.
                     let run = chunk[written].clone();
