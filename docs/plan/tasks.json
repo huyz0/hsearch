@@ -3136,10 +3136,8 @@
           "title": "Share the node's lane between indexes: per-index base pointers and a shared committer",
           "goal": "Indexes of one node write one lane, and each still publishes and recovers from its own base: the structural head names a single checkpoint for a whole lane, so a shared lane needs a per-index base pointer and a lane-level cover.",
           "deliverables": [
-            "Design record (ADR) for per-index bases on a shared lane: a per-index conditional base pointer object carrying the index's manifest and its lane cover, the lane head's cover as the minimum over members, and what recovery, `Publisher::activate`, compaction and collection read instead of `StructuralHead::checkpoint`",
-            "A shared committer thread: hosts submit their records, one lane slot carries records of many indexes, outcomes are returned per record, poison and fence are shared; `Serving` takes the log through a trait so a host works on a direct committer or a shared one",
-            "Create and delete of an index's lane membership through the node's lane (one write log per node: principles), seal on open",
-            "Per-index lane cover so a base's cover is right on a lane shared with other indexes"
+            "Design record: decisions/M06.21-shared-lane-per-index-bases.md (per-index base pointer, lane cover as a lower bound the node maintains, shared committer, membership, seal on open)",
+            "Node serves its indexes from one shared lane (integration of M06.24 to M06.26)"
           ],
           "validation": [
             "Several indexes writing one lane through hosts, killed and restarted at every step, each serves exactly its acknowledged writes; request counts per acknowledged write and per restart stay constant in the number of indexes, no LIST"
@@ -3149,7 +3147,76 @@
           ],
           "depends_on": [
             "M06.16",
-            "M03.09"
+            "M03.09",
+            "M06.24",
+            "M06.25",
+            "M06.26"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.24",
+          "title": "Per-index base pointer",
+          "goal": "An index publishes and recovers from its own conditional base pointer, so a lane head no longer has to name one checkpoint for the lane (decision M06.21).",
+          "deliverables": [
+            "A BASE pointer record in hsearch-format (versioned, enveloped, with a format test): manifest root, covered sequence, lane cover for the index, lane, generation",
+            "Host open (rebuild), recovery, collection (sweep), snapshot pins, compaction and creation detection read and write the pointer for an index that has one, and the pointer's successor rule (covered and lane cover never fall, sequence rises by one, lane cover at or above the head's) is checked before its CAS; a lane head's checkpoint still opens when no pointer exists"
+          ],
+          "validation": [
+            "Recovery from the pointer equals recovery from the head's checkpoint on a dedicated lane; a crash between base objects and the pointer leaves the old base serving; a stale writer's pointer CAS and a lowering write are refused; a pointer of an unknown format version is refused; collection and a snapshot pin work on a pointer-bearing index"
+          ],
+          "definition_of_done": [
+            "Every base operation of an index with a pointer goes through it, and a dedicated lane without one still opens"
+          ],
+          "depends_on": [
+            "M06.19"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.25",
+          "title": "Shared lane committer",
+          "goal": "Hosts of several indexes write one lane through one committer thread, with the log behind a trait so a host works on a direct committer or a shared one (decision M06.21).",
+          "deliverables": [
+            "Serving takes its log through a trait (commit, commit_external, is_poisoned) with the direct committer as one implementation, and the host is generic over it",
+            "A lane thread packs records of many indexes into one slot, returns each record its outcome, and shares poison and fence across hosts"
+          ],
+          "validation": [
+            "Hosts of several indexes write one lane concurrently and each, killed and restarted at every step, serves exactly its acknowledged writes (the head cover stays 0: no reclaim is claimed); one lane slot carries records of more than one index; a fence loss breaks every host of the lane; the shared path's latency against the direct committer is measured relative on the in-memory store (provisional)"
+          ],
+          "definition_of_done": [
+            "A shared lane commits records of many indexes and no host reads another index's records"
+          ],
+          "depends_on": [
+            "M06.24"
+          ],
+          "owner": "storage/runtime",
+          "status": "planned",
+          "evidence": []
+        },
+        {
+          "id": "M06.26",
+          "title": "Lane membership, seal on open and lane cover",
+          "goal": "Indexes join and leave the node's lane, the node scans the tail when it opens a lane, and the lane head's cover advances only to what every member that can hold an uncovered record allows (decision M06.21).",
+          "deliverables": [
+            "Create joins the lane (membership epoch) and delete seals and leaves it with a route tombstone; the index id derives from the name and a durably bound incarnation, so a reused name never reuses authority or history",
+            "Seal on open: the tail scan builds the tail set, each tail-set index is recovered and publishes a base before open completes; a resident host publishes once its uncovered lane span passes a byte bound; hosts are pinned until they publish, and a sealed-by-promotion index stays pinned on its source lane until its new-lane base covers its seal",
+            "The lane head's cover is the minimum over the pinned set, carrying the writer epoch"
+          ],
+          "validation": [
+            "Each history fails without its rule: an idle index restarted after the cover passed its pointer; an evicted or closed host (closing publishes); a promoted index whose source lane is reclaimed before its new-lane base covers its seal; a deleted index not pinning the cover and its recreate not replaying old records; a lightly written index not pinning the cover beyond the byte bound; the cover never passing a pinned record",
+            "Requests per acknowledged write constant at 1, 100 and 1,000 indexes; requests per restart a stated function of the tail (two per slot plus a pointer read per tail-set index) on a fixed tail workload and constant with every index idle and published; no LIST"
+          ],
+          "definition_of_done": [
+            "A lane's reclaim follows its members without any per-index request"
+          ],
+          "depends_on": [
+            "M06.24",
+            "M06.25"
           ],
           "owner": "storage/runtime",
           "status": "planned",
