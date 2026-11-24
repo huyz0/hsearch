@@ -270,6 +270,7 @@ impl ServedIndex {
             pin: None,
             merge: settings.merge,
             searchable_when_empty: true,
+            base: crate::pointer::BaseSource::Head,
         };
         let host = Host::open(
             OpenArgs {

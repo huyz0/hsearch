@@ -29,6 +29,7 @@ mod limits;
 mod manifest;
 mod mapping;
 mod pin;
+mod pointer;
 
 pub use authority::{
     CatalogEntry, CatalogPage, CatalogRoot, EpochEntry, IdentityBinding, NameState, StructuralHead,
@@ -47,6 +48,7 @@ pub use limits::*;
 pub use manifest::{FileEntry, ManifestPage, ManifestRoot, PageRef};
 pub use mapping::MappingObject;
 pub use pin::{Cursor, CursorBody, PinRecord};
+pub use pointer::{BasePointer, Refusal as PointerRefusal};
 
 /// A 128-bit opaque identity (index, lane domain, object, shard, pin).
 pub type Id = [u8; 16];

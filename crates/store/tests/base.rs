@@ -70,6 +70,7 @@ fn target_of(lane: &hsearch_lane::LaneId) -> BaseTarget<'_> {
         engine_format: "lucene-test",
         mapping: [5; 32],
         crypto_envelope: [6; 16],
+        base: hsearch_store::pointer::BaseSource::Head,
     }
 }
 
@@ -154,6 +155,75 @@ fn a_base_the_serving_writer_publishes_is_opened_by_recovery() {
     recover_writer(
         &publisher(&store),
         &target(&lane, big(), Expect::default()),
+        &AnyDependencies,
+        &schema,
+        &scratch,
+        |engine, _, rebuilt| {
+            assert_eq!(rebuilt.recovered.from_seq, 5);
+            assert_eq!(rebuilt.recovered.replayed, 0);
+            assert_ledger(engine, &h);
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_base_named_by_the_pointer_is_opened_by_recovery_and_the_head_names_none() {
+    use hsearch_store::pointer::BaseSource;
+    let store = Crash::new();
+    let (lane, committer) = open_lane(&store);
+    let h = history();
+    let schema = schema();
+    let dir = std::env::temp_dir().join(format!("hsearch-base-ptr-{}", std::process::id()));
+    with_local_engine(&dir, schema.clone(), |engine, local| {
+        let mut writer = Serving::new(committer, INDEX, 0, deps());
+        let p = publisher(&store);
+        let pointer_target = BaseTarget {
+            base: BaseSource::Pointer,
+            ..target_of(&lane)
+        };
+        for (i, steps) in h.iter().enumerate().take(2) {
+            write_batch(&mut writer, engine, i, steps).unwrap();
+        }
+        let first = writer
+            .publish_base(
+                engine,
+                local,
+                &p,
+                &pointer_target,
+                token(2),
+                &AnyDependencies,
+            )
+            .unwrap();
+        for (i, steps) in h.iter().enumerate().skip(2) {
+            write_batch(&mut writer, engine, i, steps).unwrap();
+        }
+        // A second base replaces the first through the pointer, one sequence higher.
+        let second = writer
+            .publish_base(
+                engine,
+                local,
+                &p,
+                &pointer_target,
+                token(3),
+                &AnyDependencies,
+            )
+            .unwrap();
+        assert_eq!(second.root.generation, first.root.generation + 1);
+    })
+    .unwrap();
+    let (head, _) =
+        hsearch_lane::block_on(hsearch_lane::read_head(store.inner_ref(), &layout(), &lane))
+            .unwrap();
+    assert_eq!(head.checkpoint, None);
+    let scratch = std::env::temp_dir().join(format!("hsearch-base-ptr-r-{}", std::process::id()));
+    let t = hsearch_store::recover::Target {
+        base: BaseSource::Pointer,
+        ..target(&lane, big(), Expect::default())
+    };
+    recover_writer(
+        &publisher(&store),
+        &t,
         &AnyDependencies,
         &schema,
         &scratch,

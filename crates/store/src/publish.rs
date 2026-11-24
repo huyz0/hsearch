@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use hsearch_engine::{LocalFiles, PublishError, UploadedFile, upload_local};
 use hsearch_format::{
-    CommitToken, Digest, FileEntry, FormatError, Id, Layout, MAX_PAGE_ENTRIES, MAX_ROOT_PAGES,
-    ManifestPage, ManifestRoot, PageRef, StructuralHead,
+    BasePointer, CommitToken, Digest, FileEntry, FormatError, Id, Layout, MAX_PAGE_ENTRIES,
+    MAX_ROOT_PAGES, ManifestPage, ManifestRoot, PageRef, StructuralHead,
 };
 use hsearch_index::barrier::Cut;
 use hsearch_lane::{Advance, Change, LaneId, advance_head, block_on};
@@ -26,6 +26,7 @@ use sha2::{Digest as _, Sha256};
 
 use crate::boundary::{self, Boundary};
 use crate::io::Io;
+use crate::pointer;
 
 /// Most bytes one ranged read of a base file asks for.
 const FETCH_RANGE: u64 = 8 << 20;
@@ -72,6 +73,8 @@ pub enum Error {
     },
     /// The collection boundary object is not valid.
     Boundary,
+    /// The base pointer could not be read or replaced.
+    Pointer(Box<pointer::Error>),
 }
 
 impl From<StoreError> for Error {
@@ -131,6 +134,18 @@ pub struct HeadRead<'a> {
     pub head: &'a StructuralHead,
     /// The version it was read at.
     pub version: &'a VersionToken,
+}
+
+/// Where the log above a base starts: the lane, the lowest ordinal that can hold a record of the
+/// index above the base, and the cover of the lane head read with it.
+#[derive(Clone, Copy)]
+pub struct LogStart<'a> {
+    /// The lane the log above the base is on.
+    pub lane: &'a LaneId,
+    /// The lowest lane ordinal that can hold such a record.
+    pub lane_cover: u64,
+    /// The lane head's cover.
+    pub head_cover: u64,
 }
 
 /// A root that is complete in the store but not yet named by the head.
@@ -202,6 +217,11 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
     #[must_use]
     pub fn store(&self) -> &S {
         &self.store
+    }
+
+    /// A metered view of the store for the small objects around a base (pointer, boundary).
+    pub(crate) fn io(&self) -> Io<S> {
+        Io::new(Arc::clone(&self.store), self.deadline)
     }
 
     /// The deployment layout.
@@ -552,14 +572,71 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
         })
     }
 
-    fn transition(
+    /// Name `published` as the base in the shard's own pointer instead of the lane head's
+    /// checkpoint: the base for an index on a shared lane. `current` is the pointer read before the
+    /// base was built (none for the first), `lane` and `lane_cover` say where the log above the
+    /// base starts (`above`, with the lane head's cover read with it). The root is verified
+    /// exactly as for [`Publisher::activate`], the successor rule is checked, and the write is a
+    /// compare-and-swap on the version read: a lost race is [`Error::Lost`] and changes nothing.
+    pub fn activate_pointer(
         &self,
-        at: &HeadRead<'_>,
+        current: Option<&pointer::Read>,
+        above: &LogStart<'_>,
         published: &Published,
         spec: &BaseSpec<'_>,
         dependencies: &dyn Dependencies,
-        change: impl FnOnce(Id) -> Change,
-    ) -> Result<(StructuralHead, VersionToken), Error> {
+    ) -> Result<BasePointer, Error> {
+        self.check_publish(published, spec, dependencies)?;
+        let LogStart {
+            lane,
+            lane_cover,
+            head_cover,
+        } = *above;
+        let next = BasePointer {
+            index: spec.index,
+            shard: spec.shard,
+            incarnation: spec.incarnation,
+            manifest: published.manifest,
+            manifest_generation: published.root.generation,
+            covered: published.root.covered,
+            lane_domain: lane.domain,
+            lane_incarnation: lane.incarnation,
+            lane_activation: lane.activation,
+            lane_number: lane.lane,
+            lane_cover,
+            sequence: current.map_or(1, |(p, _)| p.sequence + 1),
+            token: spec.attempt,
+        };
+        let io = Io::new(Arc::clone(&self.store), self.deadline);
+        match pointer::write(&io, &self.layout, &next, current, head_cover) {
+            Ok(()) => Ok(next),
+            Err(pointer::Error::Lost) => Err(Error::Lost),
+            Err(pointer::Error::Store(e)) => Err(Error::Store(e)),
+            Err(other) => Err(Error::Pointer(Box::new(other))),
+        }
+    }
+
+    /// The pointer of `spec`'s shard as stored.
+    pub fn read_pointer(&self, spec: &BaseSpec<'_>) -> Result<Option<pointer::Read>, Error> {
+        let io = Io::new(Arc::clone(&self.store), self.deadline);
+        pointer::read(
+            &io,
+            &self.layout,
+            &spec.index,
+            &spec.shard,
+            spec.incarnation,
+        )
+        .map_err(|e| Error::Pointer(Box::new(e)))
+    }
+
+    /// The checks every way of naming a base shares: the spec describes the root, the root is above
+    /// the collection boundary, and everything it names verifies.
+    fn check_publish(
+        &self,
+        published: &Published,
+        spec: &BaseSpec<'_>,
+        dependencies: &dyn Dependencies,
+    ) -> Result<(), Error> {
         if spec.index != published.root.index
             || spec.cut.covers() != published.root.covered
             || published.root.covered > spec.committed
@@ -587,6 +664,18 @@ impl<S: MetadataStore + LargeObjectWriter + 'static> Publisher<S> {
         if stored != published.root {
             return Err(Error::Mismatch);
         }
+        Ok(())
+    }
+
+    fn transition(
+        &self,
+        at: &HeadRead<'_>,
+        published: &Published,
+        spec: &BaseSpec<'_>,
+        dependencies: &dyn Dependencies,
+        change: impl FnOnce(Id) -> Change,
+    ) -> Result<(StructuralHead, VersionToken), Error> {
+        self.check_publish(published, spec, dependencies)?;
         match block_on(advance_head(
             &*self.store,
             &self.layout,

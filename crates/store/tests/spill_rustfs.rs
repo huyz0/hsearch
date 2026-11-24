@@ -153,6 +153,7 @@ fn recovered(
             bytes: 1 << 30,
         },
         expect: Expect::default(),
+        base: hsearch_store::pointer::BaseSource::Head,
     };
     let mut got = Vec::new();
     let r = recover_with(&p, &target, &AnyDependencies, spill, |r: &Record<'_>| {

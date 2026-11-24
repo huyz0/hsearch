@@ -3174,8 +3174,13 @@
             "M06.19"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-24-base-pointer.md",
+              "result": "A BASE pointer (format Kind 13, versioned, checksummed) with a successor rule (sequence +1, covered, manifest generation and same-lane lane cover never fall, lane cover not below the head's) checked before a compare-and-swap. Publisher::activate_pointer, Compactor::compact_pointer, and recovery, rebuild, sweep, snapshot pins and host open and base publishing read it through BaseSource::Pointer; BaseSource::Head (the default) opens a lane with no pointer unchanged. 17 new store tests, 6 mutations seen red. Provisional: in-memory store. Gap: the host's lane cover is still one past its own last record, which is right only for a lane the index owns alone; a shared lane's cover is M06.26."
+            }
+          ]
         },
         {
           "id": "M06.25",

@@ -39,6 +39,8 @@ pub enum Kind {
     CatalogPage = 11,
     /// The one-time binding of an identity to a catalog name.
     IdentityBinding = 12,
+    /// An index's conditional base pointer: the base it recovers from and where on its lane.
+    BasePointer = 13,
 }
 
 impl Kind {
@@ -60,6 +62,7 @@ impl Kind {
             10 => Self::CatalogRoot,
             11 => Self::CatalogPage,
             12 => Self::IdentityBinding,
+            13 => Self::BasePointer,
             _ => return Err(FormatError::UnknownKind(code)),
         })
     }
@@ -80,6 +83,7 @@ impl Kind {
             Self::CatalogRoot => MAX_CATALOG_ROOT_BODY,
             Self::CatalogPage => MAX_CATALOG_PAGE_BODY,
             Self::IdentityBinding => MAX_IDENTITY_BINDING_BODY,
+            Self::BasePointer => MAX_BASE_POINTER_BODY,
         }
     }
 

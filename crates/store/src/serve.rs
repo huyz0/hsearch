@@ -17,6 +17,7 @@
 //! the log (`recover_writer`), which replays it. An outcome the store could not settle
 //! ([`ServeError::Unknown`]) breaks the writer the same way: the next recovery shows whether the
 //! batch is in the log.
+use crate::pointer::BaseSource;
 use hsearch_commit::{
     Committer, Dependencies, DependencyView, Outcome, Receipt as Committed, Reject, Request,
 };
@@ -145,6 +146,8 @@ pub struct BaseTarget<'a> {
     pub mapping: Digest,
     /// The key envelope the files are protected under.
     pub crypto_envelope: Id,
+    /// Whether the base is named in the lane head or in the shard's own pointer.
+    pub base: BaseSource,
 }
 
 /// Why a base could not be published.
@@ -578,6 +581,26 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
             target.lane,
         ))
         .map_err(|e| BaseError::Head(format!("{e:?}")))?;
+        if target.base == BaseSource::Pointer {
+            // The pointer read here is the one the compare-and-swap names: a base published since
+            // by another writer of this shard makes the write lose.
+            let current = publisher.read_pointer(&spec).map_err(BaseError::Publish)?;
+            publisher
+                .activate_pointer(
+                    current.as_ref(),
+                    &publish::LogStart {
+                        lane: target.lane,
+                        lane_cover: self.cover,
+                        head_cover: head.cover,
+                    },
+                    &published,
+                    &spec,
+                    dependencies,
+                )
+                .map_err(BaseError::Publish)?;
+            self.base = Some(published.root.clone());
+            return Ok(published);
+        }
         publisher
             .activate(
                 &publish::HeadRead {

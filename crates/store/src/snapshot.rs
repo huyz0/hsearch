@@ -37,6 +37,7 @@ use sha2::{Digest as _, Sha256};
 use crate::Requests;
 use crate::io::{Io, request_id};
 use crate::pins::{self, Pins};
+use crate::pointer;
 use crate::sweep::ShardRef;
 
 /// Most shards one snapshot record names. A record is at most about 0.5 MiB at this bound; an
@@ -176,6 +177,15 @@ pub enum Error {
     Store(StoreError),
 }
 
+impl From<pointer::Error> for Error {
+    fn from(e: pointer::Error) -> Self {
+        match e {
+            pointer::Error::Store(e) => Self::Store(e),
+            pointer::Error::Corrupt(e) => Self::Format(e),
+            pointer::Error::Refused(_) | pointer::Error::Lost => Self::Corrupt("base pointer"),
+        }
+    }
+}
 impl From<StoreError> for Error {
     fn from(e: StoreError) -> Self {
         Self::Store(e)
@@ -521,7 +531,16 @@ impl<S: MetadataStore> Snapshots<S> {
     fn live_root(&self, index: &Id, s: &ShardRef) -> Result<Option<(Id, ManifestRoot)>, Error> {
         let (head, _) = block_on(read_head(&*self.io.store, &self.layout, &s.lane))
             .map_err(|e| Error::Head(format!("{e:?}")))?;
-        let Some(manifest) = head.checkpoint else {
+        let Some((manifest, _)) = pointer::named(
+            &self.io,
+            &self.layout,
+            s.base,
+            &head,
+            index,
+            &s.shard,
+            s.incarnation,
+        )?
+        else {
             return Ok(None);
         };
         let key = self
