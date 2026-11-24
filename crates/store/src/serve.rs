@@ -215,13 +215,24 @@ impl<L: Log> Serving<L> {
         writer
     }
 
-    /// Pin the lane's cover for this index from slot `from` (where recovery started) until a base
-    /// covering what it wrote is published, and on every record it commits after.
+    /// Pin the lane's cover for this index from slot `from` (where recovery started, given only when
+    /// it replayed a tail) until a base covering what it wrote is published, and on every record it
+    /// commits after.
     #[must_use]
-    pub fn with_cover(mut self, pins: Arc<SharedCover>, from: u64) -> Self {
-        pins.pin(self.index, from);
+    pub fn with_cover(mut self, pins: Arc<SharedCover>, from: Option<u64>) -> Self {
+        if let Some(from) = from {
+            pins.pin(self.index, from);
+        }
         self.pins = Some(pins);
         self
+    }
+
+    /// Pin before an append: the cover another host raises while this record is in flight must not
+    /// pass it.
+    fn reserve(&self) {
+        if let Some(pins) = &self.pins {
+            pins.reserve(self.index);
+        }
     }
 
     fn note_write(&self, slot: u64) {
@@ -363,6 +374,7 @@ impl<L: Log> Serving<L> {
             delete: false,
             deps: self.deps,
         };
+        self.reserve();
         let outcome = payload::commit(&mut self.committer, self.payloads.as_deref(), record)?;
         let committed = match outcome {
             Outcome::Committed(receipt) => receipt,
@@ -484,6 +496,7 @@ impl<L: Log> Serving<L> {
                 deps: self.deps,
             })
             .collect();
+        self.reserve();
         let outcomes = self.committer.commit(requests);
         let mut pending = prepared.into_iter();
         let mut failure: Option<ServeError> = None;
@@ -611,6 +624,7 @@ impl<L: Log> Serving<L> {
             {
                 return Err(BaseError::Publish(publish::Error::Lost));
             }
+            let lane_cover = self.cover.max(head.cover);
             publisher
                 .activate_pointer(
                     current.as_ref(),
@@ -618,7 +632,7 @@ impl<L: Log> Serving<L> {
                         lane: target.lane,
                         // The head's cover may have passed this index's last record (an earlier
                         // base covered it and unpinned the index): nothing of it lies below.
-                        lane_cover: self.cover.max(head.cover),
+                        lane_cover,
                         head_cover: head.cover,
                     },
                     &published,
@@ -628,7 +642,7 @@ impl<L: Log> Serving<L> {
                 .map_err(BaseError::Publish)?;
             self.base = Some(published.root.clone());
             if let Some(pins) = &self.pins {
-                pins.published(&self.index, self.cover);
+                pins.published(&self.index, lane_cover);
             }
             return Ok(published);
         }

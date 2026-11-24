@@ -362,7 +362,9 @@ impl Host {
                         .filter(|_| rebuilt.recovered.followed == 0)
                     {
                         Some(pins) => {
-                            serving.with_cover(Arc::clone(pins), rebuilt.recovered.scan_from)
+                            let from = (rebuilt.recovered.replayed > 0)
+                                .then_some(rebuilt.recovered.scan_from);
+                            serving.with_cover(Arc::clone(pins), from)
                         }
                         None => serving,
                     };
@@ -739,10 +741,12 @@ where
             match command {
                 Command::Stop => {
                     // Closing publishes, so this host stops pinning the lane's cover.
-                    if self.config.cover.is_some()
-                        && self.batches_since_base > 0
-                        && !self.serving.is_broken()
-                    {
+                    let pinned = self
+                        .config
+                        .cover
+                        .as_ref()
+                        .is_some_and(|pins| pins.is_pinned(&self.config.index));
+                    if pinned && !self.serving.is_broken() {
                         let _ = self.publish_base();
                     }
                     return;

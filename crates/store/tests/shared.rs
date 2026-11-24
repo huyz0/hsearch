@@ -335,7 +335,8 @@ fn hosts_pin_the_cover_until_each_publishes_and_the_restart_serves_what_was_ackn
     assert!(p.advance_cover(&pins).unwrap().is_none());
     // A publishes a base covering what it wrote; B has not, so B's pin still holds the cover.
     a.publish().unwrap();
-    assert_eq!(pins.allowed(), 0);
+    assert!(pins.is_pinned(&B) && !pins.is_pinned(&INDEX));
+    assert!(pins.allowed() <= 6);
     assert!(p.advance_cover(&pins).unwrap().is_none());
     // B publishes too: nothing is pinned and the cover goes to the end of what was written.
     b.publish().unwrap();
@@ -401,4 +402,35 @@ fn a_host_whose_pin_has_held_its_bound_publishes_without_a_schedule() {
     a.refresh().unwrap();
     assert!(a.stats().bases >= 1, "{:?}", a.stats());
     assert_eq!(a.stats().base_failures, 0);
+}
+
+#[test]
+fn an_idle_host_never_pins_the_cover_and_a_stopped_one_publishes_what_it_pinned() {
+    use hsearch_store::cover::SharedCover;
+    let store = Crash::new();
+    let (lane, first) = open_lane(&store);
+    drop(first);
+    let shared = lane_thread(&store, lane, 0);
+    let (h, _) =
+        hsearch_lane::block_on(hsearch_lane::read_head(store.inner_ref(), &layout(), &lane))
+            .unwrap();
+    let pins = Arc::new(SharedCover::new(lane, h.writer_epoch, 1000));
+    let with = |label: &str, index, seed| Config {
+        cover: Some(Arc::clone(&pins)),
+        ..config(label, index, 0, seed)
+    };
+    // B opens and never writes: it pins nothing, and stopping it is a no-op for the cover.
+    let b = open(&store, lane, &shared, with("idle-b", B, 2));
+    assert!(!pins.is_pinned(&B));
+    let a = open(&store, lane, &shared, with("idle-a", INDEX, 1));
+    a.bulk(vec![put("a0", "a")], Wait::Durable).unwrap();
+    assert!(pins.is_pinned(&INDEX));
+    b.stop();
+    assert!(pins.is_pinned(&INDEX));
+    // A stops: its pin is published away and nothing holds the cover.
+    a.stop();
+    assert!(!pins.is_pinned(&INDEX));
+    // A restart that replays a tail pins from the tail and stops by publishing it.
+    let again = open(&store, lane, &shared, config("idle-a2", INDEX, 0, 3));
+    assert_eq!(tag(&again, "a0").as_deref(), Some("a"));
 }

@@ -49,6 +49,17 @@ impl LaneCover {
         pin.last = pin.last.max(from);
     }
 
+    /// `index` is about to append: pin it at `seen`, which is at or below the slot the append will
+    /// take (the lane's tail never falls below any slot reported). Called before the append, so a
+    /// cover another host computes while this record is in flight cannot pass it.
+    pub fn reserve(&mut self, index: Id) {
+        let at = self.seen;
+        self.pins.entry(index).or_insert(Pin {
+            first: at,
+            last: at,
+        });
+    }
+
     /// A record of `index` was written to `slot`: pin it there unless it is pinned lower already.
     pub fn wrote(&mut self, index: Id, slot: u64) {
         self.seen = self.seen.max(slot + 1);
@@ -130,6 +141,17 @@ impl LaneCover {
             .filter(|(_, p)| self.seen.saturating_sub(p.first) >= bound)
             .map(|(index, _)| *index)
             .collect()
+    }
+
+    /// Whether `index` is pinned.
+    #[must_use]
+    pub fn is_pinned(&self, index: &Id) -> bool {
+        self.pins.contains_key(index)
+    }
+
+    /// Raise the highest slot known to be written (the lane's tail as read): never lowers it.
+    pub fn observe(&mut self, tail: u64) {
+        self.seen = self.seen.max(tail);
     }
 
     /// How many indexes are pinned.
@@ -216,7 +238,9 @@ pub struct SharedCover {
 }
 
 impl SharedCover {
-    /// The pins of `lane`, written by the writer of `writer_epoch`. A host publishes a base once
+    /// The pins of a lane known to hold nothing no base covers (a new lane); a lane that has been
+    /// written is opened with [`SharedCover::open`], which scans its tail first. The writer of
+    /// `writer_epoch` writes it. A host publishes a base once
     /// its pin has held `span_bound` slots, so a lightly written index cannot hold the lane.
     #[must_use]
     pub fn new(lane: hsearch_lane::LaneId, writer_epoch: u64, span_bound: u64) -> Self {
@@ -235,6 +259,57 @@ impl SharedCover {
             .pins
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner))
+    }
+
+    /// The pinned set of a lane a node is opening: the tail above the head's cover is scanned
+    /// first, so every index with a record its base does not cover pins the lane from its first
+    /// such slot before any host opens, and the cover cannot pass what an index not yet opened
+    /// still needs. `shard_of` maps an index to the shard and incarnation its pointer is under.
+    ///
+    /// # Errors
+    /// [`crate::tail::Error`] if the tail cannot be read or is over `max_records`.
+    pub fn open<S, F>(
+        publisher: &Publisher<S>,
+        lane: hsearch_lane::LaneId,
+        writer_epoch: u64,
+        span_bound: u64,
+        max_records: usize,
+        shard_of: F,
+    ) -> Result<Self, crate::tail::Error>
+    where
+        S: MetadataStore + hsearch_object::LargeObjectWriter + 'static,
+        F: Fn(&Id) -> (Id, u64),
+    {
+        let tail = crate::tail::scan(publisher, &lane, max_records, shard_of)?;
+        let this = Self::new(lane, writer_epoch, span_bound);
+        this.with(|c| {
+            c.observe(tail.end);
+            for t in &tail.indexes {
+                c.pin(t.index, t.first);
+            }
+        });
+        Ok(this)
+    }
+
+    /// See [`LaneCover::reserve`].
+    pub fn reserve(&self, index: Id) {
+        self.with(|c| c.reserve(index));
+    }
+
+    /// See [`LaneCover::is_pinned`].
+    #[must_use]
+    pub fn is_pinned(&self, index: &Id) -> bool {
+        self.with(|c| c.is_pinned(index))
+    }
+
+    /// See [`LaneCover::forget`].
+    pub fn forget(&self, index: &Id) {
+        self.with(|c| c.forget(index));
+    }
+
+    /// See [`LaneCover::release_promoted`].
+    pub fn release_promoted(&self, index: &Id, covered: u64, sealed: u64) -> bool {
+        self.with(|c| c.release_promoted(index, covered, sealed))
     }
 
     /// See [`LaneCover::pin`].

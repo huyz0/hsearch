@@ -326,3 +326,55 @@ fn requests_per_acknowledged_write_do_not_grow_with_the_members_of_the_lane() {
         assert_eq!(store.writes() - before, 5, "{members} members");
     }
 }
+
+#[test]
+fn a_reserved_record_keeps_the_cover_below_it_while_another_host_publishes() {
+    let mut cover = LaneCover::new();
+    cover.wrote(B, 4);
+    // A is about to append: the lane's tail is at or above 5, so it pins at 5 before the append.
+    cover.reserve(INDEX);
+    // B publishes everything and unpins; A's record is in flight, not yet reported.
+    cover.published(&B, 5);
+    assert!(cover.allowed_seen() <= 5);
+    assert!(cover.is_pinned(&INDEX));
+    // The slot the append took is 7 (others wrote 5 and 6): the pin stays at the reservation.
+    cover.wrote(INDEX, 7);
+    assert_eq!(cover.allowed(8), 5);
+}
+
+#[test]
+fn opening_the_shared_cover_pins_an_index_that_is_not_open_yet() {
+    let store = Crash::new();
+    let (lane, mut c) = open_lane(&store);
+    let ledger = fill(&mut c, 3);
+    drop(c);
+    let p = publisher(&store);
+    let (h, _) = head(&store, &lane);
+    let shared =
+        hsearch_store::cover::SharedCover::open(&p, lane, h.writer_epoch, 1000, 1000, |_| {
+            (SHARD, 1u64)
+        })
+        .unwrap();
+    // Neither index has a base: both are pinned from their first record and the cover cannot pass.
+    assert!(shared.is_pinned(&INDEX) && shared.is_pinned(&B));
+    assert_eq!(shared.allowed(), ledger[0].0.ordinal);
+    let _ = p.advance_cover(&shared);
+    assert!(head(&store, &lane).0.cover <= ledger[0].0.ordinal);
+    // A host of A publishing covers it; B still pins.
+    shared.published(&INDEX, ledger[2].1.ordinal + 1);
+    assert_eq!(shared.allowed(), ledger[0].1.ordinal);
+}
+
+#[test]
+fn a_cover_computed_under_another_epoch_is_lost_through_advance() {
+    let store = Crash::new();
+    let (lane, mut c) = open_lane(&store);
+    fill(&mut c, 2);
+    drop(c);
+    let p = publisher(&store);
+    let (h, _) = head(&store, &lane);
+    let shared = hsearch_store::cover::SharedCover::new(lane, h.writer_epoch + 1, 1000);
+    shared.wrote(INDEX, 50);
+    shared.published(&INDEX, 51);
+    assert!(matches!(p.advance_cover(&shared), Err(PublishError::Lost)));
+}

@@ -43,6 +43,17 @@ Mutations seen red: the replay start, the allowed minimum, the unpin rule, the c
 check, the promoted release, the deleted/promoted split, the tail's first uncovered record, the
 lane cover max, the open pin, the cover advance after a base, the stop guard, the span trigger.
 
+## Review fixes
+
+- A host pins at `seen` before each append (`reserve`), so a cover another host raises while its
+  record is in flight cannot pass it; the pin moves to the slot once reported.
+- A host pins from its recovery start only when it replayed a tail; an idle published index pins
+  nothing. Stopping publishes whenever the host is pinned and not broken.
+- `SharedCover::open` scans the tail above the head's cover and pins every index with uncovered
+  records before any host opens. Tests: reserve vs another host's publish, open pinning an unopened
+  index, a stale epoch through `advance_cover` (Lost), an idle host and a stopped one.
+- Mutations seen red in `shared.rs`: the reserve call, the replay-only open pin, the stop guard.
+
 ## Limits
 
 - Not wired into the node yet: creating an index joining the lane, delete sealing and leaving it with
