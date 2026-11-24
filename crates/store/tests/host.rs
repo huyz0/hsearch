@@ -464,7 +464,7 @@ fn the_batching_window_is_a_deadline_not_a_wait_after_each_arrival() {
 #[test]
 fn a_refused_operation_fails_alone_and_the_rest_of_its_run_is_written() {
     let (store, lane) = new_lane();
-    let host = Arc::new(open(&store, lane, config("alone", 100, 0, 1)));
+    let host = Arc::new(open(&store, lane, config("alone-bad", 100, 0, 1)));
     let huge = "h".repeat(200_000);
     // Both bulks fall in one group, so their operations share one run.
     let bad = {
@@ -560,8 +560,8 @@ fn runs_of_one_bulk_share_a_slot_and_recover_from_it() {
         assert!(more[0].version > got[0].version);
         cost
     };
-    let alone = cost(1, "alone");
-    let packed = cost(64, "packed");
+    let alone = cost(1, "packing-alone");
+    let packed = cost(64, "packing-packed");
     assert_eq!(alone, 7, "a record to a slot");
     assert_eq!(packed, 1, "the records share one slot");
 }
