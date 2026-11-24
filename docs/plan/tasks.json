@@ -2958,7 +2958,7 @@
           "evidence": [
             {
               "path": "evidence/m06-14-serving-writer.md",
-              "result": "Engine::admit (shared precheck with apply) and store::serve::Serving: prepare, admit, commit, apply; refused batches never reach the log, a recognised request is not rewritten, a lost reply or post-commit apply failure breaks the writer until recovery. A recovery of the log matches the live engine; 4 tests, 3 mutations seen red. Provisional (in-memory store, no RustFS); the segment bound crossed between admit and apply is documented, not tested."
+              "result": "Engine::admit (shared precheck with apply) and store::serve::Serving: prepare, admit, commit, apply; refused batches never reach the log, a recognised request is not rewritten, a lost reply or post-commit apply failure breaks the writer until recovery. A recovery of the log matches the live engine; 6 tests, 5 mutations seen red. Provisional (in-memory store, no RustFS); the segment bound crossed between admit and apply is documented, not tested."
             }
           ]
         },
@@ -3123,8 +3123,13 @@
             "M06.17"
           ],
           "owner": "storage/runtime",
-          "status": "planned",
-          "evidence": []
+          "status": "done",
+          "evidence": [
+            {
+              "path": "evidence/m06-20-resolver-on-host.md",
+              "result": "Host::resolve and ServedIndex::resolve: the M04.03 Resolver runs once on the writer thread against the committed engine view and the resolved puts and deletes go through group commit, so replay never resolves. Update, upsert, no-op, conditions, create-exists and delete-not-found tested live and after recovery (a recovered version still satisfies its condition); a retry with a request id gets its first answer, a reused id with another body is refused. 6 tests, 5 mutations seen red. Provisional: in-memory store. Gaps: retry answers are in memory only; partial update refused on a vector-field index."
+            }
+          ]
         },
         {
           "id": "M06.21",

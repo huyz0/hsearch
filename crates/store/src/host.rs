@@ -38,6 +38,10 @@ use hsearch_engine::{
 };
 use hsearch_format::{CommitToken, Digest, Id};
 use hsearch_index::barrier::{Gen, Readers};
+use hsearch_index::resolve::{
+    Committed, CommittedState, Lookup, Outcome as ResolvedOutcome, OutcomeStore, Reject as Refusal,
+    Request, Resolver,
+};
 use hsearch_index::{Field, ItemResult, Op, Wait};
 use hsearch_lane::LaneId;
 use hsearch_object::{LargeObjectWriter, MetadataStore};
@@ -73,6 +77,26 @@ pub enum HostError {
     Refresh,
     /// The host has stopped.
     Stopped,
+}
+
+/// One request's result from [`Host::resolve`]: the id, the version and writer incarnation it
+/// was written at (the committed ones for a request that wrote nothing), and what happened.
+pub type ResolvedItem = hsearch_index::resolve::Item;
+
+/// A retry key for [`Host::resolve`]: the client's request id and a fingerprint of its body.
+#[derive(Clone, Debug)]
+pub struct RetryKey {
+    /// The client's request id.
+    pub request: String,
+    /// A digest of the request body, so reusing an id for another body is caught.
+    pub fingerprint: u64,
+}
+
+/// What [`Host::resolve`] sends the writer thread.
+pub struct ResolveCall {
+    requests: Vec<Request>,
+    key: Option<RetryKey>,
+    wait: Wait,
 }
 
 /// What became of one operation of a bulk: its result, or the engine's refusal of it.
@@ -149,6 +173,10 @@ pub struct OpenArgs<S: MetadataStore, V: DependencyView, D> {
 enum Command {
     Bulk(Vec<Op>, Wait, bool, Sender<Result<Vec<Item>, HostError>>),
     Refresh(Sender<Result<(), HostError>>),
+    Resolve(
+        Box<ResolveCall>,
+        Sender<Result<Vec<ResolvedItem>, HostError>>,
+    ),
     Read(
         Vec<String>,
         Vec<String>,
@@ -283,6 +311,7 @@ impl Host {
                         batches_since_base: 0,
                         attempts: 0,
                         schema_unpublished: false,
+                        outcomes: OutcomeStore::new(OUTCOME_REQUESTS, OUTCOME_BYTES),
                     };
                     // A recovered index with data is searchable at once.
                     let first = core.serving.refresh(engine).map(|_| ()).and_then(|()| {
@@ -367,6 +396,31 @@ impl Host {
         self.send(Command::Refresh)
     }
 
+    /// Resolve `requests` (updates, upserts, creates, conditions, no-op detection) once against
+    /// the committed documents and write the resolved whole-document operations, so the log holds
+    /// only puts and deletes and replay never resolves anything. A request refused or that changed
+    /// nothing writes nothing and says so in its item. With a `key`, a retry of a request already
+    /// answered gets the original items back instead of being resolved again; the answers are
+    /// remembered in memory, so a retry after a restart is resolved again.
+    ///
+    /// # Errors
+    /// [`HostError::Invalid`] for an empty or oversize batch, a reused request id with another
+    /// body, an id named twice in one batch, or a partial update on an index with a vector field (the committed view carries no
+    /// vectors to merge into); otherwise as [`Host::bulk`].
+    pub fn resolve(
+        &self,
+        requests: Vec<Request>,
+        key: Option<RetryKey>,
+        wait: Wait,
+    ) -> Result<Vec<ResolvedItem>, HostError> {
+        let call = Box::new(ResolveCall {
+            requests,
+            key,
+            wait,
+        });
+        self.send(|reply| Command::Resolve(call, reply))
+    }
+
     /// Read documents as of every write acknowledged before the call, searchable or not, without
     /// publishing a reader: what `refresh` would make searchable stays unsearchable.
     ///
@@ -446,6 +500,56 @@ impl Drop for Host {
     }
 }
 
+/// Requests whose answers are remembered for retries, and the bytes they may hold.
+const OUTCOME_REQUESTS: usize = 4096;
+const OUTCOME_BYTES: usize = 4 << 20;
+
+/// The committed documents as the writer thread sees them: the engine's view, whole documents in
+/// schema order. A read the engine could not answer is remembered, because `get` cannot say it.
+struct Committing<'a> {
+    view: Snapshot,
+    names: &'a [&'a str],
+    head: u64,
+    term: u64,
+    failed: std::cell::Cell<bool>,
+}
+
+impl CommittedState for Committing<'_> {
+    fn head(&self) -> u64 {
+        self.head
+    }
+
+    fn get(&self, id: &str) -> Option<Committed> {
+        let hit = match self.view.get(id, self.names) {
+            Ok(hit) => hit?,
+            Err(_) => {
+                self.failed.set(true);
+                return None;
+            }
+        };
+        let fields = self
+            .names
+            .iter()
+            .map(|name| {
+                hit.fields
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .map_or(Field::Absent, |(_, v)| match v {
+                        hsearch_engine::StoredValue::String(s) => Field::Str(Arc::new(s.clone())),
+                        hsearch_engine::StoredValue::Integer(n) => Field::Int(*n),
+                        hsearch_engine::StoredValue::Boolean(b) => Field::Bool(*b),
+                        hsearch_engine::StoredValue::Date(n) => Field::Date(*n),
+                    })
+            })
+            .collect();
+        Some(Committed {
+            seq_no: u64::try_from(hit.version).unwrap_or(0),
+            primary_term: self.term,
+            fields,
+        })
+    }
+}
+
 struct Bulk {
     ops: Vec<Op>,
     wait: Wait,
@@ -471,6 +575,7 @@ struct Core<'a, 'e, S: MetadataStore, V: DependencyView, D> {
     attempts: u64,
     /// A schema change took effect but the reader under it could not be published yet.
     schema_unpublished: bool,
+    outcomes: OutcomeStore,
 }
 
 fn value(field: &Field) -> Option<Value<'_>> {
@@ -605,6 +710,9 @@ where
                         });
                     let _ = reply.send(answer);
                 }
+                Command::Resolve(call, reply) => {
+                    let _ = reply.send(self.resolve(*call));
+                }
                 Command::Publish(reply) => {
                     let _ = reply.send(self.publish_base());
                 }
@@ -648,6 +756,113 @@ where
             }
             RefreshError::Engine(_) | RefreshError::Refused(_) => HostError::Refresh,
         })
+    }
+
+    fn resolve(&mut self, call: ResolveCall) -> Result<Vec<ResolvedItem>, HostError> {
+        let ResolveCall {
+            requests,
+            key,
+            wait,
+        } = call;
+        if self.serving.is_broken() {
+            return Err(HostError::Broken);
+        }
+        if let Some(key) = &key {
+            match self.outcomes.get(&key.request, key.fingerprint) {
+                Lookup::Replay(items) => {
+                    let items = items.to_vec();
+                    // The retry's own wait still holds: what it asks to be searchable is.
+                    if wait == Wait::Searchable {
+                        self.refresh()?;
+                    }
+                    return Ok(items);
+                }
+                Lookup::Mismatch => return Err(HostError::Invalid),
+                Lookup::Unknown => {}
+            }
+        }
+        let vectors = self
+            .schema
+            .fields()
+            .any(|(_, kind)| matches!(kind, hsearch_engine::Kind::Vector(_)));
+        // One request per id: a later request on an id would be resolved against a version and a
+        // document the resolver only assumed, before the engine had taken or refused them.
+        let mut named = HashSet::new();
+        let repeated = !requests.iter().all(|r| {
+            named.insert(match r {
+                Request::Index { id, .. }
+                | Request::Create { id, .. }
+                | Request::Delete { id, .. }
+                | Request::Update { id, .. } => id.as_str(),
+            })
+        });
+        if repeated
+            || requests.is_empty()
+            || requests.len() > MAX_BATCH_OPS
+            || (vectors && requests.iter().any(|r| matches!(r, Request::Update { .. })))
+        {
+            return Err(HostError::Invalid);
+        }
+        let fields: Vec<(&str, hsearch_engine::Kind)> = self.schema.fields().collect();
+        let names: Vec<&str> = fields.iter().map(|(n, _)| *n).collect();
+        let resolver = Resolver::new(
+            self.config.incarnation,
+            &fields,
+            self.schema.limits().document_bytes,
+        );
+        // The view holds one of the engine's few reader reservations: it is dropped before the
+        // write, whose refresh needs one.
+        let prepared = {
+            let state = Committing {
+                view: self.engine.refresh().map_err(|_| HostError::Refresh)?,
+                names: &names,
+                head: self.serving.next_seq(),
+                term: self.config.incarnation,
+                failed: std::cell::Cell::new(false),
+            };
+            let prepared = resolver
+                .prepare(&state, 1, &requests)
+                .map_err(|_| HostError::Invalid)?;
+            if state.failed.get() {
+                return Err(HostError::Refresh);
+            }
+            prepared
+        };
+        let mut items = prepared.items().to_vec();
+        if !prepared.ops().is_empty() {
+            let (reply, answer) = channel();
+            self.group(vec![Bulk::new(prepared.ops().to_vec(), wait, false, reply)]);
+            let written = answer.recv().map_err(|_| HostError::Stopped)??;
+            let mut written = written.into_iter();
+            for item in &mut items {
+                if !matches!(
+                    item.outcome,
+                    ResolvedOutcome::Created | ResolvedOutcome::Updated | ResolvedOutcome::Deleted
+                ) {
+                    continue;
+                }
+                match written.next() {
+                    Some(Ok(done)) => {
+                        item.seq_no = u64::try_from(done.version).unwrap_or(0);
+                        item.primary_term = self.config.incarnation;
+                    }
+                    Some(Err(refusal)) => {
+                        item.seq_no = 0;
+                        item.primary_term = 0;
+                        item.outcome = ResolvedOutcome::Rejected(match refusal {
+                            EngineError::Limit => Refusal::Limit,
+                            _ => Refusal::Invalid,
+                        });
+                    }
+                    None => return Err(HostError::Broken),
+                }
+            }
+        }
+        if let Some(key) = key {
+            self.outcomes
+                .record(&key.request, key.fingerprint, items.clone());
+        }
+        Ok(items)
     }
 
     fn token(&mut self) -> CommitToken {
