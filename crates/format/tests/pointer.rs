@@ -180,3 +180,39 @@ fn a_promoted_index_may_start_a_lower_cover_on_its_new_lane() {
     };
     assert_eq!(promoted.validate_successor(Some(&old), 0), Ok(()));
 }
+
+#[test]
+fn a_pointer_cannot_move_back_to_an_older_lane_activation() {
+    let old = BasePointer {
+        lane_activation: 3,
+        ..pointer(1)
+    };
+    let back = BasePointer {
+        lane_activation: 2,
+        ..pointer(2)
+    };
+    assert_eq!(
+        back.validate_successor(Some(&old), 0),
+        Err(R::LaneRegressed)
+    );
+    let older = BasePointer {
+        lane_incarnation: 0,
+        ..pointer(2)
+    };
+    assert_eq!(
+        older.validate_successor(
+            Some(&BasePointer {
+                lane_incarnation: 2,
+                ..pointer(1)
+            }),
+            0
+        ),
+        Err(R::LaneRegressed)
+    );
+    let forward = BasePointer {
+        lane_activation: 4,
+        lane_cover: 0,
+        ..pointer(2)
+    };
+    assert_eq!(forward.validate_successor(Some(&old), 0), Ok(()));
+}

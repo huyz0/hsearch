@@ -38,6 +38,11 @@ Mutations seen red: the replay start (`lane_cover.max(head.cover)`), the lost-ra
 pointer sequence, the source selection in `named`, the serving writer's pointer branch, and (format
 crate) the successor rule's checks.
 
+Added after independent review: the serving writer replaces only the base it built on (compared
+with the pointer it reads, which alone would pass the compare-and-swap) and only on the live lane
+activation, and the successor rule refuses a lane incarnation or activation that falls. Both seen
+red by mutation.
+
 ## Limits
 
 - The lane cover a serving writer writes is one past its own last record, right only for a lane the

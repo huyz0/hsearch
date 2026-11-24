@@ -237,6 +237,69 @@ fn a_base_named_by_the_pointer_is_opened_by_recovery_and_the_head_names_none() {
 }
 
 #[test]
+fn a_writer_that_never_saw_the_pointers_base_cannot_overwrite_it() {
+    use hsearch_store::pointer::BaseSource;
+    let store = Crash::new();
+    let (lane, committer) = open_lane(&store);
+    let h = history();
+    let dir = std::env::temp_dir().join(format!("hsearch-base-two-{}", std::process::id()));
+    with_local_engine(&dir, schema(), |engine, local| {
+        let mut writer = Serving::new(committer, INDEX, 0, deps());
+        let p = publisher(&store);
+        let t = BaseTarget {
+            base: BaseSource::Pointer,
+            ..target_of(&lane)
+        };
+        write_batch(&mut writer, engine, 0, &h[0]).unwrap();
+        writer
+            .publish_base(engine, local, &p, &t, token(2), &AnyDependencies)
+            .unwrap();
+        let named = p
+            .read_pointer(&spec_for(cut(1)))
+            .unwrap()
+            .unwrap()
+            .0
+            .manifest;
+        // A second builder that recovered on no base builds from nothing: its fresh read of the
+        // pointer would pass the compare-and-swap, so the base it built on is compared instead.
+        let mut other = Serving::new(support::writer(&store, lane), INDEX, 1, deps());
+        write_batch(&mut other, engine, 1, &h[1]).unwrap();
+        let lost = other.publish_base(engine, local, &p, &t, token(3), &AnyDependencies);
+        assert!(
+            matches!(
+                lost,
+                Err(BaseError::Publish(hsearch_store::publish::Error::Lost))
+            ),
+            "{lost:?}"
+        );
+        assert_eq!(
+            p.read_pointer(&spec_for(cut(1)))
+                .unwrap()
+                .unwrap()
+                .0
+                .manifest,
+            named
+        );
+    })
+    .unwrap();
+}
+
+fn spec_for(cut: hsearch_index::barrier::Cut) -> hsearch_store::publish::BaseSpec<'static> {
+    hsearch_store::publish::BaseSpec {
+        index: INDEX,
+        shard: SHARD,
+        incarnation: 1,
+        engine_format: "lucene-test",
+        mapping: [5; 32],
+        crypto_envelope: [6; 16],
+        cut,
+        committed: 1,
+        previous: None,
+        attempt: token(9),
+    }
+}
+
+#[test]
 fn a_base_then_a_tail_recovers_and_the_recovered_writer_continues() {
     let store = Crash::new();
     let (lane, committer) = open_lane(&store);

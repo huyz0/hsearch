@@ -585,6 +585,17 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
             // The pointer read here is the one the compare-and-swap names: a base published since
             // by another writer of this shard makes the write lose.
             let current = publisher.read_pointer(&spec).map_err(BaseError::Publish)?;
+            // Only the base this writer built on may be replaced, by a writer of the live lane
+            // activation: the fresh read alone would let a second builder overwrite the first.
+            let held = self
+                .base
+                .as_ref()
+                .map(|b| publish::manifest_id(&spec.index, &spec.shard, &b.token));
+            if current.as_ref().map(|(p, _)| p.manifest) != held
+                || head.activation != target.lane.activation
+            {
+                return Err(BaseError::Publish(publish::Error::Lost));
+            }
             publisher
                 .activate_pointer(
                     current.as_ref(),

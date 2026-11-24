@@ -55,6 +55,8 @@ pub enum Refusal {
     LaneCover,
     /// The manifest generation would fall.
     Generation,
+    /// The lane's incarnation or activation would fall.
+    LaneRegressed,
     /// The lane cover is below the lane head's cover, which a reclaim may already have passed.
     BelowHeadCover,
 }
@@ -155,6 +157,11 @@ impl BasePointer {
                 }
                 if self.manifest_generation < old.manifest_generation {
                     return Err(Refusal::Generation);
+                }
+                if (self.lane_incarnation, self.lane_activation)
+                    < (old.lane_incarnation, old.lane_activation)
+                {
+                    return Err(Refusal::LaneRegressed);
                 }
                 if same_lane(self, old) && self.lane_cover < old.lane_cover {
                     return Err(Refusal::LaneCover);
