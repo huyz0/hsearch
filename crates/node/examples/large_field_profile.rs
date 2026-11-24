@@ -26,7 +26,7 @@ fn status_kb(field: &str) -> usize {
 /// document of up to 200 MiB can be held. Not a conformance-tested store.
 mod big {
     use hsearch_object::{
-        ByteRange, Error, MetadataStore, Mutation, ObjectBackend, ObjectKey, Payload,
+        ByteRange, Error, Metadata, MetadataStore, Mutation, ObjectBackend, ObjectKey, Payload,
         RequestContext, RequestId, VersionToken,
     };
     use hsearch_object::{ObjectInfo, Operation, Precondition, WriteReceipt};
@@ -139,6 +139,61 @@ mod big {
                 let start = range.offset() as usize;
                 Payload::new(&bytes[start..start + range.length() as usize])
             })
+        }
+    }
+
+    /// An upload held in memory until it completes: the profile's store has no part limits.
+    pub struct Upload {
+        key: ObjectKey,
+        data: Vec<u8>,
+    }
+
+    impl hsearch_object::LargeObjectWriter for BigStore {
+        type Upload = Upload;
+        fn begin_upload<'a>(
+            &'a self,
+            _: &'a RequestContext,
+            key: &'a ObjectKey,
+        ) -> Operation<'a, Upload> {
+            Box::pin(async move {
+                Ok(Upload {
+                    key: key.clone(),
+                    data: Vec::new(),
+                })
+            })
+        }
+        fn put_part<'a>(
+            &'a self,
+            _: &'a RequestContext,
+            upload: &'a mut Upload,
+            bytes: &'a [u8],
+        ) -> Operation<'a, ()> {
+            Box::pin(async move {
+                upload.data.extend_from_slice(bytes);
+                Ok(())
+            })
+        }
+        fn complete_upload<'a>(
+            &'a self,
+            ctx: &'a RequestContext,
+            upload: &'a Upload,
+        ) -> Operation<'a, (VersionToken, u64)> {
+            Box::pin(async move {
+                let mut id = b"upload-".to_vec();
+                id.extend_from_slice(upload.key.as_bytes());
+                let request = Mutation {
+                    request_id: RequestId::new(&id)?,
+                    key: upload.key.clone(),
+                    payload: Payload::new(&upload.data)?,
+                    metadata: Metadata::new(b"")?,
+                    precondition: Precondition::Absent,
+                };
+                let receipt = self.write(ctx, &request)?;
+                Ok((receipt.object.version, receipt.object.length))
+            })
+        }
+        fn abort_upload<'a>(&'a self, _: &'a RequestContext, _: &'a Upload) -> Operation<'a, ()> {
+            Box::pin(async { Ok(()) })
         }
     }
 

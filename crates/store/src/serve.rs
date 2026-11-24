@@ -78,6 +78,10 @@ pub enum ChainStop {
     /// The batch after the ones written was applied before; it is not written again, and nothing
     /// was written for any later one.
     Recognised,
+    /// The batch after the ones written is too large for a shared commit (its record would be an
+    /// external payload): write it alone with [`Serving::write`]. Nothing was written for it or
+    /// any later one.
+    Alone,
     /// The write failed; see [`ServeError`] for what is certain about the records.
     Failed(ServeError),
 }
@@ -405,6 +409,10 @@ impl<S: MetadataStore, D: DependencyView> Serving<S, D> {
                 .prepare(batch.request, batch.mutations)
                 .and_then(|p| encode_batch(batch.request, batch.mutations).map(|b| (p, b)));
             match made {
+                Ok((_, body)) if body.len() > hsearch_format::MAX_INLINE_RECORD_BYTES => {
+                    out.stop = Some(ChainStop::Alone);
+                    break;
+                }
                 Ok((p, body)) => {
                     prepared.push(p);
                     bodies.push(body);

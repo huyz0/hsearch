@@ -7,8 +7,9 @@ use std::time::Instant;
 
 use hsearch_engine::{Kind, Outcome, StoredValue};
 use hsearch_format::{Digest, Layout};
-use hsearch_index::{Field, Index, Op, Wait};
-use hsearch_object::MetadataStore;
+use hsearch_index::{Field, Op, Wait};
+use hsearch_object::{LargeObjectWriter, MetadataStore};
+use hsearch_store::served::{ServedIndex, Settings};
 use serde_json::{Map, Value, json};
 use typed_arena::Arena;
 
@@ -34,7 +35,7 @@ const LARGE_DOCUMENT_BYTES: usize = 64 * 1024;
 const INDEX_COST_FACTOR: u64 = 32;
 
 struct Entry {
-    index: Index,
+    index: ServedIndex,
     /// The mapping version writers and searches use now: one parsed copy per node,
     /// shared by every index with this mapping. Replaced only by a mapping change,
     /// after the index itself has evolved to it.
@@ -46,7 +47,7 @@ struct Entry {
 }
 
 impl Entry {
-    fn new(index: Index, mapping: Arc<Mapping>, stored: Vec<u8>) -> Self {
+    fn new(index: ServedIndex, mapping: Arc<Mapping>, stored: Vec<u8>) -> Self {
         Self {
             index,
             mapping: RwLock::new(mapping),
@@ -128,7 +129,7 @@ fn json_value(value: &StoredValue) -> Value {
     }
 }
 
-impl<S: MetadataStore + 'static> Node<S> {
+impl<S: MetadataStore + LargeObjectWriter + 'static> Node<S> {
     /// A node over `store`, keeping scratch engines under `data_dir`, with the
     /// default request limits.
     pub fn new(store: Arc<S>, data_dir: PathBuf) -> Self {
@@ -158,12 +159,14 @@ impl<S: MetadataStore + 'static> Node<S> {
         self
     }
 
-    fn merge_mode(&self) -> hsearch_engine::MergeMode {
+    /// How indexes are served under this node's settings.
+    fn settings(&self) -> Settings {
+        let mut settings =
+            Settings::new(Layout::new(DEPLOYMENT).expect("the deployment name is valid"));
         if self.background_merge {
-            hsearch_engine::MergeMode::Background
-        } else {
-            hsearch_engine::MergeMode::Inline
+            settings.merge = hsearch_engine::MergeMode::Background;
         }
+        settings
     }
 
     /// This node under explicit field, depth and nested-object limits (PR-42),
@@ -312,12 +315,13 @@ impl<S: MetadataStore + 'static> Node<S> {
 
     fn open(&self, name: &str) -> Result<Arc<Entry>, ApiError> {
         let (mapping, stored) = self.load_mapping(name)?;
-        let index = Index::open_merging(
-            Arc::clone(&self.store),
+        let index = ServedIndex::open(
+            &self.store,
+            &self.settings(),
             name,
             self.schema_of(&mapping)?,
+            &mapping.hash(),
             &self.scratch(name),
-            self.merge_mode(),
         )?;
         Ok(Arc::new(Entry::new(index, mapping, stored)))
     }
@@ -334,22 +338,26 @@ impl<S: MetadataStore + 'static> Node<S> {
             if guard.is_some() {
                 return Err(hsearch_index::Error::Exists.into());
             }
-            let index = match Index::create_merging(
-                Arc::clone(&self.store),
+            let hash = mapping.hash();
+            let settings = self.settings();
+            let index = match ServedIndex::create(
+                &self.store,
+                &settings,
                 name,
                 schema.clone(),
+                &hash,
                 &self.scratch(name),
-                self.merge_mode(),
             ) {
                 Ok(index) => Ok(index),
                 Err(hsearch_index::Error::Exists) => {
                     match hsearch_index::get_mapping(&*self.store, name) {
-                        Err(hsearch_index::Error::NotFound) => Index::open_merging(
-                            Arc::clone(&self.store),
+                        Err(hsearch_index::Error::NotFound) => ServedIndex::open(
+                            &self.store,
+                            &settings,
                             name,
                             schema,
+                            &hash,
                             &self.scratch(name),
-                            self.merge_mode(),
                         ),
                         _ => Err(hsearch_index::Error::Exists),
                     }
@@ -424,7 +432,7 @@ impl<S: MetadataStore + 'static> Node<S> {
         *stored = reference;
         // From here the new version is durable. The index evolves before the mapping
         // does, so no document is built with a field the writer cannot yet take.
-        if grew && let Err(error) = entry.index.evolve(schema) {
+        if grew && let Err(error) = entry.index.evolve(schema, &hash) {
             self.evict(name, entry);
             return Err(error.into());
         }
@@ -494,7 +502,10 @@ impl<S: MetadataStore + 'static> Node<S> {
             entry.index.bulk(std::mem::take(&mut ops), wait)
         };
         match attempt {
-            Ok(results) => results.into_iter().map(Ok).collect(),
+            Ok(results) => results
+                .into_iter()
+                .map(|item| item.map_err(ApiError::from))
+                .collect(),
             Err(hsearch_index::Error::Invalid) if n > 1 => {
                 let right = ops.split_off(n / 2);
                 let mut out = self.write(name, entry, ops, wait);
@@ -688,7 +699,10 @@ impl<S: MetadataStore + 'static> Node<S> {
         let query = search::lower(&parsed.query, &queries, &values);
         let sort = search::engine_sort(&parsed.sort);
         let snapshot = entry.index.snapshot()?;
-        let result = snapshot.search(&query, &sort, parsed.from + parsed.size, &projection)?;
+        let result =
+            snapshot
+                .reader
+                .search(&query, &sort, parsed.from + parsed.size, &projection)?;
         let hits: Vec<Value> = result
             .hits
             .iter()

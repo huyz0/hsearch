@@ -1280,6 +1280,7 @@ dependencies = [
  "hsearch-index",
  "hsearch-object",
  "hsearch-s3",
+ "hsearch-store",
  "serde_json",
  "tiny_http",
  "typed-arena",

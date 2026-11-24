@@ -33,7 +33,7 @@ fn doc_json(name: &str, id: &str, hit: Option<hsearch_engine::Hit>) -> (u16, Val
     }
 }
 
-impl<S: MetadataStore + 'static> Node<S> {
+impl<S: MetadataStore + LargeObjectWriter + 'static> Node<S> {
     /// `GET /{index}/_doc/{id}`: the latest acknowledged write.
     pub fn get(&self, name: &str, id: &str) -> Result<(u16, Value), ApiError> {
         self.get_with(name, id, true)
